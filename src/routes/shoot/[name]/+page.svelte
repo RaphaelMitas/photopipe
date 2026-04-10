@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import DenoiseMonitor from '$lib/components/DenoiseMonitor.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import DownloadDialog from '$lib/components/DownloadDialog.svelte';
 	import { formatBytes, formatDate } from '$lib/utils.js';
 	import { PURERAW_SETTINGS } from '$lib/types.js';
 	import { invalidateAll } from '$app/navigation';
@@ -9,7 +10,21 @@
 	let { data, form } = $props();
 
 	let showCleanupDialog = $state(false);
+	let showDownloadDialog = $state(false);
 	let cleaning = $state(false);
+
+	// Upload state
+	let uploadFolder = $state<'exports' | 'denoised' | 'raw'>('exports');
+	let uploadFiles = $state<File[]>([]);
+	let uploading = $state(false);
+	let uploadedCount = $state(0);
+	let uploadTotal = $state(0);
+
+	const UPLOAD_ACCEPT: Record<string, string> = {
+		raw: '.arw,.ARW',
+		denoised: '.dng,.DNG',
+		exports: '.jpg,.jpeg,.png,.tif,.tiff,.webp,.dng,.JPG,.JPEG,.PNG,.TIF,.TIFF,.WEBP,.DNG'
+	};
 
 	async function handleCleanup() {
 		cleaning = true;
@@ -17,6 +32,53 @@
 			const res = await fetch(`/api/shoots/${encodeURIComponent(data.shoot.folderName)}/cleanup`, { method: 'DELETE' });
 			if (res.ok) { showCleanupDialog = false; await invalidateAll(); }
 		} finally { cleaning = false; }
+	}
+
+	function handleUploadFileSelect(e: Event) {
+		const input = e.target as HTMLInputElement;
+		if (input.files) {
+			const existing = new Set(uploadFiles.map((f) => f.name));
+			const newFiles = Array.from(input.files).filter((f) => !existing.has(f.name));
+			uploadFiles = [...uploadFiles, ...newFiles];
+		}
+	}
+
+	function handleUploadDrop(e: DragEvent) {
+		e.preventDefault();
+		if (e.dataTransfer?.files) {
+			const existing = new Set(uploadFiles.map((f) => f.name));
+			const newFiles = Array.from(e.dataTransfer.files).filter((f) => !existing.has(f.name));
+			uploadFiles = [...uploadFiles, ...newFiles];
+		}
+	}
+
+	function removeUploadFile(index: number) { uploadFiles = uploadFiles.filter((_, i) => i !== index); }
+
+	async function handleUpload() {
+		if (uploadFiles.length === 0) return;
+		uploading = true;
+		uploadedCount = 0;
+		uploadTotal = uploadFiles.length;
+
+		const BATCH = 3;
+		for (let i = 0; i < uploadFiles.length; i += BATCH) {
+			const batch = uploadFiles.slice(i, i + BATCH);
+			await Promise.allSettled(batch.map(async (file) => {
+				const fd = new FormData();
+				fd.append('file', file);
+				fd.append('folder', uploadFolder);
+				const res = await fetch(`/api/upload/${encodeURIComponent(data.shoot.folderName)}`, { method: 'POST', body: fd });
+				if (res.ok) uploadedCount++;
+			}));
+		}
+
+		// Finalize
+		await fetch(`/api/upload/${encodeURIComponent(data.shoot.folderName)}`, { method: 'PATCH' });
+		uploadFiles = [];
+		uploading = false;
+		uploadedCount = 0;
+		uploadTotal = 0;
+		await invalidateAll();
 	}
 </script>
 
@@ -35,8 +97,24 @@
 				<span class="folder">{data.shoot.folderName}</span>
 			</p>
 		</div>
-		<span class="badge badge-{data.shoot.status}">{data.shoot.status}</span>
+		<div class="header-actions">
+			<button class="btn-ghost btn-sm" onclick={() => (showDownloadDialog = true)}>
+				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+					<polyline points="7 10 12 15 17 10"/>
+					<line x1="12" y1="15" x2="12" y2="3"/>
+				</svg>
+				Download
+			</button>
+			<span class="badge badge-{data.shoot.status}">{data.shoot.status}</span>
+		</div>
 	</div>
+
+	<DownloadDialog
+		open={showDownloadDialog}
+		shoot={data.shoot}
+		oncancel={() => (showDownloadDialog = false)}
+	/>
 
 	<!-- Stats -->
 	<div class="stats">
@@ -181,6 +259,69 @@
 			<button type="submit" class="btn-primary btn-sm">Save Metadata</button>
 		</form>
 	</section>
+
+	<!-- Upload Files -->
+	<section class="section">
+		<h2>Upload Files</h2>
+		<div class="card">
+			<div class="upload-controls">
+				<div class="field" style="max-width: 200px;">
+					<label for="upload-folder">Target folder</label>
+					<select id="upload-folder" bind:value={uploadFolder}>
+						<option value="exports">Exports</option>
+						<option value="denoised">Denoised</option>
+						<option value="raw">Raw</option>
+					</select>
+				</div>
+			</div>
+
+			<div
+				class="upload-drop"
+				ondragover={(e) => e.preventDefault()}
+				ondrop={handleUploadDrop}
+				role="region"
+				aria-label="Upload drop zone"
+			>
+				<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="upload-drop-icon">
+					<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+					<polyline points="17 8 12 3 7 8"/>
+					<line x1="12" y1="3" x2="12" y2="15"/>
+				</svg>
+				<span class="upload-drop-text">Drop files or</span>
+				<label class="btn-ghost btn-sm upload-browse">
+					Browse
+					<input type="file" accept={UPLOAD_ACCEPT[uploadFolder]} multiple onchange={handleUploadFileSelect} hidden />
+				</label>
+			</div>
+
+			{#if uploadFiles.length > 0}
+				<div class="upload-file-list">
+					{#each uploadFiles as file, i (file.name)}
+						<div class="upload-file-row">
+							<span class="upload-fname">{file.name}</span>
+							<span class="upload-fsize">{formatBytes(file.size)}</span>
+							{#if !uploading}
+								<button class="upload-fremove" onclick={() => removeUploadFile(i)}>&times;</button>
+							{/if}
+						</div>
+					{/each}
+				</div>
+
+				{#if uploading}
+					<div class="upload-progress">
+						<div class="upload-pbar-track">
+							<div class="upload-pbar-fill" style="width: {uploadTotal > 0 ? (uploadedCount / uploadTotal) * 100 : 0}%"></div>
+						</div>
+						<span class="upload-pbar-text">{uploadedCount} / {uploadTotal}</span>
+					</div>
+				{:else}
+					<button class="btn-primary btn-sm" onclick={handleUpload}>
+						Upload {uploadFiles.length} file{uploadFiles.length !== 1 ? 's' : ''} to {uploadFolder}/
+					</button>
+				{/if}
+			{/if}
+		</div>
+	</section>
 </div>
 
 <style>
@@ -195,6 +336,9 @@
 	.header {
 		display: flex; align-items: flex-start; justify-content: space-between;
 		gap: 1rem; margin-bottom: 1.5rem;
+	}
+	.header-actions {
+		display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0;
 	}
 	h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.03em; }
 	.meta { font-size: 0.8667rem; color: var(--text-muted); margin-top: 0.15rem; }
@@ -303,4 +447,118 @@
 	.field { display: flex; flex-direction: column; gap: 0.35rem; max-width: 380px; }
 	select, textarea { width: 100%; }
 
+	/* Upload section */
+	.upload-controls {
+		margin-bottom: 1rem;
+	}
+
+	.upload-drop {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		padding: 1.25rem;
+		border: 2px dashed var(--border-strong);
+		border-radius: var(--radius-sm);
+		margin-bottom: 1rem;
+		transition: all 0.15s;
+	}
+
+	.upload-drop:hover {
+		border-color: var(--accent);
+		background: var(--accent-glow);
+	}
+
+	.upload-drop-icon {
+		color: var(--text-muted);
+		flex-shrink: 0;
+	}
+
+	.upload-drop:hover .upload-drop-icon {
+		color: var(--accent-light);
+	}
+
+	.upload-drop-text {
+		font-size: 0.8667rem;
+		color: var(--text-muted);
+	}
+
+	.upload-browse {
+		cursor: pointer;
+	}
+
+	.upload-file-list {
+		background: var(--bg-root);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		max-height: 180px;
+		overflow-y: auto;
+		margin-bottom: 0.75rem;
+	}
+
+	.upload-file-row {
+		display: flex;
+		align-items: center;
+		padding: 0.35rem 0.75rem;
+		font-size: 0.8rem;
+		border-bottom: 1px solid var(--border-subtle);
+	}
+
+	.upload-file-row:last-child { border-bottom: none; }
+
+	.upload-fname {
+		flex: 1;
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		color: var(--text-secondary);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.upload-fsize {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		margin: 0 0.5rem;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.upload-fremove {
+		background: none;
+		color: var(--text-muted);
+		padding: 0 0.2rem;
+		font-size: 1rem;
+		line-height: 1;
+	}
+
+	.upload-fremove:hover { color: var(--red); }
+
+	.upload-progress {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		margin-bottom: 0.75rem;
+	}
+
+	.upload-pbar-track {
+		flex: 1;
+		height: 5px;
+		background: var(--bg-active);
+		border-radius: 3px;
+		overflow: hidden;
+	}
+
+	.upload-pbar-fill {
+		height: 100%;
+		background: linear-gradient(90deg, var(--accent), var(--pink));
+		border-radius: 3px;
+		transition: width 0.3s ease;
+	}
+
+	.upload-pbar-text {
+		font-size: 0.8rem;
+		color: var(--text-muted);
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
 </style>
