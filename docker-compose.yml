@@ -1,0 +1,13 @@
+services:
+  photopipe:
+    build: .
+    container_name: photopipe
+    # No built-in auth — only expose on trusted networks or behind a reverse proxy.
+    ports:
+      - '3000:3000'
+    volumes:
+      - ./data/camera:/data/camera
+    environment:
+      - CAMERA_BASE=/data/camera
+      - CAMERA_HOST_BASE=./data/camera
+    restart: unless-stopped

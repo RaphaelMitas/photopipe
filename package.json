@@ -1,0 +1,61 @@
+{
+	"name": "photopipe",
+	"private": true,
+	"version": "0.0.1",
+	"description": "Self-hosted photo pipeline for camera shoots, denoising workflows, and image exports",
+	"author": "Raphael Mitas",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/RaphaelMitas/photopipe.git"
+	},
+	"homepage": "https://github.com/RaphaelMitas/photopipe",
+	"keywords": [
+		"photography",
+		"sveltekit",
+		"pureraw",
+		"denoising",
+		"photo-management",
+		"sharp"
+	],
+	"type": "module",
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "vite preview",
+		"prepare": "svelte-kit sync || echo ''",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"format": "prettier --check .",
+		"format:fix": "prettier --write .",
+		"lint": "eslint .",
+		"lint:fix": "eslint --fix .",
+		"typecheck": "pnpm check",
+		"audit": "pnpm audit --audit-level high",
+		"clean": "git clean -xdf node_modules .svelte-kit build"
+	},
+	"dependencies": {
+		"@sveltejs/adapter-node": "^5.5.4",
+		"archiver": "^7.0.1",
+		"sharp": "^0.34.5"
+	},
+	"devDependencies": {
+		"@eslint/js": "^10.0.1",
+		"@sveltejs/kit": "^2.57.0",
+		"@sveltejs/vite-plugin-svelte": "^7.0.0",
+		"@types/archiver": "^7.0.0",
+		"@types/node": "^22.15.3",
+		"eslint": "^10.2.0",
+		"eslint-plugin-svelte": "^3.17.0",
+		"globals": "^17.4.0",
+		"jiti": "^2.6.1",
+		"prettier": "^3.8.2",
+		"prettier-plugin-svelte": "^3.5.1",
+		"svelte": "^5.55.2",
+		"svelte-check": "^4.4.6",
+		"typescript": "^6.0.2",
+		"typescript-eslint": "^8.58.1",
+		"vite": "^8.0.7"
+	},
+	"packageManager": "pnpm@11.0.0-rc.0+sha512.1f08eadeea025e91448de6d5dee42a6c94764257000c043a9e36b8ff12849a72ebcb9c65fc1885094747249e52f53d8b73ada1181446bba81866810c8a4d3f6c"
+}
