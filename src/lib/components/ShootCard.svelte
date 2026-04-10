@@ -6,77 +6,79 @@
 </script>
 
 <a href="/shoot/{encodeURIComponent(shoot.folderName)}" class="card">
-	<div class="card-header">
+	<div class="card-top">
 		<h3>{shoot.name}</h3>
 		<span class="badge badge-{shoot.status}">{shoot.status}</span>
 	</div>
 
-	<time class="date">{formatDate(shoot.date)}</time>
+	<time>{formatDate(shoot.date)}</time>
 
-	<div class="stats">
+	<div class="card-stats">
 		{#if shoot.rawCount > 0}
 			<div class="stat">
-				<span class="stat-value">{shoot.rawCount}</span>
-				<span class="stat-label">RAWs</span>
+				<span class="val">{shoot.rawCount}</span>
+				<span class="key">RAW</span>
 			</div>
 		{/if}
 		<div class="stat">
-			<span class="stat-value">{shoot.dngCount}</span>
-			<span class="stat-label">DNGs</span>
+			<span class="val">{shoot.dngCount}</span>
+			<span class="key">DNG</span>
 		</div>
 		<div class="stat">
-			<span class="stat-value">{shoot.exportCount}</span>
-			<span class="stat-label">Exports</span>
+			<span class="val">{shoot.exportCount}</span>
+			<span class="key">Export</span>
 		</div>
-		<div class="stat">
-			<span class="stat-value">{formatBytes(shoot.totalSizeBytes)}</span>
-			<span class="stat-label">Size</span>
+		<div class="stat stat-push">
+			<span class="val">{formatBytes(shoot.totalSizeBytes)}</span>
+			<span class="key">Size</span>
 		</div>
 	</div>
 </a>
 
 <style>
 	.card {
-		display: block;
-		background: var(--bg-secondary);
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+		background: var(--bg-surface);
 		border: 1px solid var(--border);
-		border-radius: var(--radius-lg);
+		border-radius: var(--radius);
 		padding: 1.25rem;
-		color: var(--text-primary);
-		transition:
-			border-color 0.15s,
-			box-shadow 0.15s;
+		color: var(--text);
+		transition: all 0.2s ease;
 	}
 
 	.card:hover {
-		border-color: var(--border-light);
-		box-shadow: var(--shadow-lg);
+		background: var(--bg-elevated);
+		border-color: var(--border-strong);
+		box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px var(--border-strong);
+		transform: translateY(-2px);
 		text-decoration: none;
 	}
 
-	.card-header {
+	.card-top {
 		display: flex;
 		align-items: flex-start;
 		justify-content: space-between;
 		gap: 0.75rem;
-		margin-bottom: 0.25rem;
 	}
 
 	h3 {
 		font-size: 1rem;
 		font-weight: 600;
+		letter-spacing: -0.01em;
 		line-height: 1.3;
 	}
 
-	.date {
+	time {
 		font-size: 0.8rem;
 		color: var(--text-muted);
 	}
 
-	.stats {
+	.card-stats {
 		display: flex;
-		gap: 1.5rem;
-		margin-top: 1rem;
+		gap: 1.25rem;
+		margin-top: 0.85rem;
 		padding-top: 0.75rem;
 		border-top: 1px solid var(--border);
 	}
@@ -86,16 +88,19 @@
 		flex-direction: column;
 	}
 
-	.stat-value {
-		font-size: 1.125rem;
-		font-weight: 600;
-		font-variant-numeric: tabular-nums;
+	.stat-push {
+		margin-left: auto;
 	}
 
-	.stat-label {
-		font-size: 0.75rem;
+	.val {
+		font-size: 1.05rem;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+		line-height: 1.2;
+	}
+
+	.key {
+		font-size: 0.7rem;
 		color: var(--text-muted);
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
 	}
 </style>

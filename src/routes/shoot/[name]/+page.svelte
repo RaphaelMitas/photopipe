@@ -14,105 +14,78 @@
 	async function handleCleanup() {
 		cleaning = true;
 		try {
-			const res = await fetch(
-				`/api/shoots/${encodeURIComponent(data.shoot.folderName)}/cleanup`,
-				{ method: 'DELETE' }
-			);
-			if (res.ok) {
-				showCleanupDialog = false;
-				await invalidateAll();
-			}
-		} finally {
-			cleaning = false;
-		}
+			const res = await fetch(`/api/shoots/${encodeURIComponent(data.shoot.folderName)}/cleanup`, { method: 'DELETE' });
+			if (res.ok) { showCleanupDialog = false; await invalidateAll(); }
+		} finally { cleaning = false; }
 	}
 </script>
 
 <div class="page">
-	<a href="/" class="back">&larr; Dashboard</a>
+	<a href="/" class="back">
+		<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+		Back
+	</a>
 
-	<div class="shoot-header">
+	<div class="header">
 		<div>
 			<h1>{data.shoot.name}</h1>
-			<time>{formatDate(data.shoot.date)}</time>
+			<p class="meta">
+				{formatDate(data.shoot.date)}
+				<span class="sep">&middot;</span>
+				<span class="folder">{data.shoot.folderName}</span>
+			</p>
 		</div>
 		<span class="badge badge-{data.shoot.status}">{data.shoot.status}</span>
 	</div>
 
-	<!-- Stats overview -->
-	<div class="stats-row">
+	<!-- Stats -->
+	<div class="stats">
 		{#if data.shoot.rawCount > 0}
-			<div class="stat-card">
-				<span class="stat-value">{data.shoot.rawCount}</span>
-				<span class="stat-label">Raw ARWs</span>
-				<span class="stat-detail">{formatBytes(data.shoot.rawSizeBytes)}</span>
+			<div class="st">
+				<span class="st-val">{data.shoot.rawCount}</span>
+				<span class="st-label">Raw ARWs</span>
+				<span class="st-sub">{formatBytes(data.shoot.rawSizeBytes)}</span>
 			</div>
 		{/if}
-		<div class="stat-card">
-			<span class="stat-value">{data.shoot.dngCount}</span>
-			<span class="stat-label">Denoised DNGs</span>
-			<span class="stat-detail">{formatBytes(data.shoot.dngSizeBytes)}</span>
+		<div class="st">
+			<span class="st-val">{data.shoot.dngCount}</span>
+			<span class="st-label">Denoised</span>
+			<span class="st-sub">{formatBytes(data.shoot.dngSizeBytes)}</span>
 		</div>
-		<div class="stat-card">
-			<span class="stat-value">{data.shoot.exportCount}</span>
-			<span class="stat-label">Exports</span>
-			<span class="stat-detail">{formatBytes(data.shoot.exportSizeBytes)}</span>
+		<div class="st">
+			<span class="st-val">{data.shoot.exportCount}</span>
+			<span class="st-label">Exports</span>
+			<span class="st-sub">{formatBytes(data.shoot.exportSizeBytes)}</span>
 		</div>
-		<div class="stat-card">
-			<span class="stat-value">{formatBytes(data.shoot.totalSizeBytes)}</span>
-			<span class="stat-label">Total Size</span>
+		<div class="st">
+			<span class="st-val">{formatBytes(data.shoot.totalSizeBytes)}</span>
+			<span class="st-label">Total</span>
 		</div>
 	</div>
 
-	<!-- PureRAW instructions (shown when raw files exist) -->
+	<!-- PureRAW -->
 	{#if data.shoot.rawCount > 0 && data.instructions}
 		<section class="section">
 			<h2>PureRAW Instructions</h2>
-			<div class="pureraw-instructions">
-				<p class="instruction-hint">Open PureRAW on bean.local and use these settings:</p>
-				<div class="instruction-paths">
-					<div class="path-row">
-						<span class="path-label">Input:</span>
-						<code>{data.instructions.inputPath}</code>
-					</div>
-					<div class="path-row">
-						<span class="path-label">Output:</span>
-						<code>{data.instructions.outputPath}</code>
-					</div>
+			<div class="card">
+				<p class="card-hint">Open PureRAW on bean.local and use these settings:</p>
+				<div class="paths">
+					<div class="path"><span class="path-k">Input</span><code>{data.instructions.inputPath}</code></div>
+					<div class="path"><span class="path-k">Output</span><code>{data.instructions.outputPath}</code></div>
 				</div>
-				<table class="settings-table">
-					<tbody>
-						<tr>
-							<td>Algorithm (hero shots)</td>
-							<td>DeepPRIME XD3</td>
-						</tr>
-						<tr>
-							<td>Algorithm (bulk)</td>
-							<td>DeepPRIME 3</td>
-						</tr>
-						<tr>
-							<td>Output format</td>
-							<td>{PURERAW_SETTINGS.outputFormat}</td>
-						</tr>
-						<tr>
-							<td>Lens sharpness</td>
-							<td>{PURERAW_SETTINGS.lensSharpness}</td>
-						</tr>
-						<tr>
-							<td>Optical corrections</td>
-							<td>{PURERAW_SETTINGS.opticalCorrections}</td>
-						</tr>
-						<tr>
-							<td>Dust removal</td>
-							<td>{PURERAW_SETTINGS.dustRemoval}</td>
-						</tr>
-					</tbody>
-				</table>
+				<div class="settings-grid">
+					<div class="sg-row"><span>Algorithm (hero)</span><span class="sg-val">DeepPRIME XD3</span></div>
+					<div class="sg-row"><span>Algorithm (bulk)</span><span class="sg-val">DeepPRIME 3</span></div>
+					<div class="sg-row"><span>Format</span><span class="sg-val">{PURERAW_SETTINGS.outputFormat}</span></div>
+					<div class="sg-row"><span>Lens sharpness</span><span class="sg-val">{PURERAW_SETTINGS.lensSharpness}</span></div>
+					<div class="sg-row"><span>Optical corrections</span><span class="sg-val">{PURERAW_SETTINGS.opticalCorrections}</span></div>
+					<div class="sg-row"><span>Dust removal</span><span class="sg-val">{PURERAW_SETTINGS.dustRemoval}</span></div>
+				</div>
 			</div>
 		</section>
 	{/if}
 
-	<!-- Denoise Monitor -->
+	<!-- Monitor -->
 	{#if data.shoot.rawCount > 0 || data.shoot.dngCount > 0}
 		<section class="section">
 			<h2>Denoise Monitor</h2>
@@ -125,53 +98,43 @@
 		</section>
 	{/if}
 
-	<!-- Cleanup raw files -->
+	<!-- Cleanup -->
 	{#if data.shoot.rawCount > 0}
 		<section class="section">
 			<h2>Cleanup Raw Files</h2>
-			<div class="cleanup-info">
-				<div class="cleanup-comparison">
+			<div class="card">
+				<div class="cleanup-compare">
 					<span>{data.shoot.rawCount} ARWs uploaded</span>
 					<span class="arrow">&rarr;</span>
 					<span>{data.shoot.dngCount} DNGs processed</span>
 					{#if data.shoot.rawCount === data.shoot.dngCount}
-						<span class="match">&#10003;</span>
+						<span class="match-ok">&check;</span>
 					{:else if data.shoot.dngCount > 0}
-						<span class="mismatch">mismatch</span>
+						<span class="match-warn">mismatch</span>
 					{/if}
 				</div>
-				<p class="cleanup-detail">
-					Will free <strong>{formatBytes(data.shoot.rawSizeBytes)}</strong> by deleting all ARW files
-					from <code>raw/</code>.
-				</p>
-				<button class="btn-danger" onclick={() => (showCleanupDialog = true)}>
-					Delete Raw Files
-				</button>
+				<p class="card-hint">Delete raw ARWs to free <strong>{formatBytes(data.shoot.rawSizeBytes)}</strong></p>
+				<button class="btn-danger" onclick={() => (showCleanupDialog = true)}>Delete Raw Files</button>
 			</div>
 		</section>
-
 		<ConfirmDialog
 			open={showCleanupDialog}
 			title="Delete raw files?"
-			message="This will permanently delete {data.shoot.rawCount} ARW files ({formatBytes(data.shoot.rawSizeBytes)}) from this shoot's raw/ folder. This cannot be undone."
+			message="This will permanently delete {data.shoot.rawCount} ARW files ({formatBytes(data.shoot.rawSizeBytes)}). This cannot be undone."
 			confirmLabel={cleaning ? 'Deleting...' : 'Delete All'}
 			onconfirm={handleCleanup}
 			oncancel={() => (showCleanupDialog = false)}
 		/>
 	{/if}
 
-	<!-- Export gallery -->
+	<!-- Exports Gallery -->
 	{#if data.shoot.exportFiles.length > 0}
 		<section class="section">
-			<h2>Exports ({data.shoot.exportCount})</h2>
+			<h2>Exports <span class="h2-count">{data.shoot.exportCount}</span></h2>
 			<div class="gallery">
 				{#each data.shoot.exportFiles as file (file.name)}
-					<div class="thumb-card">
-						<img
-							src="/api/thumbs/{encodeURIComponent(data.shoot.folderName)}/{encodeURIComponent(file.name)}"
-							alt={file.name}
-							loading="lazy"
-						/>
+					<div class="thumb">
+						<img src="/api/thumbs/{encodeURIComponent(data.shoot.folderName)}/{encodeURIComponent(file.name)}" alt={file.name} loading="lazy" />
 						<span class="thumb-name">{file.name}</span>
 					</div>
 				{/each}
@@ -179,31 +142,26 @@
 		</section>
 	{/if}
 
-	<!-- DNG file list -->
+	<!-- DNG Files -->
 	{#if data.shoot.dngFiles.length > 0}
 		<section class="section">
-			<h2>Denoised Files ({data.shoot.dngCount})</h2>
-			<div class="file-list">
+			<h2>Denoised Files <span class="h2-count">{data.shoot.dngCount}</span></h2>
+			<div class="flist">
 				{#each data.shoot.dngFiles as file (file.name)}
-					<div class="file-row">
-						<span class="file-name">{file.name}</span>
-						<span class="file-size">{formatBytes(file.sizeBytes)}</span>
+					<div class="frow">
+						<span class="fn">{file.name}</span>
+						<span class="fs">{formatBytes(file.sizeBytes)}</span>
 					</div>
 				{/each}
 			</div>
 		</section>
 	{/if}
 
-	<!-- Metadata editor -->
+	<!-- Metadata -->
 	<section class="section">
 		<h2>Metadata</h2>
-
-		{#if form?.success}
-			<div class="success-msg">Metadata saved.</div>
-		{/if}
-		{#if form?.error}
-			<div class="error-msg">{form.error}</div>
-		{/if}
+		{#if form?.success}<div class="alert alert-success">Saved.</div>{/if}
+		{#if form?.error}<div class="alert alert-error">{form.error}</div>{/if}
 
 		<form method="POST" action="?/updateMeta" use:enhance>
 			<div class="meta-fields">
@@ -211,308 +169,138 @@
 					<label for="algorithm">Algorithm</label>
 					<select id="algorithm" name="algorithm">
 						<option value="">Not set</option>
-						<option value="DeepPRIME 3" selected={data.shoot.metadata.algorithm === 'DeepPRIME 3'}>
-							DeepPRIME 3
-						</option>
-						<option
-							value="DeepPRIME XD3"
-							selected={data.shoot.metadata.algorithm === 'DeepPRIME XD3'}
-						>
-							DeepPRIME XD3
-						</option>
+						<option value="DeepPRIME 3" selected={data.shoot.metadata.algorithm === 'DeepPRIME 3'}>DeepPRIME 3</option>
+						<option value="DeepPRIME XD3" selected={data.shoot.metadata.algorithm === 'DeepPRIME XD3'}>DeepPRIME XD3</option>
 					</select>
 				</div>
 				<div class="field">
 					<label for="notes">Notes</label>
-					<textarea id="notes" name="notes" rows="3" placeholder="e.g. Low light venue, ISO 6400"
-						>{data.shoot.metadata.notes}</textarea
-					>
+					<textarea id="notes" name="notes" rows="3" placeholder="Low light venue, ISO 6400...">{data.shoot.metadata.notes}</textarea>
 				</div>
 			</div>
-			<button type="submit" class="btn-ghost">Save Metadata</button>
+			<button type="submit" class="btn-primary btn-sm">Save Metadata</button>
 		</form>
 	</section>
 </div>
 
 <style>
-	.page {
-		max-width: 900px;
-	}
+	.page { max-width: 860px; }
 
 	.back {
-		font-size: 0.85rem;
-		color: var(--text-muted);
-		display: inline-block;
-		margin-bottom: 1.5rem;
+		display: inline-flex; align-items: center; gap: 0.25rem;
+		font-size: 0.8667rem; color: var(--text-muted); margin-bottom: 2rem;
 	}
+	.back:hover { color: var(--text); }
 
-	.back:hover {
-		color: var(--text-primary);
-		text-decoration: none;
+	.header {
+		display: flex; align-items: flex-start; justify-content: space-between;
+		gap: 1rem; margin-bottom: 1.5rem;
 	}
+	h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.03em; }
+	.meta { font-size: 0.8667rem; color: var(--text-muted); margin-top: 0.15rem; }
+	.sep { opacity: 0.4; }
+	.folder { opacity: 0.6; }
 
-	.shoot-header {
-		display: flex;
-		align-items: flex-start;
-		justify-content: space-between;
-		gap: 1rem;
-		margin-bottom: 1.5rem;
+	/* Stats */
+	.stats {
+		display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 2.5rem;
 	}
-
-	h1 {
-		font-size: 1.5rem;
-		font-weight: 700;
+	.st {
+		flex: 1; min-width: 120px;
+		background: var(--bg-surface); border: 1px solid var(--border);
+		border-radius: var(--radius-sm); padding: 1rem 1.15rem;
+		display: flex; flex-direction: column;
 	}
-
-	time {
-		font-size: 0.85rem;
-		color: var(--text-muted);
+	.st-val {
+		font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums;
+		letter-spacing: -0.02em; line-height: 1.1;
 	}
+	.st-label { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.1rem; }
+	.st-sub { font-size: 0.75rem; color: var(--text-muted); opacity: 0.6; margin-top: 0.15rem; }
 
-	.stats-row {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-		gap: 0.75rem;
-		margin-bottom: 2rem;
-	}
-
-	.stat-card {
-		background: var(--bg-secondary);
-		border: 1px solid var(--border);
-		border-radius: var(--radius);
-		padding: 1rem;
-		display: flex;
-		flex-direction: column;
-	}
-
-	.stat-value {
-		font-size: 1.5rem;
-		font-weight: 700;
-		font-variant-numeric: tabular-nums;
-	}
-
-	.stat-label {
-		font-size: 0.75rem;
-		color: var(--text-muted);
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
-	}
-
-	.stat-detail {
-		font-size: 0.8rem;
-		color: var(--text-secondary);
-		margin-top: 0.25rem;
-	}
-
-	.section {
-		margin-bottom: 2.5rem;
-	}
-
+	/* Sections */
+	.section { margin-bottom: 2.5rem; }
 	h2 {
-		font-size: 1.1rem;
-		font-weight: 600;
-		margin-bottom: 1rem;
-		padding-bottom: 0.5rem;
-		border-bottom: 1px solid var(--border);
-	}
-
-	/* PureRAW */
-	.pureraw-instructions {
-		background: var(--bg-secondary);
-		border: 1px solid var(--border);
-		border-radius: var(--radius);
-		padding: 1.25rem;
-	}
-
-	.instruction-hint {
-		font-size: 0.875rem;
-		color: var(--text-secondary);
+		font-size: 0.9333rem; font-weight: 600;
+		padding-bottom: 0.5rem; border-bottom: 1px solid var(--border);
 		margin-bottom: 1rem;
 	}
+	.h2-count { color: var(--text-muted); font-weight: 400; }
 
-	.instruction-paths {
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		margin-bottom: 1rem;
+	.card {
+		background: var(--bg-surface); border: 1px solid var(--border);
+		border-radius: var(--radius); padding: 1.25rem;
 	}
+	.card-hint { font-size: 0.8667rem; color: var(--text-muted); margin-bottom: 1rem; }
 
-	.path-row {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-size: 0.875rem;
+	/* Paths */
+	.paths {
+		display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;
 	}
+	.path { display: flex; align-items: center; gap: 0.75rem; font-size: 0.8667rem; }
+	.path-k { font-size: 0.75rem; color: var(--text-muted); font-weight: 500; min-width: 3.5rem; }
 
-	.path-label {
-		color: var(--text-muted);
-		min-width: 4rem;
-		font-weight: 500;
+	/* Settings grid */
+	.settings-grid { display: flex; flex-direction: column; }
+	.sg-row {
+		display: flex; justify-content: space-between;
+		padding: 0.45rem 0; border-bottom: 1px solid var(--border-subtle);
+		font-size: 0.8667rem;
 	}
-
-	.settings-table {
-		width: 100%;
-		border-collapse: collapse;
-		font-size: 0.85rem;
-	}
-
-	.settings-table td {
-		padding: 0.4rem 0;
-		border-bottom: 1px solid var(--border);
-	}
-
-	.settings-table td:first-child {
-		color: var(--text-secondary);
-		width: 45%;
-	}
-
-	.settings-table td:last-child {
-		font-weight: 500;
-	}
+	.sg-row:last-child { border-bottom: none; }
+	.sg-row span:first-child { color: var(--text-muted); }
+	.sg-val { font-weight: 500; }
 
 	/* Cleanup */
-	.cleanup-info {
-		background: var(--bg-secondary);
-		border: 1px solid var(--border);
-		border-radius: var(--radius);
-		padding: 1.25rem;
+	.cleanup-compare {
+		display: flex; align-items: center; gap: 0.75rem;
+		font-size: 0.9rem; margin-bottom: 0.75rem;
 	}
-
-	.cleanup-comparison {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-		font-size: 0.95rem;
-		margin-bottom: 0.75rem;
-	}
-
-	.arrow {
-		color: var(--text-muted);
-	}
-
-	.match {
-		color: var(--success);
-		font-weight: 700;
-	}
-
-	.mismatch {
-		color: var(--warning);
-		font-size: 0.8rem;
-		font-weight: 500;
-	}
-
-	.cleanup-detail {
-		font-size: 0.85rem;
-		color: var(--text-secondary);
-		margin-bottom: 1rem;
+	.arrow { color: var(--text-muted); opacity: 0.5; }
+	.match-ok { color: var(--green); font-weight: 700; font-size: 1.1rem; }
+	.match-warn {
+		font-size: 0.75rem; color: var(--orange); font-weight: 500;
+		background: var(--orange-bg); padding: 0.1rem 0.4rem; border-radius: var(--radius-full);
 	}
 
 	/* Gallery */
 	.gallery {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-		gap: 0.75rem;
+		display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+		gap: 0.5rem;
 	}
-
-	.thumb-card {
-		background: var(--bg-secondary);
-		border: 1px solid var(--border);
-		border-radius: var(--radius);
-		overflow: hidden;
+	.thumb {
+		background: var(--bg-surface); border: 1px solid var(--border);
+		border-radius: var(--radius-sm); overflow: hidden;
+		transition: border-color 0.15s, transform 0.15s;
 	}
-
-	.thumb-card img {
-		width: 100%;
-		aspect-ratio: 1;
-		object-fit: cover;
-		display: block;
-		background: var(--bg-tertiary);
+	.thumb:hover { border-color: var(--border-strong); transform: translateY(-2px); }
+	.thumb img {
+		width: 100%; aspect-ratio: 1; object-fit: cover;
+		display: block; background: var(--bg-elevated);
 	}
-
 	.thumb-name {
-		display: block;
-		padding: 0.35rem 0.5rem;
-		font-size: 0.7rem;
-		color: var(--text-muted);
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
+		display: block; padding: 0.3rem 0.5rem;
+		font-size: 0.7rem; color: var(--text-muted);
+		white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 	}
 
 	/* File list */
-	.file-list {
-		background: var(--bg-secondary);
-		border: 1px solid var(--border);
-		border-radius: var(--radius);
-		max-height: 400px;
-		overflow-y: auto;
+	.flist {
+		background: var(--bg-surface); border: 1px solid var(--border);
+		border-radius: var(--radius-sm); max-height: 350px; overflow-y: auto;
 	}
-
-	.file-row {
-		display: flex;
-		justify-content: space-between;
-		padding: 0.5rem 1rem;
-		font-size: 0.85rem;
-		border-bottom: 1px solid var(--border);
+	.frow {
+		display: flex; justify-content: space-between;
+		padding: 0.4rem 0.85rem; font-size: 0.8rem;
+		border-bottom: 1px solid var(--border-subtle);
 	}
-
-	.file-row:last-child {
-		border-bottom: none;
-	}
-
-	.file-name {
-		font-family: var(--font-mono);
-		font-size: 0.8rem;
-	}
-
-	.file-size {
-		color: var(--text-muted);
-		font-variant-numeric: tabular-nums;
-	}
+	.frow:last-child { border-bottom: none; }
+	.fn { font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-secondary); }
+	.fs { color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
 	/* Metadata */
-	.meta-fields {
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-		margin-bottom: 1rem;
-	}
+	.meta-fields { display: flex; flex-direction: column; gap: 0.85rem; margin-bottom: 1rem; }
+	.field { display: flex; flex-direction: column; gap: 0.35rem; max-width: 380px; }
+	select, textarea { width: 100%; }
 
-	.field {
-		display: flex;
-		flex-direction: column;
-		gap: 0.3rem;
-	}
-
-	label {
-		font-size: 0.85rem;
-		font-weight: 500;
-		color: var(--text-secondary);
-	}
-
-	select,
-	textarea {
-		width: 100%;
-		max-width: 400px;
-	}
-
-	.success-msg {
-		background: rgba(34, 197, 94, 0.1);
-		border: 1px solid rgba(34, 197, 94, 0.3);
-		color: var(--success);
-		padding: 0.5rem 0.75rem;
-		border-radius: var(--radius);
-		margin-bottom: 1rem;
-		font-size: 0.85rem;
-	}
-
-	.error-msg {
-		background: rgba(239, 68, 68, 0.1);
-		border: 1px solid rgba(239, 68, 68, 0.3);
-		color: var(--danger);
-		padding: 0.5rem 0.75rem;
-		border-radius: var(--radius);
-		margin-bottom: 1rem;
-		font-size: 0.85rem;
-	}
 </style>
