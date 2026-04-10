@@ -130,7 +130,7 @@ export async function listShoots(): Promise<ShootSummary[]> {
 		const shootPath = join(CAMERA_BASE, entry.name);
 		const rawFiles = await listFilesWithExt(join(shootPath, RAW_DIR), ['.arw']);
 		const dngFiles = await listFilesWithExt(join(shootPath, DENOISED_DIR), ['.dng']);
-		const exportFiles = await listFilesWithExt(join(shootPath, EXPORTS_DIR), ['.jpg', '.jpeg']);
+		const exportFiles = await listFilesWithExt(join(shootPath, EXPORTS_DIR), ['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.webp', '.dng']);
 		const metadata = await readMetadata(shootPath);
 
 		const rawSize = rawFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
@@ -173,7 +173,7 @@ export async function getShoot(folderName: string): Promise<ShootDetail> {
 
 	const rawFiles = await listFilesWithExt(join(shootPath, RAW_DIR), ['.arw']);
 	const dngFiles = await listFilesWithExt(join(shootPath, DENOISED_DIR), ['.dng']);
-	const exportFiles = await listFilesWithExt(join(shootPath, EXPORTS_DIR), ['.jpg', '.jpeg']);
+	const exportFiles = await listFilesWithExt(join(shootPath, EXPORTS_DIR), ['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.webp', '.dng']);
 	const metadata = await readMetadata(shootPath);
 
 	const rawSizeBytes = rawFiles.reduce((sum, f) => sum + f.sizeBytes, 0);

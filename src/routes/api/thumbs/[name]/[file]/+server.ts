@@ -14,10 +14,16 @@ function validatePath(name: string): void {
 	}
 }
 
-function jpegResponse(data: ArrayBuffer, extra: Record<string, string> = {}): Response {
+/** Strip original extension and add .webp */
+function thumbName(fileName: string): string {
+	const base = fileName.substring(0, fileName.lastIndexOf('.')) || fileName;
+	return `${base}.webp`;
+}
+
+function webpResponse(data: ArrayBuffer, extra: Record<string, string> = {}): Response {
 	return new Response(data, {
 		headers: {
-			'Content-Type': 'image/jpeg',
+			'Content-Type': 'image/webp',
 			'Cache-Control': 'public, max-age=86400',
 			'Content-Length': data.byteLength.toString(),
 			...extra
@@ -38,7 +44,7 @@ export const GET: RequestHandler = async ({ params }) => {
 
 	const sourcePath = join(CAMERA_BASE, shootName, EXPORTS_DIR, fileName);
 	const thumbDir = join(CAMERA_BASE, shootName, THUMBS_DIR);
-	const thumbPath = join(thumbDir, fileName);
+	const thumbPath = join(thumbDir, thumbName(fileName));
 
 	// Check source exists
 	let sourceInfo;
@@ -51,18 +57,17 @@ export const GET: RequestHandler = async ({ params }) => {
 	// Check cache
 	try {
 		const thumbInfo = await stat(thumbPath);
-		// Serve cached thumbnail if it's newer than source
 		if (thumbInfo.mtime >= sourceInfo.mtime) {
 			const buf = await readFile(thumbPath);
-			return jpegResponse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), {
+			return webpResponse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer, {
 				ETag: `"${thumbInfo.mtime.getTime()}"`
 			});
 		}
 	} catch {
-		// Cache miss — generate below
+		// Cache miss
 	}
 
-	// Generate thumbnail (with dedup guard)
+	// Generate (with dedup guard)
 	const cacheKey = `${shootName}/${fileName}`;
 	let pending = inFlight.get(cacheKey);
 
@@ -74,7 +79,7 @@ export const GET: RequestHandler = async ({ params }) => {
 
 	try {
 		const data = await pending;
-		return jpegResponse(data);
+		return webpResponse(data);
 	} catch {
 		error(500, 'Failed to generate thumbnail');
 	}
@@ -89,10 +94,10 @@ async function generateThumbnail(
 
 	const buf = await sharp(sourcePath)
 		.resize(400, 400, { fit: 'inside', withoutEnlargement: true })
-		.jpeg({ quality: 80 })
+		.webp({ quality: 80 })
 		.toBuffer();
 
-	// Write cache file in background (non-blocking)
+	// Write cache in background
 	sharp(buf).toFile(thumbPath).catch(() => {});
 
 	return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
