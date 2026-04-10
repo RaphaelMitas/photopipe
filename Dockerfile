@@ -11,6 +11,7 @@ RUN corepack enable
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+ENV CAMERA_BASE=/data/camera
 RUN pnpm build
 
 # Stage 3: Production image
