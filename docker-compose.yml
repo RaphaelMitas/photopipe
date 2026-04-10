@@ -1,0 +1,12 @@
+services:
+  photopipe:
+    build: .
+    container_name: photopipe
+    ports:
+      - "3000:3000"
+    volumes:
+      - /Users/raphaelmitas/pictures/Camera:/data/camera
+    environment:
+      - CAMERA_BASE=/data/camera
+      - CAMERA_HOST_BASE=~/pictures/Camera
+    restart: unless-stopped

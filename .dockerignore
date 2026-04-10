@@ -1,0 +1,11 @@
+node_modules
+.svelte-kit
+build
+.git
+test-data
+.env
+.env.*
+*.arw
+*.ARW
+*.dng
+*.DNG
