@@ -130,7 +130,15 @@ export async function listShoots(): Promise<ShootSummary[]> {
 		const shootPath = join(CAMERA_BASE, entry.name);
 		const rawFiles = await listFilesWithExt(join(shootPath, RAW_DIR), ['.arw']);
 		const dngFiles = await listFilesWithExt(join(shootPath, DENOISED_DIR), ['.dng']);
-		const exportFiles = await listFilesWithExt(join(shootPath, EXPORTS_DIR), ['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.webp', '.dng']);
+		const exportFiles = await listFilesWithExt(join(shootPath, EXPORTS_DIR), [
+			'.jpg',
+			'.jpeg',
+			'.png',
+			'.tif',
+			'.tiff',
+			'.webp',
+			'.dng'
+		]);
 		const metadata = await readMetadata(shootPath);
 
 		const rawSize = rawFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
@@ -173,7 +181,15 @@ export async function getShoot(folderName: string): Promise<ShootDetail> {
 
 	const rawFiles = await listFilesWithExt(join(shootPath, RAW_DIR), ['.arw']);
 	const dngFiles = await listFilesWithExt(join(shootPath, DENOISED_DIR), ['.dng']);
-	const exportFiles = await listFilesWithExt(join(shootPath, EXPORTS_DIR), ['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.webp', '.dng']);
+	const exportFiles = await listFilesWithExt(join(shootPath, EXPORTS_DIR), [
+		'.jpg',
+		'.jpeg',
+		'.png',
+		'.tif',
+		'.tiff',
+		'.webp',
+		'.dng'
+	]);
 	const metadata = await readMetadata(shootPath);
 
 	const rawSizeBytes = rawFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
@@ -223,7 +239,11 @@ export async function createShoot(name: string, date: string): Promise<string> {
 
 	const slug = slugifyName(name);
 	if (!slug) {
-		throw new PhotopipeError('Shoot name must contain at least one letter or number', 'INVALID_INPUT', 400);
+		throw new PhotopipeError(
+			'Shoot name must contain at least one letter or number',
+			'INVALID_INPUT',
+			400
+		);
 	}
 
 	const folderName = buildFolderName(name, date);
@@ -282,32 +302,81 @@ export async function updateMetadata(
 	return updated;
 }
 
+/** Allowed file extensions per folder type for deletion */
+const DELETABLE_EXTENSIONS: Record<string, string[]> = {
+	raw: ['.arw', '.xmp'],
+	denoised: ['.dng'],
+	exports: ['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.webp', '.dng']
+};
+
+/** Map folder type to directory constant */
+const FOLDER_DIR: Record<string, string> = {
+	raw: RAW_DIR,
+	denoised: DENOISED_DIR,
+	exports: EXPORTS_DIR
+};
+
+/** Strip original extension and add .webp to get cached thumbnail name */
+function thumbName(fileName: string): string {
+	const base = fileName.substring(0, fileName.lastIndexOf('.')) || fileName;
+	return `${base}.webp`;
+}
+
+/** Validate a single filename against path traversal */
+function validateFileName(name: string): void {
+	if (!name || name.includes('..') || name.includes('/') || name.includes('\\')) {
+		throw new PhotopipeError('Invalid filename', 'INVALID_INPUT', 400);
+	}
+}
+
 /**
- * Delete all raw ARW files from a shoot's raw/ folder.
+ * Delete files from a shoot's subfolder.
+ * If `files` is provided, delete only those specific files.
+ * If `files` is omitted, delete all files in the folder.
  * Returns the number of files deleted and bytes freed.
  */
-export async function cleanupRaw(
-	folderName: string
+export async function deleteFiles(
+	folderName: string,
+	folder: 'exports' | 'denoised' | 'raw',
+	files?: string[]
 ): Promise<{ deletedCount: number; freedBytes: number }> {
 	validateShootName(folderName);
 
-	const rawPath = join(CAMERA_BASE, folderName, RAW_DIR);
-	let entries: string[];
-	try {
-		entries = await readdir(rawPath);
-	} catch {
-		return { deletedCount: 0, freedBytes: 0 };
+	const dirName = FOLDER_DIR[folder];
+	if (!dirName) {
+		throw new PhotopipeError('Invalid folder type', 'INVALID_INPUT', 400);
+	}
+
+	const dirPath = join(CAMERA_BASE, folderName, dirName);
+	const allowedExts = DELETABLE_EXTENSIONS[folder];
+
+	let targets: string[];
+
+	if (files && files.length > 0) {
+		// Selective delete: validate each filename
+		for (const f of files) {
+			validateFileName(f);
+		}
+		targets = files;
+	} else {
+		// Delete all: read directory and filter by extension
+		try {
+			const entries = await readdir(dirPath);
+			targets = entries.filter((entry) => {
+				if (entry.startsWith('.')) return false;
+				const ext = entry.substring(entry.lastIndexOf('.')).toLowerCase();
+				return allowedExts.includes(ext);
+			});
+		} catch {
+			return { deletedCount: 0, freedBytes: 0 };
+		}
 	}
 
 	let deletedCount = 0;
 	let freedBytes = 0;
 
-	for (const entry of entries) {
-		if (entry.startsWith('.')) continue;
-		const ext = entry.substring(entry.lastIndexOf('.')).toLowerCase();
-		if (ext !== '.arw' && ext !== '.xmp') continue;
-
-		const filePath = join(rawPath, entry);
+	for (const fileName of targets) {
+		const filePath = join(dirPath, fileName);
 		try {
 			const info = await stat(filePath);
 			if (!info.isFile()) continue;
@@ -315,7 +384,19 @@ export async function cleanupRaw(
 			deletedCount++;
 			freedBytes += info.size;
 		} catch {
-			// Skip files we can't delete
+			// Skip files we can't delete or don't exist
+		}
+	}
+
+	// Clean up cached thumbnails when deleting exports
+	if (folder === 'exports' && deletedCount > 0) {
+		const thumbDir = join(CAMERA_BASE, folderName, THUMBS_DIR);
+		for (const fileName of targets) {
+			try {
+				await unlink(join(thumbDir, thumbName(fileName)));
+			} catch {
+				// Thumbnail may not exist — ignore
+			}
 		}
 	}
 

@@ -13,9 +13,17 @@
 	{#if data.shoots.length === 0}
 		<div class="empty">
 			<div class="empty-ring">
-				<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-					<circle cx="12" cy="12" r="10" opacity="0.2"/>
-					<circle cx="12" cy="12" r="4" opacity="0.3"/>
+				<svg
+					width="48"
+					height="48"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.5"
+					stroke-linecap="round"
+				>
+					<circle cx="12" cy="12" r="10" opacity="0.2" />
+					<circle cx="12" cy="12" r="4" opacity="0.3" />
 				</svg>
 			</div>
 			<p class="empty-title">No shoots yet</p>

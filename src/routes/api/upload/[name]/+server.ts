@@ -2,7 +2,13 @@ import type { RequestHandler } from './$types.js';
 import { json, error } from '@sveltejs/kit';
 import { writeFile, stat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { CAMERA_BASE, RAW_DIR, DENOISED_DIR, EXPORTS_DIR, SHOOT_PATTERN } from '$lib/server/config.js';
+import {
+	CAMERA_BASE,
+	RAW_DIR,
+	DENOISED_DIR,
+	EXPORTS_DIR,
+	SHOOT_PATTERN
+} from '$lib/server/config.js';
 import { validateShootName, updateMetadata } from '$lib/server/shoots.js';
 
 const FOLDER_MAP: Record<string, string> = {

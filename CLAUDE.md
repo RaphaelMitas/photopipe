@@ -21,7 +21,7 @@ All components use runes mode. Use `$props()`, `$state()`, `$derived()` — neve
 
 ```svelte
 <script lang="ts">
-let { data } = $props();
+	let { data } = $props();
 </script>
 ```
 

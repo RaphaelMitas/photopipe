@@ -1,0 +1,34 @@
+{
+	"$schema": "https://docs.renovatebot.com/renovate-schema.json",
+	"extends": ["config:recommended", ":separateMajorReleases", ":combinePatchMinorReleases"],
+	"baseBranchPatterns": ["main"],
+	"rangeStrategy": "bump",
+	"labels": ["dependencies"],
+	"lockFileMaintenance": {
+		"enabled": true,
+		"schedule": ["before 5am on the first day of the month"]
+	},
+	"packageRules": [
+		{
+			"description": "Automerge non-major updates",
+			"matchUpdateTypes": ["minor", "patch", "digest"],
+			"automerge": true
+		},
+		{
+			"description": "Group SvelteKit",
+			"groupName": "sveltekit",
+			"matchPackageNames": ["/^@sveltejs//", "/^svelte$/", "svelte-check"]
+		},
+		{
+			"description": "Group Vite",
+			"groupName": "vite",
+			"matchPackageNames": ["/^vite$/", "@sveltejs/vite-plugin-svelte"]
+		},
+		{
+			"description": "Group type definitions",
+			"groupName": "types",
+			"automerge": true,
+			"matchPackageNames": ["/^@types//"]
+		}
+	]
+}

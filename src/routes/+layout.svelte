@@ -8,20 +8,39 @@
 	<header>
 		<nav>
 			<a href="/" class="logo">
-				<svg class="logo-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<circle cx="12" cy="12" r="10"/>
-					<circle cx="12" cy="12" r="4"/>
-					<line x1="12" y1="2" x2="12" y2="6"/>
-					<line x1="12" y1="18" x2="12" y2="22"/>
-					<line x1="2" y1="12" x2="6" y2="12"/>
-					<line x1="18" y1="12" x2="22" y2="12"/>
+				<svg
+					class="logo-icon"
+					width="22"
+					height="22"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<circle cx="12" cy="12" r="10" />
+					<circle cx="12" cy="12" r="4" />
+					<line x1="12" y1="2" x2="12" y2="6" />
+					<line x1="12" y1="18" x2="12" y2="22" />
+					<line x1="2" y1="12" x2="6" y2="12" />
+					<line x1="18" y1="12" x2="22" y2="12" />
 				</svg>
 				<span>Photopipe</span>
 			</a>
 			<div class="nav-right">
 				<a href="/" class="nav-link">Shoots</a>
 				<a href="/new" class="btn-primary btn-nav">
-					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+					<svg
+						width="14"
+						height="14"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2.5"
+						stroke-linecap="round"
+						><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg
+					>
 					New Shoot
 				</a>
 			</div>

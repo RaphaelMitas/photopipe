@@ -9,9 +9,29 @@
 
 	let { data, form } = $props();
 
-	let showCleanupDialog = $state(false);
 	let showDownloadDialog = $state(false);
-	let cleaning = $state(false);
+
+	// Delete state
+	let showDeleteAllDialog = $state(false);
+	let showDeleteSingleDialog = $state(false);
+	let deleting = $state(false);
+	let deleteTargetFile = $state<string | null>(null);
+	let deleteTargetFolder = $state<'exports' | 'denoised' | 'raw'>('exports');
+
+	const deleteAllTitle = $derived(
+		deleteTargetFolder === 'raw'
+			? 'Delete raw files?'
+			: deleteTargetFolder === 'denoised'
+				? 'Delete all denoised files?'
+				: 'Delete all exports?'
+	);
+	const deleteAllMessage = $derived(
+		deleteTargetFolder === 'raw'
+			? `This will permanently delete ${data.shoot.rawCount} ARW file${data.shoot.rawCount !== 1 ? 's' : ''} (${formatBytes(data.shoot.rawSizeBytes)}). This cannot be undone.`
+			: deleteTargetFolder === 'denoised'
+				? `This will permanently delete ${data.shoot.dngCount} DNG file${data.shoot.dngCount !== 1 ? 's' : ''} (${formatBytes(data.shoot.dngSizeBytes)}). This cannot be undone.`
+				: `This will permanently delete ${data.shoot.exportCount} exported file${data.shoot.exportCount !== 1 ? 's' : ''} (${formatBytes(data.shoot.exportSizeBytes)}) and their cached thumbnails. This cannot be undone.`
+	);
 
 	// Upload state
 	let uploadFolder = $state<'exports' | 'denoised' | 'raw'>('exports');
@@ -26,12 +46,29 @@
 		exports: '.jpg,.jpeg,.png,.tif,.tiff,.webp,.dng,.JPG,.JPEG,.PNG,.TIF,.TIFF,.WEBP,.DNG'
 	};
 
-	async function handleCleanup() {
-		cleaning = true;
+	async function handleDeleteFiles(folder: 'exports' | 'denoised' | 'raw', files?: string[]) {
+		deleting = true;
 		try {
-			const res = await fetch(`/api/shoots/${encodeURIComponent(data.shoot.folderName)}/cleanup`, { method: 'DELETE' });
-			if (res.ok) { showCleanupDialog = false; await invalidateAll(); }
-		} finally { cleaning = false; }
+			const res = await fetch(`/api/shoots/${encodeURIComponent(data.shoot.folderName)}/files`, {
+				method: 'DELETE',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ folder, files })
+			});
+			if (res.ok) {
+				showDeleteAllDialog = false;
+				showDeleteSingleDialog = false;
+				deleteTargetFile = null;
+				await invalidateAll();
+			}
+		} finally {
+			deleting = false;
+		}
+	}
+
+	function requestDeleteSingle(folder: 'exports' | 'denoised' | 'raw', fileName: string) {
+		deleteTargetFile = fileName;
+		deleteTargetFolder = folder;
+		showDeleteSingleDialog = true;
 	}
 
 	function handleUploadFileSelect(e: Event) {
@@ -52,7 +89,9 @@
 		}
 	}
 
-	function removeUploadFile(index: number) { uploadFiles = uploadFiles.filter((_, i) => i !== index); }
+	function removeUploadFile(index: number) {
+		uploadFiles = uploadFiles.filter((_, i) => i !== index);
+	}
 
 	async function handleUpload() {
 		if (uploadFiles.length === 0) return;
@@ -63,13 +102,18 @@
 		const BATCH = 3;
 		for (let i = 0; i < uploadFiles.length; i += BATCH) {
 			const batch = uploadFiles.slice(i, i + BATCH);
-			await Promise.allSettled(batch.map(async (file) => {
-				const fd = new FormData();
-				fd.append('file', file);
-				fd.append('folder', uploadFolder);
-				const res = await fetch(`/api/upload/${encodeURIComponent(data.shoot.folderName)}`, { method: 'POST', body: fd });
-				if (res.ok) uploadedCount++;
-			}));
+			await Promise.allSettled(
+				batch.map(async (file) => {
+					const fd = new FormData();
+					fd.append('file', file);
+					fd.append('folder', uploadFolder);
+					const res = await fetch(`/api/upload/${encodeURIComponent(data.shoot.folderName)}`, {
+						method: 'POST',
+						body: fd
+					});
+					if (res.ok) uploadedCount++;
+				})
+			);
 		}
 
 		// Finalize
@@ -84,7 +128,15 @@
 
 <div class="page">
 	<a href="/" class="back">
-		<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+		<svg
+			width="16"
+			height="16"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"><polyline points="15 18 9 12 15 6" /></svg
+		>
 		Back
 	</a>
 
@@ -99,10 +151,19 @@
 		</div>
 		<div class="header-actions">
 			<button class="btn-ghost btn-sm" onclick={() => (showDownloadDialog = true)}>
-				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-					<polyline points="7 10 12 15 17 10"/>
-					<line x1="12" y1="15" x2="12" y2="3"/>
+				<svg
+					width="14"
+					height="14"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+					<polyline points="7 10 12 15 17 10" />
+					<line x1="12" y1="15" x2="12" y2="3" />
 				</svg>
 				Download
 			</button>
@@ -148,16 +209,34 @@
 			<div class="card">
 				<p class="card-hint">Open PureRAW on bean.local and use these settings:</p>
 				<div class="paths">
-					<div class="path"><span class="path-k">Input</span><code>{data.instructions.inputPath}</code></div>
-					<div class="path"><span class="path-k">Output</span><code>{data.instructions.outputPath}</code></div>
+					<div class="path">
+						<span class="path-k">Input</span><code>{data.instructions.inputPath}</code>
+					</div>
+					<div class="path">
+						<span class="path-k">Output</span><code>{data.instructions.outputPath}</code>
+					</div>
 				</div>
 				<div class="settings-grid">
-					<div class="sg-row"><span>Algorithm (hero)</span><span class="sg-val">DeepPRIME XD3</span></div>
-					<div class="sg-row"><span>Algorithm (bulk)</span><span class="sg-val">DeepPRIME 3</span></div>
-					<div class="sg-row"><span>Format</span><span class="sg-val">{PURERAW_SETTINGS.outputFormat}</span></div>
-					<div class="sg-row"><span>Lens sharpness</span><span class="sg-val">{PURERAW_SETTINGS.lensSharpness}</span></div>
-					<div class="sg-row"><span>Optical corrections</span><span class="sg-val">{PURERAW_SETTINGS.opticalCorrections}</span></div>
-					<div class="sg-row"><span>Dust removal</span><span class="sg-val">{PURERAW_SETTINGS.dustRemoval}</span></div>
+					<div class="sg-row">
+						<span>Algorithm (hero)</span><span class="sg-val">DeepPRIME XD3</span>
+					</div>
+					<div class="sg-row">
+						<span>Algorithm (bulk)</span><span class="sg-val">DeepPRIME 3</span>
+					</div>
+					<div class="sg-row">
+						<span>Format</span><span class="sg-val">{PURERAW_SETTINGS.outputFormat}</span>
+					</div>
+					<div class="sg-row">
+						<span>Lens sharpness</span><span class="sg-val">{PURERAW_SETTINGS.lensSharpness}</span>
+					</div>
+					<div class="sg-row">
+						<span>Optical corrections</span><span class="sg-val"
+							>{PURERAW_SETTINGS.opticalCorrections}</span
+						>
+					</div>
+					<div class="sg-row">
+						<span>Dust removal</span><span class="sg-val">{PURERAW_SETTINGS.dustRemoval}</span>
+					</div>
 				</div>
 			</div>
 		</section>
@@ -191,29 +270,53 @@
 						<span class="match-warn">mismatch</span>
 					{/if}
 				</div>
-				<p class="card-hint">Delete raw ARWs to free <strong>{formatBytes(data.shoot.rawSizeBytes)}</strong></p>
-				<button class="btn-danger" onclick={() => (showCleanupDialog = true)}>Delete Raw Files</button>
+				<p class="card-hint">
+					Delete raw ARWs to free <strong>{formatBytes(data.shoot.rawSizeBytes)}</strong>
+				</p>
+				<button
+					class="btn-danger"
+					onclick={() => {
+						deleteTargetFolder = 'raw';
+						showDeleteAllDialog = true;
+					}}>Delete Raw Files</button
+				>
 			</div>
 		</section>
-		<ConfirmDialog
-			open={showCleanupDialog}
-			title="Delete raw files?"
-			message="This will permanently delete {data.shoot.rawCount} ARW files ({formatBytes(data.shoot.rawSizeBytes)}). This cannot be undone."
-			confirmLabel={cleaning ? 'Deleting...' : 'Delete All'}
-			onconfirm={handleCleanup}
-			oncancel={() => (showCleanupDialog = false)}
-		/>
 	{/if}
 
 	<!-- Exports Gallery -->
 	{#if data.shoot.exportFiles.length > 0}
 		<section class="section">
-			<h2>Exports <span class="h2-count">{data.shoot.exportCount}</span></h2>
+			<div class="section-header">
+				<h2>Exports <span class="h2-count">{data.shoot.exportCount}</span></h2>
+				<button
+					class="btn-danger btn-sm"
+					onclick={() => {
+						deleteTargetFolder = 'exports';
+						showDeleteAllDialog = true;
+					}}
+				>
+					Delete All
+				</button>
+			</div>
 			<div class="gallery">
 				{#each data.shoot.exportFiles as file (file.name)}
 					<div class="thumb">
-						<img src="/api/thumbs/{encodeURIComponent(data.shoot.folderName)}/{encodeURIComponent(file.name)}" alt={file.name} loading="lazy" />
-						<span class="thumb-name">{file.name}</span>
+						<img
+							src="/api/thumbs/{encodeURIComponent(data.shoot.folderName)}/{encodeURIComponent(
+								file.name
+							)}"
+							alt={file.name}
+							loading="lazy"
+						/>
+						<div class="thumb-footer">
+							<span class="thumb-name">{file.name}</span>
+							<button
+								class="thumb-delete"
+								onclick={() => requestDeleteSingle('exports', file.name)}
+								title="Delete">&times;</button
+							>
+						</div>
 					</div>
 				{/each}
 			</div>
@@ -223,17 +326,54 @@
 	<!-- DNG Files -->
 	{#if data.shoot.dngFiles.length > 0}
 		<section class="section">
-			<h2>Denoised Files <span class="h2-count">{data.shoot.dngCount}</span></h2>
+			<div class="section-header">
+				<h2>Denoised Files <span class="h2-count">{data.shoot.dngCount}</span></h2>
+				<button
+					class="btn-danger btn-sm"
+					onclick={() => {
+						deleteTargetFolder = 'denoised';
+						showDeleteAllDialog = true;
+					}}
+				>
+					Delete All
+				</button>
+			</div>
 			<div class="flist">
 				{#each data.shoot.dngFiles as file (file.name)}
 					<div class="frow">
 						<span class="fn">{file.name}</span>
 						<span class="fs">{formatBytes(file.sizeBytes)}</span>
+						<button
+							class="frow-delete"
+							onclick={() => requestDeleteSingle('denoised', file.name)}
+							title="Delete">&times;</button
+						>
 					</div>
 				{/each}
 			</div>
 		</section>
 	{/if}
+
+	<!-- Delete dialogs -->
+	<ConfirmDialog
+		open={showDeleteAllDialog}
+		title={deleteAllTitle}
+		message={deleteAllMessage}
+		confirmLabel={deleting ? 'Deleting...' : 'Delete All'}
+		onconfirm={() => handleDeleteFiles(deleteTargetFolder)}
+		oncancel={() => (showDeleteAllDialog = false)}
+	/>
+	<ConfirmDialog
+		open={showDeleteSingleDialog}
+		title="Delete file?"
+		message="This will permanently delete {deleteTargetFile ?? ''}. This cannot be undone."
+		confirmLabel={deleting ? 'Deleting...' : 'Delete'}
+		onconfirm={() => handleDeleteFiles(deleteTargetFolder, [deleteTargetFile!])}
+		oncancel={() => {
+			showDeleteSingleDialog = false;
+			deleteTargetFile = null;
+		}}
+	/>
 
 	<!-- Metadata -->
 	<section class="section">
@@ -247,13 +387,20 @@
 					<label for="algorithm">Algorithm</label>
 					<select id="algorithm" name="algorithm">
 						<option value="">Not set</option>
-						<option value="DeepPRIME 3" selected={data.shoot.metadata.algorithm === 'DeepPRIME 3'}>DeepPRIME 3</option>
-						<option value="DeepPRIME XD3" selected={data.shoot.metadata.algorithm === 'DeepPRIME XD3'}>DeepPRIME XD3</option>
+						<option value="DeepPRIME 3" selected={data.shoot.metadata.algorithm === 'DeepPRIME 3'}
+							>DeepPRIME 3</option
+						>
+						<option
+							value="DeepPRIME XD3"
+							selected={data.shoot.metadata.algorithm === 'DeepPRIME XD3'}>DeepPRIME XD3</option
+						>
 					</select>
 				</div>
 				<div class="field">
 					<label for="notes">Notes</label>
-					<textarea id="notes" name="notes" rows="3" placeholder="Low light venue, ISO 6400...">{data.shoot.metadata.notes}</textarea>
+					<textarea id="notes" name="notes" rows="3" placeholder="Low light venue, ISO 6400..."
+						>{data.shoot.metadata.notes}</textarea
+					>
 				</div>
 			</div>
 			<button type="submit" class="btn-primary btn-sm">Save Metadata</button>
@@ -282,15 +429,31 @@
 				role="region"
 				aria-label="Upload drop zone"
 			>
-				<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="upload-drop-icon">
-					<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-					<polyline points="17 8 12 3 7 8"/>
-					<line x1="12" y1="3" x2="12" y2="15"/>
+				<svg
+					width="24"
+					height="24"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="1.5"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					class="upload-drop-icon"
+				>
+					<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+					<polyline points="17 8 12 3 7 8" />
+					<line x1="12" y1="3" x2="12" y2="15" />
 				</svg>
 				<span class="upload-drop-text">Drop files or</span>
 				<label class="btn-ghost btn-sm upload-browse">
 					Browse
-					<input type="file" accept={UPLOAD_ACCEPT[uploadFolder]} multiple onchange={handleUploadFileSelect} hidden />
+					<input
+						type="file"
+						accept={UPLOAD_ACCEPT[uploadFolder]}
+						multiple
+						onchange={handleUploadFileSelect}
+						hidden
+					/>
 				</label>
 			</div>
 
@@ -310,7 +473,10 @@
 				{#if uploading}
 					<div class="upload-progress">
 						<div class="upload-pbar-track">
-							<div class="upload-pbar-fill" style="width: {uploadTotal > 0 ? (uploadedCount / uploadTotal) * 100 : 0}%"></div>
+							<div
+								class="upload-pbar-fill"
+								style="width: {uploadTotal > 0 ? (uploadedCount / uploadTotal) * 100 : 0}%"
+							></div>
 						</div>
 						<span class="upload-pbar-text">{uploadedCount} / {uploadTotal}</span>
 					</div>
@@ -325,127 +491,331 @@
 </div>
 
 <style>
-	.page { max-width: 860px; }
+	.page {
+		max-width: 860px;
+	}
 
 	.back {
-		display: inline-flex; align-items: center; gap: 0.25rem;
-		font-size: 0.8667rem; color: var(--text-muted); margin-bottom: 2rem;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		font-size: 0.8667rem;
+		color: var(--text-muted);
+		margin-bottom: 2rem;
 	}
-	.back:hover { color: var(--text); }
+	.back:hover {
+		color: var(--text);
+	}
 
 	.header {
-		display: flex; align-items: flex-start; justify-content: space-between;
-		gap: 1rem; margin-bottom: 1.5rem;
+		display: flex;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 1rem;
+		margin-bottom: 1.5rem;
 	}
 	.header-actions {
-		display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0;
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		flex-shrink: 0;
 	}
-	h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.03em; }
-	.meta { font-size: 0.8667rem; color: var(--text-muted); margin-top: 0.15rem; }
-	.sep { opacity: 0.4; }
-	.folder { opacity: 0.6; }
+	h1 {
+		font-size: 1.6rem;
+		font-weight: 700;
+		letter-spacing: -0.03em;
+	}
+	.meta {
+		font-size: 0.8667rem;
+		color: var(--text-muted);
+		margin-top: 0.15rem;
+	}
+	.sep {
+		opacity: 0.4;
+	}
+	.folder {
+		opacity: 0.6;
+	}
 
 	/* Stats */
 	.stats {
-		display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 2.5rem;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin-bottom: 2.5rem;
 	}
 	.st {
-		flex: 1; min-width: 120px;
-		background: var(--bg-surface); border: 1px solid var(--border);
-		border-radius: var(--radius-sm); padding: 1rem 1.15rem;
-		display: flex; flex-direction: column;
+		flex: 1;
+		min-width: 120px;
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		padding: 1rem 1.15rem;
+		display: flex;
+		flex-direction: column;
 	}
 	.st-val {
-		font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums;
-		letter-spacing: -0.02em; line-height: 1.1;
+		font-size: 1.4rem;
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+		letter-spacing: -0.02em;
+		line-height: 1.1;
 	}
-	.st-label { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.1rem; }
-	.st-sub { font-size: 0.75rem; color: var(--text-muted); opacity: 0.6; margin-top: 0.15rem; }
+	.st-label {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		margin-top: 0.1rem;
+	}
+	.st-sub {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		opacity: 0.6;
+		margin-top: 0.15rem;
+	}
 
 	/* Sections */
-	.section { margin-bottom: 2.5rem; }
+	.section {
+		margin-bottom: 2.5rem;
+	}
 	h2 {
-		font-size: 0.9333rem; font-weight: 600;
-		padding-bottom: 0.5rem; border-bottom: 1px solid var(--border);
+		font-size: 0.9333rem;
+		font-weight: 600;
+		padding-bottom: 0.5rem;
+		border-bottom: 1px solid var(--border);
 		margin-bottom: 1rem;
 	}
-	.h2-count { color: var(--text-muted); font-weight: 400; }
+	.section-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding-bottom: 0.5rem;
+		border-bottom: 1px solid var(--border);
+		margin-bottom: 1rem;
+	}
+	.section-header h2 {
+		border-bottom: none;
+		padding-bottom: 0;
+		margin-bottom: 0;
+	}
+	.h2-count {
+		color: var(--text-muted);
+		font-weight: 400;
+	}
 
 	.card {
-		background: var(--bg-surface); border: 1px solid var(--border);
-		border-radius: var(--radius); padding: 1.25rem;
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		padding: 1.25rem;
 	}
-	.card-hint { font-size: 0.8667rem; color: var(--text-muted); margin-bottom: 1rem; }
+	.card-hint {
+		font-size: 0.8667rem;
+		color: var(--text-muted);
+		margin-bottom: 1rem;
+	}
 
 	/* Paths */
 	.paths {
-		display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		margin-bottom: 1rem;
 	}
-	.path { display: flex; align-items: center; gap: 0.75rem; font-size: 0.8667rem; }
-	.path-k { font-size: 0.75rem; color: var(--text-muted); font-weight: 500; min-width: 3.5rem; }
-
-	/* Settings grid */
-	.settings-grid { display: flex; flex-direction: column; }
-	.sg-row {
-		display: flex; justify-content: space-between;
-		padding: 0.45rem 0; border-bottom: 1px solid var(--border-subtle);
+	.path {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
 		font-size: 0.8667rem;
 	}
-	.sg-row:last-child { border-bottom: none; }
-	.sg-row span:first-child { color: var(--text-muted); }
-	.sg-val { font-weight: 500; }
+	.path-k {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		font-weight: 500;
+		min-width: 3.5rem;
+	}
+
+	/* Settings grid */
+	.settings-grid {
+		display: flex;
+		flex-direction: column;
+	}
+	.sg-row {
+		display: flex;
+		justify-content: space-between;
+		padding: 0.45rem 0;
+		border-bottom: 1px solid var(--border-subtle);
+		font-size: 0.8667rem;
+	}
+	.sg-row:last-child {
+		border-bottom: none;
+	}
+	.sg-row span:first-child {
+		color: var(--text-muted);
+	}
+	.sg-val {
+		font-weight: 500;
+	}
 
 	/* Cleanup */
 	.cleanup-compare {
-		display: flex; align-items: center; gap: 0.75rem;
-		font-size: 0.9rem; margin-bottom: 0.75rem;
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		font-size: 0.9rem;
+		margin-bottom: 0.75rem;
 	}
-	.arrow { color: var(--text-muted); opacity: 0.5; }
-	.match-ok { color: var(--green); font-weight: 700; font-size: 1.1rem; }
+	.arrow {
+		color: var(--text-muted);
+		opacity: 0.5;
+	}
+	.match-ok {
+		color: var(--green);
+		font-weight: 700;
+		font-size: 1.1rem;
+	}
 	.match-warn {
-		font-size: 0.75rem; color: var(--orange); font-weight: 500;
-		background: var(--orange-bg); padding: 0.1rem 0.4rem; border-radius: var(--radius-full);
+		font-size: 0.75rem;
+		color: var(--orange);
+		font-weight: 500;
+		background: var(--orange-bg);
+		padding: 0.1rem 0.4rem;
+		border-radius: var(--radius-full);
 	}
 
 	/* Gallery */
 	.gallery {
-		display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
 		gap: 0.5rem;
 	}
 	.thumb {
-		background: var(--bg-surface); border: 1px solid var(--border);
-		border-radius: var(--radius-sm); overflow: hidden;
-		transition: border-color 0.15s, transform 0.15s;
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		overflow: hidden;
+		transition:
+			border-color 0.15s,
+			transform 0.15s;
 	}
-	.thumb:hover { border-color: var(--border-strong); transform: translateY(-2px); }
+	.thumb:hover {
+		border-color: var(--border-strong);
+		transform: translateY(-2px);
+	}
 	.thumb img {
-		width: 100%; aspect-ratio: 1; object-fit: cover;
-		display: block; background: var(--bg-elevated);
+		width: 100%;
+		aspect-ratio: 1;
+		object-fit: cover;
+		display: block;
+		background: var(--bg-elevated);
 	}
 	.thumb-name {
-		display: block; padding: 0.3rem 0.5rem;
-		font-size: 0.7rem; color: var(--text-muted);
-		white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+		font-size: 0.7rem;
+		color: var(--text-muted);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		min-width: 0;
+	}
+
+	.thumb-footer {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0.3rem 0.5rem;
+		gap: 0.25rem;
+	}
+
+	.thumb-delete {
+		background: none;
+		color: var(--text-muted);
+		font-size: 1rem;
+		line-height: 1;
+		padding: 0 0.2rem;
+		flex-shrink: 0;
+		opacity: 0;
+		transition:
+			opacity 0.15s,
+			color 0.15s;
+	}
+
+	.thumb:hover .thumb-delete {
+		opacity: 1;
+	}
+
+	.thumb-delete:hover {
+		color: var(--red);
 	}
 
 	/* File list */
 	.flist {
-		background: var(--bg-surface); border: 1px solid var(--border);
-		border-radius: var(--radius-sm); max-height: 350px; overflow-y: auto;
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		max-height: 350px;
+		overflow-y: auto;
 	}
 	.frow {
-		display: flex; justify-content: space-between;
-		padding: 0.4rem 0.85rem; font-size: 0.8rem;
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.4rem 0.85rem;
+		font-size: 0.8rem;
 		border-bottom: 1px solid var(--border-subtle);
 	}
-	.frow:last-child { border-bottom: none; }
-	.fn { font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-secondary); }
-	.fs { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+	.frow:last-child {
+		border-bottom: none;
+	}
+	.fn {
+		flex: 1;
+		font-family: var(--font-mono);
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.fs {
+		color: var(--text-muted);
+		font-variant-numeric: tabular-nums;
+		flex-shrink: 0;
+	}
+	.frow-delete {
+		background: none;
+		color: var(--text-muted);
+		font-size: 1rem;
+		line-height: 1;
+		padding: 0 0.2rem;
+		flex-shrink: 0;
+		opacity: 0;
+		transition:
+			opacity 0.15s,
+			color 0.15s;
+	}
+	.frow:hover .frow-delete {
+		opacity: 1;
+	}
+	.frow-delete:hover {
+		color: var(--red);
+	}
 
 	/* Metadata */
-	.meta-fields { display: flex; flex-direction: column; gap: 0.85rem; margin-bottom: 1rem; }
-	.field { display: flex; flex-direction: column; gap: 0.35rem; max-width: 380px; }
-	select, textarea { width: 100%; }
+	.meta-fields {
+		display: flex;
+		flex-direction: column;
+		gap: 0.85rem;
+		margin-bottom: 1rem;
+	}
+	.field {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		max-width: 380px;
+	}
+	select,
+	textarea {
+		width: 100%;
+	}
 
 	/* Upload section */
 	.upload-controls {
@@ -504,7 +874,9 @@
 		border-bottom: 1px solid var(--border-subtle);
 	}
 
-	.upload-file-row:last-child { border-bottom: none; }
+	.upload-file-row:last-child {
+		border-bottom: none;
+	}
 
 	.upload-fname {
 		flex: 1;
@@ -531,7 +903,9 @@
 		line-height: 1;
 	}
 
-	.upload-fremove:hover { color: var(--red); }
+	.upload-fremove:hover {
+		color: var(--red);
+	}
 
 	.upload-progress {
 		display: flex;

@@ -42,7 +42,7 @@ export function slugifyName(name: string): string {
 		.trim()
 		.toLowerCase()
 		.replace(/\s+/g, '-')
-		.replace(/[^a-z0-9\-]/g, '')
+		.replace(/[^a-z0-9-]/g, '')
 		.replace(/-+/g, '-')
 		.replace(/^-|-$/g, '');
 }

@@ -59,9 +59,12 @@ export const GET: RequestHandler = async ({ params }) => {
 		const thumbInfo = await stat(thumbPath);
 		if (thumbInfo.mtime >= sourceInfo.mtime) {
 			const buf = await readFile(thumbPath);
-			return webpResponse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer, {
-				ETag: `"${thumbInfo.mtime.getTime()}"`
-			});
+			return webpResponse(
+				buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer,
+				{
+					ETag: `"${thumbInfo.mtime.getTime()}"`
+				}
+			);
 		}
 	} catch {
 		// Cache miss
@@ -98,7 +101,9 @@ async function generateThumbnail(
 		.toBuffer();
 
 	// Write cache in background
-	sharp(buf).toFile(thumbPath).catch(() => {});
+	sharp(buf)
+		.toFile(thumbPath)
+		.catch(() => {});
 
 	return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
 }

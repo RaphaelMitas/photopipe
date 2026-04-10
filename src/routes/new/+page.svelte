@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { formatBytes, slugifyName, buildFolderName } from '$lib/utils.js';
+	import { formatBytes, buildFolderName } from '$lib/utils.js';
 
 	const today = new Date().toISOString().split('T')[0];
 
@@ -18,9 +17,7 @@
 
 	const totalSize = $derived(files.reduce((sum, f) => sum + f.size, 0));
 	const progress = $derived(files.length > 0 ? uploadedCount / files.length : 0);
-	const folderPreview = $derived(
-		name.trim() ? buildFolderName(name, date) : `${date}_shoot-name`
-	);
+	const folderPreview = $derived(name.trim() ? buildFolderName(name, date) : `${date}_shoot-name`);
 
 	function handleFileSelect(e: Event) {
 		const input = e.target as HTMLInputElement;
@@ -38,13 +35,23 @@
 		files = [...files, ...arwFiles.filter((f) => !existing.has(f.name))];
 	}
 
-	function removeFile(index: number) { files = files.filter((_, i) => i !== index); }
-	function clearFiles() { files = []; }
+	function removeFile(index: number) {
+		files = files.filter((_, i) => i !== index);
+	}
+	function clearFiles() {
+		files = [];
+	}
 
 	async function handleSubmit() {
 		error = '';
-		if (!name.trim()) { error = 'Shoot name is required'; return; }
-		if (files.length === 0) { error = 'Select at least one ARW file'; return; }
+		if (!name.trim()) {
+			error = 'Shoot name is required';
+			return;
+		}
+		if (files.length === 0) {
+			error = 'Select at least one ARW file';
+			return;
+		}
 
 		phase = 'uploading';
 		try {
@@ -56,24 +63,39 @@
 			if (!res.ok) {
 				const err = await res.json().catch(() => ({ message: 'Failed to create shoot' }));
 				error = err.message || 'Failed to create shoot';
-				phase = 'form'; return;
+				phase = 'form';
+				return;
 			}
 			shootFolderName = (await res.json()).folderName;
-		} catch { error = 'Connection failed'; phase = 'form'; return; }
+		} catch {
+			error = 'Connection failed';
+			phase = 'form';
+			return;
+		}
 
 		const BATCH = 3;
 		for (let i = 0; i < files.length; i += BATCH) {
 			const batch = files.slice(i, i + BATCH);
-			const results = await Promise.allSettled(batch.map(async (file) => {
-				currentFile = file.name;
-				const fd = new FormData(); fd.append('file', file);
-				const res = await fetch(`/api/upload/${encodeURIComponent(shootFolderName)}`, { method: 'POST', body: fd });
-				if (!res.ok) throw new Error(file.name);
-				return file;
-			}));
+			const results = await Promise.allSettled(
+				batch.map(async (file) => {
+					currentFile = file.name;
+					const fd = new FormData();
+					fd.append('file', file);
+					const res = await fetch(`/api/upload/${encodeURIComponent(shootFolderName)}`, {
+						method: 'POST',
+						body: fd
+					});
+					if (!res.ok) throw new Error(file.name);
+					return file;
+				})
+			);
 			for (const r of results) {
-				if (r.status === 'fulfilled') { uploadedCount++; uploadedBytes += r.value.size; }
-				else { failedFiles = [...failedFiles, batch[results.indexOf(r)]?.name ?? '?']; }
+				if (r.status === 'fulfilled') {
+					uploadedCount++;
+					uploadedBytes += r.value.size;
+				} else {
+					failedFiles = [...failedFiles, batch[results.indexOf(r)]?.name ?? '?'];
+				}
 			}
 		}
 
@@ -85,7 +107,15 @@
 
 <div class="page">
 	<a href="/" class="back">
-		<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+		<svg
+			width="16"
+			height="16"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"><polyline points="15 18 9 12 15 6" /></svg
+		>
 		Back
 	</a>
 
@@ -111,13 +141,28 @@
 			<code>{folderPreview}/</code>
 		</div>
 
-		<div class="drop" ondragover={(e) => e.preventDefault()} ondrop={handleDrop} role="region" aria-label="File drop zone">
+		<div
+			class="drop"
+			ondragover={(e) => e.preventDefault()}
+			ondrop={handleDrop}
+			role="region"
+			aria-label="File drop zone"
+		>
 			<div class="drop-inner">
 				<div class="drop-icon">
-					<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-						<polyline points="17 8 12 3 7 8"/>
-						<line x1="12" y1="3" x2="12" y2="15"/>
+					<svg
+						width="32"
+						height="32"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.5"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					>
+						<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+						<polyline points="17 8 12 3 7 8" />
+						<line x1="12" y1="3" x2="12" y2="15" />
 					</svg>
 				</div>
 				<p class="drop-title">Drop ARW files here</p>
@@ -137,7 +182,10 @@
 
 		{#if files.length > 0}
 			<div class="file-bar">
-				<span><strong>{files.length}</strong> file{files.length !== 1 ? 's' : ''} <span class="muted">&middot; {formatBytes(totalSize)}</span></span>
+				<span
+					><strong>{files.length}</strong> file{files.length !== 1 ? 's' : ''}
+					<span class="muted">&middot; {formatBytes(totalSize)}</span></span
+				>
 				<button class="btn-ghost btn-xs" onclick={clearFiles}>Clear all</button>
 			</div>
 
@@ -152,10 +200,13 @@
 			</div>
 		{/if}
 
-		<button class="btn-primary btn-lg" onclick={handleSubmit} disabled={!name.trim() || files.length === 0}>
+		<button
+			class="btn-primary btn-lg"
+			onclick={handleSubmit}
+			disabled={!name.trim() || files.length === 0}
+		>
 			Create & Upload {files.length} File{files.length !== 1 ? 's' : ''}
 		</button>
-
 	{:else if phase === 'uploading'}
 		<h1>Uploading...</h1>
 		<p class="desc">Transferring files to the server.</p>
@@ -169,7 +220,6 @@
 			{#if currentFile}<p class="upload-current"><code>{currentFile}</code></p>{/if}
 			<p class="muted">{formatBytes(uploadedBytes)} transferred</p>
 		</div>
-
 	{:else}
 		<h1>Upload Complete</h1>
 
@@ -185,10 +235,16 @@
 		</div>
 
 		{#if failedFiles.length > 0}
-			<div class="alert alert-error">{failedFiles.length} file{failedFiles.length !== 1 ? 's' : ''} failed: {failedFiles.join(', ')}</div>
+			<div class="alert alert-error">
+				{failedFiles.length} file{failedFiles.length !== 1 ? 's' : ''} failed: {failedFiles.join(
+					', '
+				)}
+			</div>
 		{/if}
 
-		<p class="done-hint">Now open PureRAW on bean.local and process <code>raw/</code> &rarr; <code>denoised/</code></p>
+		<p class="done-hint">
+			Now open PureRAW on bean.local and process <code>raw/</code> &rarr; <code>denoised/</code>
+		</p>
 
 		<div class="done-actions">
 			<a href="/shoot/{encodeURIComponent(shootFolderName)}" class="btn-primary">View Shoot</a>
@@ -198,7 +254,9 @@
 </div>
 
 <style>
-	.page { max-width: 560px; }
+	.page {
+		max-width: 560px;
+	}
 
 	.back {
 		display: inline-flex;
@@ -208,7 +266,9 @@
 		color: var(--text-muted);
 		margin-bottom: 2rem;
 	}
-	.back:hover { color: var(--text); }
+	.back:hover {
+		color: var(--text);
+	}
 
 	h1 {
 		font-size: 1.6rem;
@@ -229,14 +289,18 @@
 		gap: 0.75rem;
 		margin-bottom: 0.75rem;
 	}
-	.grow { flex: 1; }
+	.grow {
+		flex: 1;
+	}
 
 	.field {
 		display: flex;
 		flex-direction: column;
 		gap: 0.35rem;
 	}
-	input { width: 100%; }
+	input {
+		width: 100%;
+	}
 
 	.folder-preview {
 		display: flex;
@@ -249,7 +313,11 @@
 		margin-bottom: 1.75rem;
 		font-size: 0.8667rem;
 	}
-	.folder-label { font-size: 0.75rem; color: var(--text-muted); font-weight: 500; }
+	.folder-label {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		font-weight: 500;
+	}
 
 	/* Drop zone */
 	.drop {
@@ -265,13 +333,37 @@
 		border-color: var(--accent);
 		background: var(--accent-glow);
 	}
-	.drop-inner { display: flex; flex-direction: column; align-items: center; gap: 0.4rem; }
-	.drop-icon { color: var(--text-muted); margin-bottom: 0.25rem; }
-	.drop:hover .drop-icon { color: var(--accent-light); }
-	.drop-title { font-weight: 500; font-size: 0.9333rem; }
-	.drop-sub { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem; }
-	.drop-btns { display: flex; gap: 0.5rem; }
-	.drop-btn { cursor: pointer; font-size: 0.8rem; padding: 0.35rem 0.65rem; }
+	.drop-inner {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.4rem;
+	}
+	.drop-icon {
+		color: var(--text-muted);
+		margin-bottom: 0.25rem;
+	}
+	.drop:hover .drop-icon {
+		color: var(--accent-light);
+	}
+	.drop-title {
+		font-weight: 500;
+		font-size: 0.9333rem;
+	}
+	.drop-sub {
+		font-size: 0.8rem;
+		color: var(--text-muted);
+		margin-bottom: 0.5rem;
+	}
+	.drop-btns {
+		display: flex;
+		gap: 0.5rem;
+	}
+	.drop-btn {
+		cursor: pointer;
+		font-size: 0.8rem;
+		padding: 0.35rem 0.65rem;
+	}
 
 	/* File list */
 	.file-bar {
@@ -281,7 +373,9 @@
 		margin-bottom: 0.5rem;
 		font-size: 0.8667rem;
 	}
-	.muted { color: var(--text-muted); }
+	.muted {
+		color: var(--text-muted);
+	}
 
 	.file-list {
 		background: var(--bg-surface);
@@ -298,7 +392,9 @@
 		font-size: 0.8rem;
 		border-bottom: 1px solid var(--border-subtle);
 	}
-	.file-row:last-child { border-bottom: none; }
+	.file-row:last-child {
+		border-bottom: none;
+	}
 	.fname {
 		flex: 1;
 		font-family: var(--font-mono);
@@ -308,12 +404,22 @@
 		white-space: nowrap;
 		color: var(--text-secondary);
 	}
-	.fsize { color: var(--text-muted); margin: 0 0.5rem; font-variant-numeric: tabular-nums; font-size: 0.8rem; }
-	.fremove {
-		background: none; color: var(--text-muted); padding: 0 0.2rem;
-		font-size: 1rem; line-height: 1;
+	.fsize {
+		color: var(--text-muted);
+		margin: 0 0.5rem;
+		font-variant-numeric: tabular-nums;
+		font-size: 0.8rem;
 	}
-	.fremove:hover { color: var(--red); }
+	.fremove {
+		background: none;
+		color: var(--text-muted);
+		padding: 0 0.2rem;
+		font-size: 1rem;
+		line-height: 1;
+	}
+	.fremove:hover {
+		color: var(--red);
+	}
 
 	/* Upload */
 	.upload-card {
@@ -343,12 +449,26 @@
 		font-size: 0.9rem;
 		margin-bottom: 0.5rem;
 	}
-	.accent { color: var(--accent-light); font-weight: 600; }
-	.upload-current { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.25rem; }
+	.accent {
+		color: var(--accent-light);
+		font-weight: 600;
+	}
+	.upload-current {
+		font-size: 0.8rem;
+		color: var(--text-muted);
+		margin-bottom: 0.25rem;
+	}
 
 	/* Done */
-	.done-stats { display: flex; gap: 3rem; margin: 2rem 0; }
-	.dstat { display: flex; flex-direction: column; }
+	.done-stats {
+		display: flex;
+		gap: 3rem;
+		margin: 2rem 0;
+	}
+	.dstat {
+		display: flex;
+		flex-direction: column;
+	}
 	.dval {
 		font-size: 2.25rem;
 		font-weight: 700;
@@ -360,7 +480,18 @@
 		-webkit-text-fill-color: transparent;
 		background-clip: text;
 	}
-	.dkey { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; }
-	.done-hint { font-size: 0.8667rem; color: var(--text-secondary); margin-bottom: 1.75rem; }
-	.done-actions { display: flex; gap: 0.75rem; }
+	.dkey {
+		font-size: 0.8rem;
+		color: var(--text-muted);
+		margin-top: 0.25rem;
+	}
+	.done-hint {
+		font-size: 0.8667rem;
+		color: var(--text-secondary);
+		margin-bottom: 1.75rem;
+	}
+	.done-actions {
+		display: flex;
+		gap: 0.75rem;
+	}
 </style>

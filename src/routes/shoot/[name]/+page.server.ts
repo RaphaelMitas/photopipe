@@ -1,6 +1,11 @@
 import type { PageServerLoad, Actions } from './$types.js';
 import { error, fail } from '@sveltejs/kit';
-import { getShoot, updateMetadata, getPureRawInstructions, PhotopipeError } from '$lib/server/shoots.js';
+import {
+	getShoot,
+	updateMetadata,
+	getPureRawInstructions,
+	PhotopipeError
+} from '$lib/server/shoots.js';
 import type { DenoiseAlgorithm } from '$lib/types.js';
 
 export const load: PageServerLoad = async ({ params }) => {

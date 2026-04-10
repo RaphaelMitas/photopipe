@@ -27,8 +27,8 @@
 
 	let totalSize = $derived(
 		(includeRaw ? shoot.rawSizeBytes : 0) +
-		(includeDenoised ? shoot.dngSizeBytes : 0) +
-		(includeExports ? shoot.exportSizeBytes : 0)
+			(includeDenoised ? shoot.dngSizeBytes : 0) +
+			(includeExports ? shoot.exportSizeBytes : 0)
 	);
 
 	let anySelected = $derived(includeRaw || includeDenoised || includeExports);
@@ -61,7 +61,11 @@
 				<input type="checkbox" bind:checked={includeRaw} />
 				<div class="option-info">
 					<span class="option-name">Raw ARWs</span>
-					<span class="option-meta">{shoot.rawCount} file{shoot.rawCount !== 1 ? 's' : ''} &middot; {formatBytes(shoot.rawSizeBytes)}</span>
+					<span class="option-meta"
+						>{shoot.rawCount} file{shoot.rawCount !== 1 ? 's' : ''} &middot; {formatBytes(
+							shoot.rawSizeBytes
+						)}</span
+					>
 				</div>
 			</label>
 
@@ -69,7 +73,11 @@
 				<input type="checkbox" bind:checked={includeDenoised} />
 				<div class="option-info">
 					<span class="option-name">Denoised DNGs</span>
-					<span class="option-meta">{shoot.dngCount} file{shoot.dngCount !== 1 ? 's' : ''} &middot; {formatBytes(shoot.dngSizeBytes)}</span>
+					<span class="option-meta"
+						>{shoot.dngCount} file{shoot.dngCount !== 1 ? 's' : ''} &middot; {formatBytes(
+							shoot.dngSizeBytes
+						)}</span
+					>
 				</div>
 			</label>
 
@@ -77,7 +85,11 @@
 				<input type="checkbox" bind:checked={includeExports} />
 				<div class="option-info">
 					<span class="option-name">Exports</span>
-					<span class="option-meta">{shoot.exportCount} file{shoot.exportCount !== 1 ? 's' : ''} &middot; {formatBytes(shoot.exportSizeBytes)}</span>
+					<span class="option-meta"
+						>{shoot.exportCount} file{shoot.exportCount !== 1 ? 's' : ''} &middot; {formatBytes(
+							shoot.exportSizeBytes
+						)}</span
+					>
 				</div>
 			</label>
 		</div>
@@ -96,10 +108,19 @@
 		<div class="actions">
 			<button class="btn-ghost" onclick={oncancel}>Cancel</button>
 			<button class="btn-primary" disabled={!anySelected} onclick={handleDownload}>
-				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-					<polyline points="7 10 12 15 17 10"/>
-					<line x1="12" y1="15" x2="12" y2="3"/>
+				<svg
+					width="14"
+					height="14"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2.5"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
+					<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+					<polyline points="7 10 12 15 17 10" />
+					<line x1="12" y1="15" x2="12" y2="3" />
 				</svg>
 				Download
 			</button>
@@ -116,7 +137,9 @@
 		padding: 0;
 		max-width: 420px;
 		width: 90vw;
-		box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--border);
+		box-shadow:
+			0 16px 48px rgba(0, 0, 0, 0.5),
+			0 0 0 1px var(--border);
 	}
 
 	dialog::backdrop {

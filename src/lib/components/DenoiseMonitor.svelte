@@ -22,8 +22,12 @@
 	let connected = $state(false);
 	let selectedAlgorithm = $state<DenoiseAlgorithm>('DeepPRIME 3');
 
-	$effect(() => { dngCount = currentCount; });
-	$effect(() => { selectedAlgorithm = algorithm ?? 'DeepPRIME 3'; });
+	$effect(() => {
+		dngCount = currentCount;
+	});
+	$effect(() => {
+		selectedAlgorithm = algorithm ?? 'DeepPRIME 3';
+	});
 
 	let progress = $derived(expectedTotal > 0 ? Math.min(dngCount / expectedTotal, 1) : 0);
 	let remaining = $derived(
@@ -35,22 +39,37 @@
 	onMount(() => {
 		if ('Notification' in window) notificationPermission = Notification.permission;
 		const es = new EventSource(`/api/watch/${encodeURIComponent(shootName)}`);
-		es.onopen = () => { connected = true; };
+		es.onopen = () => {
+			connected = true;
+		};
 		es.onmessage = (e) => {
 			try {
 				const ev: DenoiseEvent = JSON.parse(e.data);
 				dngCount = ev.dngCount;
 				latestFile = ev.latestFile;
-				if (ev.type === 'idle') { isIdle = true; notify(ev); } else { isIdle = false; }
-			} catch {}
+				if (ev.type === 'idle') {
+					isIdle = true;
+					notify(ev);
+				} else {
+					isIdle = false;
+				}
+			} catch {
+				// Invalid JSON — skip
+			}
 		};
-		es.onerror = () => { connected = false; };
+		es.onerror = () => {
+			connected = false;
+		};
 		return () => es.close();
 	});
 
 	function notify(ev: DenoiseEvent) {
 		if (notificationPermission !== 'granted') return;
-		try { new Notification('Processing Complete', { body: `${ev.dngCount} DNGs ready.` }); } catch {}
+		try {
+			new Notification('Processing Complete', { body: `${ev.dngCount} DNGs ready.` });
+		} catch {
+			// Notifications not supported
+		}
 	}
 
 	async function requestPermission() {
@@ -80,7 +99,9 @@
 	</div>
 
 	{#if expectedTotal > 0}
-		<div class="pbar-track"><div class="pbar-fill" class:done={progress >= 1} style="width: {progress * 100}%"></div></div>
+		<div class="pbar-track">
+			<div class="pbar-fill" class:done={progress >= 1} style="width: {progress * 100}%"></div>
+		</div>
 		<div class="pbar-meta">
 			<span>{Math.round(progress * 100)}%</span>
 			{#if remaining > 0 && dngCount < expectedTotal}
@@ -129,7 +150,8 @@
 		color: var(--text-muted);
 	}
 	.dot {
-		width: 7px; height: 7px;
+		width: 7px;
+		height: 7px;
 		border-radius: 50%;
 		background: var(--text-muted);
 		transition: all 0.2s;
@@ -139,9 +161,14 @@
 		box-shadow: 0 0 8px var(--green-bg);
 		animation: pulse 2s ease-in-out infinite;
 	}
-	.status.on { color: var(--green); }
+	.status.on {
+		color: var(--green);
+	}
 
-	.notif-on { font-size: 0.75rem; color: var(--text-muted); }
+	.notif-on {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+	}
 
 	.counter {
 		display: flex;
@@ -160,8 +187,13 @@
 		-webkit-text-fill-color: transparent;
 		background-clip: text;
 	}
-	.counter-label { font-size: 0.9rem; color: var(--text-secondary); }
-	.counter-of { color: var(--text-muted); }
+	.counter-label {
+		font-size: 0.9rem;
+		color: var(--text-secondary);
+	}
+	.counter-of {
+		color: var(--text-muted);
+	}
 
 	.pbar-track {
 		height: 5px;
@@ -189,9 +221,15 @@
 		color: var(--text-muted);
 		margin-bottom: 0.75rem;
 	}
-	.eta { color: var(--text-secondary); }
+	.eta {
+		color: var(--text-secondary);
+	}
 
-	.latest { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.6rem; }
+	.latest {
+		font-size: 0.8rem;
+		color: var(--text-muted);
+		margin-bottom: 0.6rem;
+	}
 
 	.idle-notice {
 		background: var(--green-bg);
@@ -211,6 +249,13 @@
 		border-top: 1px solid var(--border);
 		font-size: 0.8rem;
 	}
-	.algo-row label { font-size: 0.8rem; color: var(--text-muted); font-weight: 500; }
-	.algo-row select { font-size: 0.8667rem; padding: 0.4rem 0.65rem; }
+	.algo-row label {
+		font-size: 0.8rem;
+		color: var(--text-muted);
+		font-weight: 500;
+	}
+	.algo-row select {
+		font-size: 0.8667rem;
+		padding: 0.4rem 0.65rem;
+	}
 </style>

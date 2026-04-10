@@ -51,7 +51,9 @@
 	.card:hover {
 		background: var(--bg-elevated);
 		border-color: var(--border-strong);
-		box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px var(--border-strong);
+		box-shadow:
+			0 4px 24px rgba(0, 0, 0, 0.3),
+			0 0 0 1px var(--border-strong);
 		transform: translateY(-2px);
 		text-decoration: none;
 	}

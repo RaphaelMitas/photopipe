@@ -57,7 +57,10 @@ class DenoiseWatcher {
 
 				// The controller passed to cancel is not the same reference,
 				// so we clean up differently
-				this.removeSubscriber(shootName, controller as unknown as ReadableStreamDefaultController<Uint8Array>);
+				this.removeSubscriber(
+					shootName,
+					controller as unknown as ReadableStreamDefaultController<Uint8Array>
+				);
 			}
 		});
 	}
@@ -65,7 +68,10 @@ class DenoiseWatcher {
 	/**
 	 * Remove a subscriber. If no subscribers remain, stop the session.
 	 */
-	private removeSubscriber(shootName: string, controller: ReadableStreamDefaultController<Uint8Array>): void {
+	private removeSubscriber(
+		shootName: string,
+		controller: ReadableStreamDefaultController<Uint8Array>
+	): void {
 		const session = this.sessions.get(shootName);
 		if (!session) return;
 
@@ -226,7 +232,10 @@ class DenoiseWatcher {
 		}
 	}
 
-	private sendEvent(controller: ReadableStreamDefaultController<Uint8Array>, event: DenoiseEvent): void {
+	private sendEvent(
+		controller: ReadableStreamDefaultController<Uint8Array>,
+		event: DenoiseEvent
+	): void {
 		try {
 			const data = this.encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
 			controller.enqueue(data);

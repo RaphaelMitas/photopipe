@@ -44,7 +44,9 @@
 		padding: 0;
 		max-width: 420px;
 		width: 90vw;
-		box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--border);
+		box-shadow:
+			0 16px 48px rgba(0, 0, 0, 0.5),
+			0 0 0 1px var(--border);
 	}
 
 	dialog::backdrop {
@@ -53,7 +55,9 @@
 		-webkit-backdrop-filter: blur(8px);
 	}
 
-	.content { padding: 1.5rem; }
+	.content {
+		padding: 1.5rem;
+	}
 
 	h3 {
 		font-size: 1.05rem;

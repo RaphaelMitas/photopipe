@@ -2,9 +2,9 @@ import type { RequestHandler } from './$types.js';
 import { error } from '@sveltejs/kit';
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { Readable } from 'node:stream';
+import type { Readable } from 'node:stream';
 import archiver from 'archiver';
-import { CAMERA_BASE, SHOOT_PATTERN, RAW_DIR, DENOISED_DIR, EXPORTS_DIR } from '$lib/server/config.js';
+import { CAMERA_BASE, RAW_DIR, DENOISED_DIR, EXPORTS_DIR } from '$lib/server/config.js';
 import { validateShootName } from '$lib/server/shoots.js';
 
 const VALID_FOLDERS: Record<string, string> = {
