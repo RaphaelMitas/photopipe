@@ -55,7 +55,7 @@
 		"svelte-check": "^4.4.6",
 		"typescript": "^6.0.2",
 		"typescript-eslint": "^8.58.1",
-		"vite": "^8.0.7"
+		"vite": "^8.0.8"
 	},
 	"packageManager": "pnpm@11.0.0-rc.0+sha512.1f08eadeea025e91448de6d5dee42a6c94764257000c043a9e36b8ff12849a72ebcb9c65fc1885094747249e52f53d8b73ada1181446bba81866810c8a4d3f6c"
 }
