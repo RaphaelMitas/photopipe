@@ -1,4 +1,4 @@
-import { readdir, stat, mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
+import { readdir, stat, mkdir, readFile, writeFile, unlink, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
 	CAMERA_BASE,
@@ -401,6 +401,20 @@ export async function deleteFiles(
 	}
 
 	return { deletedCount, freedBytes };
+}
+
+export async function deleteShoot(folderName: string): Promise<void> {
+	validateShootName(folderName);
+
+	const shootPath = join(CAMERA_BASE, folderName);
+
+	try {
+		await stat(shootPath);
+	} catch {
+		throw new PhotopipeError(`Shoot "${folderName}" not found`, 'NOT_FOUND', 404);
+	}
+
+	await rm(shootPath, { recursive: true, force: true });
 }
 
 /**

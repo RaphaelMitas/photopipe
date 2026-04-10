@@ -5,7 +5,7 @@
 	import DownloadDialog from '$lib/components/DownloadDialog.svelte';
 	import { formatBytes, formatDate } from '$lib/utils.js';
 	import { PURERAW_SETTINGS } from '$lib/types.js';
-	import { invalidateAll } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 
 	let { data, form } = $props();
 
@@ -17,6 +17,8 @@
 	let deleting = $state(false);
 	let deleteTargetFile = $state<string | null>(null);
 	let deleteTargetFolder = $state<'exports' | 'denoised' | 'raw'>('exports');
+	let showDeleteProjectDialog = $state(false);
+	let deletingProject = $state(false);
 
 	const deleteAllTitle = $derived(
 		deleteTargetFolder === 'raw'
@@ -62,6 +64,20 @@
 			}
 		} finally {
 			deleting = false;
+		}
+	}
+
+	async function handleDeleteProject() {
+		deletingProject = true;
+		try {
+			const res = await fetch(`/api/shoots/${encodeURIComponent(data.shoot.folderName)}`, {
+				method: 'DELETE'
+			});
+			if (res.ok) {
+				await goto('/');
+			}
+		} finally {
+			deletingProject = false;
 		}
 	}
 
@@ -166,6 +182,9 @@
 					<line x1="12" y1="15" x2="12" y2="3" />
 				</svg>
 				Download
+			</button>
+			<button class="btn-danger btn-sm" onclick={() => (showDeleteProjectDialog = true)}>
+				Delete Project
 			</button>
 			<span class="badge badge-{data.shoot.status}">{data.shoot.status}</span>
 		</div>
@@ -373,6 +392,15 @@
 			showDeleteSingleDialog = false;
 			deleteTargetFile = null;
 		}}
+	/>
+
+	<ConfirmDialog
+		open={showDeleteProjectDialog}
+		title="Delete this project?"
+		message={`This will permanently delete the entire project \u201c${data.shoot.name}\u201d including all raw files, denoised files, exports, and metadata (${formatBytes(data.shoot.totalSizeBytes)}). This cannot be undone.`}
+		confirmLabel={deletingProject ? 'Deleting...' : 'Delete Project'}
+		onconfirm={handleDeleteProject}
+		oncancel={() => (showDeleteProjectDialog = false)}
 	/>
 
 	<!-- Metadata -->
