@@ -1,11 +1,18 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { rateFiles, updateRating, validateShootName, PhotopipeError } from '$lib/server/shoots.js';
-import type { StarRating } from '$lib/types.js';
+import { z } from 'zod/v4';
 
-function isValidRating(v: unknown): v is StarRating {
-	return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 5;
-}
+const starRating = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]);
+
+const postSchema = z.object({
+	ratings: z.array(z.object({ file: z.string().min(1), rating: starRating })).min(1)
+});
+
+const patchSchema = z.object({
+	file: z.string().min(1),
+	rating: starRating
+});
 
 export const POST: RequestHandler = async ({ params, request }) => {
 	const shootName = decodeURIComponent(params.name);
@@ -16,28 +23,13 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		error(400, 'Invalid shoot name');
 	}
 
-	let body: { ratings?: unknown };
-	try {
-		body = await request.json();
-	} catch {
-		error(400, 'Invalid JSON body');
-	}
-
-	if (!Array.isArray(body.ratings) || body.ratings.length === 0) {
-		error(400, 'ratings must be a non-empty array of {file, rating}');
-	}
-
-	for (const entry of body.ratings) {
-		if (typeof entry !== 'object' || !entry) error(400, 'Invalid rating entry');
-		if (typeof entry.file !== 'string' || !entry.file) error(400, 'file must be a string');
-		if (!isValidRating(entry.rating)) error(400, 'rating must be an integer 1-5');
+	const parsed = postSchema.safeParse(await request.json().catch(() => null));
+	if (!parsed.success) {
+		error(400, 'ratings must be a non-empty array of {file: string, rating: 1-5}');
 	}
 
 	try {
-		const result = await rateFiles(
-			shootName,
-			body.ratings as Array<{ file: string; rating: StarRating }>
-		);
+		const result = await rateFiles(shootName, parsed.data.ratings);
 		return json(result);
 	} catch (err) {
 		if (err instanceof PhotopipeError) {
@@ -56,23 +48,13 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		error(400, 'Invalid shoot name');
 	}
 
-	let body: { file?: unknown; rating?: unknown };
-	try {
-		body = await request.json();
-	} catch {
-		error(400, 'Invalid JSON body');
-	}
-
-	if (typeof body.file !== 'string' || !body.file) {
-		error(400, 'file must be a string');
-	}
-
-	if (!isValidRating(body.rating)) {
-		error(400, 'rating must be an integer 1-5');
+	const parsed = patchSchema.safeParse(await request.json().catch(() => null));
+	if (!parsed.success) {
+		error(400, 'file must be a string, rating must be an integer 1-5');
 	}
 
 	try {
-		await updateRating(shootName, body.file, body.rating);
+		await updateRating(shootName, parsed.data.file, parsed.data.rating);
 		return json({ success: true });
 	} catch (err) {
 		if (err instanceof PhotopipeError) {

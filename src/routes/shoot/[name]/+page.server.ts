@@ -6,7 +6,14 @@ import {
 	getPureRawInstructions,
 	PhotopipeError
 } from '$lib/server/shoots.js';
+
 import type { DenoiseAlgorithm } from '$lib/types.js';
+
+const VALID_ALGORITHMS: ReadonlySet<string> = new Set(['DeepPRIME 3', 'DeepPRIME XD3']);
+
+function parseAlgorithm(value: string): DenoiseAlgorithm | null {
+	return VALID_ALGORITHMS.has(value) ? (value as DenoiseAlgorithm) : null;
+}
 
 export const load: PageServerLoad = async ({ params }) => {
 	const folderName = decodeURIComponent(params.name);
@@ -29,12 +36,12 @@ export const actions: Actions = {
 		const folderName = decodeURIComponent(params.name);
 		const formData = await request.formData();
 
-		const algorithm = (formData.get('algorithm') as string) || null;
-		const notes = (formData.get('notes') as string) ?? '';
+		const algorithm = parseAlgorithm(String(formData.get('algorithm') ?? ''));
+		const notes = String(formData.get('notes') ?? '');
 
 		try {
 			await updateMetadata(folderName, {
-				algorithm: algorithm as DenoiseAlgorithm | null,
+				algorithm,
 				notes
 			});
 			return { success: true };

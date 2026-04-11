@@ -1,8 +1,12 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { deleteFiles, validateShootName, PhotopipeError } from '$lib/server/shoots.js';
+import { z } from 'zod/v4';
 
-const VALID_FOLDERS = ['exports', 'denoised', 'raw', 'rated', 'selects'] as const;
+const bodySchema = z.object({
+	folder: z.enum(['exports', 'denoised', 'raw', 'rated', 'selects']),
+	files: z.array(z.string().min(1)).optional()
+});
 
 export const DELETE: RequestHandler = async ({ params, request }) => {
 	const shootName = decodeURIComponent(params.name);
@@ -13,29 +17,13 @@ export const DELETE: RequestHandler = async ({ params, request }) => {
 		error(400, 'Invalid shoot name');
 	}
 
-	let body: { folder?: string; files?: string[] };
-	try {
-		body = await request.json();
-	} catch {
-		error(400, 'Invalid JSON body');
-	}
-
-	const folder = body.folder;
-	if (!folder || !VALID_FOLDERS.includes(folder as (typeof VALID_FOLDERS)[number])) {
+	const parsed = bodySchema.safeParse(await request.json().catch(() => null));
+	if (!parsed.success) {
 		error(400, 'folder must be "exports", "denoised", "raw", "rated", or "selects"');
 	}
 
-	const files = body.files;
-	if (files !== undefined && (!Array.isArray(files) || files.some((f) => typeof f !== 'string'))) {
-		error(400, 'files must be an array of filenames');
-	}
-
 	try {
-		const result = await deleteFiles(
-			shootName,
-			folder as 'exports' | 'denoised' | 'raw' | 'rated' | 'selects',
-			files
-		);
+		const result = await deleteFiles(shootName, parsed.data.folder, parsed.data.files);
 		return json(result);
 	} catch (err) {
 		if (err instanceof PhotopipeError) {

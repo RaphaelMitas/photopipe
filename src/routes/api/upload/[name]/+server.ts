@@ -54,12 +54,14 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	}
 
 	const formData = await request.formData();
-	const file = formData.get('file') as File | null;
-	const folderParam = (formData.get('folder') as string) || 'raw';
+	const fileField = formData.get('file');
+	const folderParam = String(formData.get('folder') ?? 'raw');
 
-	if (!file || !(file instanceof File)) {
+	if (!fileField || !(fileField instanceof File)) {
 		error(400, 'No file provided');
 	}
+
+	const file = fileField;
 
 	// Validate folder
 	if (!(folderParam in FOLDER_MAP)) {

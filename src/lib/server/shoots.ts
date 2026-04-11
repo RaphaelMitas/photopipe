@@ -24,6 +24,7 @@ import type {
 } from '$lib/types.js';
 import { PURERAW_SETTINGS } from '$lib/types.js';
 import { parseShootFolder, buildFolderName, slugifyName } from '$lib/utils.js';
+import { z } from 'zod/v4';
 
 export class PhotopipeError extends Error {
 	constructor(
@@ -88,14 +89,28 @@ async function listFilesWithExt(dirPath: string, extensions: string[]): Promise<
 	}
 }
 
+const starRating = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]);
+
+const metadataSchema = z.object({
+	version: z.number(),
+	name: z.string(),
+	date: z.string(),
+	createdAt: z.string(),
+	algorithm: z.enum(['DeepPRIME 3', 'DeepPRIME XD3']).nullable(),
+	notes: z.string(),
+	rawCount: z.number().nullable(),
+	ratings: z.record(z.string(), starRating).default({})
+});
+
+function parseMetadata(raw: string): ShootMetadata | null {
+	const result = metadataSchema.safeParse(JSON.parse(raw));
+	return result.success ? result.data : null;
+}
+
 async function readMetadata(shootPath: string): Promise<ShootMetadata | null> {
 	try {
 		const raw = await readFile(join(shootPath, METADATA_FILE), 'utf-8');
-		const parsed = JSON.parse(raw) as Record<string, unknown>;
-		if (!parsed.ratings || typeof parsed.ratings !== 'object') {
-			parsed.ratings = {};
-		}
-		return parsed as unknown as ShootMetadata;
+		return parseMetadata(raw);
 	} catch {
 		return null;
 	}
@@ -238,7 +253,7 @@ export async function getShoot(folderName: string): Promise<ShootDetail> {
 
 	const ratedFiles: RatedFileInfo[] = ratedFilesRaw.map((f) => ({
 		...f,
-		rating: (meta.ratings[f.name] as StarRating) ?? 3
+		rating: meta.ratings[f.name] ?? 3
 	}));
 
 	return {

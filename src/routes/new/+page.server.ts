@@ -5,8 +5,8 @@ import { createShoot, PhotopipeError } from '$lib/server/shoots.js';
 export const actions: Actions = {
 	default: async ({ request }) => {
 		const formData = await request.formData();
-		const name = (formData.get('name') as string)?.trim();
-		const date = formData.get('date') as string;
+		const name = String(formData.get('name') ?? '').trim();
+		const date = String(formData.get('date') ?? '');
 
 		if (!name) {
 			return fail(400, { error: 'Shoot name is required', name, date });
