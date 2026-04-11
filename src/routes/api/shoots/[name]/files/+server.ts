@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
 import { deleteFiles, validateShootName, PhotopipeError } from '$lib/server/shoots.js';
 
-const VALID_FOLDERS = ['exports', 'denoised', 'raw'] as const;
+const VALID_FOLDERS = ['exports', 'denoised', 'raw', 'rated', 'selects'] as const;
 
 export const DELETE: RequestHandler = async ({ params, request }) => {
 	const shootName = decodeURIComponent(params.name);
@@ -22,7 +22,7 @@ export const DELETE: RequestHandler = async ({ params, request }) => {
 
 	const folder = body.folder;
 	if (!folder || !VALID_FOLDERS.includes(folder as (typeof VALID_FOLDERS)[number])) {
-		error(400, 'folder must be "exports", "denoised", or "raw"');
+		error(400, 'folder must be "exports", "denoised", "raw", "rated", or "selects"');
 	}
 
 	const files = body.files;
@@ -31,7 +31,11 @@ export const DELETE: RequestHandler = async ({ params, request }) => {
 	}
 
 	try {
-		const result = await deleteFiles(shootName, folder as 'exports' | 'denoised' | 'raw', files);
+		const result = await deleteFiles(
+			shootName,
+			folder as 'exports' | 'denoised' | 'raw' | 'rated' | 'selects',
+			files
+		);
 		return json(result);
 	} catch (err) {
 		if (err instanceof PhotopipeError) {

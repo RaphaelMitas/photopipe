@@ -274,6 +274,24 @@ textarea:focus {
 	background: var(--accent-light);
 }
 
+.badge-rating {
+	color: var(--yellow);
+	background: var(--yellow-bg);
+}
+
+.badge-rating::before {
+	background: var(--yellow);
+}
+
+.badge-curating {
+	color: var(--pink);
+	background: var(--pink-bg);
+}
+
+.badge-curating::before {
+	background: var(--pink);
+}
+
 .badge-exported {
 	color: var(--green);
 	background: var(--green-bg);

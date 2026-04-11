@@ -6,6 +6,8 @@ import {
 	CAMERA_BASE,
 	RAW_DIR,
 	DENOISED_DIR,
+	RATED_DIR,
+	SELECTS_DIR,
 	EXPORTS_DIR,
 	SHOOT_PATTERN
 } from '$lib/server/config.js';
@@ -14,12 +16,16 @@ import { validateShootName, updateMetadata } from '$lib/server/shoots.js';
 const FOLDER_MAP: Record<string, string> = {
 	raw: RAW_DIR,
 	denoised: DENOISED_DIR,
+	rated: RATED_DIR,
+	selects: SELECTS_DIR,
 	exports: EXPORTS_DIR
 };
 
 const ALLOWED_EXTENSIONS: Record<string, string[]> = {
 	raw: ['.arw'],
 	denoised: ['.dng'],
+	rated: ['.dng'],
+	selects: ['.dng'],
 	exports: ['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.webp', '.dng']
 };
 
