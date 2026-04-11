@@ -287,6 +287,17 @@
 			movingFrom = '';
 		}
 	}
+
+	async function handleMoveGte4ToSelects() {
+		const files = data.shoot.ratedFiles.filter((f) => f.rating >= 4).map((f) => f.name);
+		if (files.length === 0) return;
+		movingFrom = 'bulk';
+		try {
+			await handleMoveFiles('rated', 'selects', files);
+		} finally {
+			movingFrom = '';
+		}
+	}
 </script>
 
 <div class="page">
@@ -435,7 +446,7 @@
 	{:else if currentView === 'denoised'}
 		<div class="view">
 			{#if data.shoot.dngFiles.length > 0}
-				<button class="next-action" onclick={() => (currentView = 'rate')}>
+				<button class="next-action" onclick={() => { currentView = 'rate'; openRatingViewForDenoised(); }}>
 					<span class="next-action-content">
 						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
@@ -522,6 +533,25 @@
 					</span>
 					<svg class="next-action-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6" /></svg>
 				</button>
+			{/if}
+
+			{#if data.shoot.ratedFiles.length > 0 && data.shoot.selectCount === 0}
+				{@const gte4Count = data.shoot.ratedFiles.filter(f => f.rating >= 4).length}
+				{#if gte4Count > 0}
+					<button class="next-action next-action-pink" onclick={handleMoveGte4ToSelects} disabled={movingFrom === 'bulk'}>
+						<span class="next-action-content">
+							<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+								<polyline points="22 4 12 14.01 9 11.01" />
+							</svg>
+							<span class="next-action-text">
+								<strong>{movingFrom === 'bulk' ? 'Moving...' : 'Move ≥4★ to Selects'}</strong>
+								<span>{gte4Count} of {data.shoot.ratedCount} rated image{data.shoot.ratedCount !== 1 ? 's' : ''} qualify</span>
+							</span>
+						</span>
+						<svg class="next-action-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6" /></svg>
+					</button>
+				{/if}
 			{/if}
 
 			{#if data.shoot.ratedFiles.length > 0}
@@ -622,14 +652,15 @@
 				</section>
 			{:else}
 				{#if data.shoot.ratedCount > 0}
-					<button class="next-action next-action-pink" onclick={() => (currentView = 'rate')}>
+					<button class="next-action next-action-pink" onclick={handleMoveGte4ToSelects} disabled={movingFrom === 'bulk'}>
 						<span class="next-action-content">
 							<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-								<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+								<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+								<polyline points="22 4 12 14.01 9 11.01" />
 							</svg>
 							<span class="next-action-text">
-								<strong>Go to Rating</strong>
-								<span>{data.shoot.ratedCount} rated image{data.shoot.ratedCount !== 1 ? 's' : ''} ready to move into selects</span>
+								<strong>{movingFrom === 'bulk' ? 'Moving...' : 'Move ≥4★ to Selects'}</strong>
+								<span>{data.shoot.ratedFiles.filter(f => f.rating >= 4).length} of {data.shoot.ratedCount} rated image{data.shoot.ratedCount !== 1 ? 's' : ''} qualify</span>
 							</span>
 						</span>
 						<svg class="next-action-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6" /></svg>
