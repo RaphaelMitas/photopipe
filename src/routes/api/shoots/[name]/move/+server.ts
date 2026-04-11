@@ -37,7 +37,11 @@ export const POST: RequestHandler = async ({ params, request }) => {
 		error(400, 'from and to must be different');
 	}
 
-	if (!Array.isArray(body.files) || body.files.length === 0 || body.files.some((f) => typeof f !== 'string')) {
+	if (
+		!Array.isArray(body.files) ||
+		body.files.length === 0 ||
+		body.files.some((f) => typeof f !== 'string')
+	) {
 		error(400, 'files must be a non-empty array of filenames');
 	}
 

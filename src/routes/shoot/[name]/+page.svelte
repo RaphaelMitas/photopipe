@@ -42,23 +42,23 @@
 	let deleteTargetFolder = $state<'exports' | 'denoised' | 'raw' | 'rated' | 'selects'>('exports');
 
 	let deleteAllTitle = $derived(
-		({
+		{
 			raw: 'Delete raw files?',
 			denoised: 'Delete all denoised files?',
 			rated: 'Delete all rated files?',
 			selects: 'Delete all selects?',
 			exports: 'Delete all exports?'
-		})[deleteTargetFolder]
+		}[deleteTargetFolder]
 	);
 
 	let deleteAllMessage = $derived(
-		({
+		{
 			raw: `This will permanently delete ${data.shoot.rawCount} ARW file${data.shoot.rawCount !== 1 ? 's' : ''} (${formatBytes(data.shoot.rawSizeBytes)}). This cannot be undone.`,
 			denoised: `This will permanently delete ${data.shoot.dngCount} DNG file${data.shoot.dngCount !== 1 ? 's' : ''} (${formatBytes(data.shoot.dngSizeBytes)}). This cannot be undone.`,
 			rated: `This will permanently delete ${data.shoot.ratedCount} rated file${data.shoot.ratedCount !== 1 ? 's' : ''} (${formatBytes(data.shoot.ratedSizeBytes)}) and their ratings. This cannot be undone.`,
 			selects: `This will permanently delete ${data.shoot.selectCount} select${data.shoot.selectCount !== 1 ? 's' : ''} (${formatBytes(data.shoot.selectSizeBytes)}). This cannot be undone.`,
 			exports: `This will permanently delete ${data.shoot.exportCount} exported file${data.shoot.exportCount !== 1 ? 's' : ''} (${formatBytes(data.shoot.exportSizeBytes)}) and their cached thumbnails. This cannot be undone.`
-		})[deleteTargetFolder]
+		}[deleteTargetFolder]
 	);
 
 	// Upload state
@@ -130,18 +130,27 @@
 	function openRatingViewForRated(fileName: string) {
 		ratingViewFiles = data.shoot.ratedFiles;
 		ratingViewFolder = 'rated';
-		ratingViewStartIndex = Math.max(0, data.shoot.ratedFiles.findIndex((f) => f.name === fileName));
+		ratingViewStartIndex = Math.max(
+			0,
+			data.shoot.ratedFiles.findIndex((f) => f.name === fileName)
+		);
 		showRatingView = true;
 	}
 
 	function openRatingViewForSelects(fileName: string) {
 		ratingViewFiles = data.shoot.selectFiles;
 		ratingViewFolder = 'selects';
-		ratingViewStartIndex = Math.max(0, data.shoot.selectFiles.findIndex((f) => f.name === fileName));
+		ratingViewStartIndex = Math.max(
+			0,
+			data.shoot.selectFiles.findIndex((f) => f.name === fileName)
+		);
 		showRatingView = true;
 	}
 
-	async function handleDeleteFiles(folder: 'exports' | 'denoised' | 'raw' | 'rated' | 'selects', files?: string[]) {
+	async function handleDeleteFiles(
+		folder: 'exports' | 'denoised' | 'raw' | 'rated' | 'selects',
+		files?: string[]
+	) {
 		deleting = true;
 		try {
 			const res = await fetch(`/api/shoots/${encodeURIComponent(data.shoot.folderName)}/files`, {
@@ -169,7 +178,10 @@
 		}
 	}
 
-	function requestDeleteSingle(folder: 'exports' | 'denoised' | 'raw' | 'rated' | 'selects', fileName: string) {
+	function requestDeleteSingle(
+		folder: 'exports' | 'denoised' | 'raw' | 'rated' | 'selects',
+		fileName: string
+	) {
 		deleteTargetFile = fileName;
 		deleteTargetFolder = folder;
 		showDeleteSingleDialog = true;
@@ -302,7 +314,15 @@
 
 <div class="page">
 	<a href="/" class="back">
-		<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="15 18 9 12 15 6" /></svg>
+		<svg
+			width="16"
+			height="16"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"><polyline points="15 18 9 12 15 6" /></svg
+		>
 		Back
 	</a>
 
@@ -316,14 +336,42 @@
 			</p>
 		</div>
 		<div class="header-actions">
-			<button class="btn-ghost btn-icon" onclick={() => (showSettingsDialog = true)} title="Settings">
-				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+			<button
+				class="btn-ghost btn-icon"
+				onclick={() => (showSettingsDialog = true)}
+				title="Settings"
+			>
+				<svg
+					width="16"
+					height="16"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
 					<circle cx="12" cy="12" r="3" />
-					<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+					<path
+						d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+					/>
 				</svg>
 			</button>
-			<button class="btn-ghost btn-icon" onclick={() => (showDownloadDialog = true)} title="Download">
-				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+			<button
+				class="btn-ghost btn-icon"
+				onclick={() => (showDownloadDialog = true)}
+				title="Download"
+			>
+				<svg
+					width="16"
+					height="16"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+				>
 					<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
 					<polyline points="7 10 12 15 17 10" />
 					<line x1="12" y1="15" x2="12" y2="3" />
@@ -360,7 +408,17 @@
 						role="region"
 						aria-label="Upload drop zone"
 					>
-						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="upload-drop-icon">
+						<svg
+							width="24"
+							height="24"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							class="upload-drop-icon"
+						>
 							<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
 							<polyline points="17 8 12 3 7 8" />
 							<line x1="12" y1="3" x2="12" y2="15" />
@@ -368,7 +426,13 @@
 						<span class="upload-drop-text">Drop files or</span>
 						<label class="btn-ghost btn-sm upload-browse">
 							Browse
-							<input type="file" accept={UPLOAD_ACCEPT[uploadFolder]} multiple onchange={handleUploadFileSelect} hidden />
+							<input
+								type="file"
+								accept={UPLOAD_ACCEPT[uploadFolder]}
+								multiple
+								onchange={handleUploadFileSelect}
+								hidden
+							/>
 						</label>
 					</div>
 
@@ -379,7 +443,9 @@
 									<span class="upload-fname">{file.name}</span>
 									<span class="upload-fsize">{formatBytes(file.size)}</span>
 									{#if !uploading}
-										<button class="upload-fremove" onclick={() => removeUploadFile(i)}>&times;</button>
+										<button class="upload-fremove" onclick={() => removeUploadFile(i)}
+											>&times;</button
+										>
 									{/if}
 								</div>
 							{/each}
@@ -388,7 +454,10 @@
 						{#if uploading}
 							<div class="upload-progress">
 								<div class="upload-pbar-track">
-									<div class="upload-pbar-fill" style="width: {uploadTotal > 0 ? (uploadedCount / uploadTotal) * 100 : 0}%"></div>
+									<div
+										class="upload-pbar-fill"
+										style="width: {uploadTotal > 0 ? (uploadedCount / uploadTotal) * 100 : 0}%"
+									></div>
 								</div>
 								<span class="upload-pbar-text">{uploadedCount} / {uploadTotal}</span>
 							</div>
@@ -405,8 +474,18 @@
 			{#if data.shoot.rawFiles.length > 0}
 				<section class="section">
 					<div class="section-header">
-						<h2>Raw Files <span class="h2-count">{data.shoot.rawCount} &middot; {formatBytes(data.shoot.rawSizeBytes)}</span></h2>
-						<button class="btn-danger btn-sm" onclick={() => { deleteTargetFolder = 'raw'; showDeleteAllDialog = true; }}>
+						<h2>
+							Raw Files <span class="h2-count"
+								>{data.shoot.rawCount} &middot; {formatBytes(data.shoot.rawSizeBytes)}</span
+							>
+						</h2>
+						<button
+							class="btn-danger btn-sm"
+							onclick={() => {
+								deleteTargetFolder = 'raw';
+								showDeleteAllDialog = true;
+							}}
+						>
 							Delete All
 						</button>
 					</div>
@@ -415,7 +494,11 @@
 							<div class="frow">
 								<span class="fn">{file.name}</span>
 								<span class="fs">{formatBytes(file.sizeBytes)}</span>
-								<button class="frow-delete" onclick={() => requestDeleteSingle('raw', file.name)} title="Delete">&times;</button>
+								<button
+									class="frow-delete"
+									onclick={() => requestDeleteSingle('raw', file.name)}
+									title="Delete">&times;</button
+								>
 							</div>
 						{/each}
 					</div>
@@ -435,28 +518,65 @@
 								<span class="match-warn">mismatch</span>
 							{/if}
 						</div>
-						<p class="card-hint">Delete raw ARWs to free <strong>{formatBytes(data.shoot.rawSizeBytes)}</strong></p>
-						<button class="btn-danger" onclick={() => { deleteTargetFolder = 'raw'; showDeleteAllDialog = true; }}>Delete Raw Files</button>
+						<p class="card-hint">
+							Delete raw ARWs to free <strong>{formatBytes(data.shoot.rawSizeBytes)}</strong>
+						</p>
+						<button
+							class="btn-danger"
+							onclick={() => {
+								deleteTargetFolder = 'raw';
+								showDeleteAllDialog = true;
+							}}>Delete Raw Files</button
+						>
 					</div>
 				</section>
 			{/if}
 		</div>
 
-	<!-- ═══ DENOISED VIEW ═══ -->
+		<!-- ═══ DENOISED VIEW ═══ -->
 	{:else if currentView === 'denoised'}
 		<div class="view">
 			{#if data.shoot.dngFiles.length > 0}
-				<button class="next-action" onclick={() => { currentView = 'rate'; openRatingViewForDenoised(); }}>
+				<button
+					class="next-action"
+					onclick={() => {
+						currentView = 'rate';
+						openRatingViewForDenoised();
+					}}
+				>
 					<span class="next-action-content">
-						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+						<svg
+							width="20"
+							height="20"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
+							<path
+								d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
+							/>
 						</svg>
 						<span class="next-action-text">
 							<strong>Start Rating</strong>
-							<span>Review {data.shoot.dngCount} denoised image{data.shoot.dngCount !== 1 ? 's' : ''} and assign star ratings</span>
+							<span
+								>Review {data.shoot.dngCount} denoised image{data.shoot.dngCount !== 1 ? 's' : ''} and
+								assign star ratings</span
+							>
 						</span>
 					</span>
-					<svg class="next-action-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6" /></svg>
+					<svg
+						class="next-action-arrow"
+						width="20"
+						height="20"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2.5"
+						stroke-linecap="round"><polyline points="9 18 15 12 9 6" /></svg
+					>
 				</button>
 			{/if}
 
@@ -467,16 +587,36 @@
 					<div class="card">
 						<p class="card-hint">Open PureRAW on bean.local and use these settings:</p>
 						<div class="paths">
-							<div class="path"><span class="path-k">Input</span><code>{data.instructions.inputPath}</code></div>
-							<div class="path"><span class="path-k">Output</span><code>{data.instructions.outputPath}</code></div>
+							<div class="path">
+								<span class="path-k">Input</span><code>{data.instructions.inputPath}</code>
+							</div>
+							<div class="path">
+								<span class="path-k">Output</span><code>{data.instructions.outputPath}</code>
+							</div>
 						</div>
 						<div class="settings-grid">
-							<div class="sg-row"><span>Algorithm (hero)</span><span class="sg-val">DeepPRIME XD3</span></div>
-							<div class="sg-row"><span>Algorithm (bulk)</span><span class="sg-val">DeepPRIME 3</span></div>
-							<div class="sg-row"><span>Format</span><span class="sg-val">{PURERAW_SETTINGS.outputFormat}</span></div>
-							<div class="sg-row"><span>Lens sharpness</span><span class="sg-val">{PURERAW_SETTINGS.lensSharpness}</span></div>
-							<div class="sg-row"><span>Optical corrections</span><span class="sg-val">{PURERAW_SETTINGS.opticalCorrections}</span></div>
-							<div class="sg-row"><span>Dust removal</span><span class="sg-val">{PURERAW_SETTINGS.dustRemoval}</span></div>
+							<div class="sg-row">
+								<span>Algorithm (hero)</span><span class="sg-val">DeepPRIME XD3</span>
+							</div>
+							<div class="sg-row">
+								<span>Algorithm (bulk)</span><span class="sg-val">DeepPRIME 3</span>
+							</div>
+							<div class="sg-row">
+								<span>Format</span><span class="sg-val">{PURERAW_SETTINGS.outputFormat}</span>
+							</div>
+							<div class="sg-row">
+								<span>Lens sharpness</span><span class="sg-val"
+									>{PURERAW_SETTINGS.lensSharpness}</span
+								>
+							</div>
+							<div class="sg-row">
+								<span>Optical corrections</span><span class="sg-val"
+									>{PURERAW_SETTINGS.opticalCorrections}</span
+								>
+							</div>
+							<div class="sg-row">
+								<span>Dust removal</span><span class="sg-val">{PURERAW_SETTINGS.dustRemoval}</span>
+							</div>
 						</div>
 					</div>
 				</section>
@@ -499,8 +639,18 @@
 			{#if data.shoot.dngFiles.length > 0}
 				<section class="section">
 					<div class="section-header">
-						<h2>Denoised Files <span class="h2-count">{data.shoot.dngCount} &middot; {formatBytes(data.shoot.dngSizeBytes)}</span></h2>
-						<button class="btn-danger btn-sm" onclick={() => { deleteTargetFolder = 'denoised'; showDeleteAllDialog = true; }}>
+						<h2>
+							Denoised Files <span class="h2-count"
+								>{data.shoot.dngCount} &middot; {formatBytes(data.shoot.dngSizeBytes)}</span
+							>
+						</h2>
+						<button
+							class="btn-danger btn-sm"
+							onclick={() => {
+								deleteTargetFolder = 'denoised';
+								showDeleteAllDialog = true;
+							}}
+						>
 							Delete All
 						</button>
 					</div>
@@ -509,7 +659,11 @@
 							<div class="frow">
 								<span class="fn">{file.name}</span>
 								<span class="fs">{formatBytes(file.sizeBytes)}</span>
-								<button class="frow-delete" onclick={() => requestDeleteSingle('denoised', file.name)} title="Delete">&times;</button>
+								<button
+									class="frow-delete"
+									onclick={() => requestDeleteSingle('denoised', file.name)}
+									title="Delete">&times;</button
+								>
 							</div>
 						{/each}
 					</div>
@@ -517,39 +671,88 @@
 			{/if}
 		</div>
 
-	<!-- ═══ RATE VIEW ═══ -->
+		<!-- ═══ RATE VIEW ═══ -->
 	{:else if currentView === 'rate'}
 		<div class="view">
 			{#if data.shoot.dngFiles.length > 0}
 				<button class="next-action next-action-gold" onclick={openRatingViewForDenoised}>
 					<span class="next-action-content">
-						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+						<svg
+							width="20"
+							height="20"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
+							<path
+								d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
+							/>
 						</svg>
 						<span class="next-action-text">
 							<strong>Open Rating View</strong>
-							<span>{data.shoot.dngCount} image{data.shoot.dngCount !== 1 ? 's' : ''} to review &middot; Press 1-5 to rate, arrows to navigate</span>
+							<span
+								>{data.shoot.dngCount} image{data.shoot.dngCount !== 1 ? 's' : ''} to review &middot;
+								Press 1-5 to rate, arrows to navigate</span
+							>
 						</span>
 					</span>
-					<svg class="next-action-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6" /></svg>
+					<svg
+						class="next-action-arrow"
+						width="20"
+						height="20"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2.5"
+						stroke-linecap="round"><polyline points="9 18 15 12 9 6" /></svg
+					>
 				</button>
 			{/if}
 
 			{#if data.shoot.ratedFiles.length > 0 && data.shoot.selectCount === 0}
-				{@const gte4Count = data.shoot.ratedFiles.filter(f => f.rating >= 4).length}
+				{@const gte4Count = data.shoot.ratedFiles.filter((f) => f.rating >= 4).length}
 				{#if gte4Count > 0}
-					<button class="next-action next-action-pink" onclick={handleMoveGte4ToSelects} disabled={movingFrom === 'bulk'}>
+					<button
+						class="next-action next-action-pink"
+						onclick={handleMoveGte4ToSelects}
+						disabled={movingFrom === 'bulk'}
+					>
 						<span class="next-action-content">
-							<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<svg
+								width="20"
+								height="20"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
 								<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
 								<polyline points="22 4 12 14.01 9 11.01" />
 							</svg>
 							<span class="next-action-text">
 								<strong>{movingFrom === 'bulk' ? 'Moving...' : 'Move ≥4★ to Selects'}</strong>
-								<span>{gte4Count} of {data.shoot.ratedCount} rated image{data.shoot.ratedCount !== 1 ? 's' : ''} qualify</span>
+								<span
+									>{gte4Count} of {data.shoot.ratedCount} rated image{data.shoot.ratedCount !== 1
+										? 's'
+										: ''} qualify</span
+								>
 							</span>
 						</span>
-						<svg class="next-action-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6" /></svg>
+						<svg
+							class="next-action-arrow"
+							width="20"
+							height="20"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2.5"
+							stroke-linecap="round"><polyline points="9 18 15 12 9 6" /></svg
+						>
 					</button>
 				{/if}
 			{/if}
@@ -557,11 +760,25 @@
 			{#if data.shoot.ratedFiles.length > 0}
 				<section class="section">
 					<div class="section-header">
-						<h2>Rated Files <span class="h2-count">{data.shoot.ratedCount} &middot; {formatBytes(data.shoot.ratedSizeBytes)}</span></h2>
+						<h2>
+							Rated Files <span class="h2-count"
+								>{data.shoot.ratedCount} &middot; {formatBytes(data.shoot.ratedSizeBytes)}</span
+							>
+						</h2>
 						<div class="section-actions">
 							<div class="filter-bar">
-								<button class="filter-btn" class:active={filterMode === 'all'} onclick={() => (filterMode = 'all')}>All</button>
-								<select class="filter-op" bind:value={filterMode} onchange={() => { if (filterMode === 'all') filterMode = 'gte'; }}>
+								<button
+									class="filter-btn"
+									class:active={filterMode === 'all'}
+									onclick={() => (filterMode = 'all')}>All</button
+								>
+								<select
+									class="filter-op"
+									bind:value={filterMode}
+									onchange={() => {
+										if (filterMode === 'all') filterMode = 'gte';
+									}}
+								>
 									<option value="gte">≥</option>
 									<option value="eq">=</option>
 									<option value="lte">≤</option>
@@ -576,7 +793,13 @@
 									</button>
 								{/each}
 							</div>
-							<button class="btn-danger btn-sm" onclick={() => { deleteTargetFolder = 'rated'; showDeleteAllDialog = true; }}>
+							<button
+								class="btn-danger btn-sm"
+								onclick={() => {
+									deleteTargetFolder = 'rated';
+									showDeleteAllDialog = true;
+								}}
+							>
 								Delete All
 							</button>
 						</div>
@@ -598,8 +821,20 @@
 			{:else if data.shoot.dngFiles.length === 0}
 				<section class="section">
 					<div class="empty-view">
-						<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
-							<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+						<svg
+							width="40"
+							height="40"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							class="empty-icon"
+						>
+							<path
+								d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
+							/>
 						</svg>
 						<p class="empty-title">No images to rate</p>
 						<p class="empty-sub">Denoise images first, then come back to rate them.</p>
@@ -608,17 +843,31 @@
 			{/if}
 		</div>
 
-	<!-- ═══ SELECTS VIEW ═══ -->
+		<!-- ═══ SELECTS VIEW ═══ -->
 	{:else if currentView === 'selects'}
 		<div class="view">
 			{#if data.shoot.selectFiles.length > 0}
 				<section class="section">
 					<div class="section-header">
-						<h2>Selects <span class="h2-count">{data.shoot.selectCount} &middot; {formatBytes(data.shoot.selectSizeBytes)}</span></h2>
+						<h2>
+							Selects <span class="h2-count"
+								>{data.shoot.selectCount} &middot; {formatBytes(data.shoot.selectSizeBytes)}</span
+							>
+						</h2>
 						<div class="section-actions">
 							<div class="filter-bar">
-								<button class="filter-btn" class:active={selectsFilterMode === 'all'} onclick={() => (selectsFilterMode = 'all')}>All</button>
-								<select class="filter-op" bind:value={selectsFilterMode} onchange={() => { if (selectsFilterMode === 'all') selectsFilterMode = 'gte'; }}>
+								<button
+									class="filter-btn"
+									class:active={selectsFilterMode === 'all'}
+									onclick={() => (selectsFilterMode = 'all')}>All</button
+								>
+								<select
+									class="filter-op"
+									bind:value={selectsFilterMode}
+									onchange={() => {
+										if (selectsFilterMode === 'all') selectsFilterMode = 'gte';
+									}}
+								>
 									<option value="gte">≥</option>
 									<option value="eq">=</option>
 									<option value="lte">≤</option>
@@ -633,7 +882,13 @@
 									</button>
 								{/each}
 							</div>
-							<button class="btn-danger btn-sm" onclick={() => { deleteTargetFolder = 'selects'; showDeleteAllDialog = true; }}>
+							<button
+								class="btn-danger btn-sm"
+								onclick={() => {
+									deleteTargetFolder = 'selects';
+									showDeleteAllDialog = true;
+								}}
+							>
 								Delete All
 							</button>
 						</div>
@@ -652,23 +907,58 @@
 				</section>
 			{:else}
 				{#if data.shoot.ratedCount > 0}
-					<button class="next-action next-action-pink" onclick={handleMoveGte4ToSelects} disabled={movingFrom === 'bulk'}>
+					<button
+						class="next-action next-action-pink"
+						onclick={handleMoveGte4ToSelects}
+						disabled={movingFrom === 'bulk'}
+					>
 						<span class="next-action-content">
-							<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<svg
+								width="20"
+								height="20"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							>
 								<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
 								<polyline points="22 4 12 14.01 9 11.01" />
 							</svg>
 							<span class="next-action-text">
 								<strong>{movingFrom === 'bulk' ? 'Moving...' : 'Move ≥4★ to Selects'}</strong>
-								<span>{data.shoot.ratedFiles.filter(f => f.rating >= 4).length} of {data.shoot.ratedCount} rated image{data.shoot.ratedCount !== 1 ? 's' : ''} qualify</span>
+								<span
+									>{data.shoot.ratedFiles.filter((f) => f.rating >= 4).length} of {data.shoot
+										.ratedCount} rated image{data.shoot.ratedCount !== 1 ? 's' : ''} qualify</span
+								>
 							</span>
 						</span>
-						<svg class="next-action-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6" /></svg>
+						<svg
+							class="next-action-arrow"
+							width="20"
+							height="20"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2.5"
+							stroke-linecap="round"><polyline points="9 18 15 12 9 6" /></svg
+						>
 					</button>
 				{/if}
 				<section class="section">
 					<div class="empty-view">
-						<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
+						<svg
+							width="40"
+							height="40"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							class="empty-icon"
+						>
 							<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
 							<polyline points="22 4 12 14.01 9 11.01" />
 						</svg>
@@ -679,14 +969,24 @@
 			{/if}
 		</div>
 
-	<!-- ═══ EXPORT VIEW ═══ -->
+		<!-- ═══ EXPORT VIEW ═══ -->
 	{:else if currentView === 'export'}
 		<div class="view">
 			{#if data.shoot.exportFiles.length > 0}
 				<section class="section">
 					<div class="section-header">
-						<h2>Exports <span class="h2-count">{data.shoot.exportCount} &middot; {formatBytes(data.shoot.exportSizeBytes)}</span></h2>
-						<button class="btn-danger btn-sm" onclick={() => { deleteTargetFolder = 'exports'; showDeleteAllDialog = true; }}>
+						<h2>
+							Exports <span class="h2-count"
+								>{data.shoot.exportCount} &middot; {formatBytes(data.shoot.exportSizeBytes)}</span
+							>
+						</h2>
+						<button
+							class="btn-danger btn-sm"
+							onclick={() => {
+								deleteTargetFolder = 'exports';
+								showDeleteAllDialog = true;
+							}}
+						>
 							Delete All
 						</button>
 					</div>
@@ -694,13 +994,19 @@
 						{#each data.shoot.exportFiles as file (file.name)}
 							<div class="thumb">
 								<img
-									src="/api/thumbs/{encodeURIComponent(data.shoot.folderName)}/{encodeURIComponent(file.name)}"
+									src="/api/thumbs/{encodeURIComponent(data.shoot.folderName)}/{encodeURIComponent(
+										file.name
+									)}"
 									alt={file.name}
 									loading="lazy"
 								/>
 								<div class="thumb-footer">
 									<span class="thumb-name">{file.name}</span>
-									<button class="thumb-delete" onclick={() => requestDeleteSingle('exports', file.name)} title="Delete">&times;</button>
+									<button
+										class="thumb-delete"
+										onclick={() => requestDeleteSingle('exports', file.name)}
+										title="Delete">&times;</button
+									>
 								</div>
 							</div>
 						{/each}
@@ -709,7 +1015,17 @@
 			{:else}
 				<section class="section">
 					<div class="empty-view">
-						<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
+						<svg
+							width="40"
+							height="40"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							class="empty-icon"
+						>
 							<rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
 							<circle cx="8.5" cy="8.5" r="1.5" />
 							<polyline points="21 15 16 10 5 21" />
@@ -727,11 +1043,24 @@
 					<div
 						class="upload-drop"
 						ondragover={(e) => e.preventDefault()}
-						ondrop={(e) => { uploadFolder = 'exports'; handleUploadDrop(e); }}
+						ondrop={(e) => {
+							uploadFolder = 'exports';
+							handleUploadDrop(e);
+						}}
 						role="region"
 						aria-label="Upload exports drop zone"
 					>
-						<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="upload-drop-icon">
+						<svg
+							width="24"
+							height="24"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							class="upload-drop-icon"
+						>
 							<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
 							<polyline points="17 8 12 3 7 8" />
 							<line x1="12" y1="3" x2="12" y2="15" />
@@ -739,7 +1068,16 @@
 						<span class="upload-drop-text">Drop exports or</span>
 						<label class="btn-ghost btn-sm upload-browse">
 							Browse
-							<input type="file" accept={UPLOAD_ACCEPT.exports} multiple onchange={(e) => { uploadFolder = 'exports'; handleUploadFileSelect(e); }} hidden />
+							<input
+								type="file"
+								accept={UPLOAD_ACCEPT.exports}
+								multiple
+								onchange={(e) => {
+									uploadFolder = 'exports';
+									handleUploadFileSelect(e);
+								}}
+								hidden
+							/>
 						</label>
 					</div>
 
@@ -750,7 +1088,9 @@
 									<span class="upload-fname">{file.name}</span>
 									<span class="upload-fsize">{formatBytes(file.size)}</span>
 									{#if !uploading}
-										<button class="upload-fremove" onclick={() => removeUploadFile(i)}>&times;</button>
+										<button class="upload-fremove" onclick={() => removeUploadFile(i)}
+											>&times;</button
+										>
 									{/if}
 								</div>
 							{/each}
@@ -759,7 +1099,10 @@
 						{#if uploading}
 							<div class="upload-progress">
 								<div class="upload-pbar-track">
-									<div class="upload-pbar-fill" style="width: {uploadTotal > 0 ? (uploadedCount / uploadTotal) * 100 : 0}%"></div>
+									<div
+										class="upload-pbar-fill"
+										style="width: {uploadTotal > 0 ? (uploadedCount / uploadTotal) * 100 : 0}%"
+									></div>
 								</div>
 								<span class="upload-pbar-text">{uploadedCount} / {uploadTotal}</span>
 							</div>
@@ -775,10 +1118,37 @@
 	{/if}
 
 	<!-- Dialogs (always rendered) -->
-	<DownloadDialog open={showDownloadDialog} shoot={data.shoot} oncancel={() => (showDownloadDialog = false)} />
-	<SettingsDialog open={showSettingsDialog} shoot={data.shoot} formResult={form} oncancel={() => (showSettingsDialog = false)} ondeleteproject={handleDeleteProject} />
-	<ConfirmDialog open={showDeleteAllDialog} title={deleteAllTitle} message={deleteAllMessage} confirmLabel={deleting ? 'Deleting...' : 'Delete All'} onconfirm={() => handleDeleteFiles(deleteTargetFolder)} oncancel={() => (showDeleteAllDialog = false)} />
-	<ConfirmDialog open={showDeleteSingleDialog} title="Delete file?" message="This will permanently delete {deleteTargetFile ?? ''}. This cannot be undone." confirmLabel={deleting ? 'Deleting...' : 'Delete'} onconfirm={() => handleDeleteFiles(deleteTargetFolder, [deleteTargetFile!])} oncancel={() => { showDeleteSingleDialog = false; deleteTargetFile = null; }} />
+	<DownloadDialog
+		open={showDownloadDialog}
+		shoot={data.shoot}
+		oncancel={() => (showDownloadDialog = false)}
+	/>
+	<SettingsDialog
+		open={showSettingsDialog}
+		shoot={data.shoot}
+		formResult={form}
+		oncancel={() => (showSettingsDialog = false)}
+		ondeleteproject={handleDeleteProject}
+	/>
+	<ConfirmDialog
+		open={showDeleteAllDialog}
+		title={deleteAllTitle}
+		message={deleteAllMessage}
+		confirmLabel={deleting ? 'Deleting...' : 'Delete All'}
+		onconfirm={() => handleDeleteFiles(deleteTargetFolder)}
+		oncancel={() => (showDeleteAllDialog = false)}
+	/>
+	<ConfirmDialog
+		open={showDeleteSingleDialog}
+		title="Delete file?"
+		message="This will permanently delete {deleteTargetFile ?? ''}. This cannot be undone."
+		confirmLabel={deleting ? 'Deleting...' : 'Delete'}
+		onconfirm={() => handleDeleteFiles(deleteTargetFolder, [deleteTargetFile!])}
+		oncancel={() => {
+			showDeleteSingleDialog = false;
+			deleteTargetFile = null;
+		}}
+	/>
 
 	{#if showRatingView}
 		<RatingView
@@ -833,8 +1203,12 @@
 		color: var(--text-muted);
 		margin-top: 0.15rem;
 	}
-	.sep { opacity: 0.4; }
-	.folder { opacity: 0.6; }
+	.sep {
+		opacity: 0.4;
+	}
+	.folder {
+		opacity: 0.6;
+	}
 
 	.btn-icon {
 		padding: 0.4rem;
@@ -854,7 +1228,12 @@
 		width: 100%;
 		padding: 1rem 1.25rem;
 		margin-bottom: 2rem;
-		background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(99, 102, 241, 0.06) 50%, rgba(139, 92, 246, 0.12) 100%);
+		background: linear-gradient(
+			135deg,
+			rgba(99, 102, 241, 0.15) 0%,
+			rgba(99, 102, 241, 0.06) 50%,
+			rgba(139, 92, 246, 0.12) 100%
+		);
 		border: 1px solid rgba(99, 102, 241, 0.25);
 		border-radius: var(--radius);
 		color: var(--text);
@@ -881,7 +1260,9 @@
 	.next-action:hover:not(:disabled) {
 		border-color: rgba(99, 102, 241, 0.4);
 		transform: translateY(-2px);
-		box-shadow: 0 8px 32px rgba(99, 102, 241, 0.15), 0 0 0 1px rgba(99, 102, 241, 0.1);
+		box-shadow:
+			0 8px 32px rgba(99, 102, 241, 0.15),
+			0 0 0 1px rgba(99, 102, 241, 0.1);
 	}
 
 	.next-action:disabled {
@@ -890,7 +1271,12 @@
 	}
 
 	.next-action-gold {
-		background: linear-gradient(135deg, rgba(234, 179, 8, 0.12) 0%, rgba(234, 179, 8, 0.04) 50%, rgba(245, 158, 11, 0.1) 100%);
+		background: linear-gradient(
+			135deg,
+			rgba(234, 179, 8, 0.12) 0%,
+			rgba(234, 179, 8, 0.04) 50%,
+			rgba(245, 158, 11, 0.1) 100%
+		);
 		border-color: rgba(234, 179, 8, 0.2);
 	}
 
@@ -900,11 +1286,18 @@
 
 	.next-action-gold:hover:not(:disabled) {
 		border-color: rgba(234, 179, 8, 0.35);
-		box-shadow: 0 8px 32px rgba(234, 179, 8, 0.1), 0 0 0 1px rgba(234, 179, 8, 0.08);
+		box-shadow:
+			0 8px 32px rgba(234, 179, 8, 0.1),
+			0 0 0 1px rgba(234, 179, 8, 0.08);
 	}
 
 	.next-action-pink {
-		background: linear-gradient(135deg, rgba(236, 72, 153, 0.12) 0%, rgba(236, 72, 153, 0.04) 50%, rgba(168, 85, 247, 0.1) 100%);
+		background: linear-gradient(
+			135deg,
+			rgba(236, 72, 153, 0.12) 0%,
+			rgba(236, 72, 153, 0.04) 50%,
+			rgba(168, 85, 247, 0.1) 100%
+		);
 		border-color: rgba(236, 72, 153, 0.2);
 	}
 
@@ -914,7 +1307,9 @@
 
 	.next-action-pink:hover:not(:disabled) {
 		border-color: rgba(236, 72, 153, 0.35);
-		box-shadow: 0 8px 32px rgba(236, 72, 153, 0.1), 0 0 0 1px rgba(236, 72, 153, 0.08);
+		box-shadow:
+			0 8px 32px rgba(236, 72, 153, 0.1),
+			0 0 0 1px rgba(236, 72, 153, 0.08);
 	}
 
 	.next-action-content {
@@ -958,7 +1353,9 @@
 	.next-action-arrow {
 		flex-shrink: 0;
 		color: var(--text-muted);
-		transition: transform 0.2s, color 0.2s;
+		transition:
+			transform 0.2s,
+			color 0.2s;
 		position: relative;
 		z-index: 1;
 	}
@@ -968,9 +1365,10 @@
 		color: var(--text-secondary);
 	}
 
-
 	/* Sections */
-	.section { margin-bottom: 2.5rem; }
+	.section {
+		margin-bottom: 2.5rem;
+	}
 
 	h2 {
 		font-size: 0.9333rem;
@@ -1018,22 +1416,72 @@
 	}
 
 	/* Paths */
-	.paths { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
-	.path { display: flex; align-items: center; gap: 0.75rem; font-size: 0.8667rem; }
-	.path-k { font-size: 0.75rem; color: var(--text-muted); font-weight: 500; min-width: 3.5rem; }
+	.paths {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		margin-bottom: 1rem;
+	}
+	.path {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		font-size: 0.8667rem;
+	}
+	.path-k {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		font-weight: 500;
+		min-width: 3.5rem;
+	}
 
 	/* Settings grid */
-	.settings-grid { display: flex; flex-direction: column; }
-	.sg-row { display: flex; justify-content: space-between; padding: 0.45rem 0; border-bottom: 1px solid var(--border-subtle); font-size: 0.8667rem; }
-	.sg-row:last-child { border-bottom: none; }
-	.sg-row span:first-child { color: var(--text-muted); }
-	.sg-val { font-weight: 500; }
+	.settings-grid {
+		display: flex;
+		flex-direction: column;
+	}
+	.sg-row {
+		display: flex;
+		justify-content: space-between;
+		padding: 0.45rem 0;
+		border-bottom: 1px solid var(--border-subtle);
+		font-size: 0.8667rem;
+	}
+	.sg-row:last-child {
+		border-bottom: none;
+	}
+	.sg-row span:first-child {
+		color: var(--text-muted);
+	}
+	.sg-val {
+		font-weight: 500;
+	}
 
 	/* Cleanup */
-	.cleanup-compare { display: flex; align-items: center; gap: 0.75rem; font-size: 0.9rem; margin-bottom: 0.75rem; }
-	.arrow { color: var(--text-muted); opacity: 0.5; }
-	.match-ok { color: var(--green); font-weight: 700; font-size: 1.1rem; }
-	.match-warn { font-size: 0.75rem; color: var(--orange); font-weight: 500; background: var(--orange-bg); padding: 0.1rem 0.4rem; border-radius: var(--radius-full); }
+	.cleanup-compare {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		font-size: 0.9rem;
+		margin-bottom: 0.75rem;
+	}
+	.arrow {
+		color: var(--text-muted);
+		opacity: 0.5;
+	}
+	.match-ok {
+		color: var(--green);
+		font-weight: 700;
+		font-size: 1.1rem;
+	}
+	.match-warn {
+		font-size: 0.75rem;
+		color: var(--orange);
+		font-weight: 500;
+		background: var(--orange-bg);
+		padding: 0.1rem 0.4rem;
+		border-radius: var(--radius-full);
+	}
 
 	/* Gallery */
 	.gallery {
@@ -1046,25 +1494,109 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius-sm);
 		overflow: hidden;
-		transition: border-color 0.15s, transform 0.15s;
+		transition:
+			border-color 0.15s,
+			transform 0.15s;
 	}
-	.thumb:hover { border-color: var(--border-strong); transform: translateY(-2px); }
-	.thumb img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; background: var(--bg-elevated); }
-	.thumb-name { font-size: 0.7rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-	.thumb-footer { display: flex; align-items: center; justify-content: space-between; padding: 0.3rem 0.5rem; gap: 0.25rem; }
-	.thumb-delete { background: none; color: var(--text-muted); font-size: 1rem; line-height: 1; padding: 0 0.2rem; flex-shrink: 0; opacity: 0; transition: opacity 0.15s, color 0.15s; border-radius: 0; }
-	.thumb:hover .thumb-delete { opacity: 1; }
-	.thumb-delete:hover { color: var(--red); }
+	.thumb:hover {
+		border-color: var(--border-strong);
+		transform: translateY(-2px);
+	}
+	.thumb img {
+		width: 100%;
+		aspect-ratio: 1;
+		object-fit: cover;
+		display: block;
+		background: var(--bg-elevated);
+	}
+	.thumb-name {
+		font-size: 0.7rem;
+		color: var(--text-muted);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		min-width: 0;
+	}
+	.thumb-footer {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0.3rem 0.5rem;
+		gap: 0.25rem;
+	}
+	.thumb-delete {
+		background: none;
+		color: var(--text-muted);
+		font-size: 1rem;
+		line-height: 1;
+		padding: 0 0.2rem;
+		flex-shrink: 0;
+		opacity: 0;
+		transition:
+			opacity 0.15s,
+			color 0.15s;
+		border-radius: 0;
+	}
+	.thumb:hover .thumb-delete {
+		opacity: 1;
+	}
+	.thumb-delete:hover {
+		color: var(--red);
+	}
 
 	/* File list */
-	.flist { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius-sm); max-height: 350px; overflow-y: auto; }
-	.frow { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.85rem; font-size: 0.8rem; border-bottom: 1px solid var(--border-subtle); }
-	.frow:last-child { border-bottom: none; }
-	.fn { flex: 1; font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-secondary); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-	.fs { color: var(--text-muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
-	.frow-delete { background: none; color: var(--text-muted); font-size: 1rem; line-height: 1; padding: 0 0.2rem; flex-shrink: 0; opacity: 0; transition: opacity 0.15s, color 0.15s; border-radius: 0; }
-	.frow:hover .frow-delete { opacity: 1; }
-	.frow-delete:hover { color: var(--red); }
+	.flist {
+		background: var(--bg-surface);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		max-height: 350px;
+		overflow-y: auto;
+	}
+	.frow {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.4rem 0.85rem;
+		font-size: 0.8rem;
+		border-bottom: 1px solid var(--border-subtle);
+	}
+	.frow:last-child {
+		border-bottom: none;
+	}
+	.fn {
+		flex: 1;
+		font-family: var(--font-mono);
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.fs {
+		color: var(--text-muted);
+		font-variant-numeric: tabular-nums;
+		flex-shrink: 0;
+	}
+	.frow-delete {
+		background: none;
+		color: var(--text-muted);
+		font-size: 1rem;
+		line-height: 1;
+		padding: 0 0.2rem;
+		flex-shrink: 0;
+		opacity: 0;
+		transition:
+			opacity 0.15s,
+			color 0.15s;
+		border-radius: 0;
+	}
+	.frow:hover .frow-delete {
+		opacity: 1;
+	}
+	.frow-delete:hover {
+		color: var(--red);
+	}
 
 	/* Filter bar */
 	.filter-bar {
@@ -1083,8 +1615,14 @@
 		border-radius: 4px;
 		transition: all 0.15s;
 	}
-	.filter-btn:hover { color: var(--text-secondary); }
-	.filter-btn.active { background: var(--bg-surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+	.filter-btn:hover {
+		color: var(--text-secondary);
+	}
+	.filter-btn.active {
+		background: var(--bg-surface);
+		color: var(--text);
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+	}
 
 	.filter-op {
 		font-size: 0.75rem;
@@ -1109,43 +1647,150 @@
 		padding-top: 1rem;
 		border-top: 1px solid var(--border);
 	}
-	.batch-label { font-size: 0.8rem; color: var(--text-secondary); white-space: nowrap; }
-	.batch-select { font-size: 0.8rem; padding: 0.3rem 1.5rem 0.3rem 0.5rem; }
+	.batch-label {
+		font-size: 0.8rem;
+		color: var(--text-secondary);
+		white-space: nowrap;
+	}
+	.batch-select {
+		font-size: 0.8rem;
+		padding: 0.3rem 1.5rem 0.3rem 0.5rem;
+	}
 
 	/* Empty view */
 	.empty-view {
 		text-align: center;
 		padding: 3rem 2rem;
 	}
-	.empty-icon { color: var(--text-muted); opacity: 0.4; margin-bottom: 0.75rem; }
-	.empty-title { font-size: 1rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.25rem; }
-	.empty-sub { font-size: 0.8667rem; color: var(--text-muted); margin-bottom: 1rem; }
+	.empty-icon {
+		color: var(--text-muted);
+		opacity: 0.4;
+		margin-bottom: 0.75rem;
+	}
+	.empty-title {
+		font-size: 1rem;
+		font-weight: 600;
+		color: var(--text-secondary);
+		margin-bottom: 0.25rem;
+	}
+	.empty-sub {
+		font-size: 0.8667rem;
+		color: var(--text-muted);
+		margin-bottom: 1rem;
+	}
 
 	/* Upload section */
-	.upload-controls { margin-bottom: 1rem; }
-	.field { display: flex; flex-direction: column; gap: 0.35rem; max-width: 380px; }
-	select { width: 100%; }
+	.upload-controls {
+		margin-bottom: 1rem;
+	}
+	.field {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		max-width: 380px;
+	}
+	select {
+		width: 100%;
+	}
 
 	.upload-drop {
-		display: flex; align-items: center; justify-content: center; gap: 0.5rem;
-		padding: 1.25rem; border: 2px dashed var(--border-strong); border-radius: var(--radius-sm); margin-bottom: 1rem; transition: all 0.15s;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+		padding: 1.25rem;
+		border: 2px dashed var(--border-strong);
+		border-radius: var(--radius-sm);
+		margin-bottom: 1rem;
+		transition: all 0.15s;
 	}
-	.upload-drop:hover { border-color: var(--accent); background: var(--accent-glow); }
-	.upload-drop-icon { color: var(--text-muted); flex-shrink: 0; }
-	.upload-drop:hover .upload-drop-icon { color: var(--accent-light); }
-	.upload-drop-text { font-size: 0.8667rem; color: var(--text-muted); }
-	.upload-browse { cursor: pointer; }
+	.upload-drop:hover {
+		border-color: var(--accent);
+		background: var(--accent-glow);
+	}
+	.upload-drop-icon {
+		color: var(--text-muted);
+		flex-shrink: 0;
+	}
+	.upload-drop:hover .upload-drop-icon {
+		color: var(--accent-light);
+	}
+	.upload-drop-text {
+		font-size: 0.8667rem;
+		color: var(--text-muted);
+	}
+	.upload-browse {
+		cursor: pointer;
+	}
 
-	.upload-file-list { background: var(--bg-root); border: 1px solid var(--border); border-radius: var(--radius-sm); max-height: 180px; overflow-y: auto; margin-bottom: 0.75rem; }
-	.upload-file-row { display: flex; align-items: center; padding: 0.35rem 0.75rem; font-size: 0.8rem; border-bottom: 1px solid var(--border-subtle); }
-	.upload-file-row:last-child { border-bottom: none; }
-	.upload-fname { flex: 1; font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-	.upload-fsize { font-size: 0.75rem; color: var(--text-muted); margin: 0 0.5rem; font-variant-numeric: tabular-nums; }
-	.upload-fremove { background: none; color: var(--text-muted); padding: 0 0.2rem; font-size: 1rem; line-height: 1; border-radius: 0; }
-	.upload-fremove:hover { color: var(--red); }
+	.upload-file-list {
+		background: var(--bg-root);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-sm);
+		max-height: 180px;
+		overflow-y: auto;
+		margin-bottom: 0.75rem;
+	}
+	.upload-file-row {
+		display: flex;
+		align-items: center;
+		padding: 0.35rem 0.75rem;
+		font-size: 0.8rem;
+		border-bottom: 1px solid var(--border-subtle);
+	}
+	.upload-file-row:last-child {
+		border-bottom: none;
+	}
+	.upload-fname {
+		flex: 1;
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		color: var(--text-secondary);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.upload-fsize {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		margin: 0 0.5rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.upload-fremove {
+		background: none;
+		color: var(--text-muted);
+		padding: 0 0.2rem;
+		font-size: 1rem;
+		line-height: 1;
+		border-radius: 0;
+	}
+	.upload-fremove:hover {
+		color: var(--red);
+	}
 
-	.upload-progress { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }
-	.upload-pbar-track { flex: 1; height: 5px; background: var(--bg-active); border-radius: 3px; overflow: hidden; }
-	.upload-pbar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--pink)); border-radius: 3px; transition: width 0.3s ease; }
-	.upload-pbar-text { font-size: 0.8rem; color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+	.upload-progress {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+		margin-bottom: 0.75rem;
+	}
+	.upload-pbar-track {
+		flex: 1;
+		height: 5px;
+		background: var(--bg-active);
+		border-radius: 3px;
+		overflow: hidden;
+	}
+	.upload-pbar-fill {
+		height: 100%;
+		background: linear-gradient(90deg, var(--accent), var(--pink));
+		border-radius: 3px;
+		transition: width 0.3s ease;
+	}
+	.upload-pbar-text {
+		font-size: 0.8rem;
+		color: var(--text-muted);
+		font-variant-numeric: tabular-nums;
+		white-space: nowrap;
+	}
 </style>

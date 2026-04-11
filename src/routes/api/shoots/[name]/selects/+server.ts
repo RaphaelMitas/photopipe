@@ -40,12 +40,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	}
 
 	try {
-		const result = await moveFiles(
-			shootName,
-			'rated',
-			'selects',
-			files as string[]
-		);
+		const result = await moveFiles(shootName, 'rated', 'selects', files as string[]);
 		return json(result);
 	} catch (err) {
 		if (err instanceof PhotopipeError) {

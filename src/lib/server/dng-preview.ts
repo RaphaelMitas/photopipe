@@ -129,9 +129,7 @@ export async function getDngImage(
 	const sourcePath = join(CAMERA_BASE, shootName, folder, fileName);
 	const thumbDir = join(CAMERA_BASE, shootName, THUMBS_DIR);
 	const cacheName =
-		size === 'preview'
-			? previewCacheName(folder, fileName)
-			: thumbCacheName(folder, fileName);
+		size === 'preview' ? previewCacheName(folder, fileName) : thumbCacheName(folder, fileName);
 	const cachePath = join(thumbDir, cacheName);
 
 	let sourceInfo;

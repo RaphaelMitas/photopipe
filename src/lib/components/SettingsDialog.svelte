@@ -44,13 +44,19 @@
 					<label for="s-algorithm">Algorithm</label>
 					<select id="s-algorithm" name="algorithm">
 						<option value="">Not set</option>
-						<option value="DeepPRIME 3" selected={shoot.metadata.algorithm === 'DeepPRIME 3'}>DeepPRIME 3</option>
-						<option value="DeepPRIME XD3" selected={shoot.metadata.algorithm === 'DeepPRIME XD3'}>DeepPRIME XD3</option>
+						<option value="DeepPRIME 3" selected={shoot.metadata.algorithm === 'DeepPRIME 3'}
+							>DeepPRIME 3</option
+						>
+						<option value="DeepPRIME XD3" selected={shoot.metadata.algorithm === 'DeepPRIME XD3'}
+							>DeepPRIME XD3</option
+						>
 					</select>
 				</div>
 				<div class="field">
 					<label for="s-notes">Notes</label>
-					<textarea id="s-notes" name="notes" rows="3" placeholder="Low light venue, ISO 6400...">{shoot.metadata.notes}</textarea>
+					<textarea id="s-notes" name="notes" rows="3" placeholder="Low light venue, ISO 6400..."
+						>{shoot.metadata.notes}</textarea
+					>
 				</div>
 			</div>
 			<button type="submit" class="btn-primary btn-sm">Save</button>
@@ -64,10 +70,13 @@
 				</button>
 			{:else}
 				<p class="danger-msg">
-					Delete <strong>{shoot.name}</strong> and all files ({formatBytes(shoot.totalSizeBytes)})? This cannot be undone.
+					Delete <strong>{shoot.name}</strong> and all files ({formatBytes(shoot.totalSizeBytes)})?
+					This cannot be undone.
 				</p>
 				<div class="danger-actions">
-					<button class="btn-ghost btn-sm" onclick={() => (showDeleteConfirm = false)}>Cancel</button>
+					<button class="btn-ghost btn-sm" onclick={() => (showDeleteConfirm = false)}
+						>Cancel</button
+					>
 					<button class="btn-danger btn-sm" onclick={ondeleteproject}>Delete Everything</button>
 				</div>
 			{/if}
@@ -122,7 +131,8 @@
 		gap: 0.35rem;
 	}
 
-	select, textarea {
+	select,
+	textarea {
 		width: 100%;
 	}
 

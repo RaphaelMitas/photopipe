@@ -51,26 +51,18 @@
 		return r <= viewFilterValue;
 	}
 
-	let filteredIndices = $derived(
-		files.map((_, i) => i).filter((i) => matchesFilter(i))
-	);
+	let filteredIndices = $derived(files.map((_, i) => i).filter((i) => matchesFilter(i)));
 
 	let currentFile = $derived(files[currentIndex]);
-	let currentRating = $derived<StarRating | null>(
-		fileRating(currentFile?.name ?? '')
-	);
+	let currentRating = $derived<StarRating | null>(fileRating(currentFile?.name ?? ''));
 	let ratedCount = $derived(
-		files.filter(
-			(f) => pendingRatings.has(f.name) || existingRatings[f.name] !== undefined
-		).length
+		files.filter((f) => pendingRatings.has(f.name) || existingRatings[f.name] !== undefined).length
 	);
 	let hasPending = $derived(pendingRatings.size > 0);
 
 	let currentFilteredPos = $derived(filteredIndices.indexOf(currentIndex));
 	let hasPrevFiltered = $derived(
-		viewFilterMode === 'all'
-			? currentIndex > 0
-			: filteredIndices.some((i) => i < currentIndex)
+		viewFilterMode === 'all' ? currentIndex > 0 : filteredIndices.some((i) => i < currentIndex)
 	);
 	let hasNextFiltered = $derived(
 		viewFilterMode === 'all'
@@ -135,10 +127,8 @@
 				const rect = previewAreaEl.getBoundingClientRect();
 				const clickX = (e.clientX - rect.left) / rect.width;
 				const clickY = (e.clientY - rect.top) / rect.height;
-				previewAreaEl.scrollLeft =
-					(previewAreaEl.scrollWidth - rect.width) * clickX;
-				previewAreaEl.scrollTop =
-					(previewAreaEl.scrollHeight - rect.height) * clickY;
+				previewAreaEl.scrollLeft = (previewAreaEl.scrollWidth - rect.width) * clickX;
+				previewAreaEl.scrollTop = (previewAreaEl.scrollHeight - rect.height) * clickY;
 			});
 		} else {
 			zoomed = false;
@@ -197,7 +187,15 @@
 	<header class="toolbar">
 		<div class="toolbar-left">
 			<button type="button" class="btn-ghost btn-sm" onclick={onclose}>
-				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+				<svg
+					width="14"
+					height="14"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+				>
 					<line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
 				</svg>
 				Close
@@ -205,22 +203,43 @@
 		</div>
 		<div class="toolbar-center">
 			<div class="toolbar-filter">
-				<button class="vf-btn" class:active={viewFilterMode === 'all'} onclick={() => (viewFilterMode = 'all')}>All</button>
-				<select class="vf-op" bind:value={viewFilterMode} onchange={() => { if (viewFilterMode === 'all' || viewFilterMode === 'unrated') viewFilterMode = 'gte'; }}>
+				<button
+					class="vf-btn"
+					class:active={viewFilterMode === 'all'}
+					onclick={() => (viewFilterMode = 'all')}>All</button
+				>
+				<select
+					class="vf-op"
+					bind:value={viewFilterMode}
+					onchange={() => {
+						if (viewFilterMode === 'all' || viewFilterMode === 'unrated') viewFilterMode = 'gte';
+					}}
+				>
 					<option value="gte">≥</option>
 					<option value="eq">=</option>
 					<option value="lte">≤</option>
 				</select>
 				{#each [1, 2, 3, 4, 5] as star}
-					<button class="vf-btn" class:active={viewFilterMode !== 'all' && viewFilterMode !== 'unrated' && viewFilterValue === star} onclick={() => setViewFilter(star)}>
+					<button
+						class="vf-btn"
+						class:active={viewFilterMode !== 'all' &&
+							viewFilterMode !== 'unrated' &&
+							viewFilterValue === star}
+						onclick={() => setViewFilter(star)}
+					>
 						{star}★
 					</button>
 				{/each}
-				<button class="vf-btn" class:active={viewFilterMode === 'unrated'} onclick={() => (viewFilterMode = 'unrated')}>Unrated</button>
+				<button
+					class="vf-btn"
+					class:active={viewFilterMode === 'unrated'}
+					onclick={() => (viewFilterMode = 'unrated')}>Unrated</button
+				>
 			</div>
 			<span class="counter">
 				{#if viewFilterMode !== 'all'}
-					{currentFilteredPos >= 0 ? currentFilteredPos + 1 : '–'} / {filteredIndices.length} filtered &middot;
+					{currentFilteredPos >= 0 ? currentFilteredPos + 1 : '–'} / {filteredIndices.length} filtered
+					&middot;
 				{/if}
 				{ratedCount} of {files.length} rated
 			</span>
@@ -232,14 +251,30 @@
 				disabled={saving || !hasPending}
 				onclick={handleSave}
 			>
-				{saving ? 'Saving...' : `Save ${pendingRatings.size} rating${pendingRatings.size !== 1 ? 's' : ''}`}
+				{saving
+					? 'Saving...'
+					: `Save ${pendingRatings.size} rating${pendingRatings.size !== 1 ? 's' : ''}`}
 			</button>
 		</div>
 	</header>
 
 	<div class="main-area">
-		<button type="button" class="nav-btn nav-prev" onclick={goPrev} disabled={!hasPrevFiltered} aria-label="Previous image">
-			<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+		<button
+			type="button"
+			class="nav-btn nav-prev"
+			onclick={goPrev}
+			disabled={!hasPrevFiltered}
+			aria-label="Previous image"
+		>
+			<svg
+				width="24"
+				height="24"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+			>
 				<polyline points="15 18 9 12 15 6" />
 			</svg>
 		</button>
@@ -266,8 +301,22 @@
 			{/if}
 		</div>
 
-		<button type="button" class="nav-btn nav-next" onclick={goNext} disabled={!hasNextFiltered} aria-label="Next image">
-			<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+		<button
+			type="button"
+			class="nav-btn nav-next"
+			onclick={goNext}
+			disabled={!hasNextFiltered}
+			aria-label="Next image"
+		>
+			<svg
+				width="24"
+				height="24"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2"
+				stroke-linecap="round"
+			>
 				<polyline points="9 18 15 12 9 6" />
 			</svg>
 		</button>
@@ -375,8 +424,14 @@
 		white-space: nowrap;
 	}
 
-	.vf-btn:hover { color: var(--text-secondary); }
-	.vf-btn.active { background: var(--bg-surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+	.vf-btn:hover {
+		color: var(--text-secondary);
+	}
+	.vf-btn.active {
+		background: var(--bg-surface);
+		color: var(--text);
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+	}
 
 	.vf-op {
 		font-size: 0.7rem;
@@ -432,8 +487,12 @@
 		cursor: default;
 	}
 
-	.nav-prev { left: 1rem; }
-	.nav-next { right: 1rem; }
+	.nav-prev {
+		left: 1rem;
+	}
+	.nav-next {
+		right: 1rem;
+	}
 
 	/* Preview area — fit mode */
 	.preview-area {
@@ -531,7 +590,9 @@
 		border: 2px solid transparent;
 		cursor: pointer;
 		position: relative;
-		transition: border-color 0.15s, opacity 0.15s;
+		transition:
+			border-color 0.15s,
+			opacity 0.15s;
 		padding: 0;
 		background: var(--bg-elevated);
 	}

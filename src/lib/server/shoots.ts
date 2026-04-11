@@ -1,13 +1,4 @@
-import {
-	readdir,
-	stat,
-	mkdir,
-	readFile,
-	writeFile,
-	unlink,
-	rm,
-	rename
-} from 'node:fs/promises';
+import { readdir, stat, mkdir, readFile, writeFile, unlink, rm, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
 	CAMERA_BASE,
@@ -259,7 +250,8 @@ export async function getShoot(folderName: string): Promise<ShootDetail> {
 		ratedCount: ratedFiles.length,
 		selectCount: selectFiles.length,
 		exportCount: exportFiles.length,
-		totalSizeBytes: rawSizeBytes + dngSizeBytes + ratedSizeBytes + selectSizeBytes + exportSizeBytes,
+		totalSizeBytes:
+			rawSizeBytes + dngSizeBytes + ratedSizeBytes + selectSizeBytes + exportSizeBytes,
 		status: deriveStatus(
 			rawFiles.length,
 			dngFiles.length,

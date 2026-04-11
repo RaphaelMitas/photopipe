@@ -109,20 +109,27 @@
 				<span class="select-count">{selectedCount} selected</span>
 				{#if onmove}
 					<div class="move-split">
-						<button
-							class="move-main"
-							disabled={moving}
-							onclick={() => handleMove(defaultMoveTo)}
-						>
+						<button class="move-main" disabled={moving} onclick={() => handleMove(defaultMoveTo)}>
 							{moving ? 'Moving...' : `Move to ${defaultMoveTo}/`}
 						</button>
 						<button
 							class="move-caret"
 							disabled={moving}
-							onclick={(e) => { e.stopPropagation(); dropdownOpen = !dropdownOpen; }}
+							onclick={(e) => {
+								e.stopPropagation();
+								dropdownOpen = !dropdownOpen;
+							}}
 							aria-label="More move options"
 						>
-							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+							<svg
+								width="12"
+								height="12"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2.5"
+								stroke-linecap="round"
+							>
 								<polyline points="6 9 12 15 18 9" />
 							</svg>
 						</button>
@@ -143,10 +150,7 @@
 
 	<div class="gallery">
 		{#each files as file (file.name)}
-			<div
-				class="thumb"
-				class:selected={selectable && selected.has(file.name)}
-			>
+			<div class="thumb" class:selected={selectable && selected.has(file.name)}>
 				{#if selectable}
 					<div class="select-hit">
 						<Checkbox
@@ -158,7 +162,9 @@
 				{/if}
 				<!-- svelte-ignore a11y_click_events_have_key_events -->
 				<img
-					src="/api/thumbs/{encodeURIComponent(shootName)}/{encodeURIComponent(file.name)}?folder={folder}"
+					src="/api/thumbs/{encodeURIComponent(shootName)}/{encodeURIComponent(
+						file.name
+					)}?folder={folder}"
 					alt={file.name}
 					loading="lazy"
 					class="thumb-img"
@@ -180,10 +186,8 @@
 					<span class="thumb-name" title={file.name}>{file.name}</span>
 					<span class="thumb-size">{formatBytes(file.sizeBytes)}</span>
 					{#if ondelete}
-						<button
-							class="thumb-delete"
-							onclick={() => ondelete?.(file.name)}
-							title="Delete">&times;</button
+						<button class="thumb-delete" onclick={() => ondelete?.(file.name)} title="Delete"
+							>&times;</button
 						>
 					{/if}
 				</div>
@@ -318,7 +322,10 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius-sm);
 		overflow: hidden;
-		transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+		transition:
+			border-color 0.15s,
+			transform 0.15s,
+			box-shadow 0.15s;
 		position: relative;
 	}
 
@@ -329,7 +336,9 @@
 
 	.thumb.selected {
 		border-color: var(--accent);
-		box-shadow: 0 0 0 1px var(--accent), 0 2px 8px var(--accent-glow);
+		box-shadow:
+			0 0 0 1px var(--accent),
+			0 2px 8px var(--accent-glow);
 	}
 
 	.thumb-img {
@@ -393,7 +402,9 @@
 		padding: 0 0.2rem;
 		flex-shrink: 0;
 		opacity: 0;
-		transition: opacity 0.15s, color 0.15s;
+		transition:
+			opacity 0.15s,
+			color 0.15s;
 		border-radius: 0;
 	}
 

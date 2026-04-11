@@ -1,11 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import {
-	rateFiles,
-	updateRating,
-	validateShootName,
-	PhotopipeError
-} from '$lib/server/shoots.js';
+import { rateFiles, updateRating, validateShootName, PhotopipeError } from '$lib/server/shoots.js';
 import type { StarRating } from '$lib/types.js';
 
 function isValidRating(v: unknown): v is StarRating {
