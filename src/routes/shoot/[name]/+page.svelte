@@ -7,7 +7,6 @@
 	import WorkflowTabs from '$lib/components/WorkflowTabs.svelte';
 	import RatedGallery from '$lib/components/RatedGallery.svelte';
 	import RatingView from '$lib/components/RatingView.svelte';
-	import StarRating from '$lib/components/StarRating.svelte';
 	import { formatBytes, formatDate } from '$lib/utils.js';
 	import { PURERAW_SETTINGS } from '$lib/types.js';
 	import type { StarRating as StarRatingType } from '$lib/types.js';
@@ -76,15 +75,71 @@
 	};
 
 	// Rating state
-	let ratingFilterStar = $state<number>(0);
-	let selectMinRating = $state<StarRatingType>(4);
-	let movingToSelects = $state(false);
+	let filterMode = $state<'all' | 'eq' | 'gte' | 'lte'>('all');
+	let filterValue = $state<number>(4);
+	let selectsFilterMode = $state<'all' | 'eq' | 'gte' | 'lte'>('all');
+	let selectsFilterValue = $state<number>(4);
+	let ratingViewFolder = $state('denoised');
+	let ratingViewFiles = $state<typeof data.shoot.dngFiles>([]);
+	let ratingViewStartIndex = $state(0);
+
+	let enrichedSelectFiles = $derived(
+		data.shoot.selectFiles.map((f) => ({
+			...f,
+			rating: (data.shoot.metadata.ratings[f.name] ?? 3) as StarRatingType
+		}))
+	);
 
 	let filteredRatedFiles = $derived(
-		ratingFilterStar === 0
+		filterMode === 'all'
 			? data.shoot.ratedFiles
-			: data.shoot.ratedFiles.filter((f) => f.rating === ratingFilterStar)
+			: filterMode === 'eq'
+				? data.shoot.ratedFiles.filter((f) => f.rating === filterValue)
+				: filterMode === 'gte'
+					? data.shoot.ratedFiles.filter((f) => f.rating >= filterValue)
+					: data.shoot.ratedFiles.filter((f) => f.rating <= filterValue)
 	);
+
+	function setFilter(star: number) {
+		if (filterMode === 'all') filterMode = 'gte';
+		filterValue = star;
+	}
+
+	function setSelectsFilter(star: number) {
+		if (selectsFilterMode === 'all') selectsFilterMode = 'gte';
+		selectsFilterValue = star;
+	}
+
+	let filteredSelectFiles = $derived(
+		selectsFilterMode === 'all'
+			? enrichedSelectFiles
+			: selectsFilterMode === 'eq'
+				? enrichedSelectFiles.filter((f) => f.rating === selectsFilterValue)
+				: selectsFilterMode === 'gte'
+					? enrichedSelectFiles.filter((f) => f.rating >= selectsFilterValue)
+					: enrichedSelectFiles.filter((f) => f.rating <= selectsFilterValue)
+	);
+
+	function openRatingViewForDenoised() {
+		ratingViewFiles = data.shoot.dngFiles;
+		ratingViewFolder = 'denoised';
+		ratingViewStartIndex = 0;
+		showRatingView = true;
+	}
+
+	function openRatingViewForRated(fileName: string) {
+		ratingViewFiles = data.shoot.ratedFiles;
+		ratingViewFolder = 'rated';
+		ratingViewStartIndex = Math.max(0, data.shoot.ratedFiles.findIndex((f) => f.name === fileName));
+		showRatingView = true;
+	}
+
+	function openRatingViewForSelects(fileName: string) {
+		ratingViewFiles = data.shoot.selectFiles;
+		ratingViewFolder = 'selects';
+		ratingViewStartIndex = Math.max(0, data.shoot.selectFiles.findIndex((f) => f.name === fileName));
+		showRatingView = true;
+	}
 
 	async function handleDeleteFiles(folder: 'exports' | 'denoised' | 'raw' | 'rated' | 'selects', files?: string[]) {
 		deleting = true;
@@ -174,12 +229,29 @@
 	}
 
 	async function handleRatingSave(ratings: Array<{ file: string; rating: StarRatingType }>) {
-		const res = await fetch(`/api/shoots/${encodeURIComponent(data.shoot.folderName)}/rate`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ ratings })
-		});
-		if (res.ok) {
+		const shootUrl = `/api/shoots/${encodeURIComponent(data.shoot.folderName)}/rate`;
+
+		if (ratingViewFolder === 'denoised') {
+			const res = await fetch(shootUrl, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ ratings })
+			});
+			if (res.ok) {
+				showRatingView = false;
+				await invalidateAll();
+			}
+		} else {
+			// Re-rating files in rated/ or selects/ — update metadata only
+			await Promise.all(
+				ratings.map((r) =>
+					fetch(shootUrl, {
+						method: 'PATCH',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({ file: r.file, rating: r.rating })
+					})
+				)
+			);
 			showRatingView = false;
 			await invalidateAll();
 		}
@@ -194,19 +266,25 @@
 		await invalidateAll();
 	}
 
-	async function handleMoveToSelects() {
-		movingToSelects = true;
+	async function handleMoveFiles(from: string, to: string, files: string[]) {
+		const res = await fetch(`/api/shoots/${encodeURIComponent(data.shoot.folderName)}/move`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ from, to, files })
+		});
+		if (res.ok) {
+			await invalidateAll();
+		}
+	}
+
+	let movingFrom = $state('');
+
+	async function handleMoveFrom(from: string, files: string[], to: string) {
+		movingFrom = from;
 		try {
-			const res = await fetch(`/api/shoots/${encodeURIComponent(data.shoot.folderName)}/selects`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ minRating: selectMinRating })
-			});
-			if (res.ok) {
-				await invalidateAll();
-			}
+			await handleMoveFiles(from, to, files);
 		} finally {
-			movingToSelects = false;
+			movingFrom = '';
 		}
 	}
 </script>
@@ -432,7 +510,7 @@
 	{:else if currentView === 'rate'}
 		<div class="view">
 			{#if data.shoot.dngFiles.length > 0}
-				<button class="next-action next-action-gold" onclick={() => (showRatingView = true)}>
+				<button class="next-action next-action-gold" onclick={openRatingViewForDenoised}>
 					<span class="next-action-content">
 						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
@@ -447,38 +525,23 @@
 			{/if}
 
 			{#if data.shoot.ratedFiles.length > 0}
-				<button class="next-action next-action-pink" onclick={handleMoveToSelects} disabled={movingToSelects}>
-					<span class="next-action-content">
-						<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-							<polyline points="22 4 12 14.01 9 11.01" />
-						</svg>
-						<span class="next-action-text">
-							<strong>{movingToSelects ? 'Moving...' : 'Move to Selects'}</strong>
-							<span>
-								Send
-								<select class="inline-select" bind:value={selectMinRating} onclick={(e) => e.stopPropagation()}>
-									<option value={5}>5★ only</option>
-									<option value={4}>≥ 4★</option>
-									<option value={3}>≥ 3★</option>
-									<option value={2}>≥ 2★</option>
-									<option value={1}>all rated</option>
-								</select>
-								images to the selects folder
-							</span>
-						</span>
-					</span>
-					<svg class="next-action-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6" /></svg>
-				</button>
-
 				<section class="section">
 					<div class="section-header">
 						<h2>Rated Files <span class="h2-count">{data.shoot.ratedCount} &middot; {formatBytes(data.shoot.ratedSizeBytes)}</span></h2>
 						<div class="section-actions">
 							<div class="filter-bar">
-								<button class="filter-btn" class:active={ratingFilterStar === 0} onclick={() => (ratingFilterStar = 0)}>All</button>
-								{#each [5, 4, 3, 2, 1] as star}
-									<button class="filter-btn" class:active={ratingFilterStar === star} onclick={() => (ratingFilterStar = star)}>
+								<button class="filter-btn" class:active={filterMode === 'all'} onclick={() => (filterMode = 'all')}>All</button>
+								<select class="filter-op" bind:value={filterMode} onchange={() => { if (filterMode === 'all') filterMode = 'gte'; }}>
+									<option value="gte">≥</option>
+									<option value="eq">=</option>
+									<option value="lte">≤</option>
+								</select>
+								{#each [1, 2, 3, 4, 5] as star}
+									<button
+										class="filter-btn"
+										class:active={filterMode !== 'all' && filterValue === star}
+										onclick={() => setFilter(star)}
+									>
 										{star}★
 									</button>
 								{/each}
@@ -493,8 +556,13 @@
 						shootName={data.shoot.folderName}
 						files={filteredRatedFiles}
 						folder="rated"
+						selectable
+						defaultMoveTo="selects"
 						ondelete={(f) => requestDeleteSingle('rated', f)}
 						onratingchange={handleInlineRatingChange}
+						onmove={(files, to) => handleMoveFrom('rated', files, to)}
+						moving={movingFrom === 'rated'}
+						onopen={openRatingViewForRated}
 					/>
 				</section>
 			{:else if data.shoot.dngFiles.length === 0}
@@ -517,15 +585,39 @@
 				<section class="section">
 					<div class="section-header">
 						<h2>Selects <span class="h2-count">{data.shoot.selectCount} &middot; {formatBytes(data.shoot.selectSizeBytes)}</span></h2>
-						<button class="btn-danger btn-sm" onclick={() => { deleteTargetFolder = 'selects'; showDeleteAllDialog = true; }}>
-							Delete All
-						</button>
+						<div class="section-actions">
+							<div class="filter-bar">
+								<button class="filter-btn" class:active={selectsFilterMode === 'all'} onclick={() => (selectsFilterMode = 'all')}>All</button>
+								<select class="filter-op" bind:value={selectsFilterMode} onchange={() => { if (selectsFilterMode === 'all') selectsFilterMode = 'gte'; }}>
+									<option value="gte">≥</option>
+									<option value="eq">=</option>
+									<option value="lte">≤</option>
+								</select>
+								{#each [1, 2, 3, 4, 5] as star}
+									<button
+										class="filter-btn"
+										class:active={selectsFilterMode !== 'all' && selectsFilterValue === star}
+										onclick={() => setSelectsFilter(star)}
+									>
+										{star}★
+									</button>
+								{/each}
+							</div>
+							<button class="btn-danger btn-sm" onclick={() => { deleteTargetFolder = 'selects'; showDeleteAllDialog = true; }}>
+								Delete All
+							</button>
+						</div>
 					</div>
 					<RatedGallery
 						shootName={data.shoot.folderName}
-						files={data.shoot.selectFiles}
+						files={filteredSelectFiles}
 						folder="selects"
+						selectable
+						defaultMoveTo="rated"
 						ondelete={(f) => requestDeleteSingle('selects', f)}
+						onmove={(files, to) => handleMoveFrom('selects', files, to)}
+						moving={movingFrom === 'selects'}
+						onopen={openRatingViewForSelects}
 					/>
 				</section>
 			{:else}
@@ -660,7 +752,9 @@
 	{#if showRatingView}
 		<RatingView
 			shootName={data.shoot.folderName}
-			files={data.shoot.dngFiles}
+			files={ratingViewFiles}
+			folder={ratingViewFolder}
+			startIndex={ratingViewStartIndex}
 			existingRatings={data.shoot.metadata.ratings}
 			onclose={() => (showRatingView = false)}
 			onsave={handleRatingSave}
@@ -843,17 +937,6 @@
 		color: var(--text-secondary);
 	}
 
-	.inline-select {
-		font-size: 0.8rem;
-		padding: 0.1rem 1.2rem 0.1rem 0.35rem;
-		background: var(--bg-active);
-		border: 1px solid var(--border-strong);
-		border-radius: 4px;
-		color: var(--text);
-		cursor: pointer;
-		display: inline;
-		width: auto;
-	}
 
 	/* Sections */
 	.section { margin-bottom: 2.5rem; }
@@ -971,6 +1054,20 @@
 	}
 	.filter-btn:hover { color: var(--text-secondary); }
 	.filter-btn.active { background: var(--bg-surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+
+	.filter-op {
+		font-size: 0.75rem;
+		padding: 0.15rem 0.3rem;
+		background: var(--bg-surface);
+		border: none;
+		border-radius: 4px;
+		color: var(--accent-light);
+		font-weight: 600;
+		cursor: pointer;
+		appearance: none;
+		text-align: center;
+		min-width: 28px;
+	}
 
 	/* Batch action */
 	.batch-action {

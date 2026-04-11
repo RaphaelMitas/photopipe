@@ -505,12 +505,19 @@ export async function updateRating(
 	validateShootName(folderName);
 	validateFileName(file);
 	const shootPath = join(CAMERA_BASE, folderName);
-	const filePath = join(shootPath, RATED_DIR, file);
 
-	try {
-		await stat(filePath);
-	} catch {
-		throw new PhotopipeError(`File "${file}" not found in rated/`, 'NOT_FOUND', 404);
+	let found = false;
+	for (const dir of [RATED_DIR, SELECTS_DIR]) {
+		try {
+			await stat(join(shootPath, dir, file));
+			found = true;
+			break;
+		} catch {
+			// Try next
+		}
+	}
+	if (!found) {
+		throw new PhotopipeError(`File "${file}" not found in rated/ or selects/`, 'NOT_FOUND', 404);
 	}
 
 	const metadata = await readMetadata(shootPath);
@@ -522,39 +529,31 @@ export async function updateRating(
 	await writeMetadata(shootPath, metadata);
 }
 
-export async function moveToSelects(
+type MoveableFolder = 'raw' | 'denoised' | 'rated' | 'selects' | 'exports';
+
+export async function moveFiles(
 	folderName: string,
-	files?: string[],
-	minRating?: StarRating
+	from: MoveableFolder,
+	to: MoveableFolder,
+	files: string[]
 ): Promise<{ movedCount: number }> {
 	validateShootName(folderName);
 	const shootPath = join(CAMERA_BASE, folderName);
 
-	await mkdir(join(shootPath, SELECTS_DIR), { recursive: true });
-
-	const metadata = await readMetadata(shootPath);
-	if (!metadata) {
-		throw new PhotopipeError('Shoot metadata not found', 'NOT_FOUND', 404);
+	const fromDir = FOLDER_DIR[from];
+	const toDir = FOLDER_DIR[to];
+	if (!fromDir || !toDir) {
+		throw new PhotopipeError('Invalid folder type', 'INVALID_INPUT', 400);
 	}
 
-	let targets: string[];
-	if (files && files.length > 0) {
-		for (const f of files) validateFileName(f);
-		targets = files;
-	} else {
-		const entries = await listFilesWithExt(join(shootPath, RATED_DIR), ['.dng']);
-		targets = entries
-			.filter((f) => {
-				const r = metadata.ratings[f.name];
-				return r !== undefined && (!minRating || r >= minRating);
-			})
-			.map((f) => f.name);
-	}
+	await mkdir(join(shootPath, toDir), { recursive: true });
+
+	for (const f of files) validateFileName(f);
 
 	let movedCount = 0;
-	for (const file of targets) {
-		const src = join(shootPath, RATED_DIR, file);
-		const dest = join(shootPath, SELECTS_DIR, file);
+	for (const file of files) {
+		const src = join(shootPath, fromDir, file);
+		const dest = join(shootPath, toDir, file);
 		try {
 			await rename(src, dest);
 			movedCount++;

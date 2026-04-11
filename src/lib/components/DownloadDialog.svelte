@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { ShootDetail } from '$lib/types.js';
 	import { formatBytes } from '$lib/utils.js';
+	import Checkbox from './Checkbox.svelte';
 
 	let {
 		open,
@@ -63,51 +64,51 @@
 		<p class="hint">Select which files to include in the zip.</p>
 
 		<div class="options">
-			<label class="option">
-				<input type="checkbox" bind:checked={includeRaw} />
+			<div class="option" onclick={() => (includeRaw = !includeRaw)} role="button" tabindex="0" onkeydown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); includeRaw = !includeRaw; } }}>
+				<Checkbox checked={includeRaw} onchange={(v) => (includeRaw = v)} />
 				<div class="option-info">
 					<span class="option-name">Raw ARWs</span>
 					<span class="option-meta">{shoot.rawCount} file{shoot.rawCount !== 1 ? 's' : ''} &middot; {formatBytes(shoot.rawSizeBytes)}</span>
 				</div>
-			</label>
+			</div>
 
-			<label class="option">
-				<input type="checkbox" bind:checked={includeDenoised} />
+			<div class="option" onclick={() => (includeDenoised = !includeDenoised)} role="button" tabindex="0" onkeydown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); includeDenoised = !includeDenoised; } }}>
+				<Checkbox checked={includeDenoised} onchange={(v) => (includeDenoised = v)} />
 				<div class="option-info">
 					<span class="option-name">Denoised DNGs</span>
 					<span class="option-meta">{shoot.dngCount} file{shoot.dngCount !== 1 ? 's' : ''} &middot; {formatBytes(shoot.dngSizeBytes)}</span>
 				</div>
-			</label>
+			</div>
 
-			<label class="option">
-				<input type="checkbox" bind:checked={includeRated} />
+			<div class="option" onclick={() => (includeRated = !includeRated)} role="button" tabindex="0" onkeydown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); includeRated = !includeRated; } }}>
+				<Checkbox checked={includeRated} onchange={(v) => (includeRated = v)} />
 				<div class="option-info">
 					<span class="option-name">Rated DNGs</span>
 					<span class="option-meta">{shoot.ratedCount} file{shoot.ratedCount !== 1 ? 's' : ''} &middot; {formatBytes(shoot.ratedSizeBytes)}</span>
 				</div>
-			</label>
+			</div>
 
-			<label class="option">
-				<input type="checkbox" bind:checked={includeSelects} />
+			<div class="option" onclick={() => (includeSelects = !includeSelects)} role="button" tabindex="0" onkeydown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); includeSelects = !includeSelects; } }}>
+				<Checkbox checked={includeSelects} onchange={(v) => (includeSelects = v)} />
 				<div class="option-info">
 					<span class="option-name">Selects</span>
 					<span class="option-meta">{shoot.selectCount} file{shoot.selectCount !== 1 ? 's' : ''} &middot; {formatBytes(shoot.selectSizeBytes)}</span>
 				</div>
-			</label>
+			</div>
 
-			<label class="option">
-				<input type="checkbox" bind:checked={includeExports} />
+			<div class="option" onclick={() => (includeExports = !includeExports)} role="button" tabindex="0" onkeydown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); includeExports = !includeExports; } }}>
+				<Checkbox checked={includeExports} onchange={(v) => (includeExports = v)} />
 				<div class="option-info">
 					<span class="option-name">Exports</span>
 					<span class="option-meta">{shoot.exportCount} file{shoot.exportCount !== 1 ? 's' : ''} &middot; {formatBytes(shoot.exportSizeBytes)}</span>
 				</div>
-			</label>
+			</div>
 		</div>
 
-		<label class="toggle">
-			<input type="checkbox" bind:checked={keepStructure} />
+		<div class="toggle" onclick={() => (keepStructure = !keepStructure)} role="button" tabindex="0" onkeydown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); keepStructure = !keepStructure; } }}>
+			<Checkbox checked={keepStructure} onchange={(v) => (keepStructure = v)} />
 			<span>Keep folder structure</span>
-		</label>
+		</div>
 
 		{#if anySelected}
 			<div class="total">
@@ -160,13 +161,9 @@
 		border: 1px solid var(--border); border-radius: var(--radius-sm);
 		cursor: pointer; transition: border-color 0.15s;
 		font-size: inherit; font-weight: inherit; color: inherit;
+		outline: none;
 	}
-	.option:hover { border-color: var(--border-strong); }
-
-	.option input[type='checkbox'] {
-		width: 16px; height: 16px; accent-color: var(--accent);
-		cursor: pointer; flex-shrink: 0; padding: 0; border-radius: 3px;
-	}
+	.option:hover, .option:focus-visible { border-color: var(--border-strong); }
 
 	.option-info { display: flex; flex-direction: column; min-width: 0; }
 	.option-name { font-size: 0.8667rem; font-weight: 500; }
@@ -176,10 +173,7 @@
 		display: flex; align-items: center; gap: 0.5rem;
 		font-size: 0.8667rem; color: var(--text-secondary);
 		cursor: pointer; margin-bottom: 1rem; font-weight: inherit;
-	}
-	.toggle input[type='checkbox'] {
-		width: 14px; height: 14px; accent-color: var(--accent);
-		cursor: pointer; padding: 0; border-radius: 3px;
+		outline: none;
 	}
 
 	.total { font-size: 0.8667rem; color: var(--text-muted); margin-bottom: 1.25rem; }

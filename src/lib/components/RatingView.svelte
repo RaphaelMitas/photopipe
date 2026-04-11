@@ -8,27 +8,56 @@
 		files,
 		existingRatings,
 		onclose,
-		onsave
+		onsave,
+		startIndex = 0,
+		folder = 'denoised'
 	}: {
 		shootName: string;
 		files: FileInfo[];
 		existingRatings: Record<string, StarRating>;
 		onclose: () => void;
 		onsave: (ratings: Array<{ file: string; rating: StarRating }>) => void;
+		startIndex?: number;
+		folder?: string;
 	} = $props();
 
 	let currentIndex = $state(0);
+	$effect(() => {
+		currentIndex = startIndex;
+	});
 	let pendingRatings = $state<Map<string, StarRating>>(new Map());
 	let saving = $state(false);
 	let zoomed = $state(false);
 	let filmstripEl: HTMLDivElement | undefined = $state();
 	let previewAreaEl: HTMLDivElement | undefined = $state();
 
+	// Filter state
+	let viewFilterMode = $state<'all' | 'eq' | 'gte' | 'lte' | 'unrated'>('all');
+	let viewFilterValue = $state<number>(4);
+
+	function fileRating(fileName: string): StarRating | null {
+		return pendingRatings.get(fileName) ?? existingRatings[fileName] ?? null;
+	}
+
+	function matchesFilter(index: number): boolean {
+		if (viewFilterMode === 'all') return true;
+		const f = files[index];
+		if (!f) return false;
+		const r = fileRating(f.name);
+		if (viewFilterMode === 'unrated') return r === null;
+		if (r === null) return false;
+		if (viewFilterMode === 'eq') return r === viewFilterValue;
+		if (viewFilterMode === 'gte') return r >= viewFilterValue;
+		return r <= viewFilterValue;
+	}
+
+	let filteredIndices = $derived(
+		files.map((_, i) => i).filter((i) => matchesFilter(i))
+	);
+
 	let currentFile = $derived(files[currentIndex]);
 	let currentRating = $derived<StarRating | null>(
-		pendingRatings.get(currentFile?.name ?? '') ??
-			existingRatings[currentFile?.name ?? ''] ??
-			null
+		fileRating(currentFile?.name ?? '')
 	);
 	let ratedCount = $derived(
 		files.filter(
@@ -36,6 +65,18 @@
 		).length
 	);
 	let hasPending = $derived(pendingRatings.size > 0);
+
+	let currentFilteredPos = $derived(filteredIndices.indexOf(currentIndex));
+	let hasPrevFiltered = $derived(
+		viewFilterMode === 'all'
+			? currentIndex > 0
+			: filteredIndices.some((i) => i < currentIndex)
+	);
+	let hasNextFiltered = $derived(
+		viewFilterMode === 'all'
+			? currentIndex < files.length - 1
+			: filteredIndices.some((i) => i > currentIndex)
+	);
 
 	function setRating(rating: StarRating) {
 		if (!currentFile) return;
@@ -50,11 +91,21 @@
 	}
 
 	function goPrev() {
-		goTo(currentIndex - 1);
+		if (viewFilterMode === 'all') {
+			goTo(currentIndex - 1);
+		} else {
+			const prev = filteredIndices.filter((i) => i < currentIndex);
+			if (prev.length > 0) goTo(prev[prev.length - 1]);
+		}
 	}
 
 	function goNext() {
-		goTo(currentIndex + 1);
+		if (viewFilterMode === 'all') {
+			goTo(currentIndex + 1);
+		} else {
+			const next = filteredIndices.find((i) => i > currentIndex);
+			if (next !== undefined) goTo(next);
+		}
 	}
 
 	function scrollFilmstrip() {
@@ -94,6 +145,11 @@
 		}
 	}
 
+	function setViewFilter(star: number) {
+		if (viewFilterMode === 'all' || viewFilterMode === 'unrated') viewFilterMode = 'gte';
+		viewFilterValue = star;
+	}
+
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
 			if (zoomed) {
@@ -127,11 +183,7 @@
 	}
 
 	function previewUrl(fileName: string, size: 'thumb' | 'preview' = 'thumb') {
-		return `/api/thumbs/${encodeURIComponent(shootName)}/${encodeURIComponent(fileName)}?folder=denoised&size=${size}`;
-	}
-
-	function getRatingForFile(fileName: string): StarRating | null {
-		return pendingRatings.get(fileName) ?? existingRatings[fileName] ?? null;
+		return `/api/thumbs/${encodeURIComponent(shootName)}/${encodeURIComponent(fileName)}?folder=${folder}&size=${size}`;
 	}
 
 	onMount(() => {
@@ -152,7 +204,26 @@
 			</button>
 		</div>
 		<div class="toolbar-center">
-			<span class="counter">{ratedCount} of {files.length} rated</span>
+			<div class="toolbar-filter">
+				<button class="vf-btn" class:active={viewFilterMode === 'all'} onclick={() => (viewFilterMode = 'all')}>All</button>
+				<select class="vf-op" bind:value={viewFilterMode} onchange={() => { if (viewFilterMode === 'all' || viewFilterMode === 'unrated') viewFilterMode = 'gte'; }}>
+					<option value="gte">≥</option>
+					<option value="eq">=</option>
+					<option value="lte">≤</option>
+				</select>
+				{#each [1, 2, 3, 4, 5] as star}
+					<button class="vf-btn" class:active={viewFilterMode !== 'all' && viewFilterMode !== 'unrated' && viewFilterValue === star} onclick={() => setViewFilter(star)}>
+						{star}★
+					</button>
+				{/each}
+				<button class="vf-btn" class:active={viewFilterMode === 'unrated'} onclick={() => (viewFilterMode = 'unrated')}>Unrated</button>
+			</div>
+			<span class="counter">
+				{#if viewFilterMode !== 'all'}
+					{currentFilteredPos >= 0 ? currentFilteredPos + 1 : '–'} / {filteredIndices.length} filtered &middot;
+				{/if}
+				{ratedCount} of {files.length} rated
+			</span>
 		</div>
 		<div class="toolbar-right">
 			<button
@@ -167,7 +238,7 @@
 	</header>
 
 	<div class="main-area">
-		<button type="button" class="nav-btn nav-prev" onclick={goPrev} disabled={currentIndex === 0} aria-label="Previous image">
+		<button type="button" class="nav-btn nav-prev" onclick={goPrev} disabled={!hasPrevFiltered} aria-label="Previous image">
 			<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
 				<polyline points="15 18 9 12 15 6" />
 			</svg>
@@ -195,7 +266,7 @@
 			{/if}
 		</div>
 
-		<button type="button" class="nav-btn nav-next" onclick={goNext} disabled={currentIndex === files.length - 1} aria-label="Next image">
+		<button type="button" class="nav-btn nav-next" onclick={goNext} disabled={!hasNextFiltered} aria-label="Next image">
 			<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
 				<polyline points="9 18 15 12 9 6" />
 			</svg>
@@ -218,12 +289,13 @@
 						type="button"
 						class="film-thumb"
 						class:active={i === currentIndex}
-						class:rated={getRatingForFile(file.name) !== null}
+						class:rated={fileRating(file.name) !== null}
+						class:dimmed={viewFilterMode !== 'all' && !matchesFilter(i)}
 						onclick={() => goTo(i)}
 					>
 						<img src={previewUrl(file.name)} alt="" loading="lazy" draggable="false" />
-						{#if getRatingForFile(file.name)}
-							<span class="film-rating">{getRatingForFile(file.name)}</span>
+						{#if fileRating(file.name)}
+							<span class="film-rating">{fileRating(file.name)}</span>
 						{/if}
 					</button>
 				{/each}
@@ -260,11 +332,13 @@
 		backdrop-filter: blur(12px);
 		flex-shrink: 0;
 		z-index: 10;
+		gap: 0.75rem;
 	}
 
 	.toolbar-left,
 	.toolbar-right {
-		min-width: 140px;
+		min-width: 120px;
+		flex-shrink: 0;
 	}
 
 	.toolbar-right {
@@ -273,12 +347,54 @@
 	}
 
 	.toolbar-center {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.25rem;
+		min-width: 0;
+	}
+
+	.toolbar-filter {
+		display: flex;
+		gap: 2px;
+		background: var(--bg-active);
+		border-radius: var(--radius-sm);
+		padding: 2px;
+	}
+
+	.vf-btn {
+		background: none;
+		color: var(--text-muted);
+		font-size: 0.7rem;
+		font-weight: 500;
+		padding: 0.15rem 0.4rem;
+		border-radius: 4px;
+		transition: all 0.15s;
+		border: none;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+
+	.vf-btn:hover { color: var(--text-secondary); }
+	.vf-btn.active { background: var(--bg-surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+
+	.vf-op {
+		font-size: 0.7rem;
+		padding: 0.1rem 0.2rem;
+		background: var(--bg-surface);
+		border: none;
+		border-radius: 4px;
+		color: var(--accent-light);
+		font-weight: 600;
+		cursor: pointer;
+		appearance: none;
 		text-align: center;
+		min-width: 24px;
 	}
 
 	.counter {
-		font-size: 0.8rem;
-		color: var(--text-secondary);
+		font-size: 0.7rem;
+		color: var(--text-muted);
 		font-variant-numeric: tabular-nums;
 	}
 
@@ -433,6 +549,14 @@
 
 	.film-thumb:not(.active):not(.rated) {
 		opacity: 0.5;
+	}
+
+	.film-thumb.dimmed {
+		opacity: 0.2;
+	}
+
+	.film-thumb.dimmed.active {
+		opacity: 1;
 	}
 
 	.film-thumb:hover {

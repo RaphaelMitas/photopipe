@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types.js';
-import { moveToSelects, validateShootName, PhotopipeError } from '$lib/server/shoots.js';
+import { moveFiles, validateShootName, PhotopipeError } from '$lib/server/shoots.js';
 import type { StarRating } from '$lib/types.js';
 
 function isValidRating(v: unknown): v is StarRating {
@@ -40,10 +40,11 @@ export const POST: RequestHandler = async ({ params, request }) => {
 	}
 
 	try {
-		const result = await moveToSelects(
+		const result = await moveFiles(
 			shootName,
-			files as string[] | undefined,
-			minRating as StarRating | undefined
+			'rated',
+			'selects',
+			files as string[]
 		);
 		return json(result);
 	} catch (err) {
