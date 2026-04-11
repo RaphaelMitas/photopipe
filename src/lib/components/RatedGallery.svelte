@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { SvelteSet } from 'svelte/reactivity';
 	import type { RatedFileInfo, FileInfo, StarRating } from '$lib/types.js';
 	import StarRatingWidget from './StarRating.svelte';
 	import Checkbox from './Checkbox.svelte';
@@ -30,7 +31,7 @@
 		onopen?: (fileName: string) => void;
 	} = $props();
 
-	let selected = $state<Set<string>>(new Set());
+	let selected = new SvelteSet<string>();
 	let dropdownOpen = $state(false);
 
 	let allSelected = $derived(files.length > 0 && files.every((f) => selected.has(f.name)));
@@ -38,22 +39,20 @@
 	let otherFolders = $derived(ALL_FOLDERS.filter((f) => f !== folder && f !== defaultMoveTo));
 
 	$effect(() => {
-		files;
-		selected = new Set();
+		void files;
+		selected.clear();
 	});
 
 	function toggleFile(name: string) {
-		const next = new Set(selected);
-		if (next.has(name)) next.delete(name);
-		else next.add(name);
-		selected = next;
+		if (selected.has(name)) selected.delete(name);
+		else selected.add(name);
 	}
 
 	function toggleAll() {
 		if (allSelected) {
-			selected = new Set();
+			selected.clear();
 		} else {
-			selected = new Set(files.map((f) => f.name));
+			for (const f of files) selected.add(f.name);
 		}
 	}
 
@@ -135,7 +134,7 @@
 						</button>
 						{#if dropdownOpen}
 							<div class="move-dropdown">
-								{#each otherFolders as target}
+								{#each otherFolders as target (target)}
 									<button class="move-option" onclick={() => handleMove(target)}>
 										Move to {target}/
 									</button>
@@ -160,7 +159,6 @@
 						/>
 					</div>
 				{/if}
-				<!-- svelte-ignore a11y_click_events_have_key_events -->
 				<img
 					src="/api/thumbs/{encodeURIComponent(shootName)}/{encodeURIComponent(
 						file.name

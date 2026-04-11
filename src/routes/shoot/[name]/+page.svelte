@@ -783,7 +783,7 @@
 									<option value="eq">=</option>
 									<option value="lte">≤</option>
 								</select>
-								{#each [1, 2, 3, 4, 5] as star}
+								{#each [1, 2, 3, 4, 5] as star (star)}
 									<button
 										class="filter-btn"
 										class:active={filterMode !== 'all' && filterValue === star}
@@ -872,7 +872,7 @@
 									<option value="eq">=</option>
 									<option value="lte">≤</option>
 								</select>
-								{#each [1, 2, 3, 4, 5] as star}
+								{#each [1, 2, 3, 4, 5] as star (star)}
 									<button
 										class="filter-btn"
 										class:active={selectsFilterMode !== 'all' && selectsFilterValue === star}

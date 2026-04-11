@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { SvelteMap } from 'svelte/reactivity';
 	import type { FileInfo, StarRating } from '$lib/types.js';
 	import StarRatingWidget from './StarRating.svelte';
 
@@ -25,7 +26,7 @@
 	$effect(() => {
 		currentIndex = startIndex;
 	});
-	let pendingRatings = $state<Map<string, StarRating>>(new Map());
+	let pendingRatings = new SvelteMap<string, StarRating>();
 	let saving = $state(false);
 	let zoomed = $state(false);
 	let filmstripEl: HTMLDivElement | undefined = $state();
@@ -73,7 +74,6 @@
 	function setRating(rating: StarRating) {
 		if (!currentFile) return;
 		pendingRatings.set(currentFile.name, rating);
-		pendingRatings = new Map(pendingRatings);
 	}
 
 	function goTo(index: number) {
@@ -219,7 +219,7 @@
 					<option value="eq">=</option>
 					<option value="lte">≤</option>
 				</select>
-				{#each [1, 2, 3, 4, 5] as star}
+				{#each [1, 2, 3, 4, 5] as star (star)}
 					<button
 						class="vf-btn"
 						class:active={viewFilterMode !== 'all' &&
