@@ -1,6 +1,15 @@
 export type DenoiseAlgorithm = 'DeepPRIME 3' | 'DeepPRIME XD3';
 
-export type ShootStatus = 'empty' | 'uploading' | 'denoising' | 'ready' | 'exported';
+export type ShootStatus =
+	| 'empty'
+	| 'uploading'
+	| 'denoising'
+	| 'ready'
+	| 'rating'
+	| 'curating'
+	| 'exported';
+
+export type StarRating = 1 | 2 | 3 | 4 | 5;
 
 /** Seconds per file for each algorithm on M4 Mac Mini */
 export const DENOISE_TIMES: Record<DenoiseAlgorithm, number> = {
@@ -23,6 +32,7 @@ export interface ShootMetadata {
 	algorithm: DenoiseAlgorithm | null;
 	notes: string;
 	rawCount: number | null;
+	ratings: Record<string, StarRating>;
 }
 
 export interface ShootSummary {
@@ -32,6 +42,8 @@ export interface ShootSummary {
 	date: string;
 	rawCount: number;
 	dngCount: number;
+	ratedCount: number;
+	selectCount: number;
 	exportCount: number;
 	totalSizeBytes: number;
 	status: ShootStatus;
@@ -41,9 +53,13 @@ export interface ShootDetail extends ShootSummary {
 	metadata: ShootMetadata;
 	rawFiles: FileInfo[];
 	dngFiles: FileInfo[];
+	ratedFiles: RatedFileInfo[];
+	selectFiles: FileInfo[];
 	exportFiles: FileInfo[];
 	rawSizeBytes: number;
 	dngSizeBytes: number;
+	ratedSizeBytes: number;
+	selectSizeBytes: number;
 	exportSizeBytes: number;
 }
 
@@ -51,6 +67,10 @@ export interface FileInfo {
 	name: string;
 	sizeBytes: number;
 	modifiedAt: string;
+}
+
+export interface RatedFileInfo extends FileInfo {
+	rating: StarRating;
 }
 
 export interface DenoiseEvent {

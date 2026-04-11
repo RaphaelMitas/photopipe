@@ -24,6 +24,18 @@
 			<span class="val">{shoot.dngCount}</span>
 			<span class="key">DNG</span>
 		</div>
+		{#if shoot.ratedCount > 0}
+			<div class="stat">
+				<span class="val">{shoot.ratedCount}</span>
+				<span class="key">Rated</span>
+			</div>
+		{/if}
+		{#if shoot.selectCount > 0}
+			<div class="stat">
+				<span class="val">{shoot.selectCount}</span>
+				<span class="key">Selects</span>
+			</div>
+		{/if}
 		<div class="stat">
 			<span class="val">{shoot.exportCount}</span>
 			<span class="key">Export</span>
@@ -71,7 +83,6 @@
 		letter-spacing: -0.01em;
 		line-height: 1.3;
 	}
-
 	time {
 		font-size: 0.8rem;
 		color: var(--text-muted);
@@ -89,18 +100,15 @@
 		display: flex;
 		flex-direction: column;
 	}
-
 	.stat-push {
 		margin-left: auto;
 	}
-
 	.val {
 		font-size: 1.05rem;
 		font-weight: 600;
 		font-variant-numeric: tabular-nums;
 		line-height: 1.2;
 	}
-
 	.key {
 		font-size: 0.7rem;
 		color: var(--text-muted);

@@ -3,10 +3,25 @@ import { error } from '@sveltejs/kit';
 import { stat, mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import sharp from 'sharp';
-import { CAMERA_BASE, SHOOT_PATTERN, THUMBS_DIR, EXPORTS_DIR } from '$lib/server/config.js';
+import {
+	CAMERA_BASE,
+	SHOOT_PATTERN,
+	THUMBS_DIR,
+	EXPORTS_DIR,
+	DENOISED_DIR,
+	RATED_DIR,
+	SELECTS_DIR
+} from '$lib/server/config.js';
+import { getDngImage } from '$lib/server/dng-preview.js';
 
-/** In-flight generation guard to prevent duplicate work */
 const inFlight = new Map<string, Promise<ArrayBuffer>>();
+
+const FOLDER_MAP: Record<string, string> = {
+	exports: EXPORTS_DIR,
+	denoised: DENOISED_DIR,
+	rated: RATED_DIR,
+	selects: SELECTS_DIR
+};
 
 function validatePath(name: string): void {
 	if (name.includes('..') || name.includes('/') || name.includes('\\')) {
@@ -14,10 +29,10 @@ function validatePath(name: string): void {
 	}
 }
 
-/** Strip original extension and add .webp */
-function thumbName(fileName: string): string {
+function thumbName(folder: string, fileName: string): string {
 	const base = fileName.substring(0, fileName.lastIndexOf('.')) || fileName;
-	return `${base}.webp`;
+	if (folder === 'exports') return `${base}.webp`;
+	return `${folder}_${base}.webp`;
 }
 
 function webpResponse(data: ArrayBuffer, extra: Record<string, string> = {}): Response {
@@ -31,7 +46,7 @@ function webpResponse(data: ArrayBuffer, extra: Record<string, string> = {}): Re
 	});
 }
 
-export const GET: RequestHandler = async ({ params }) => {
+export const GET: RequestHandler = async ({ params, url }) => {
 	const shootName = decodeURIComponent(params.name);
 	const fileName = decodeURIComponent(params.file);
 
@@ -42,11 +57,32 @@ export const GET: RequestHandler = async ({ params }) => {
 		error(400, 'Invalid shoot name');
 	}
 
-	const sourcePath = join(CAMERA_BASE, shootName, EXPORTS_DIR, fileName);
-	const thumbDir = join(CAMERA_BASE, shootName, THUMBS_DIR);
-	const thumbPath = join(thumbDir, thumbName(fileName));
+	const folder = url.searchParams.get('folder') ?? 'exports';
+	const size = url.searchParams.get('size') ?? 'thumb';
 
-	// Check source exists
+	if (!(folder in FOLDER_MAP)) {
+		error(400, 'Invalid folder parameter');
+	}
+
+	if (size !== 'thumb' && size !== 'preview') {
+		error(400, 'Size must be "thumb" or "preview"');
+	}
+
+	const dirName = FOLDER_MAP[folder];
+
+	if (folder !== 'exports' || size === 'preview') {
+		try {
+			const result = await getDngImage(shootName, dirName, fileName, size);
+			return webpResponse(result.data);
+		} catch {
+			error(404, 'Source file not found');
+		}
+	}
+
+	const sourcePath = join(CAMERA_BASE, shootName, dirName, fileName);
+	const thumbDir = join(CAMERA_BASE, shootName, THUMBS_DIR);
+	const thumbPath = join(thumbDir, thumbName(folder, fileName));
+
 	let sourceInfo;
 	try {
 		sourceInfo = await stat(sourcePath);
@@ -54,7 +90,6 @@ export const GET: RequestHandler = async ({ params }) => {
 		error(404, 'Source file not found');
 	}
 
-	// Check cache
 	try {
 		const thumbInfo = await stat(thumbPath);
 		if (thumbInfo.mtime >= sourceInfo.mtime) {
@@ -70,8 +105,7 @@ export const GET: RequestHandler = async ({ params }) => {
 		// Cache miss
 	}
 
-	// Generate (with dedup guard)
-	const cacheKey = `${shootName}/${fileName}`;
+	const cacheKey = `${shootName}/${folder}/${fileName}`;
 	let pending = inFlight.get(cacheKey);
 
 	if (!pending) {
@@ -100,7 +134,6 @@ async function generateThumbnail(
 		.webp({ quality: 80 })
 		.toBuffer();
 
-	// Write cache in background
 	sharp(buf)
 		.toFile(thumbPath)
 		.catch((err: unknown) => {

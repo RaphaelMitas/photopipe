@@ -27,4 +27,6 @@ export const THUMBS_DIR = '.thumbs';
 /** Subdirectory names inside each shoot */
 export const RAW_DIR = 'raw';
 export const DENOISED_DIR = 'denoised';
+export const RATED_DIR = 'rated';
+export const SELECTS_DIR = 'selects';
 export const EXPORTS_DIR = 'exports';

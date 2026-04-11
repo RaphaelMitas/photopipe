@@ -4,12 +4,21 @@ import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
 import archiver from 'archiver';
-import { CAMERA_BASE, RAW_DIR, DENOISED_DIR, EXPORTS_DIR } from '$lib/server/config.js';
+import {
+	CAMERA_BASE,
+	RAW_DIR,
+	DENOISED_DIR,
+	RATED_DIR,
+	SELECTS_DIR,
+	EXPORTS_DIR
+} from '$lib/server/config.js';
 import { validateShootName } from '$lib/server/shoots.js';
 
 const VALID_FOLDERS: Record<string, string> = {
 	raw: RAW_DIR,
 	denoised: DENOISED_DIR,
+	rated: RATED_DIR,
+	selects: SELECTS_DIR,
 	exports: EXPORTS_DIR
 };
 

@@ -1,4 +1,4 @@
-import { readdir, stat, mkdir, readFile, writeFile, unlink, rm } from 'node:fs/promises';
+import { readdir, stat, mkdir, readFile, writeFile, unlink, rm, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
 	CAMERA_BASE,
@@ -7,6 +7,8 @@ import {
 	METADATA_FILE,
 	RAW_DIR,
 	DENOISED_DIR,
+	RATED_DIR,
+	SELECTS_DIR,
 	EXPORTS_DIR,
 	THUMBS_DIR
 } from './config.js';
@@ -16,7 +18,9 @@ import type {
 	ShootDetail,
 	ShootStatus,
 	FileInfo,
-	PureRawInstructions
+	RatedFileInfo,
+	PureRawInstructions,
+	StarRating
 } from '$lib/types.js';
 import { PURERAW_SETTINGS } from '$lib/types.js';
 import { parseShootFolder, buildFolderName, slugifyName } from '$lib/utils.js';
@@ -32,9 +36,6 @@ export class PhotopipeError extends Error {
 	}
 }
 
-/**
- * Validate a shoot name against path traversal and format rules
- */
 export function validateShootName(name: string): void {
 	if (!name || typeof name !== 'string') {
 		throw new PhotopipeError('Shoot name is required', 'INVALID_INPUT', 400);
@@ -51,10 +52,12 @@ export function validateShootName(name: string): void {
 	}
 }
 
-/**
- * List files in a directory with given extensions, returning file info.
- * Returns empty array if directory doesn't exist.
- */
+function validateFileName(name: string): void {
+	if (!name || name.includes('..') || name.includes('/') || name.includes('\\')) {
+		throw new PhotopipeError('Invalid filename', 'INVALID_INPUT', 400);
+	}
+}
+
 async function listFilesWithExt(dirPath: string, extensions: string[]): Promise<FileInfo[]> {
 	try {
 		const entries = await readdir(dirPath);
@@ -85,37 +88,40 @@ async function listFilesWithExt(dirPath: string, extensions: string[]): Promise<
 	}
 }
 
-/**
- * Read .photopipe.json metadata from a shoot folder
- */
 async function readMetadata(shootPath: string): Promise<ShootMetadata | null> {
 	try {
 		const raw = await readFile(join(shootPath, METADATA_FILE), 'utf-8');
-		return JSON.parse(raw) as ShootMetadata;
+		const parsed = JSON.parse(raw) as Record<string, unknown>;
+		if (!parsed.ratings || typeof parsed.ratings !== 'object') {
+			parsed.ratings = {};
+		}
+		return parsed as unknown as ShootMetadata;
 	} catch {
 		return null;
 	}
 }
 
-/**
- * Derive the status of a shoot based on its contents
- */
+async function writeMetadata(shootPath: string, metadata: ShootMetadata): Promise<void> {
+	await writeFile(join(shootPath, METADATA_FILE), JSON.stringify(metadata, null, '\t'), 'utf-8');
+}
+
 function deriveStatus(
 	rawCount: number,
 	dngCount: number,
+	ratedCount: number,
+	selectCount: number,
 	exportCount: number,
 	metadata: ShootMetadata | null
 ): ShootStatus {
 	if (exportCount > 0) return 'exported';
+	if (selectCount > 0) return 'curating';
+	if (ratedCount > 0) return 'rating';
 	if (dngCount > 0 && metadata?.rawCount && dngCount < metadata.rawCount) return 'denoising';
 	if (dngCount > 0) return 'ready';
 	if (rawCount > 0) return 'uploading';
 	return 'empty';
 }
 
-/**
- * List all shoots matching the YYYY-MM-DD format, sorted by date descending
- */
 export async function listShoots(): Promise<ShootSummary[]> {
 	const entries = await readdir(CAMERA_BASE, { withFileTypes: true });
 	const shoots: ShootSummary[] = [];
@@ -130,6 +136,8 @@ export async function listShoots(): Promise<ShootSummary[]> {
 		const shootPath = join(CAMERA_BASE, entry.name);
 		const rawFiles = await listFilesWithExt(join(shootPath, RAW_DIR), ['.arw']);
 		const dngFiles = await listFilesWithExt(join(shootPath, DENOISED_DIR), ['.dng']);
+		const ratedFiles = await listFilesWithExt(join(shootPath, RATED_DIR), ['.dng']);
+		const selectFiles = await listFilesWithExt(join(shootPath, SELECTS_DIR), ['.dng']);
 		const exportFiles = await listFilesWithExt(join(shootPath, EXPORTS_DIR), [
 			'.jpg',
 			'.jpeg',
@@ -143,6 +151,8 @@ export async function listShoots(): Promise<ShootSummary[]> {
 
 		const rawSize = rawFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
 		const dngSize = dngFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
+		const ratedSize = ratedFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
+		const selectSize = selectFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
 		const exportSize = exportFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
 
 		shoots.push({
@@ -151,18 +161,29 @@ export async function listShoots(): Promise<ShootSummary[]> {
 			date: parsed.date,
 			rawCount: rawFiles.length,
 			dngCount: dngFiles.length,
+			ratedCount: ratedFiles.length,
+			selectCount: selectFiles.length,
 			exportCount: exportFiles.length,
-			totalSizeBytes: rawSize + dngSize + exportSize,
-			status: deriveStatus(rawFiles.length, dngFiles.length, exportFiles.length, metadata)
+			totalSizeBytes: rawSize + dngSize + ratedSize + selectSize + exportSize,
+			status: deriveStatus(
+				rawFiles.length,
+				dngFiles.length,
+				ratedFiles.length,
+				selectFiles.length,
+				exportFiles.length,
+				metadata
+			)
 		});
 	}
 
 	return shoots.sort((a, b) => b.date.localeCompare(a.date));
 }
 
-/**
- * Get detailed information about a single shoot
- */
+async function ensureRatingFolders(shootPath: string): Promise<void> {
+	await mkdir(join(shootPath, RATED_DIR), { recursive: true });
+	await mkdir(join(shootPath, SELECTS_DIR), { recursive: true });
+}
+
 export async function getShoot(folderName: string): Promise<ShootDetail> {
 	validateShootName(folderName);
 
@@ -179,8 +200,12 @@ export async function getShoot(folderName: string): Promise<ShootDetail> {
 		throw new PhotopipeError('Invalid shoot folder name', 'INVALID_INPUT', 400);
 	}
 
+	await ensureRatingFolders(shootPath);
+
 	const rawFiles = await listFilesWithExt(join(shootPath, RAW_DIR), ['.arw']);
 	const dngFiles = await listFilesWithExt(join(shootPath, DENOISED_DIR), ['.dng']);
+	const ratedFilesRaw = await listFilesWithExt(join(shootPath, RATED_DIR), ['.dng']);
+	const selectFiles = await listFilesWithExt(join(shootPath, SELECTS_DIR), ['.dng']);
 	const exportFiles = await listFilesWithExt(join(shootPath, EXPORTS_DIR), [
 		'.jpg',
 		'.jpeg',
@@ -194,6 +219,8 @@ export async function getShoot(folderName: string): Promise<ShootDetail> {
 
 	const rawSizeBytes = rawFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
 	const dngSizeBytes = dngFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
+	const ratedSizeBytes = ratedFilesRaw.reduce((sum, f) => sum + f.sizeBytes, 0);
+	const selectSizeBytes = selectFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
 	const exportSizeBytes = exportFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
 
 	const defaultMetadata: ShootMetadata = {
@@ -203,8 +230,16 @@ export async function getShoot(folderName: string): Promise<ShootDetail> {
 		createdAt: new Date().toISOString(),
 		algorithm: null,
 		notes: '',
-		rawCount: null
+		rawCount: null,
+		ratings: {}
 	};
+
+	const meta = metadata ?? defaultMetadata;
+
+	const ratedFiles: RatedFileInfo[] = ratedFilesRaw.map((f) => ({
+		...f,
+		rating: (meta.ratings[f.name] as StarRating) ?? 3
+	}));
 
 	return {
 		folderName,
@@ -212,22 +247,33 @@ export async function getShoot(folderName: string): Promise<ShootDetail> {
 		date: parsed.date,
 		rawCount: rawFiles.length,
 		dngCount: dngFiles.length,
+		ratedCount: ratedFiles.length,
+		selectCount: selectFiles.length,
 		exportCount: exportFiles.length,
-		totalSizeBytes: rawSizeBytes + dngSizeBytes + exportSizeBytes,
-		status: deriveStatus(rawFiles.length, dngFiles.length, exportFiles.length, metadata),
-		metadata: metadata ?? defaultMetadata,
+		totalSizeBytes:
+			rawSizeBytes + dngSizeBytes + ratedSizeBytes + selectSizeBytes + exportSizeBytes,
+		status: deriveStatus(
+			rawFiles.length,
+			dngFiles.length,
+			ratedFiles.length,
+			selectFiles.length,
+			exportFiles.length,
+			meta
+		),
+		metadata: meta,
 		rawFiles,
 		dngFiles,
+		ratedFiles,
+		selectFiles,
 		exportFiles,
 		rawSizeBytes,
 		dngSizeBytes,
+		ratedSizeBytes,
+		selectSizeBytes,
 		exportSizeBytes
 	};
 }
 
-/**
- * Create a new shoot folder with standard structure
- */
 export async function createShoot(name: string, date: string): Promise<string> {
 	if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
 		throw new PhotopipeError('Date must be in YYYY-MM-DD format', 'INVALID_INPUT', 400);
@@ -251,7 +297,6 @@ export async function createShoot(name: string, date: string): Promise<string> {
 
 	const shootPath = join(CAMERA_BASE, folderName);
 
-	// Check for duplicates
 	try {
 		await stat(shootPath);
 		throw new PhotopipeError(`Shoot "${folderName}" already exists`, 'CONFLICT', 409);
@@ -259,9 +304,10 @@ export async function createShoot(name: string, date: string): Promise<string> {
 		if (err instanceof PhotopipeError) throw err;
 	}
 
-	// Create directory structure
 	await mkdir(join(shootPath, RAW_DIR), { recursive: true });
 	await mkdir(join(shootPath, DENOISED_DIR), { recursive: true });
+	await mkdir(join(shootPath, RATED_DIR), { recursive: true });
+	await mkdir(join(shootPath, SELECTS_DIR), { recursive: true });
 	await mkdir(join(shootPath, EXPORTS_DIR), { recursive: true });
 	await mkdir(join(shootPath, THUMBS_DIR), { recursive: true });
 
@@ -272,20 +318,18 @@ export async function createShoot(name: string, date: string): Promise<string> {
 		createdAt: new Date().toISOString(),
 		algorithm: null,
 		notes: '',
-		rawCount: null
+		rawCount: null,
+		ratings: {}
 	};
 
-	await writeFile(join(shootPath, METADATA_FILE), JSON.stringify(metadata, null, '\t'), 'utf-8');
+	await writeMetadata(shootPath, metadata);
 
 	return folderName;
 }
 
-/**
- * Update metadata fields for a shoot
- */
 export async function updateMetadata(
 	folderName: string,
-	updates: Partial<Pick<ShootMetadata, 'algorithm' | 'notes' | 'rawCount'>>
+	updates: Partial<Pick<ShootMetadata, 'algorithm' | 'notes' | 'rawCount' | 'ratings'>>
 ): Promise<ShootMetadata> {
 	validateShootName(folderName);
 
@@ -297,47 +341,35 @@ export async function updateMetadata(
 	}
 
 	const updated: ShootMetadata = { ...existing, ...updates };
-	await writeFile(join(shootPath, METADATA_FILE), JSON.stringify(updated, null, '\t'), 'utf-8');
+	await writeMetadata(shootPath, updated);
 
 	return updated;
 }
 
-/** Allowed file extensions per folder type for deletion */
 const DELETABLE_EXTENSIONS: Record<string, string[]> = {
 	raw: ['.arw', '.xmp'],
 	denoised: ['.dng'],
+	rated: ['.dng'],
+	selects: ['.dng'],
 	exports: ['.jpg', '.jpeg', '.png', '.tif', '.tiff', '.webp', '.dng']
 };
 
-/** Map folder type to directory constant */
 const FOLDER_DIR: Record<string, string> = {
 	raw: RAW_DIR,
 	denoised: DENOISED_DIR,
+	rated: RATED_DIR,
+	selects: SELECTS_DIR,
 	exports: EXPORTS_DIR
 };
 
-/** Strip original extension and add .webp to get cached thumbnail name */
 function thumbName(fileName: string): string {
 	const base = fileName.substring(0, fileName.lastIndexOf('.')) || fileName;
 	return `${base}.webp`;
 }
 
-/** Validate a single filename against path traversal */
-function validateFileName(name: string): void {
-	if (!name || name.includes('..') || name.includes('/') || name.includes('\\')) {
-		throw new PhotopipeError('Invalid filename', 'INVALID_INPUT', 400);
-	}
-}
-
-/**
- * Delete files from a shoot's subfolder.
- * If `files` is provided, delete only those specific files.
- * If `files` is omitted, delete all files in the folder.
- * Returns the number of files deleted and bytes freed.
- */
 export async function deleteFiles(
 	folderName: string,
-	folder: 'exports' | 'denoised' | 'raw',
+	folder: 'exports' | 'denoised' | 'raw' | 'rated' | 'selects',
 	files?: string[]
 ): Promise<{ deletedCount: number; freedBytes: number }> {
 	validateShootName(folderName);
@@ -353,13 +385,11 @@ export async function deleteFiles(
 	let targets: string[];
 
 	if (files && files.length > 0) {
-		// Selective delete: validate each filename
 		for (const f of files) {
 			validateFileName(f);
 		}
 		targets = files;
 	} else {
-		// Delete all: read directory and filter by extension
 		try {
 			const entries = await readdir(dirPath);
 			targets = entries.filter((entry) => {
@@ -388,15 +418,25 @@ export async function deleteFiles(
 		}
 	}
 
-	// Clean up cached thumbnails when deleting exports
 	if (folder === 'exports' && deletedCount > 0) {
 		const thumbDir = join(CAMERA_BASE, folderName, THUMBS_DIR);
 		for (const fileName of targets) {
 			try {
 				await unlink(join(thumbDir, thumbName(fileName)));
 			} catch {
-				// Thumbnail may not exist — ignore
+				// Thumbnail may not exist
 			}
+		}
+	}
+
+	if (folder === 'rated' && deletedCount > 0) {
+		const shootPath = join(CAMERA_BASE, folderName);
+		const metadata = await readMetadata(shootPath);
+		if (metadata) {
+			for (const fileName of targets) {
+				delete metadata.ratings[fileName];
+			}
+			await writeMetadata(shootPath, metadata);
 		}
 	}
 
@@ -417,9 +457,106 @@ export async function deleteShoot(folderName: string): Promise<void> {
 	await rm(shootPath, { recursive: true, force: true });
 }
 
-/**
- * Get PureRAW instructions for a specific shoot
- */
+export async function rateFiles(
+	folderName: string,
+	ratings: Array<{ file: string; rating: StarRating }>
+): Promise<{ movedCount: number }> {
+	validateShootName(folderName);
+	const shootPath = join(CAMERA_BASE, folderName);
+
+	await mkdir(join(shootPath, RATED_DIR), { recursive: true });
+
+	const metadata = await readMetadata(shootPath);
+	if (!metadata) {
+		throw new PhotopipeError('Shoot metadata not found', 'NOT_FOUND', 404);
+	}
+
+	let movedCount = 0;
+	for (const { file, rating } of ratings) {
+		validateFileName(file);
+		const src = join(shootPath, DENOISED_DIR, file);
+		const dest = join(shootPath, RATED_DIR, file);
+		try {
+			await rename(src, dest);
+			metadata.ratings[file] = rating;
+			movedCount++;
+		} catch {
+			// File might not exist or already moved
+		}
+	}
+
+	await writeMetadata(shootPath, metadata);
+	return { movedCount };
+}
+
+export async function updateRating(
+	folderName: string,
+	file: string,
+	rating: StarRating
+): Promise<void> {
+	validateShootName(folderName);
+	validateFileName(file);
+	const shootPath = join(CAMERA_BASE, folderName);
+
+	let found = false;
+	for (const dir of [RATED_DIR, SELECTS_DIR]) {
+		try {
+			await stat(join(shootPath, dir, file));
+			found = true;
+			break;
+		} catch {
+			// Try next
+		}
+	}
+	if (!found) {
+		throw new PhotopipeError(`File "${file}" not found in rated/ or selects/`, 'NOT_FOUND', 404);
+	}
+
+	const metadata = await readMetadata(shootPath);
+	if (!metadata) {
+		throw new PhotopipeError('Shoot metadata not found', 'NOT_FOUND', 404);
+	}
+
+	metadata.ratings[file] = rating;
+	await writeMetadata(shootPath, metadata);
+}
+
+type MoveableFolder = 'raw' | 'denoised' | 'rated' | 'selects' | 'exports';
+
+export async function moveFiles(
+	folderName: string,
+	from: MoveableFolder,
+	to: MoveableFolder,
+	files: string[]
+): Promise<{ movedCount: number }> {
+	validateShootName(folderName);
+	const shootPath = join(CAMERA_BASE, folderName);
+
+	const fromDir = FOLDER_DIR[from];
+	const toDir = FOLDER_DIR[to];
+	if (!fromDir || !toDir) {
+		throw new PhotopipeError('Invalid folder type', 'INVALID_INPUT', 400);
+	}
+
+	await mkdir(join(shootPath, toDir), { recursive: true });
+
+	for (const f of files) validateFileName(f);
+
+	let movedCount = 0;
+	for (const file of files) {
+		const src = join(shootPath, fromDir, file);
+		const dest = join(shootPath, toDir, file);
+		try {
+			await rename(src, dest);
+			movedCount++;
+		} catch {
+			// Skip
+		}
+	}
+
+	return { movedCount };
+}
+
 export function getPureRawInstructions(shootFolderName: string): PureRawInstructions {
 	return {
 		inputPath: `${CAMERA_HOST_BASE}/${shootFolderName}/${RAW_DIR}/`,
