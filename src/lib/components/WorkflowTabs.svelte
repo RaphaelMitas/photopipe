@@ -222,9 +222,13 @@
 		font-variant-numeric: tabular-nums;
 		color: var(--text-muted);
 		background: var(--bg-active);
-		padding: 0.05rem 0.35rem;
+		padding: 0 0.35rem;
 		border-radius: var(--radius-full);
-		line-height: 1.4;
+		min-height: 18px;
+		min-width: 18px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
 	}
 
 	.stage.active .stage-count {

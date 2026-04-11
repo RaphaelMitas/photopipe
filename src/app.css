@@ -56,12 +56,13 @@
 *::before,
 *::after {
 	box-sizing: border-box;
-	margin: 0;
 	padding: 0;
 }
 
-dialog {
-	margin: auto;
+body,
+h1, h2, h3, h4, h5, h6,
+p, ul, ol, figure, blockquote {
+	margin: 0;
 }
 
 html {
@@ -109,6 +110,26 @@ button:disabled {
 	cursor: not-allowed;
 }
 
+/* Shared base for .btn-* on any element (button, a, label) */
+.btn-primary,
+.btn-danger,
+.btn-ghost {
+	font-family: var(--font-sans);
+	font-size: 0.8667rem;
+	font-weight: 500;
+	cursor: pointer;
+	border: none;
+	border-radius: var(--radius-sm);
+	padding: 0.5rem 1rem;
+	transition: all 0.15s ease;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4rem;
+	text-decoration: none;
+	line-height: 1.4;
+}
+
 .btn-primary {
 	background: var(--accent);
 	color: white;
@@ -119,6 +140,7 @@ button:disabled {
 
 .btn-primary:hover:not(:disabled) {
 	background: var(--accent-light);
+	color: white;
 	box-shadow:
 		0 2px 12px var(--accent-glow-strong),
 		inset 0 1px 0 rgba(255, 255, 255, 0.15);
@@ -133,6 +155,7 @@ button:disabled {
 
 .btn-danger:hover:not(:disabled) {
 	background: #dc2626;
+	color: white;
 	box-shadow: 0 2px 12px var(--red-bg);
 	transform: translateY(-1px);
 }

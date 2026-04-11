@@ -11,6 +11,7 @@
 	import { PURERAW_SETTINGS } from '$lib/types.js';
 	import type { StarRating as StarRatingType } from '$lib/types.js';
 	import { goto, invalidateAll } from '$app/navigation';
+	import { untrack } from 'svelte';
 
 	let { data, form } = $props();
 
@@ -67,12 +68,34 @@
 	let uploading = $state(false);
 	let uploadedCount = $state(0);
 	let uploadTotal = $state(0);
+	let uploadWarning = $state('');
 
 	const UPLOAD_ACCEPT: Record<string, string> = {
 		raw: '.arw,.ARW',
 		denoised: '.dng,.DNG',
 		exports: '.jpg,.jpeg,.png,.tif,.tiff,.webp,.dng,.JPG,.JPEG,.PNG,.TIF,.TIFF,.WEBP,.DNG'
 	};
+
+	const UPLOAD_ACCEPT_DISPLAY: Record<string, string> = {
+		raw: '.arw',
+		denoised: '.dng',
+		exports: '.jpg, .jpeg, .png, .tif, .tiff, .webp, .dng'
+	};
+
+	function allowedExtensions(): Set<string> {
+		return new Set(UPLOAD_ACCEPT[uploadFolder].split(',').map((s) => s.toLowerCase()));
+	}
+
+	$effect(() => {
+		const allowed = allowedExtensions();
+		untrack(() => {
+			uploadWarning = '';
+			uploadFiles = uploadFiles.filter((f) => {
+				const ext = f.name.substring(f.name.lastIndexOf('.')).toLowerCase();
+				return allowed.has(ext);
+			});
+		});
+	});
 
 	// Rating state
 	let filterMode = $state<'all' | 'eq' | 'gte' | 'lte'>('all');
@@ -198,10 +221,25 @@
 
 	function handleUploadDrop(e: DragEvent) {
 		e.preventDefault();
+		uploadWarning = '';
 		if (e.dataTransfer?.files) {
+			const allowed = allowedExtensions();
 			const existing = new Set(uploadFiles.map((f) => f.name));
-			const newFiles = Array.from(e.dataTransfer.files).filter((f) => !existing.has(f.name));
-			uploadFiles = [...uploadFiles, ...newFiles];
+			const accepted: File[] = [];
+			const rejected: string[] = [];
+			for (const f of Array.from(e.dataTransfer.files)) {
+				if (existing.has(f.name)) continue;
+				const ext = f.name.substring(f.name.lastIndexOf('.')).toLowerCase();
+				if (allowed.has(ext)) {
+					accepted.push(f);
+				} else {
+					rejected.push(f.name);
+				}
+			}
+			uploadFiles = [...uploadFiles, ...accepted];
+			if (rejected.length > 0) {
+				uploadWarning = `${rejected.length} file${rejected.length !== 1 ? 's' : ''} skipped (${rejected.slice(0, 3).join(', ')}${rejected.length > 3 ? '...' : ''}). Accepted formats for ${uploadFolder}/: ${UPLOAD_ACCEPT_DISPLAY[uploadFolder]}`;
+			}
 		}
 	}
 
@@ -435,6 +473,11 @@
 							/>
 						</label>
 					</div>
+					<p class="upload-formats">Accepted: {UPLOAD_ACCEPT_DISPLAY[uploadFolder]}</p>
+
+					{#if uploadWarning}
+						<div class="alert alert-error">{uploadWarning}</div>
+					{/if}
 
 					{#if uploadFiles.length > 0}
 						<div class="upload-file-list">
@@ -1080,6 +1123,11 @@
 							/>
 						</label>
 					</div>
+					<p class="upload-formats">Accepted: {UPLOAD_ACCEPT_DISPLAY.exports}</p>
+
+					{#if uploadWarning && uploadFolder === 'exports'}
+						<div class="alert alert-error">{uploadWarning}</div>
+					{/if}
 
 					{#if uploadFiles.length > 0 && uploadFolder === 'exports'}
 						<div class="upload-file-list">
@@ -1166,6 +1214,7 @@
 <style>
 	.page {
 		max-width: 860px;
+		margin: 0 auto;
 	}
 
 	.back {
@@ -1718,6 +1767,13 @@
 	.upload-drop-text {
 		font-size: 0.8667rem;
 		color: var(--text-muted);
+	}
+	.upload-formats {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		opacity: 0.6;
+		margin-top: -0.5rem;
+		margin-bottom: 0.75rem;
 	}
 	.upload-browse {
 		cursor: pointer;
