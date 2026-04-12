@@ -43,7 +43,9 @@
 	let viewFilterValue = $state<number>(4);
 
 	function fileRating(fileName: string): StarRating | null {
-		return unsaved.get(fileName) ?? remoteRatings.get(fileName) ?? existingRatings[fileName] ?? null;
+		return (
+			unsaved.get(fileName) ?? remoteRatings.get(fileName) ?? existingRatings[fileName] ?? null
+		);
 	}
 
 	function matchesFilter(index: number): boolean {
@@ -65,9 +67,7 @@
 	let ratedCount = $derived(
 		files.filter(
 			(f) =>
-				unsaved.has(f.name) ||
-				remoteRatings.has(f.name) ||
-				existingRatings[f.name] !== undefined
+				unsaved.has(f.name) || remoteRatings.has(f.name) || existingRatings[f.name] !== undefined
 		).length
 	);
 
@@ -219,9 +219,7 @@
 	onMount(() => {
 		scrollFilmstrip();
 
-		eventSource = new EventSource(
-			`/api/shoots/${encodeURIComponent(shootName)}/ratings-stream`
-		);
+		eventSource = new EventSource(`/api/shoots/${encodeURIComponent(shootName)}/ratings-stream`);
 		eventSource.onmessage = (e) => {
 			try {
 				const data: RatingEvent = JSON.parse(e.data);
@@ -307,11 +305,24 @@
 			</span>
 		</div>
 		<div class="toolbar-right">
-			<span class="save-status" class:saving={saveStatus === 'saving'} class:saved={saveStatus === 'saved'} class:error={saveStatus === 'error'}>
+			<span
+				class="save-status"
+				class:saving={saveStatus === 'saving'}
+				class:saved={saveStatus === 'saved'}
+				class:error={saveStatus === 'error'}
+			>
 				{#if saveStatus === 'saving'}
 					<span class="status-dot"></span> Saving…
 				{:else if saveStatus === 'saved'}
-					<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12" /></svg>
+					<svg
+						width="12"
+						height="12"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2.5"
+						stroke-linecap="round"><polyline points="20 6 9 17 4 12" /></svg
+					>
 					Saved
 				{:else if saveStatus === 'error'}
 					Save failed
