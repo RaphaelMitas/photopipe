@@ -41,7 +41,7 @@
 	// Brightness state (ephemeral, never saved)
 	let brightness = $state(1.0);
 	let brightnessPercent = $derived(Math.round(brightness * 100));
-	let brightnessFill = $derived(((brightness - 0.5) / 2.5) * 100);
+	let brightnessFill = $derived(((brightness - 0.5) / 5.5) * 100);
 
 	// Filter state
 	let viewFilterMode = $state<'all' | 'eq' | 'gte' | 'lte' | 'unrated'>('all');
@@ -212,7 +212,7 @@
 		}
 		if (e.key === 'ArrowUp') {
 			e.preventDefault();
-			brightness = Math.min(3, +(brightness + 0.1).toFixed(2));
+			brightness = Math.min(6, +(brightness + 0.1).toFixed(2));
 			return;
 		}
 		if (e.key === 'ArrowDown') {
@@ -448,7 +448,7 @@
 							id="brightness-slider"
 							type="range"
 							min="0.5"
-							max="3"
+							max="6"
 							step="0.05"
 							bind:value={brightness}
 							onkeydown={(e) => e.stopPropagation()}
