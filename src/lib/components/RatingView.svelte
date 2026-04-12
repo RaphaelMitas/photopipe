@@ -38,6 +38,11 @@
 	let savedFadeTimer: ReturnType<typeof setTimeout> | undefined;
 	let eventSource: EventSource | undefined;
 
+	// Brightness state (ephemeral, never saved)
+	let brightness = $state(1.0);
+	let brightnessPercent = $derived(Math.round(brightness * 100));
+	let brightnessFill = $derived(((brightness - 0.5) / 2.5) * 100);
+
 	// Filter state
 	let viewFilterMode = $state<'all' | 'eq' | 'gte' | 'lte' | 'unrated'>('all');
 	let viewFilterValue = $state<number>(4);
@@ -205,6 +210,21 @@
 			goNext();
 			return;
 		}
+		if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			brightness = Math.min(3, +(brightness + 0.1).toFixed(2));
+			return;
+		}
+		if (e.key === 'ArrowDown') {
+			e.preventDefault();
+			brightness = Math.max(0.5, +(brightness - 0.1).toFixed(2));
+			return;
+		}
+		if (e.key === 'b') {
+			e.preventDefault();
+			brightness = 1;
+			return;
+		}
 		const num = parseInt(e.key);
 		if (num >= 1 && num <= 5) {
 			e.preventDefault();
@@ -369,6 +389,7 @@
 						alt={currentFile.name}
 						class="preview-img"
 						draggable="false"
+						style:filter={brightness !== 1 ? `brightness(${brightness})` : undefined}
 					/>
 				{/key}
 			{/if}
@@ -400,7 +421,50 @@
 			{#if currentFile}
 				<span class="file-name">{currentFile.name}</span>
 				<StarRatingWidget value={currentRating} size="lg" onchange={setRating} />
-				<span class="rating-hint">1-5 rate · arrows navigate · z zoom</span>
+				<div class="brightness-control" class:adjusted={brightness !== 1}>
+					<label for="brightness-slider" class="brightness-label">
+						<svg
+							width="14"
+							height="14"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+						>
+							<circle cx="12" cy="12" r="5" />
+							<line x1="12" y1="1" x2="12" y2="3" />
+							<line x1="12" y1="21" x2="12" y2="23" />
+							<line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+							<line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+							<line x1="1" y1="12" x2="3" y2="12" />
+							<line x1="21" y1="12" x2="23" y2="12" />
+							<line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+							<line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+						</svg>
+					</label>
+					<div class="brightness-track" style="--fill: {brightnessFill}%">
+						<input
+							id="brightness-slider"
+							type="range"
+							min="0.5"
+							max="3"
+							step="0.05"
+							bind:value={brightness}
+							onkeydown={(e) => e.stopPropagation()}
+						/>
+					</div>
+					<button
+						type="button"
+						class="brightness-reset"
+						class:visible={brightness !== 1}
+						onclick={() => (brightness = 1)}
+						title="Reset brightness (b)"
+					>
+						{brightnessPercent}%
+					</button>
+				</div>
+				<span class="rating-hint">1-5 rate · ←→ navigate · ↑↓ brightness · b reset · z zoom</span>
 			{/if}
 		</div>
 
@@ -657,6 +721,183 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.brightness-control {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.25rem 0.5rem;
+		border-radius: var(--radius-sm);
+		border: 1px solid transparent;
+		transition: all 0.2s;
+	}
+
+	.brightness-control.adjusted {
+		background: rgba(255, 255, 255, 0.03);
+		border-color: var(--border);
+	}
+
+	.brightness-label {
+		color: var(--text-muted);
+		display: flex;
+		align-items: center;
+		transition: color 0.2s;
+	}
+
+	.brightness-control.adjusted .brightness-label {
+		color: var(--accent-light);
+		filter: drop-shadow(0 0 4px var(--accent-glow));
+	}
+
+	/* Track wrapper — draws the visible rail via ::before, inset by thumb radius */
+	.brightness-track {
+		--thumb-size: 16px;
+		position: relative;
+		width: 100px;
+		height: var(--thumb-size);
+		display: flex;
+		align-items: center;
+	}
+
+	.brightness-track::before {
+		content: '';
+		position: absolute;
+		left: calc(var(--thumb-size) / 2);
+		right: calc(var(--thumb-size) / 2);
+		height: 6px;
+		top: 50%;
+		transform: translateY(-50%);
+		background: linear-gradient(
+			to right,
+			var(--accent) var(--fill),
+			var(--bg-active) var(--fill)
+		);
+		border-radius: var(--radius-full);
+		pointer-events: none;
+		transition: box-shadow 0.2s;
+	}
+
+	.brightness-control.adjusted .brightness-track::before {
+		box-shadow: 0 0 8px var(--accent-glow);
+	}
+
+	/* Range input — transparent track, full width */
+	.brightness-track input[type='range'] {
+		width: 100%;
+		height: 100%;
+		-webkit-appearance: none;
+		appearance: none;
+		background: transparent;
+		outline: none;
+		cursor: pointer;
+		margin: 0;
+		padding: 0;
+		border: none;
+		position: relative;
+		z-index: 1;
+	}
+
+	.brightness-track:has(input:focus-visible)::before {
+		box-shadow: 0 0 0 3px var(--accent-glow);
+	}
+
+	/* Webkit: hide default track */
+	.brightness-track input[type='range']::-webkit-slider-runnable-track {
+		background: transparent;
+		height: 6px;
+	}
+
+	/* Webkit thumb */
+	.brightness-track input[type='range']::-webkit-slider-thumb {
+		-webkit-appearance: none;
+		width: var(--thumb-size);
+		height: var(--thumb-size);
+		border-radius: 50%;
+		background: var(--text);
+		border: none;
+		cursor: pointer;
+		margin-top: -5px;
+		box-shadow:
+			0 1px 3px rgba(0, 0, 0, 0.4),
+			0 0 0 2px var(--bg-surface);
+		transition: all 0.15s;
+	}
+
+	.brightness-track input[type='range']::-webkit-slider-thumb:hover {
+		transform: scale(1.15);
+		box-shadow:
+			0 2px 6px rgba(0, 0, 0, 0.5),
+			0 0 0 2px var(--bg-surface),
+			0 0 10px var(--accent-glow-strong);
+	}
+
+	.brightness-track input[type='range']:active::-webkit-slider-thumb {
+		transform: scale(1.05);
+		background: var(--accent-light);
+		box-shadow:
+			0 1px 3px rgba(0, 0, 0, 0.4),
+			0 0 0 2px var(--bg-surface),
+			0 0 12px var(--accent-glow-strong);
+	}
+
+	/* Firefox: hide default track, use custom fill via wrapper */
+	.brightness-track input[type='range']::-moz-range-track {
+		background: transparent;
+		height: 6px;
+		border: none;
+	}
+
+	.brightness-track input[type='range']::-moz-range-progress {
+		background: transparent;
+	}
+
+	/* Firefox thumb */
+	.brightness-track input[type='range']::-moz-range-thumb {
+		width: var(--thumb-size);
+		height: var(--thumb-size);
+		border-radius: 50%;
+		background: var(--text);
+		border: none;
+		cursor: pointer;
+		box-shadow:
+			0 1px 3px rgba(0, 0, 0, 0.4),
+			0 0 0 2px var(--bg-surface);
+		transition: all 0.15s;
+	}
+
+	.brightness-track input[type='range']::-moz-range-thumb:hover {
+		transform: scale(1.15);
+		box-shadow:
+			0 2px 6px rgba(0, 0, 0, 0.5),
+			0 0 0 2px var(--bg-surface),
+			0 0 10px var(--accent-glow-strong);
+	}
+
+	.brightness-reset {
+		font-size: 0.7rem;
+		font-weight: 500;
+		font-variant-numeric: tabular-nums;
+		color: var(--text-muted);
+		background: none;
+		border: none;
+		padding: 0.15rem 0.35rem;
+		min-width: 38px;
+		text-align: center;
+		cursor: default;
+		border-radius: 4px;
+		transition: all 0.15s;
+		letter-spacing: -0.01em;
+	}
+
+	.brightness-reset.visible {
+		cursor: pointer;
+		color: var(--accent-light);
+	}
+
+	.brightness-reset.visible:hover {
+		background: var(--accent-glow);
+		color: var(--text);
 	}
 
 	.rating-hint {
