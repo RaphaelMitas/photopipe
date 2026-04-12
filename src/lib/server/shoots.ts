@@ -1,5 +1,7 @@
-import { readdir, stat, mkdir, readFile, writeFile, unlink, rm, rename } from 'node:fs/promises';
+import { readdir, stat, mkdir, readFile, unlink, rm, rename } from 'node:fs/promises';
 import { join } from 'node:path';
+import { Mutex } from 'async-mutex';
+import { Writer } from 'steno';
 import {
 	CAMERA_BASE,
 	CAMERA_HOST_BASE,
@@ -25,6 +27,28 @@ import type {
 import { PURERAW_SETTINGS } from '$lib/types.js';
 import { parseShootFolder, buildFolderName, slugifyName } from '$lib/utils.js';
 import { z } from 'zod/v4';
+
+const shootMutexes = new Map<string, Mutex>();
+
+function getShootMutex(folderName: string): Mutex {
+	let mutex = shootMutexes.get(folderName);
+	if (!mutex) {
+		mutex = new Mutex();
+		shootMutexes.set(folderName, mutex);
+	}
+	return mutex;
+}
+
+const metadataWriters = new Map<string, Writer>();
+
+function getMetadataWriter(shootPath: string): Writer {
+	let writer = metadataWriters.get(shootPath);
+	if (!writer) {
+		writer = new Writer(join(shootPath, METADATA_FILE));
+		metadataWriters.set(shootPath, writer);
+	}
+	return writer;
+}
 
 export class PhotopipeError extends Error {
 	constructor(
@@ -117,7 +141,7 @@ async function readMetadata(shootPath: string): Promise<ShootMetadata | null> {
 }
 
 async function writeMetadata(shootPath: string, metadata: ShootMetadata): Promise<void> {
-	await writeFile(join(shootPath, METADATA_FILE), JSON.stringify(metadata, null, '\t'), 'utf-8');
+	await getMetadataWriter(shootPath).write(JSON.stringify(metadata, null, '\t'));
 }
 
 function deriveStatus(
@@ -348,17 +372,19 @@ export async function updateMetadata(
 ): Promise<ShootMetadata> {
 	validateShootName(folderName);
 
-	const shootPath = join(CAMERA_BASE, folderName);
-	const existing = await readMetadata(shootPath);
+	return getShootMutex(folderName).runExclusive(async () => {
+		const shootPath = join(CAMERA_BASE, folderName);
+		const existing = await readMetadata(shootPath);
 
-	if (!existing) {
-		throw new PhotopipeError('Shoot metadata not found', 'NOT_FOUND', 404);
-	}
+		if (!existing) {
+			throw new PhotopipeError('Shoot metadata not found', 'NOT_FOUND', 404);
+		}
 
-	const updated: ShootMetadata = { ...existing, ...updates };
-	await writeMetadata(shootPath, updated);
+		const updated: ShootMetadata = { ...existing, ...updates };
+		await writeMetadata(shootPath, updated);
 
-	return updated;
+		return updated;
+	});
 }
 
 const DELETABLE_EXTENSIONS: Record<string, string[]> = {
@@ -445,14 +471,16 @@ export async function deleteFiles(
 	}
 
 	if (folder === 'rated' && deletedCount > 0) {
-		const shootPath = join(CAMERA_BASE, folderName);
-		const metadata = await readMetadata(shootPath);
-		if (metadata) {
-			for (const fileName of targets) {
-				delete metadata.ratings[fileName];
+		await getShootMutex(folderName).runExclusive(async () => {
+			const shootPath = join(CAMERA_BASE, folderName);
+			const metadata = await readMetadata(shootPath);
+			if (metadata) {
+				for (const fileName of targets) {
+					delete metadata.ratings[fileName];
+				}
+				await writeMetadata(shootPath, metadata);
 			}
-			await writeMetadata(shootPath, metadata);
-		}
+		});
 	}
 
 	return { deletedCount, freedBytes };
@@ -477,63 +505,60 @@ export async function rateFiles(
 	ratings: Array<{ file: string; rating: StarRating }>
 ): Promise<{ movedCount: number }> {
 	validateShootName(folderName);
-	const shootPath = join(CAMERA_BASE, folderName);
 
-	await mkdir(join(shootPath, RATED_DIR), { recursive: true });
+	return getShootMutex(folderName).runExclusive(async () => {
+		const shootPath = join(CAMERA_BASE, folderName);
 
-	const metadata = await readMetadata(shootPath);
-	if (!metadata) {
-		throw new PhotopipeError('Shoot metadata not found', 'NOT_FOUND', 404);
-	}
+		await mkdir(join(shootPath, RATED_DIR), { recursive: true });
 
-	let movedCount = 0;
-	for (const { file, rating } of ratings) {
-		validateFileName(file);
-		const src = join(shootPath, DENOISED_DIR, file);
-		const dest = join(shootPath, RATED_DIR, file);
-		try {
-			await rename(src, dest);
-			metadata.ratings[file] = rating;
-			movedCount++;
-		} catch {
-			// File might not exist or already moved
+		const metadata = await readMetadata(shootPath);
+		if (!metadata) {
+			throw new PhotopipeError('Shoot metadata not found', 'NOT_FOUND', 404);
 		}
-	}
 
-	await writeMetadata(shootPath, metadata);
-	return { movedCount };
+		let movedCount = 0;
+		for (const { file, rating } of ratings) {
+			validateFileName(file);
+			const src = join(shootPath, DENOISED_DIR, file);
+			const dest = join(shootPath, RATED_DIR, file);
+			try {
+				await rename(src, dest);
+				metadata.ratings[file] = rating;
+				movedCount++;
+			} catch {
+				// File might not exist or already moved
+			}
+		}
+
+		await writeMetadata(shootPath, metadata);
+		return { movedCount };
+	});
 }
 
-export async function updateRating(
+export async function updateRatings(
 	folderName: string,
-	file: string,
-	rating: StarRating
+	ratings: Array<{ file: string; rating: StarRating }>
 ): Promise<void> {
 	validateShootName(folderName);
-	validateFileName(file);
-	const shootPath = join(CAMERA_BASE, folderName);
 
-	let found = false;
-	for (const dir of [RATED_DIR, SELECTS_DIR]) {
-		try {
-			await stat(join(shootPath, dir, file));
-			found = true;
-			break;
-		} catch {
-			// Try next
+	await getShootMutex(folderName).runExclusive(async () => {
+		const shootPath = join(CAMERA_BASE, folderName);
+
+		for (const { file } of ratings) {
+			validateFileName(file);
 		}
-	}
-	if (!found) {
-		throw new PhotopipeError(`File "${file}" not found in rated/ or selects/`, 'NOT_FOUND', 404);
-	}
 
-	const metadata = await readMetadata(shootPath);
-	if (!metadata) {
-		throw new PhotopipeError('Shoot metadata not found', 'NOT_FOUND', 404);
-	}
+		const metadata = await readMetadata(shootPath);
+		if (!metadata) {
+			throw new PhotopipeError('Shoot metadata not found', 'NOT_FOUND', 404);
+		}
 
-	metadata.ratings[file] = rating;
-	await writeMetadata(shootPath, metadata);
+		for (const { file, rating } of ratings) {
+			metadata.ratings[file] = rating;
+		}
+
+		await writeMetadata(shootPath, metadata);
+	});
 }
 
 type MoveableFolder = 'raw' | 'denoised' | 'rated' | 'selects' | 'exports';

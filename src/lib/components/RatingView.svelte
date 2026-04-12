@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import type { FileInfo, StarRating } from '$lib/types.js';
 	import StarRatingWidget from './StarRating.svelte';
@@ -9,15 +9,15 @@
 		files,
 		existingRatings,
 		onclose,
-		onsave,
+		onrate,
 		startIndex = 0,
 		folder = 'denoised'
 	}: {
 		shootName: string;
 		files: FileInfo[];
 		existingRatings: Record<string, StarRating>;
-		onclose: () => void;
-		onsave: (ratings: Array<{ file: string; rating: StarRating }>) => void;
+		onclose: (allRatings: Array<{ file: string; rating: StarRating }>) => void;
+		onrate: (ratings: Array<{ file: string; rating: StarRating }>) => Promise<void>;
 		startIndex?: number;
 		folder?: string;
 	} = $props();
@@ -27,10 +27,14 @@
 		currentIndex = startIndex;
 	});
 	let pendingRatings = new SvelteMap<string, StarRating>();
-	let saving = $state(false);
+	let unsaved = new SvelteMap<string, StarRating>();
 	let zoomed = $state(false);
 	let filmstripEl: HTMLDivElement | undefined = $state();
 	let previewAreaEl: HTMLDivElement | undefined = $state();
+
+	let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
+	let flushTimer: ReturnType<typeof setTimeout> | undefined;
+	let savedFadeTimer: ReturnType<typeof setTimeout> | undefined;
 
 	// Filter state
 	let viewFilterMode = $state<'all' | 'eq' | 'gte' | 'lte' | 'unrated'>('all');
@@ -59,7 +63,6 @@
 	let ratedCount = $derived(
 		files.filter((f) => pendingRatings.has(f.name) || existingRatings[f.name] !== undefined).length
 	);
-	let hasPending = $derived(pendingRatings.size > 0);
 
 	let currentFilteredPos = $derived(filteredIndices.indexOf(currentIndex));
 	let hasPrevFiltered = $derived(
@@ -74,6 +77,33 @@
 	function setRating(rating: StarRating) {
 		if (!currentFile) return;
 		pendingRatings.set(currentFile.name, rating);
+		unsaved.set(currentFile.name, rating);
+		scheduleFlush();
+	}
+
+	function scheduleFlush() {
+		clearTimeout(flushTimer);
+		flushTimer = setTimeout(flush, 500);
+	}
+
+	async function flush() {
+		clearTimeout(flushTimer);
+		if (unsaved.size === 0) return;
+
+		const batch = Array.from(unsaved.entries()).map(([file, rating]) => ({ file, rating }));
+		unsaved.clear();
+
+		saveStatus = 'saving';
+		try {
+			await onrate(batch);
+			saveStatus = 'saved';
+			clearTimeout(savedFadeTimer);
+			savedFadeTimer = setTimeout(() => {
+				saveStatus = 'idle';
+			}, 2000);
+		} catch {
+			saveStatus = 'error';
+		}
 	}
 
 	function goTo(index: number) {
@@ -106,17 +136,13 @@
 		thumb?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
 	}
 
-	function handleSave() {
-		if (pendingRatings.size === 0) {
-			onclose();
-			return;
-		}
-		saving = true;
-		const ratings = Array.from(pendingRatings.entries()).map(([file, rating]) => ({
+	async function handleClose() {
+		await flush();
+		const allRatings = Array.from(pendingRatings.entries()).map(([file, rating]) => ({
 			file,
 			rating
 		}));
-		onsave(ratings);
+		onclose(allRatings);
 	}
 
 	function toggleZoom(e: MouseEvent) {
@@ -147,7 +173,7 @@
 				e.stopPropagation();
 				return;
 			}
-			onclose();
+			handleClose();
 			return;
 		}
 		if (e.key === 'z' || e.key === ' ') {
@@ -179,6 +205,11 @@
 	onMount(() => {
 		scrollFilmstrip();
 	});
+
+	onDestroy(() => {
+		clearTimeout(flushTimer);
+		clearTimeout(savedFadeTimer);
+	});
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -186,7 +217,7 @@
 <div class="overlay" role="dialog" aria-modal="true" aria-label="Rating view">
 	<header class="toolbar">
 		<div class="toolbar-left">
-			<button type="button" class="btn-ghost btn-sm" onclick={onclose}>
+			<button type="button" class="btn-ghost btn-sm" onclick={handleClose}>
 				<svg
 					width="14"
 					height="14"
@@ -215,7 +246,7 @@
 						if (viewFilterMode === 'all' || viewFilterMode === 'unrated') viewFilterMode = 'gte';
 					}}
 				>
-					<option value="gte">≥</option>
+					<option value="gte">��</option>
 					<option value="eq">=</option>
 					<option value="lte">≤</option>
 				</select>
@@ -245,16 +276,16 @@
 			</span>
 		</div>
 		<div class="toolbar-right">
-			<button
-				type="button"
-				class="btn-primary btn-sm"
-				disabled={saving || !hasPending}
-				onclick={handleSave}
-			>
-				{saving
-					? 'Saving...'
-					: `Save ${pendingRatings.size} rating${pendingRatings.size !== 1 ? 's' : ''}`}
-			</button>
+			<span class="save-status" class:saving={saveStatus === 'saving'} class:saved={saveStatus === 'saved'} class:error={saveStatus === 'error'}>
+				{#if saveStatus === 'saving'}
+					<span class="status-dot"></span> Saving…
+				{:else if saveStatus === 'saved'}
+					<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12" /></svg>
+					Saved
+				{:else if saveStatus === 'error'}
+					Save failed
+				{/if}
+			</span>
 		</div>
 	</header>
 
@@ -377,7 +408,7 @@
 		justify-content: space-between;
 		padding: 0.5rem 1rem;
 		border-bottom: 1px solid var(--border);
-		background: rgba(9, 9, 11, 0.85);
+		background: var(--header-bg);
 		backdrop-filter: blur(12px);
 		flex-shrink: 0;
 		z-index: 10;
@@ -393,6 +424,35 @@
 	.toolbar-right {
 		display: flex;
 		justify-content: flex-end;
+	}
+
+	.save-status {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		transition: opacity 0.3s;
+	}
+
+	.save-status.saving {
+		color: var(--accent-light);
+	}
+
+	.save-status.saved {
+		color: var(--green);
+	}
+
+	.save-status.error {
+		color: var(--red);
+	}
+
+	.status-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--accent-light);
+		animation: pulse 1.5s ease-in-out infinite;
 	}
 
 	.toolbar-center {
@@ -430,7 +490,7 @@
 	.vf-btn.active {
 		background: var(--bg-surface);
 		color: var(--text);
-		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+		box-shadow: 0 1px 2px var(--shadow-color);
 	}
 
 	.vf-op {
@@ -466,7 +526,7 @@
 		top: 50%;
 		transform: translateY(-50%);
 		z-index: 5;
-		background: rgba(17, 17, 19, 0.7);
+		background: var(--nav-btn-bg);
 		backdrop-filter: blur(8px);
 		color: var(--text-secondary);
 		border: 1px solid var(--border);
@@ -522,7 +582,7 @@
 		align-items: flex-start;
 		justify-content: flex-start;
 		scrollbar-width: thin;
-		scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+		scrollbar-color: var(--scrollbar-thumb-hover) transparent;
 	}
 
 	.preview-area.zoomed .preview-img {
