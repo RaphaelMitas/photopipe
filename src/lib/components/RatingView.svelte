@@ -3,6 +3,12 @@
 	import { SvelteMap } from 'svelte/reactivity';
 	import type { FileInfo, StarRating, RatingEvent } from '$lib/types.js';
 	import StarRatingWidget from './StarRating.svelte';
+	import ExposureCanvas from './ExposureCanvas.svelte';
+	import {
+		DEFAULT_ADJUSTMENTS,
+		hasAdjustments,
+		type AdjustmentParams
+	} from '$lib/webgl/exposure-renderer.js';
 
 	let {
 		shootName,
@@ -38,10 +44,11 @@
 	let savedFadeTimer: ReturnType<typeof setTimeout> | undefined;
 	let eventSource: EventSource | undefined;
 
-	// Brightness state (ephemeral, never saved)
-	let brightness = $state(1.0);
-	let brightnessPercent = $derived(Math.round(brightness * 100));
-	let brightnessFill = $derived(((brightness - 0.5) / 5.5) * 100);
+	let adjustments = $state<AdjustmentParams>({ ...DEFAULT_ADJUSTMENTS });
+	let adjusted = $derived(hasAdjustments(adjustments));
+	let exposureDisplay = $derived(
+		(adjustments.exposure >= 0 ? '+' : '') + adjustments.exposure.toFixed(2) + ' EV'
+	);
 
 	// Filter state
 	let viewFilterMode = $state<'all' | 'eq' | 'gte' | 'lte' | 'unrated'>('all');
@@ -212,17 +219,17 @@
 		}
 		if (e.key === 'ArrowUp') {
 			e.preventDefault();
-			brightness = Math.min(6, +(brightness + 0.1).toFixed(2));
+			adjustments.exposure = Math.min(5, +(adjustments.exposure + 0.25).toFixed(2));
 			return;
 		}
 		if (e.key === 'ArrowDown') {
 			e.preventDefault();
-			brightness = Math.max(0.5, +(brightness - 0.1).toFixed(2));
+			adjustments.exposure = Math.max(-5, +(adjustments.exposure - 0.25).toFixed(2));
 			return;
 		}
 		if (e.key === 'b') {
 			e.preventDefault();
-			brightness = 1;
+			adjustments = { ...DEFAULT_ADJUSTMENTS };
 			return;
 		}
 		const num = parseInt(e.key);
@@ -383,15 +390,12 @@
 			aria-label={zoomed ? 'Click to zoom out' : 'Click to zoom in'}
 		>
 			{#if currentFile}
-				{#key currentFile.name}
-					<img
-						src={previewUrl(currentFile.name, 'preview')}
-						alt={currentFile.name}
-						class="preview-img"
-						draggable="false"
-						style:filter={brightness !== 1 ? `brightness(${brightness})` : undefined}
-					/>
-				{/key}
+				<ExposureCanvas
+					src={previewUrl(currentFile.name, 'preview')}
+					alt={currentFile.name}
+					{adjustments}
+					class="preview-img"
+				/>
 			{/if}
 		</div>
 
@@ -421,8 +425,8 @@
 			{#if currentFile}
 				<span class="file-name">{currentFile.name}</span>
 				<StarRatingWidget value={currentRating} size="lg" onchange={setRating} />
-				<div class="brightness-control" class:adjusted={brightness !== 1}>
-					<label for="brightness-slider" class="brightness-label">
+				<div class="adj-control" class:adjusted>
+					<label for="exposure-slider" class="adj-icon">
 						<svg
 							width="14"
 							height="14"
@@ -443,28 +447,28 @@
 							<line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
 						</svg>
 					</label>
-					<div class="brightness-track" style="--fill: {brightnessFill}%">
+					<div class="adj-track" style="--fill: {((adjustments.exposure + 5) / 10) * 100}%">
 						<input
-							id="brightness-slider"
+							id="exposure-slider"
 							type="range"
-							min="0.5"
-							max="6"
+							min="-5"
+							max="5"
 							step="0.05"
-							bind:value={brightness}
+							bind:value={adjustments.exposure}
 							onkeydown={(e) => e.stopPropagation()}
 						/>
 					</div>
 					<button
 						type="button"
-						class="brightness-reset"
-						class:visible={brightness !== 1}
-						onclick={() => (brightness = 1)}
-						title="Reset brightness (b)"
+						class="adj-reset"
+						class:visible={adjusted}
+						onclick={() => (adjustments = { ...DEFAULT_ADJUSTMENTS })}
+						title="Reset exposure (b)"
 					>
-						{brightnessPercent}%
+						{exposureDisplay}
 					</button>
 				</div>
-				<span class="rating-hint">1-5 rate · ←→ navigate · ↑↓ brightness · b reset · z zoom</span>
+				<span class="rating-hint">1-5 rate · ←→ navigate · ↑↓ exposure · b reset · z zoom</span>
 			{/if}
 		</div>
 
@@ -673,7 +677,7 @@
 		cursor: zoom-in;
 	}
 
-	.preview-img {
+	.preview-area :global(.preview-img) {
 		max-width: 100%;
 		max-height: 100%;
 		object-fit: contain;
@@ -691,7 +695,7 @@
 		scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 	}
 
-	.preview-area.zoomed .preview-img {
+	.preview-area.zoomed :global(.preview-img) {
 		max-width: none;
 		max-height: none;
 		width: auto;
@@ -723,7 +727,7 @@
 		white-space: nowrap;
 	}
 
-	.brightness-control {
+	.adj-control {
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
@@ -733,26 +737,25 @@
 		transition: all 0.2s;
 	}
 
-	.brightness-control.adjusted {
+	.adj-control.adjusted {
 		background: rgba(255, 255, 255, 0.03);
 		border-color: var(--border);
 	}
 
-	.brightness-label {
+	.adj-icon {
 		color: var(--text-muted);
 		display: flex;
 		align-items: center;
 		transition: color 0.2s;
 	}
 
-	.brightness-control.adjusted .brightness-label {
+	.adj-control.adjusted .adj-icon {
 		color: var(--accent-light);
 		filter: drop-shadow(0 0 4px var(--accent-glow));
 	}
 
-	/* Track wrapper — draws the visible rail via ::before, inset by thumb radius */
-	.brightness-track {
-		--thumb-size: 16px;
+	.adj-track {
+		--thumb-size: 14px;
 		position: relative;
 		width: 100px;
 		height: var(--thumb-size);
@@ -760,26 +763,20 @@
 		align-items: center;
 	}
 
-	.brightness-track::before {
+	.adj-track::before {
 		content: '';
 		position: absolute;
 		left: calc(var(--thumb-size) / 2);
 		right: calc(var(--thumb-size) / 2);
-		height: 6px;
+		height: 4px;
 		top: 50%;
 		transform: translateY(-50%);
 		background: linear-gradient(to right, var(--accent) var(--fill), var(--bg-active) var(--fill));
 		border-radius: var(--radius-full);
 		pointer-events: none;
-		transition: box-shadow 0.2s;
 	}
 
-	.brightness-control.adjusted .brightness-track::before {
-		box-shadow: 0 0 8px var(--accent-glow);
-	}
-
-	/* Range input — transparent track, full width */
-	.brightness-track input[type='range'] {
+	.adj-track input[type='range'] {
 		width: 100%;
 		height: 100%;
 		-webkit-appearance: none;
@@ -794,18 +791,16 @@
 		z-index: 1;
 	}
 
-	.brightness-track:has(input:focus-visible)::before {
+	.adj-track:has(input:focus-visible)::before {
 		box-shadow: 0 0 0 3px var(--accent-glow);
 	}
 
-	/* Webkit: hide default track */
-	.brightness-track input[type='range']::-webkit-slider-runnable-track {
+	.adj-track input[type='range']::-webkit-slider-runnable-track {
 		background: transparent;
-		height: 6px;
+		height: 4px;
 	}
 
-	/* Webkit thumb */
-	.brightness-track input[type='range']::-webkit-slider-thumb {
+	.adj-track input[type='range']::-webkit-slider-thumb {
 		-webkit-appearance: none;
 		width: var(--thumb-size);
 		height: var(--thumb-size);
@@ -820,7 +815,7 @@
 		transition: all 0.15s;
 	}
 
-	.brightness-track input[type='range']::-webkit-slider-thumb:hover {
+	.adj-track input[type='range']::-webkit-slider-thumb:hover {
 		transform: scale(1.15);
 		box-shadow:
 			0 2px 6px rgba(0, 0, 0, 0.5),
@@ -828,7 +823,7 @@
 			0 0 10px var(--accent-glow-strong);
 	}
 
-	.brightness-track input[type='range']:active::-webkit-slider-thumb {
+	.adj-track input[type='range']:active::-webkit-slider-thumb {
 		transform: scale(1.05);
 		background: var(--accent-light);
 		box-shadow:
@@ -837,19 +832,17 @@
 			0 0 12px var(--accent-glow-strong);
 	}
 
-	/* Firefox: hide default track, use custom fill via wrapper */
-	.brightness-track input[type='range']::-moz-range-track {
+	.adj-track input[type='range']::-moz-range-track {
 		background: transparent;
-		height: 6px;
+		height: 4px;
 		border: none;
 	}
 
-	.brightness-track input[type='range']::-moz-range-progress {
+	.adj-track input[type='range']::-moz-range-progress {
 		background: transparent;
 	}
 
-	/* Firefox thumb */
-	.brightness-track input[type='range']::-moz-range-thumb {
+	.adj-track input[type='range']::-moz-range-thumb {
 		width: var(--thumb-size);
 		height: var(--thumb-size);
 		border-radius: 50%;
@@ -862,7 +855,7 @@
 		transition: all 0.15s;
 	}
 
-	.brightness-track input[type='range']::-moz-range-thumb:hover {
+	.adj-track input[type='range']::-moz-range-thumb:hover {
 		transform: scale(1.15);
 		box-shadow:
 			0 2px 6px rgba(0, 0, 0, 0.5),
@@ -870,7 +863,7 @@
 			0 0 10px var(--accent-glow-strong);
 	}
 
-	.brightness-reset {
+	.adj-reset {
 		font-size: 0.7rem;
 		font-weight: 500;
 		font-variant-numeric: tabular-nums;
@@ -878,7 +871,7 @@
 		background: none;
 		border: none;
 		padding: 0.15rem 0.35rem;
-		min-width: 38px;
+		min-width: 52px;
 		text-align: center;
 		cursor: default;
 		border-radius: 4px;
@@ -886,12 +879,12 @@
 		letter-spacing: -0.01em;
 	}
 
-	.brightness-reset.visible {
+	.adj-reset.visible {
 		cursor: pointer;
 		color: var(--accent-light);
 	}
 
-	.brightness-reset.visible:hover {
+	.adj-reset.visible:hover {
 		background: var(--accent-glow);
 		color: var(--text);
 	}
