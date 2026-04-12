@@ -275,7 +275,7 @@
 						if (viewFilterMode === 'all' || viewFilterMode === 'unrated') viewFilterMode = 'gte';
 					}}
 				>
-					<option value="gte">��</option>
+					<option value="gte">&ge;</option>
 					<option value="eq">=</option>
 					<option value="lte">≤</option>
 				</select>
@@ -450,7 +450,7 @@
 		justify-content: space-between;
 		padding: 0.5rem 1rem;
 		border-bottom: 1px solid var(--border);
-		background: var(--header-bg);
+		background: rgba(9, 9, 11, 0.85);
 		backdrop-filter: blur(12px);
 		flex-shrink: 0;
 		z-index: 10;
@@ -532,7 +532,7 @@
 	.vf-btn.active {
 		background: var(--bg-surface);
 		color: var(--text);
-		box-shadow: 0 1px 2px var(--shadow-color);
+		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 	}
 
 	.vf-op {
@@ -568,7 +568,7 @@
 		top: 50%;
 		transform: translateY(-50%);
 		z-index: 5;
-		background: var(--nav-btn-bg);
+		background: rgba(17, 17, 19, 0.7);
 		backdrop-filter: blur(8px);
 		color: var(--text-secondary);
 		border: 1px solid var(--border);
@@ -624,7 +624,7 @@
 		align-items: flex-start;
 		justify-content: flex-start;
 		scrollbar-width: thin;
-		scrollbar-color: var(--scrollbar-thumb-hover) transparent;
+		scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 	}
 
 	.preview-area.zoomed .preview-img {

@@ -280,11 +280,12 @@
 
 	async function handleRate(ratings: Array<{ file: string; rating: StarRatingType }>) {
 		const shootUrl = `/api/shoots/${encodeURIComponent(data.shoot.folderName)}/rate`;
-		await fetch(shootUrl, {
+		const res = await fetch(shootUrl, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ ratings })
 		});
+		if (!res.ok) throw new Error(`Rating save failed (${res.status})`);
 	}
 
 	async function handleRatingViewClose(
@@ -292,11 +293,12 @@
 	) {
 		if (ratingViewFolder === 'denoised' && allRatings.length > 0) {
 			const shootUrl = `/api/shoots/${encodeURIComponent(data.shoot.folderName)}/rate`;
-			await fetch(shootUrl, {
+			const res = await fetch(shootUrl, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ ratings: allRatings })
 			});
+			if (!res.ok) throw new Error(`Failed to move rated files (${res.status})`);
 		}
 		showRatingView = false;
 		await invalidateAll();
