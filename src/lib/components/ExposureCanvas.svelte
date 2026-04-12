@@ -65,10 +65,5 @@
 			: undefined}
 	/>
 {:else}
-	<canvas
-		bind:this={canvasEl}
-		class={className}
-		draggable="false"
-		aria-label={alt}
-	></canvas>
+	<canvas bind:this={canvasEl} class={className} draggable="false" aria-label={alt}></canvas>
 {/if}

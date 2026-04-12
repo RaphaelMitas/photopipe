@@ -4,7 +4,11 @@
 	import type { FileInfo, StarRating, RatingEvent } from '$lib/types.js';
 	import StarRatingWidget from './StarRating.svelte';
 	import ExposureCanvas from './ExposureCanvas.svelte';
-	import { DEFAULT_ADJUSTMENTS, hasAdjustments, type AdjustmentParams } from '$lib/webgl/exposure-renderer.js';
+	import {
+		DEFAULT_ADJUSTMENTS,
+		hasAdjustments,
+		type AdjustmentParams
+	} from '$lib/webgl/exposure-renderer.js';
 
 	let {
 		shootName,
