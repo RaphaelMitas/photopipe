@@ -5,8 +5,10 @@ class RatingBroadcaster {
 	private encoder = new TextEncoder();
 
 	subscribe(shootName: string): ReadableStream<Uint8Array> {
+		let ctrl: ReadableStreamDefaultController<Uint8Array>;
 		return new ReadableStream<Uint8Array>({
 			start: (controller) => {
+				ctrl = controller;
 				let subs = this.subscribers.get(shootName);
 				if (!subs) {
 					subs = new Set();
@@ -17,8 +19,10 @@ class RatingBroadcaster {
 			cancel: () => {
 				const subs = this.subscribers.get(shootName);
 				if (!subs) return;
-				// On cancel we can't match the exact controller reference,
-				// but dead controllers get pruned on next broadcast
+				subs.delete(ctrl);
+				if (subs.size === 0) {
+					this.subscribers.delete(shootName);
+				}
 			}
 		});
 	}
