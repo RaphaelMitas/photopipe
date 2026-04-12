@@ -81,6 +81,7 @@ async function generatePreview(
 	const input = jpeg ?? sourcePath;
 
 	const buf = await sharp(input)
+		.rotate()
 		.resize(PREVIEW_WIDTH, null, { fit: 'inside', withoutEnlargement: true })
 		.webp({ quality: PREVIEW_QUALITY })
 		.toBuffer();
@@ -106,6 +107,7 @@ async function generateThumb(
 	const input = jpeg ?? sourcePath;
 
 	const buf = await sharp(input)
+		.rotate()
 		.resize(600, 600, { fit: 'inside', withoutEnlargement: true })
 		.webp({ quality: 80 })
 		.toBuffer();
