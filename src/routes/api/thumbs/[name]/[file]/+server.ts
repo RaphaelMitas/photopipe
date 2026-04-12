@@ -130,6 +130,7 @@ async function generateThumbnail(
 	await mkdir(thumbDir, { recursive: true });
 
 	const buf = await sharp(sourcePath)
+		.rotate()
 		.resize(400, 400, { fit: 'inside', withoutEnlargement: true })
 		.webp({ quality: 80 })
 		.toBuffer();
