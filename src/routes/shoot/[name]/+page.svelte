@@ -278,40 +278,37 @@
 		await invalidateAll();
 	}
 
-	async function handleRatingSave(ratings: Array<{ file: string; rating: StarRatingType }>) {
+	async function handleRate(ratings: Array<{ file: string; rating: StarRatingType }>) {
 		const shootUrl = `/api/shoots/${encodeURIComponent(data.shoot.folderName)}/rate`;
+		const res = await fetch(shootUrl, {
+			method: 'PATCH',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ ratings })
+		});
+		if (!res.ok) throw new Error(`Rating save failed (${res.status})`);
+	}
 
-		if (ratingViewFolder === 'denoised') {
+	async function handleRatingViewClose(
+		allRatings: Array<{ file: string; rating: StarRatingType }>
+	) {
+		if (ratingViewFolder === 'denoised' && allRatings.length > 0) {
+			const shootUrl = `/api/shoots/${encodeURIComponent(data.shoot.folderName)}/rate`;
 			const res = await fetch(shootUrl, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ ratings })
+				body: JSON.stringify({ ratings: allRatings })
 			});
-			if (res.ok) {
-				showRatingView = false;
-				await invalidateAll();
-			}
-		} else {
-			// Re-rating files in rated/ or selects/ — update metadata only
-			await Promise.all(
-				ratings.map((r) =>
-					fetch(shootUrl, {
-						method: 'PATCH',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({ file: r.file, rating: r.rating })
-					})
-				)
-			);
-			showRatingView = false;
-			await invalidateAll();
+			if (!res.ok) throw new Error(`Failed to move rated files (${res.status})`);
 		}
+		showRatingView = false;
+		await invalidateAll();
 	}
 
 	async function handleInlineRatingChange(file: string, rating: StarRatingType) {
 		await fetch(`/api/shoots/${encodeURIComponent(data.shoot.folderName)}/rate`, {
 			method: 'PATCH',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ file, rating })
+			body: JSON.stringify({ ratings: [{ file, rating }] })
 		});
 		await invalidateAll();
 	}
@@ -1205,8 +1202,8 @@
 			folder={ratingViewFolder}
 			startIndex={ratingViewStartIndex}
 			existingRatings={data.shoot.metadata.ratings}
-			onclose={() => (showRatingView = false)}
-			onsave={handleRatingSave}
+			onclose={handleRatingViewClose}
+			onrate={handleRate}
 		/>
 	{/if}
 </div>
