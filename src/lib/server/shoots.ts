@@ -27,6 +27,7 @@ import type {
 import { PURERAW_SETTINGS } from '$lib/types.js';
 import { parseShootFolder, buildFolderName, slugifyName } from '$lib/utils.js';
 import { z } from 'zod/v4';
+import { ratingBroadcaster } from './rating-broadcaster.js';
 
 const shootMutexes = new Map<string, Mutex>();
 
@@ -531,6 +532,15 @@ export async function rateFiles(
 		}
 
 		await writeMetadata(shootPath, metadata);
+
+		const changed: Record<string, StarRating> = {};
+		for (const { file, rating } of ratings) {
+			if (metadata.ratings[file]) changed[file] = rating;
+		}
+		if (Object.keys(changed).length > 0) {
+			ratingBroadcaster.broadcast(folderName, changed);
+		}
+
 		return { movedCount };
 	});
 }
@@ -558,6 +568,12 @@ export async function updateRatings(
 		}
 
 		await writeMetadata(shootPath, metadata);
+
+		const changed: Record<string, StarRating> = {};
+		for (const { file, rating } of ratings) {
+			changed[file] = rating;
+		}
+		ratingBroadcaster.broadcast(folderName, changed);
 	});
 }
 

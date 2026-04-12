@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
-	import type { FileInfo, StarRating } from '$lib/types.js';
+	import type { FileInfo, StarRating, RatingEvent } from '$lib/types.js';
 	import StarRatingWidget from './StarRating.svelte';
 
 	let {
@@ -28,6 +28,7 @@
 	});
 	let pendingRatings = new SvelteMap<string, StarRating>();
 	let unsaved = new SvelteMap<string, StarRating>();
+	let remoteRatings = new SvelteMap<string, StarRating>();
 	let zoomed = $state(false);
 	let filmstripEl: HTMLDivElement | undefined = $state();
 	let previewAreaEl: HTMLDivElement | undefined = $state();
@@ -35,13 +36,14 @@
 	let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
 	let flushTimer: ReturnType<typeof setTimeout> | undefined;
 	let savedFadeTimer: ReturnType<typeof setTimeout> | undefined;
+	let eventSource: EventSource | undefined;
 
 	// Filter state
 	let viewFilterMode = $state<'all' | 'eq' | 'gte' | 'lte' | 'unrated'>('all');
 	let viewFilterValue = $state<number>(4);
 
 	function fileRating(fileName: string): StarRating | null {
-		return pendingRatings.get(fileName) ?? existingRatings[fileName] ?? null;
+		return unsaved.get(fileName) ?? remoteRatings.get(fileName) ?? existingRatings[fileName] ?? null;
 	}
 
 	function matchesFilter(index: number): boolean {
@@ -61,7 +63,12 @@
 	let currentFile = $derived(files[currentIndex]);
 	let currentRating = $derived<StarRating | null>(fileRating(currentFile?.name ?? ''));
 	let ratedCount = $derived(
-		files.filter((f) => pendingRatings.has(f.name) || existingRatings[f.name] !== undefined).length
+		files.filter(
+			(f) =>
+				unsaved.has(f.name) ||
+				remoteRatings.has(f.name) ||
+				existingRatings[f.name] !== undefined
+		).length
 	);
 
 	let currentFilteredPos = $derived(filteredIndices.indexOf(currentIndex));
@@ -96,6 +103,9 @@
 		saveStatus = 'saving';
 		try {
 			await onrate(batch);
+			for (const { file, rating } of batch) {
+				remoteRatings.set(file, rating);
+			}
 			saveStatus = 'saved';
 			clearTimeout(savedFadeTimer);
 			savedFadeTimer = setTimeout(() => {
@@ -103,6 +113,10 @@
 			}, 2000);
 		} catch {
 			saveStatus = 'error';
+			for (const { file, rating } of batch) {
+				unsaved.set(file, rating);
+			}
+			scheduleFlush();
 		}
 	}
 
@@ -204,11 +218,28 @@
 
 	onMount(() => {
 		scrollFilmstrip();
+
+		eventSource = new EventSource(
+			`/api/shoots/${encodeURIComponent(shootName)}/ratings-stream`
+		);
+		eventSource.onmessage = (e) => {
+			try {
+				const data: RatingEvent = JSON.parse(e.data);
+				for (const [file, rating] of Object.entries(data.ratings)) {
+					if (!unsaved.has(file)) {
+						remoteRatings.set(file, rating as StarRating);
+					}
+				}
+			} catch {
+				// Ignore malformed events
+			}
+		};
 	});
 
 	onDestroy(() => {
 		clearTimeout(flushTimer);
 		clearTimeout(savedFadeTimer);
+		eventSource?.close();
 	});
 </script>
 
