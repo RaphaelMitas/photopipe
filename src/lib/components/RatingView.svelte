@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
-	import type { FileInfo, StarRating } from '$lib/types.js';
+	import type { FileInfo, StarRating, RatingEvent } from '$lib/types.js';
 	import StarRatingWidget from './StarRating.svelte';
 
 	let {
@@ -9,15 +9,15 @@
 		files,
 		existingRatings,
 		onclose,
-		onsave,
+		onrate,
 		startIndex = 0,
 		folder = 'denoised'
 	}: {
 		shootName: string;
 		files: FileInfo[];
 		existingRatings: Record<string, StarRating>;
-		onclose: () => void;
-		onsave: (ratings: Array<{ file: string; rating: StarRating }>) => void;
+		onclose: (allRatings: Array<{ file: string; rating: StarRating }>) => void;
+		onrate: (ratings: Array<{ file: string; rating: StarRating }>) => Promise<void>;
 		startIndex?: number;
 		folder?: string;
 	} = $props();
@@ -27,17 +27,25 @@
 		currentIndex = startIndex;
 	});
 	let pendingRatings = new SvelteMap<string, StarRating>();
-	let saving = $state(false);
+	let unsaved = new SvelteMap<string, StarRating>();
+	let remoteRatings = new SvelteMap<string, StarRating>();
 	let zoomed = $state(false);
 	let filmstripEl: HTMLDivElement | undefined = $state();
 	let previewAreaEl: HTMLDivElement | undefined = $state();
+
+	let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
+	let flushTimer: ReturnType<typeof setTimeout> | undefined;
+	let savedFadeTimer: ReturnType<typeof setTimeout> | undefined;
+	let eventSource: EventSource | undefined;
 
 	// Filter state
 	let viewFilterMode = $state<'all' | 'eq' | 'gte' | 'lte' | 'unrated'>('all');
 	let viewFilterValue = $state<number>(4);
 
 	function fileRating(fileName: string): StarRating | null {
-		return pendingRatings.get(fileName) ?? existingRatings[fileName] ?? null;
+		return (
+			unsaved.get(fileName) ?? remoteRatings.get(fileName) ?? existingRatings[fileName] ?? null
+		);
 	}
 
 	function matchesFilter(index: number): boolean {
@@ -57,9 +65,11 @@
 	let currentFile = $derived(files[currentIndex]);
 	let currentRating = $derived<StarRating | null>(fileRating(currentFile?.name ?? ''));
 	let ratedCount = $derived(
-		files.filter((f) => pendingRatings.has(f.name) || existingRatings[f.name] !== undefined).length
+		files.filter(
+			(f) =>
+				unsaved.has(f.name) || remoteRatings.has(f.name) || existingRatings[f.name] !== undefined
+		).length
 	);
-	let hasPending = $derived(pendingRatings.size > 0);
 
 	let currentFilteredPos = $derived(filteredIndices.indexOf(currentIndex));
 	let hasPrevFiltered = $derived(
@@ -74,6 +84,40 @@
 	function setRating(rating: StarRating) {
 		if (!currentFile) return;
 		pendingRatings.set(currentFile.name, rating);
+		unsaved.set(currentFile.name, rating);
+		scheduleFlush();
+	}
+
+	function scheduleFlush() {
+		clearTimeout(flushTimer);
+		flushTimer = setTimeout(flush, 500);
+	}
+
+	async function flush() {
+		clearTimeout(flushTimer);
+		if (unsaved.size === 0) return;
+
+		const batch = Array.from(unsaved.entries()).map(([file, rating]) => ({ file, rating }));
+		unsaved.clear();
+
+		saveStatus = 'saving';
+		try {
+			await onrate(batch);
+			for (const { file, rating } of batch) {
+				remoteRatings.set(file, rating);
+			}
+			saveStatus = 'saved';
+			clearTimeout(savedFadeTimer);
+			savedFadeTimer = setTimeout(() => {
+				saveStatus = 'idle';
+			}, 2000);
+		} catch {
+			saveStatus = 'error';
+			for (const { file, rating } of batch) {
+				unsaved.set(file, rating);
+			}
+			scheduleFlush();
+		}
 	}
 
 	function goTo(index: number) {
@@ -106,17 +150,13 @@
 		thumb?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
 	}
 
-	function handleSave() {
-		if (pendingRatings.size === 0) {
-			onclose();
-			return;
-		}
-		saving = true;
-		const ratings = Array.from(pendingRatings.entries()).map(([file, rating]) => ({
+	async function handleClose() {
+		await flush();
+		const allRatings = Array.from(pendingRatings.entries()).map(([file, rating]) => ({
 			file,
 			rating
 		}));
-		onsave(ratings);
+		onclose(allRatings);
 	}
 
 	function toggleZoom(e: MouseEvent) {
@@ -147,7 +187,7 @@
 				e.stopPropagation();
 				return;
 			}
-			onclose();
+			handleClose();
 			return;
 		}
 		if (e.key === 'z' || e.key === ' ') {
@@ -178,6 +218,26 @@
 
 	onMount(() => {
 		scrollFilmstrip();
+
+		eventSource = new EventSource(`/api/shoots/${encodeURIComponent(shootName)}/ratings-stream`);
+		eventSource.onmessage = (e) => {
+			try {
+				const data: RatingEvent = JSON.parse(e.data);
+				for (const [file, rating] of Object.entries(data.ratings)) {
+					if (!unsaved.has(file)) {
+						remoteRatings.set(file, rating as StarRating);
+					}
+				}
+			} catch {
+				// Ignore malformed events
+			}
+		};
+	});
+
+	onDestroy(() => {
+		clearTimeout(flushTimer);
+		clearTimeout(savedFadeTimer);
+		eventSource?.close();
 	});
 </script>
 
@@ -186,7 +246,7 @@
 <div class="overlay" role="dialog" aria-modal="true" aria-label="Rating view">
 	<header class="toolbar">
 		<div class="toolbar-left">
-			<button type="button" class="btn-ghost btn-sm" onclick={onclose}>
+			<button type="button" class="btn-ghost btn-sm" onclick={handleClose}>
 				<svg
 					width="14"
 					height="14"
@@ -215,7 +275,7 @@
 						if (viewFilterMode === 'all' || viewFilterMode === 'unrated') viewFilterMode = 'gte';
 					}}
 				>
-					<option value="gte">≥</option>
+					<option value="gte">&ge;</option>
 					<option value="eq">=</option>
 					<option value="lte">≤</option>
 				</select>
@@ -245,16 +305,29 @@
 			</span>
 		</div>
 		<div class="toolbar-right">
-			<button
-				type="button"
-				class="btn-primary btn-sm"
-				disabled={saving || !hasPending}
-				onclick={handleSave}
+			<span
+				class="save-status"
+				class:saving={saveStatus === 'saving'}
+				class:saved={saveStatus === 'saved'}
+				class:error={saveStatus === 'error'}
 			>
-				{saving
-					? 'Saving...'
-					: `Save ${pendingRatings.size} rating${pendingRatings.size !== 1 ? 's' : ''}`}
-			</button>
+				{#if saveStatus === 'saving'}
+					<span class="status-dot"></span> Saving…
+				{:else if saveStatus === 'saved'}
+					<svg
+						width="12"
+						height="12"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2.5"
+						stroke-linecap="round"><polyline points="20 6 9 17 4 12" /></svg
+					>
+					Saved
+				{:else if saveStatus === 'error'}
+					Save failed
+				{/if}
+			</span>
 		</div>
 	</header>
 
@@ -393,6 +466,35 @@
 	.toolbar-right {
 		display: flex;
 		justify-content: flex-end;
+	}
+
+	.save-status {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		transition: opacity 0.3s;
+	}
+
+	.save-status.saving {
+		color: var(--accent-light);
+	}
+
+	.save-status.saved {
+		color: var(--green);
+	}
+
+	.save-status.error {
+		color: var(--red);
+	}
+
+	.status-dot {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--accent-light);
+		animation: pulse 1.5s ease-in-out infinite;
 	}
 
 	.toolbar-center {

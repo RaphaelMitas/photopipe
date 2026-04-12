@@ -81,6 +81,10 @@ export interface DenoiseEvent {
 	timestamp: string;
 }
 
+export interface RatingEvent {
+	ratings: Record<string, StarRating>;
+}
+
 export interface PureRawInstructions {
 	inputPath: string;
 	outputPath: string;
