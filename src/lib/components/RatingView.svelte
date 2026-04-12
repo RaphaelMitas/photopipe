@@ -768,11 +768,7 @@
 		height: 6px;
 		top: 50%;
 		transform: translateY(-50%);
-		background: linear-gradient(
-			to right,
-			var(--accent) var(--fill),
-			var(--bg-active) var(--fill)
-		);
+		background: linear-gradient(to right, var(--accent) var(--fill), var(--bg-active) var(--fill));
 		border-radius: var(--radius-full);
 		pointer-events: none;
 		transition: box-shadow 0.2s;
