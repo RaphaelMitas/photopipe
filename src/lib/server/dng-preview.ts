@@ -70,6 +70,28 @@ function bufToArrayBuffer(buf: Buffer): ArrayBuffer {
 	return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
 }
 
+function orientationToAngle(orientation: number | undefined): number {
+	switch (orientation) {
+		case 6:
+			return 90;
+		case 3:
+			return 180;
+		case 8:
+			return 270;
+		default:
+			return 0;
+	}
+}
+
+async function getSourceOrientation(sourcePath: string): Promise<number> {
+	try {
+		const meta = await sharp(sourcePath).metadata();
+		return orientationToAngle(meta.orientation);
+	} catch {
+		return 0;
+	}
+}
+
 async function generatePreview(
 	sourcePath: string,
 	thumbDir: string,
@@ -79,9 +101,16 @@ async function generatePreview(
 
 	const jpeg = await extractEmbeddedJpeg(sourcePath);
 	const input = jpeg ?? sourcePath;
+	const angle = jpeg ? await getSourceOrientation(sourcePath) : 0;
 
-	const buf = await sharp(input)
-		.rotate()
+	const pipeline = sharp(input);
+	if (angle > 0) {
+		pipeline.rotate(angle);
+	} else {
+		pipeline.rotate();
+	}
+
+	const buf = await pipeline
 		.resize(PREVIEW_WIDTH, null, { fit: 'inside', withoutEnlargement: true })
 		.webp({ quality: PREVIEW_QUALITY })
 		.toBuffer();
@@ -105,9 +134,16 @@ async function generateThumb(
 
 	const jpeg = await extractEmbeddedJpeg(sourcePath);
 	const input = jpeg ?? sourcePath;
+	const angle = jpeg ? await getSourceOrientation(sourcePath) : 0;
 
-	const buf = await sharp(input)
-		.rotate()
+	const pipeline = sharp(input);
+	if (angle > 0) {
+		pipeline.rotate(angle);
+	} else {
+		pipeline.rotate();
+	}
+
+	const buf = await pipeline
 		.resize(600, 600, { fit: 'inside', withoutEnlargement: true })
 		.webp({ quality: 80 })
 		.toBuffer();
