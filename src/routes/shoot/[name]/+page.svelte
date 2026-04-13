@@ -12,8 +12,21 @@
 	import type { StarRating as StarRatingType } from '$lib/types.js';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { untrack } from 'svelte';
+	import { useQuery, useConvexClient } from 'convex-svelte';
+	import { api } from '../../../convex/_generated/api.js';
 
 	let { data, form } = $props();
+
+	const convex = useConvexClient();
+	const ratingsQuery = useQuery(api.ratings.getForShoot, () => ({
+		folderName: data.shoot.folderName
+	}));
+
+	let liveRatings = $derived(
+		Object.fromEntries(
+			(ratingsQuery.data ?? []).map((r) => [r.fileName, r.rating as StarRatingType])
+		)
+	);
 
 	// View state
 	let currentView = $state('raw');
@@ -106,21 +119,28 @@
 	let ratingViewFiles = $state<typeof data.shoot.dngFiles>([]);
 	let ratingViewStartIndex = $state(0);
 
+	let effectiveRatedFiles = $derived(
+		data.shoot.ratedFiles.map((f) => ({
+			...f,
+			rating: (liveRatings[f.name] ?? f.rating) as StarRatingType
+		}))
+	);
+
 	let enrichedSelectFiles = $derived(
 		data.shoot.selectFiles.map((f) => ({
 			...f,
-			rating: (data.shoot.metadata.ratings[f.name] ?? 3) as StarRatingType
+			rating: (liveRatings[f.name] ?? data.shoot.metadata.ratings[f.name] ?? 3) as StarRatingType
 		}))
 	);
 
 	let filteredRatedFiles = $derived(
 		filterMode === 'all'
-			? data.shoot.ratedFiles
+			? effectiveRatedFiles
 			: filterMode === 'eq'
-				? data.shoot.ratedFiles.filter((f) => f.rating === filterValue)
+				? effectiveRatedFiles.filter((f) => f.rating === filterValue)
 				: filterMode === 'gte'
-					? data.shoot.ratedFiles.filter((f) => f.rating >= filterValue)
-					: data.shoot.ratedFiles.filter((f) => f.rating <= filterValue)
+					? effectiveRatedFiles.filter((f) => f.rating >= filterValue)
+					: effectiveRatedFiles.filter((f) => f.rating <= filterValue)
 	);
 
 	function setFilter(star: number) {
@@ -151,11 +171,11 @@
 	}
 
 	function openRatingViewForRated(fileName: string) {
-		ratingViewFiles = data.shoot.ratedFiles;
+		ratingViewFiles = effectiveRatedFiles;
 		ratingViewFolder = 'rated';
 		ratingViewStartIndex = Math.max(
 			0,
-			data.shoot.ratedFiles.findIndex((f) => f.name === fileName)
+			effectiveRatedFiles.findIndex((f) => f.name === fileName)
 		);
 		showRatingView = true;
 	}
@@ -185,7 +205,7 @@
 				showDeleteAllDialog = false;
 				showDeleteSingleDialog = false;
 				deleteTargetFile = null;
-				await invalidateAll();
+				invalidateAll();
 			}
 		} finally {
 			deleting = false;
@@ -279,38 +299,25 @@
 	}
 
 	async function handleRate(ratings: Array<{ file: string; rating: StarRatingType }>) {
-		const shootUrl = `/api/shoots/${encodeURIComponent(data.shoot.folderName)}/rate`;
-		const res = await fetch(shootUrl, {
-			method: 'PATCH',
+		const method = ratingViewFolder === 'denoised' ? 'POST' : 'PATCH';
+		const res = await fetch(`/api/shoots/${encodeURIComponent(data.shoot.folderName)}/rate`, {
+			method,
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ ratings })
 		});
 		if (!res.ok) throw new Error(`Rating save failed (${res.status})`);
 	}
 
-	async function handleRatingViewClose(
-		allRatings: Array<{ file: string; rating: StarRatingType }>
-	) {
-		if (ratingViewFolder === 'denoised' && allRatings.length > 0) {
-			const shootUrl = `/api/shoots/${encodeURIComponent(data.shoot.folderName)}/rate`;
-			const res = await fetch(shootUrl, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ ratings: allRatings })
-			});
-			if (!res.ok) throw new Error(`Failed to move rated files (${res.status})`);
-		}
+	async function handleRatingViewClose() {
 		showRatingView = false;
 		await invalidateAll();
 	}
 
 	async function handleInlineRatingChange(file: string, rating: StarRatingType) {
-		await fetch(`/api/shoots/${encodeURIComponent(data.shoot.folderName)}/rate`, {
-			method: 'PATCH',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ ratings: [{ file, rating }] })
+		await convex.mutation(api.ratings.upsertMany, {
+			folderName: data.shoot.folderName,
+			ratings: [{ fileName: file, rating }]
 		});
-		await invalidateAll();
 	}
 
 	async function handleMoveFiles(from: string, to: string, files: string[]) {
@@ -320,7 +327,7 @@
 			body: JSON.stringify({ from, to, files })
 		});
 		if (res.ok) {
-			await invalidateAll();
+			invalidateAll();
 		}
 	}
 
@@ -336,7 +343,7 @@
 	}
 
 	async function handleMoveGte4ToSelects() {
-		const files = data.shoot.ratedFiles.filter((f) => f.rating >= 4).map((f) => f.name);
+		const files = effectiveRatedFiles.filter((f) => f.rating >= 4).map((f) => f.name);
 		if (files.length === 0) return;
 		movingFrom = 'bulk';
 		try {
