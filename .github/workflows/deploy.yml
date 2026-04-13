@@ -1,38 +1,65 @@
-name: Deploy
+name: CI / Deploy
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
 
 concurrency:
-  group: deploy-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  ci:
-    uses: ./.github/workflows/ci.yml
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        task: [lint, format, audit, typecheck]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run ${{ matrix.task }}
+
+  convex-deploy:
+    needs: check
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: npx convex deploy
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
 
   build-and-push:
-    needs: ci
+    needs: check
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v6
-
       - uses: docker/setup-qemu-action@v4
         with:
           platforms: arm64
-
       - uses: docker/setup-buildx-action@v4
-
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - uses: docker/metadata-action@v6
         id: meta
         with:
@@ -40,7 +67,6 @@ jobs:
           tags: |
             type=raw,value=latest
             type=sha,prefix=,format=short
-
       - uses: docker/build-push-action@v7
         with:
           context: .
