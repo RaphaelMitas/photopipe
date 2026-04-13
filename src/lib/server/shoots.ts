@@ -150,6 +150,16 @@ function shootDocToMetadata(
 	};
 }
 
+function ratingsRowsToRecord(
+	rows: Array<{ fileName: string; rating: number }>
+): Record<string, number> {
+	const result: Record<string, number> = {};
+	for (const r of rows) {
+		result[r.fileName] = r.rating;
+	}
+	return result;
+}
+
 export async function listShoots(): Promise<ShootSummary[]> {
 	const entries = await readdir(CAMERA_BASE, { withFileTypes: true });
 	const convex = getConvexClient();
@@ -246,7 +256,7 @@ export async function getShoot(folderName: string): Promise<ShootDetail> {
 	await ensureRatingFolders(shootPath);
 
 	const convex = getConvexClient();
-	const [shootDoc, ratingsMap, rawFiles, dngFiles, ratedFilesRaw, selectFiles, exportFiles] =
+	const [shootDoc, ratingsRows, rawFiles, dngFiles, ratedFilesRaw, selectFiles, exportFiles] =
 		await Promise.all([
 			convex.query(api.shoots.getByFolder, { folderName }),
 			convex.query(api.ratings.getForShoot, { folderName }),
@@ -269,7 +279,7 @@ export async function getShoot(folderName: string): Promise<ShootDetail> {
 		await ensureShootInConvex(folderName, parsed);
 	}
 
-	const ratings = ratingsMap as Record<string, StarRating>;
+	const ratings = ratingsRowsToRecord(ratingsRows);
 
 	const defaultMetadata: ShootMetadata = {
 		version: 1,
@@ -417,13 +427,13 @@ export async function updateMetadata(
 	}
 
 	const shootDoc = await convex.query(api.shoots.getByFolder, { folderName });
-	const allRatings = await convex.query(api.ratings.getForShoot, { folderName });
+	const ratingsRows = await convex.query(api.ratings.getForShoot, { folderName });
 
 	if (!shootDoc) {
 		throw new PhotopipeError('Shoot metadata not found', 'NOT_FOUND', 404);
 	}
 
-	return shootDocToMetadata(shootDoc, allRatings);
+	return shootDocToMetadata(shootDoc, ratingsRowsToRecord(ratingsRows));
 }
 
 const DELETABLE_EXTENSIONS: Record<string, string[]> = {

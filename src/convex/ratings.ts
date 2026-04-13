@@ -9,18 +9,12 @@ export const getForShoot = query({
 			.withIndex('by_folder', (q) => q.eq('folderName', args.folderName))
 			.unique();
 
-		if (!shoot) return {};
+		if (!shoot) return [];
 
-		const ratings = await ctx.db
+		return await ctx.db
 			.query('ratings')
 			.withIndex('by_shoot', (q) => q.eq('shootId', shoot._id))
 			.collect();
-
-		const result: Record<string, number> = {};
-		for (const r of ratings) {
-			result[r.fileName] = r.rating;
-		}
-		return result;
 	}
 });
 
