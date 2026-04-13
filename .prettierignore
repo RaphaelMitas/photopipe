@@ -3,3 +3,4 @@ build
 node_modules
 pnpm-lock.yaml
 test-data
+src/convex/_generated

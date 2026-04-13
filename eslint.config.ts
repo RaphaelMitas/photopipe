@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint';
 export default tseslint.config(
 	// Global ignores
 	{
-		ignores: ['build/', '.svelte-kit/', 'node_modules/', 'test-data/']
+		ignores: ['build/', '.svelte-kit/', 'node_modules/', 'test-data/', 'src/convex/_generated/']
 	},
 
 	// Base JS/TS rules
