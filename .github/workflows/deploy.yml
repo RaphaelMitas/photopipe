@@ -24,7 +24,7 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
-      - run: pnpm ${{ matrix.task }}
+      - run: pnpm run ${{ matrix.task }}
 
   convex-deploy:
     needs: check
