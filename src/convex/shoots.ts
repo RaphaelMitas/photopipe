@@ -53,9 +53,7 @@ export const upsert = mutation({
 export const updateFields = mutation({
 	args: {
 		folderName: v.string(),
-		algorithm: v.optional(
-			v.union(v.literal('DeepPRIME 3'), v.literal('DeepPRIME XD3'), v.null())
-		),
+		algorithm: v.optional(v.union(v.literal('DeepPRIME 3'), v.literal('DeepPRIME XD3'), v.null())),
 		notes: v.optional(v.string()),
 		rawCount: v.optional(v.union(v.number(), v.null()))
 	},
