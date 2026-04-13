@@ -1,12 +1,9 @@
-import { readdir, stat, mkdir, readFile, unlink, rm, rename } from 'node:fs/promises';
+import { readdir, stat, mkdir, unlink, rm, rename } from 'node:fs/promises';
 import { join } from 'node:path';
-import { Mutex } from 'async-mutex';
-import { Writer } from 'steno';
 import {
 	CAMERA_BASE,
 	CAMERA_HOST_BASE,
 	SHOOT_PATTERN,
-	METADATA_FILE,
 	RAW_DIR,
 	DENOISED_DIR,
 	RATED_DIR,
@@ -26,30 +23,9 @@ import type {
 } from '$lib/types.js';
 import { PURERAW_SETTINGS } from '$lib/types.js';
 import { parseShootFolder, buildFolderName, slugifyName } from '$lib/utils.js';
-import { z } from 'zod/v4';
 import { ratingBroadcaster } from './rating-broadcaster.js';
-
-const shootMutexes = new Map<string, Mutex>();
-
-function getShootMutex(folderName: string): Mutex {
-	let mutex = shootMutexes.get(folderName);
-	if (!mutex) {
-		mutex = new Mutex();
-		shootMutexes.set(folderName, mutex);
-	}
-	return mutex;
-}
-
-const metadataWriters = new Map<string, Writer>();
-
-function getMetadataWriter(shootPath: string): Writer {
-	let writer = metadataWriters.get(shootPath);
-	if (!writer) {
-		writer = new Writer(join(shootPath, METADATA_FILE));
-		metadataWriters.set(shootPath, writer);
-	}
-	return writer;
-}
+import { getConvexClient } from './convex.js';
+import { api } from '../../convex/_generated/api.js';
 
 export class PhotopipeError extends Error {
 	constructor(
@@ -114,37 +90,6 @@ async function listFilesWithExt(dirPath: string, extensions: string[]): Promise<
 	}
 }
 
-const starRating = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]);
-
-const metadataSchema = z.object({
-	version: z.number(),
-	name: z.string(),
-	date: z.string(),
-	createdAt: z.string(),
-	algorithm: z.enum(['DeepPRIME 3', 'DeepPRIME XD3']).nullable(),
-	notes: z.string(),
-	rawCount: z.number().nullable(),
-	ratings: z.record(z.string(), starRating).default({})
-});
-
-function parseMetadata(raw: string): ShootMetadata | null {
-	const result = metadataSchema.safeParse(JSON.parse(raw));
-	return result.success ? result.data : null;
-}
-
-async function readMetadata(shootPath: string): Promise<ShootMetadata | null> {
-	try {
-		const raw = await readFile(join(shootPath, METADATA_FILE), 'utf-8');
-		return parseMetadata(raw);
-	} catch {
-		return null;
-	}
-}
-
-async function writeMetadata(shootPath: string, metadata: ShootMetadata): Promise<void> {
-	await getMetadataWriter(shootPath).write(JSON.stringify(metadata, null, '\t'));
-}
-
 function deriveStatus(
 	rawCount: number,
 	dngCount: number,
@@ -162,8 +107,59 @@ function deriveStatus(
 	return 'empty';
 }
 
+async function ensureShootInConvex(
+	folderName: string,
+	parsed: { name: string; date: string }
+): Promise<void> {
+	const convex = getConvexClient();
+	const existing = await convex.query(api.shoots.getByFolder, { folderName });
+	if (!existing) {
+		await convex.mutation(api.shoots.upsert, {
+			folderName,
+			name: parsed.name,
+			date: parsed.date,
+			createdAt: new Date().toISOString(),
+			algorithm: null,
+			notes: '',
+			rawCount: null
+		});
+	}
+}
+
+function shootDocToMetadata(
+	doc: {
+		folderName: string;
+		name: string;
+		date: string;
+		createdAt: string;
+		algorithm: 'DeepPRIME 3' | 'DeepPRIME XD3' | null;
+		notes: string;
+		rawCount: number | null;
+	},
+	ratings: Record<string, number>
+): ShootMetadata {
+	return {
+		version: 1,
+		name: doc.name,
+		date: doc.date,
+		createdAt: doc.createdAt,
+		algorithm: doc.algorithm,
+		notes: doc.notes,
+		rawCount: doc.rawCount,
+		ratings: ratings as Record<string, StarRating>
+	};
+}
+
 export async function listShoots(): Promise<ShootSummary[]> {
 	const entries = await readdir(CAMERA_BASE, { withFileTypes: true });
+	const convex = getConvexClient();
+	const allShootDocs = await convex.query(api.shoots.list, {});
+
+	const shootDocMap = new Map<string, (typeof allShootDocs)[number]>();
+	for (const doc of allShootDocs) {
+		shootDocMap.set(doc.folderName, doc);
+	}
+
 	const shoots: ShootSummary[] = [];
 
 	for (const entry of entries) {
@@ -187,7 +183,14 @@ export async function listShoots(): Promise<ShootSummary[]> {
 			'.webp',
 			'.dng'
 		]);
-		const metadata = await readMetadata(shootPath);
+
+		const doc = shootDocMap.get(entry.name);
+		let metadata: ShootMetadata | null = null;
+		if (doc) {
+			metadata = shootDocToMetadata(doc, {});
+		} else {
+			await ensureShootInConvex(entry.name, parsed);
+		}
 
 		const rawSize = rawFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
 		const dngSize = dngFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
@@ -242,26 +245,31 @@ export async function getShoot(folderName: string): Promise<ShootDetail> {
 
 	await ensureRatingFolders(shootPath);
 
-	const rawFiles = await listFilesWithExt(join(shootPath, RAW_DIR), ['.arw']);
-	const dngFiles = await listFilesWithExt(join(shootPath, DENOISED_DIR), ['.dng']);
-	const ratedFilesRaw = await listFilesWithExt(join(shootPath, RATED_DIR), ['.dng']);
-	const selectFiles = await listFilesWithExt(join(shootPath, SELECTS_DIR), ['.dng']);
-	const exportFiles = await listFilesWithExt(join(shootPath, EXPORTS_DIR), [
-		'.jpg',
-		'.jpeg',
-		'.png',
-		'.tif',
-		'.tiff',
-		'.webp',
-		'.dng'
-	]);
-	const metadata = await readMetadata(shootPath);
+	const convex = getConvexClient();
+	const [shootDoc, ratingsMap, rawFiles, dngFiles, ratedFilesRaw, selectFiles, exportFiles] =
+		await Promise.all([
+			convex.query(api.shoots.getByFolder, { folderName }),
+			convex.query(api.ratings.getForShoot, { folderName }),
+			listFilesWithExt(join(shootPath, RAW_DIR), ['.arw']),
+			listFilesWithExt(join(shootPath, DENOISED_DIR), ['.dng']),
+			listFilesWithExt(join(shootPath, RATED_DIR), ['.dng']),
+			listFilesWithExt(join(shootPath, SELECTS_DIR), ['.dng']),
+			listFilesWithExt(join(shootPath, EXPORTS_DIR), [
+				'.jpg',
+				'.jpeg',
+				'.png',
+				'.tif',
+				'.tiff',
+				'.webp',
+				'.dng'
+			])
+		]);
 
-	const rawSizeBytes = rawFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
-	const dngSizeBytes = dngFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
-	const ratedSizeBytes = ratedFilesRaw.reduce((sum, f) => sum + f.sizeBytes, 0);
-	const selectSizeBytes = selectFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
-	const exportSizeBytes = exportFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
+	if (!shootDoc) {
+		await ensureShootInConvex(folderName, parsed);
+	}
+
+	const ratings = ratingsMap as Record<string, StarRating>;
 
 	const defaultMetadata: ShootMetadata = {
 		version: 1,
@@ -274,11 +282,17 @@ export async function getShoot(folderName: string): Promise<ShootDetail> {
 		ratings: {}
 	};
 
-	const meta = metadata ?? defaultMetadata;
+	const meta = shootDoc ? shootDocToMetadata(shootDoc, ratings) : defaultMetadata;
+
+	const rawSizeBytes = rawFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
+	const dngSizeBytes = dngFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
+	const ratedSizeBytes = ratedFilesRaw.reduce((sum, f) => sum + f.sizeBytes, 0);
+	const selectSizeBytes = selectFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
+	const exportSizeBytes = exportFiles.reduce((sum, f) => sum + f.sizeBytes, 0);
 
 	const ratedFiles: RatedFileInfo[] = ratedFilesRaw.map((f) => ({
 		...f,
-		rating: meta.ratings[f.name] ?? 3
+		rating: (ratings[f.name] ?? 3) as StarRating
 	}));
 
 	return {
@@ -351,18 +365,16 @@ export async function createShoot(name: string, date: string): Promise<string> {
 	await mkdir(join(shootPath, EXPORTS_DIR), { recursive: true });
 	await mkdir(join(shootPath, THUMBS_DIR), { recursive: true });
 
-	const metadata: ShootMetadata = {
-		version: 1,
+	const convex = getConvexClient();
+	await convex.mutation(api.shoots.upsert, {
+		folderName,
 		name: name.trim(),
 		date,
 		createdAt: new Date().toISOString(),
 		algorithm: null,
 		notes: '',
-		rawCount: null,
-		ratings: {}
-	};
-
-	await writeMetadata(shootPath, metadata);
+		rawCount: null
+	});
 
 	return folderName;
 }
@@ -373,19 +385,45 @@ export async function updateMetadata(
 ): Promise<ShootMetadata> {
 	validateShootName(folderName);
 
-	return getShootMutex(folderName).runExclusive(async () => {
-		const shootPath = join(CAMERA_BASE, folderName);
-		const existing = await readMetadata(shootPath);
+	const convex = getConvexClient();
 
-		if (!existing) {
-			throw new PhotopipeError('Shoot metadata not found', 'NOT_FOUND', 404);
+	const { ratings: ratingsUpdate, ...shootUpdates } = updates;
+
+	const fieldUpdates: {
+		folderName: string;
+		algorithm?: 'DeepPRIME 3' | 'DeepPRIME XD3' | null;
+		notes?: string;
+		rawCount?: number | null;
+	} = { folderName };
+	if (shootUpdates.algorithm !== undefined) fieldUpdates.algorithm = shootUpdates.algorithm;
+	if (shootUpdates.notes !== undefined) fieldUpdates.notes = shootUpdates.notes;
+	if (shootUpdates.rawCount !== undefined) fieldUpdates.rawCount = shootUpdates.rawCount;
+
+	if (Object.keys(shootUpdates).length > 0) {
+		await convex.mutation(api.shoots.updateFields, fieldUpdates);
+	}
+
+	if (ratingsUpdate) {
+		const ratingEntries = Object.entries(ratingsUpdate).map(([fileName, rating]) => ({
+			fileName,
+			rating
+		}));
+		if (ratingEntries.length > 0) {
+			await convex.mutation(api.ratings.upsertMany, {
+				folderName,
+				ratings: ratingEntries
+			});
 		}
+	}
 
-		const updated: ShootMetadata = { ...existing, ...updates };
-		await writeMetadata(shootPath, updated);
+	const shootDoc = await convex.query(api.shoots.getByFolder, { folderName });
+	const allRatings = await convex.query(api.ratings.getForShoot, { folderName });
 
-		return updated;
-	});
+	if (!shootDoc) {
+		throw new PhotopipeError('Shoot metadata not found', 'NOT_FOUND', 404);
+	}
+
+	return shootDocToMetadata(shootDoc, allRatings);
 }
 
 const DELETABLE_EXTENSIONS: Record<string, string[]> = {
@@ -472,15 +510,10 @@ export async function deleteFiles(
 	}
 
 	if (folder === 'rated' && deletedCount > 0) {
-		await getShootMutex(folderName).runExclusive(async () => {
-			const shootPath = join(CAMERA_BASE, folderName);
-			const metadata = await readMetadata(shootPath);
-			if (metadata) {
-				for (const fileName of targets) {
-					delete metadata.ratings[fileName];
-				}
-				await writeMetadata(shootPath, metadata);
-			}
+		const convex = getConvexClient();
+		await convex.mutation(api.ratings.deleteMany, {
+			folderName,
+			fileNames: targets
 		});
 	}
 
@@ -499,6 +532,9 @@ export async function deleteShoot(folderName: string): Promise<void> {
 	}
 
 	await rm(shootPath, { recursive: true, force: true });
+
+	const convex = getConvexClient();
+	await convex.mutation(api.shoots.remove, { folderName });
 }
 
 export async function rateFiles(
@@ -507,42 +543,41 @@ export async function rateFiles(
 ): Promise<{ movedCount: number }> {
 	validateShootName(folderName);
 
-	return getShootMutex(folderName).runExclusive(async () => {
-		const shootPath = join(CAMERA_BASE, folderName);
+	const shootPath = join(CAMERA_BASE, folderName);
 
-		await mkdir(join(shootPath, RATED_DIR), { recursive: true });
+	await mkdir(join(shootPath, RATED_DIR), { recursive: true });
 
-		const metadata = await readMetadata(shootPath);
-		if (!metadata) {
-			throw new PhotopipeError('Shoot metadata not found', 'NOT_FOUND', 404);
+	let movedCount = 0;
+	const movedRatings: Array<{ fileName: string; rating: number }> = [];
+
+	for (const { file, rating } of ratings) {
+		validateFileName(file);
+		const src = join(shootPath, DENOISED_DIR, file);
+		const dest = join(shootPath, RATED_DIR, file);
+		try {
+			await rename(src, dest);
+			movedRatings.push({ fileName: file, rating });
+			movedCount++;
+		} catch {
+			// File might not exist or already moved
 		}
+	}
 
-		let movedCount = 0;
-		for (const { file, rating } of ratings) {
-			validateFileName(file);
-			const src = join(shootPath, DENOISED_DIR, file);
-			const dest = join(shootPath, RATED_DIR, file);
-			try {
-				await rename(src, dest);
-				metadata.ratings[file] = rating;
-				movedCount++;
-			} catch {
-				// File might not exist or already moved
-			}
-		}
-
-		await writeMetadata(shootPath, metadata);
+	if (movedRatings.length > 0) {
+		const convex = getConvexClient();
+		await convex.mutation(api.ratings.upsertMany, {
+			folderName,
+			ratings: movedRatings
+		});
 
 		const changed: Record<string, StarRating> = {};
-		for (const { file, rating } of ratings) {
-			if (metadata.ratings[file]) changed[file] = rating;
+		for (const { fileName, rating } of movedRatings) {
+			changed[fileName] = rating as StarRating;
 		}
-		if (Object.keys(changed).length > 0) {
-			ratingBroadcaster.broadcast(folderName, changed);
-		}
+		ratingBroadcaster.broadcast(folderName, changed);
+	}
 
-		return { movedCount };
-	});
+	return { movedCount };
 }
 
 export async function updateRatings(
@@ -551,30 +586,21 @@ export async function updateRatings(
 ): Promise<void> {
 	validateShootName(folderName);
 
-	await getShootMutex(folderName).runExclusive(async () => {
-		const shootPath = join(CAMERA_BASE, folderName);
+	for (const { file } of ratings) {
+		validateFileName(file);
+	}
 
-		for (const { file } of ratings) {
-			validateFileName(file);
-		}
-
-		const metadata = await readMetadata(shootPath);
-		if (!metadata) {
-			throw new PhotopipeError('Shoot metadata not found', 'NOT_FOUND', 404);
-		}
-
-		for (const { file, rating } of ratings) {
-			metadata.ratings[file] = rating;
-		}
-
-		await writeMetadata(shootPath, metadata);
-
-		const changed: Record<string, StarRating> = {};
-		for (const { file, rating } of ratings) {
-			changed[file] = rating;
-		}
-		ratingBroadcaster.broadcast(folderName, changed);
+	const convex = getConvexClient();
+	await convex.mutation(api.ratings.upsertMany, {
+		folderName,
+		ratings: ratings.map(({ file, rating }) => ({ fileName: file, rating }))
 	});
+
+	const changed: Record<string, StarRating> = {};
+	for (const { file, rating } of ratings) {
+		changed[file] = rating;
+	}
+	ratingBroadcaster.broadcast(folderName, changed);
 }
 
 type MoveableFolder = 'raw' | 'denoised' | 'rated' | 'selects' | 'exports';
