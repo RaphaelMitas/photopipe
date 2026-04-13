@@ -119,6 +119,10 @@
 	let ratingViewFiles = $state<typeof data.shoot.dngFiles>([]);
 	let ratingViewStartIndex = $state(0);
 
+	let ratedDngFiles = $derived(
+		data.shoot.dngFiles.filter((f) => liveRatings[f.name] !== undefined)
+	);
+
 	let effectiveRatedFiles = $derived(
 		data.shoot.ratedFiles.map((f) => ({
 			...f,
@@ -691,6 +695,20 @@
 								>{data.shoot.dngCount} &middot; {formatBytes(data.shoot.dngSizeBytes)}</span
 							>
 						</h2>
+						{#if ratedDngFiles.length > 0}
+							<button
+								class="btn-ghost btn-sm"
+								disabled={movingFrom === 'denoised'}
+								onclick={() =>
+									handleMoveFrom(
+										'denoised',
+										ratedDngFiles.map((f) => f.name),
+										'rated'
+									)}
+							>
+								{movingFrom === 'denoised' ? 'Moving…' : `Move rated (${ratedDngFiles.length})`}
+							</button>
+						{/if}
 						<button
 							class="btn-danger btn-sm"
 							onclick={() => {
