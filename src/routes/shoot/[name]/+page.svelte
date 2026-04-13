@@ -18,7 +18,9 @@
 	let { data, form } = $props();
 
 	const convex = useConvexClient();
-	const ratingsQuery = useQuery(api.ratings.getForShoot, () => ({ folderName: data.shoot.folderName }));
+	const ratingsQuery = useQuery(api.ratings.getForShoot, () => ({
+		folderName: data.shoot.folderName
+	}));
 
 	let liveRatings = $derived(
 		Object.fromEntries(
