@@ -13,8 +13,6 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    env:
-      PUBLIC_CONVEX_URL: https://placeholder.convex.cloud
     strategy:
       matrix:
         task: [lint, format, audit, typecheck]
