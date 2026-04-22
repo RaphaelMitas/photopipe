@@ -37,7 +37,7 @@
 	"dependencies": {
 		"@sveltejs/adapter-node": "^5.5.4",
 		"archiver": "^7.0.1",
-		"convex": "^1.35.1",
+		"convex": "^1.36.0",
 		"convex-svelte": "^0.0.12",
 		"sharp": "^0.34.5",
 		"zod": "^4.3.6"
