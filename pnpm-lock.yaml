@@ -196,11 +196,11 @@ importers:
         specifier: ^7.0.1
         version: 7.0.1
       convex:
-        specifier: ^1.35.1
-        version: 1.35.1
+        specifier: ^1.36.0
+        version: 1.36.0
       convex-svelte:
         specifier: ^0.0.12
-        version: 0.0.12(convex@1.35.1)(svelte@5.55.4)
+        version: 0.0.12(convex@1.36.0)(svelte@5.55.4)
       sharp:
         specifier: ^0.34.5
         version: 0.34.5
@@ -1225,8 +1225,8 @@ packages:
       convex: ^1.10.0
       svelte: ^5.0.0
 
-  convex@1.35.1:
-    resolution: {integrity: sha512-g23KrTjBiXqRHzWIN0PVFagKjrmFxWUaOSiBsAWPTpXX2rXl0L1F4PR0YpAcMJEzMgfZR9AGymJvLTM+KA6lsQ==}
+  convex@1.36.0:
+    resolution: {integrity: sha512-17cfDr2z+Apd59291rKWij6jq79eVwzY9u2MQOnuVkOsfEPXcuerWHQLf1ngXAbQjeTXD1nwQYsxQBhZnjZMIQ==}
     engines: {node: '>=18.0.0', npm: '>=7.0.0'}
     hasBin: true
     peerDependencies:
@@ -1771,11 +1771,6 @@ packages:
     peerDependencies:
       prettier: ^3.0.0
       svelte: ^3.2.0 || ^4.0.0-next.0 || ^5.0.0-next.0
-
-  prettier@3.8.2:
-    resolution: {integrity: sha512-8c3mgTe0ASwWAJK+78dpviD+A8EqhndQPUBpNUIPt6+xWlIigCwfN01lWr9MAede4uqXGTEKeQWTvzb3vjia0Q==}
-    engines: {node: '>=14'}
-    hasBin: true
 
   prettier@3.8.3:
     resolution: {integrity: sha512-7igPTM53cGHMW8xWuVTydi2KO233VFiTNyF5hLJqpilHfmn8C8gPf+PS7dUT64YcXFbiMGZxS9pCSxL/Dxm/Jw==}
@@ -2815,17 +2810,17 @@ snapshots:
       normalize-path: 3.0.0
       readable-stream: 4.7.0
 
-  convex-svelte@0.0.12(convex@1.35.1)(svelte@5.55.4):
+  convex-svelte@0.0.12(convex@1.36.0)(svelte@5.55.4):
     dependencies:
-      convex: 1.35.1
+      convex: 1.36.0
       esm-env: 1.2.2
       runed: 0.31.1(svelte@5.55.4)
       svelte: 5.55.4
 
-  convex@1.35.1:
+  convex@1.36.0:
     dependencies:
       esbuild: 0.27.0
-      prettier: 3.8.2
+      prettier: 3.8.3
       ws: 8.18.0
     transitivePeerDependencies:
       - bufferutil
@@ -3310,8 +3305,6 @@ snapshots:
     dependencies:
       prettier: 3.8.3
       svelte: 5.55.4
-
-  prettier@3.8.2: {}
 
   prettier@3.8.3: {}
 
