@@ -15,11 +15,11 @@ importers:
         specifier: ^7.0.1
         version: 7.0.1
       convex:
-        specifier: ^1.39.0
-        version: 1.39.0
+        specifier: ^1.39.1
+        version: 1.39.1
       convex-svelte:
         specifier: ^0.0.12
-        version: 0.0.12(convex@1.39.0)(svelte@5.55.7)
+        version: 0.0.12(convex@1.39.1)(svelte@5.55.7)
       sharp:
         specifier: ^0.34.5
         version: 0.34.5
@@ -1043,8 +1043,8 @@ packages:
       convex: ^1.10.0
       svelte: ^5.0.0
 
-  convex@1.39.0:
-    resolution: {integrity: sha512-7ZP/Yi1EL0RUxVDT6knKNThoAoIOinDp+XnWTGTN3+fD3bzdxVYqiBKNbuUo/SvrU80drft11ZLnAv/MjbAHEg==}
+  convex@1.39.1:
+    resolution: {integrity: sha512-W+gVXA7BpRF1xLlS1kGTtKVaqd5yonqbGESKiPtIUXjV744GdDz8IG7RVsSY5KzHbgxuJBHKaJYk+92OIHTskQ==}
     engines: {node: '>=18.0.0', npm: '>=7.0.0'}
     hasBin: true
     peerDependencies:
@@ -2628,14 +2628,14 @@ snapshots:
       normalize-path: 3.0.0
       readable-stream: 4.7.0
 
-  convex-svelte@0.0.12(convex@1.39.0)(svelte@5.55.7):
+  convex-svelte@0.0.12(convex@1.39.1)(svelte@5.55.7):
     dependencies:
-      convex: 1.39.0
+      convex: 1.39.1
       esm-env: 1.2.2
       runed: 0.31.1(svelte@5.55.7)
       svelte: 5.55.7
 
-  convex@1.39.0:
+  convex@1.39.1:
     dependencies:
       esbuild: 0.27.0
       prettier: 3.8.3
