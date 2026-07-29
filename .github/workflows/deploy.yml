@@ -26,9 +26,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run ${{ matrix.task }}
 
-  convex-deploy:
+  build:
     needs: check
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -38,9 +37,9 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
-      - run: npx convex deploy
+      - run: pnpm build
         env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          CAMERA_BASE: /tmp/camera
 
   build-and-push:
     needs: check

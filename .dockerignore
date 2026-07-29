@@ -1,10 +1,11 @@
 node_modules
-.svelte-kit
-build
+.next
 .git
+data
 test-data
 .env
 .env.*
+!.env.example
 *.arw
 *.ARW
 *.dng

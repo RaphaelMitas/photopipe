@@ -1,17 +1,21 @@
-export type DenoiseAlgorithm = 'DeepPRIME 3' | 'DeepPRIME XD3';
+import type { PhysicalStage } from './config';
 
-export type ShootStatus =
-	| 'empty'
-	| 'uploading'
-	| 'denoising'
-	| 'ready'
-	| 'rating'
-	| 'curating'
-	| 'exported';
+export type { PhysicalStage };
+
+/** Stages the UI can ask for: physical directories plus query-backed views. */
+export type ViewStage = PhysicalStage | 'rated' | 'selects';
+
+export type DenoiseAlgorithm = 'DeepPRIME 3' | 'DeepPRIME XD3';
 
 export type StarRating = 1 | 2 | 3 | 4 | 5;
 
-/** Seconds per file for each algorithm on M4 Mac Mini */
+/** XMP label marking a curated pick. Standard field, readable by Lightroom/Bridge. */
+export const SELECT_LABEL = 'Select';
+
+export type ShootStatus =
+	'empty' | 'uploading' | 'denoising' | 'ready' | 'rating' | 'curating' | 'exported';
+
+/** Seconds per file for each algorithm on an M4 Mac Mini. */
 export const DENOISE_TIMES: Record<DenoiseAlgorithm, number> = {
 	'DeepPRIME 3': 24,
 	'DeepPRIME XD3': 54
@@ -24,69 +28,66 @@ export const PURERAW_SETTINGS = {
 	dustRemoval: 'ON'
 } as const;
 
-export interface ShootMetadata {
-	version: number;
+/** Shoot-level metadata, persisted to .photopipe.json inside the shoot folder. */
+export interface ShootManifest {
+	version: 2;
 	name: string;
 	date: string;
 	createdAt: string;
 	algorithm: DenoiseAlgorithm | null;
 	notes: string;
 	rawCount: number | null;
-	ratings: Record<string, StarRating>;
+}
+
+export interface FileInfo {
+	name: string;
+	stage: PhysicalStage;
+	sizeBytes: number;
+	modifiedAt: string;
+	rating: StarRating | null;
+	isSelect: boolean;
+}
+
+export interface StageCounts {
+	raw: number;
+	denoised: number;
+	rated: number;
+	selects: number;
+	exports: number;
+}
+
+export interface StageSizes {
+	raw: number;
+	denoised: number;
+	rated: number;
+	selects: number;
+	exports: number;
 }
 
 export interface ShootSummary {
-	/** Folder name, e.g. "2026-04-10 Spring Concert" */
 	folderName: string;
 	name: string;
 	date: string;
-	rawCount: number;
-	dngCount: number;
-	ratedCount: number;
-	selectCount: number;
-	exportCount: number;
+	counts: StageCounts;
+	sizes: StageSizes;
 	totalSizeBytes: number;
 	status: ShootStatus;
 }
 
 export interface ShootDetail extends ShootSummary {
-	metadata: ShootMetadata;
-	rawFiles: FileInfo[];
-	dngFiles: FileInfo[];
-	ratedFiles: RatedFileInfo[];
-	selectFiles: FileInfo[];
-	exportFiles: FileInfo[];
-	rawSizeBytes: number;
-	dngSizeBytes: number;
-	ratedSizeBytes: number;
-	selectSizeBytes: number;
-	exportSizeBytes: number;
-}
-
-export interface FileInfo {
-	name: string;
-	sizeBytes: number;
-	modifiedAt: string;
-}
-
-export interface RatedFileInfo extends FileInfo {
-	rating: StarRating;
-}
-
-export interface DenoiseEvent {
-	type: 'file' | 'idle';
-	dngCount: number;
-	latestFile: string | null;
-	idleMinutes?: number;
-	timestamp: string;
-}
-
-export interface RatingEvent {
-	ratings: Record<string, StarRating>;
+	manifest: ShootManifest;
+	files: FileInfo[];
 }
 
 export interface PureRawInstructions {
 	inputPath: string;
 	outputPath: string;
 	settings: typeof PURERAW_SETTINGS;
+}
+
+/** Payload of the single SSE invalidation channel. No data rides this stream. */
+export interface InvalidationEvent {
+	folderName: string | null;
+	stages: PhysicalStage[];
+	at: string;
 }

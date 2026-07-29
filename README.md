@@ -1,71 +1,89 @@
 # Photopipe
 
-A self-hosted photo pipeline for organizing camera shoots, running DxO PureRAW denoising workflows, and managing image exports.
+A self-hosted photo pipeline for organising camera shoots, running DxO PureRAW denoising, culling with star ratings, and managing exports.
 
-Built with SvelteKit, Sharp, and deployed via Docker. No database — everything lives on the filesystem.
+Built with Next.js, Tailwind, SQLite and exiftool.
+
+## How it works
+
+**The disk is the source of truth.** Photopipe manages an ordinary folder tree that you can also share over SMB/NFS and edit with anything else — PureRAW, Lightroom, Finder. Ratings live _inside the image files_ as standard XMP (`xmp:Rating`), so a shoot folder is self-describing and your ratings travel with the files.
+
+**SQLite is only an index.** A sync engine watches the tree and mirrors it into a local database so the UI can query it quickly. The index is disposable: delete it and it rebuilds on the next boot. Nothing is stored only in the database.
+
+**Changes show up quickly, from anywhere.** Edit a rating in Lightroom over the network share and the app picks it up within a few seconds, because the watcher reconciles the change and pushes an invalidation to the browser.
+
+```
+raw/       camera originals (.arw)  — ratings go in .xmp sidecars
+denoised/  PureRAW output (.dng)    — ratings embedded in the file
+exports/   final edited images
+.thumbs/   regenerable preview cache
+```
+
+`rated` and `selects` are **not folders** — they are views over `denoised/`:
+
+| View    | Means                     |
+| ------- | ------------------------- |
+| rated   | `xmp:Rating` is set (1–5) |
+| selects | `xmp:Label` is `Select`   |
+
+Rating and curating therefore never move a file. Downloads still offer `rated` and `selects` as selectable sets and materialise them as folders inside the ZIP.
 
 ## Features
 
-- **Shoot management** — Create dated shoots (`YYYY-MM-DD_slug-name`) with `raw/`, `denoised/`, and `exports/` subdirectories
-- **Drag-and-drop uploads** — Upload ARW, DNG, and export files with progress tracking
-- **Live denoise monitoring** — SSE-powered real-time progress as PureRAW processes your files
-- **Thumbnail generation** — On-demand WebP thumbnails via Sharp with disk caching
-- **ZIP downloads** — Download any combination of raw, denoised, and export folders as a single archive
-- **PureRAW integration** — Shows host paths and settings for external denoising
-- **Status tracking** — Shoots display their current state: empty, uploading, denoising, ready, or exported
+- **Shoot management** — dated shoots (`YYYY-MM-DD_slug-name`) with a `.photopipe.json` manifest
+- **Streaming uploads** — files stream straight to disk, so a 50 MB raw is never buffered in memory
+- **Rating view** — fullscreen culling with a filmstrip, rating filters, 1:1 zoom, and a WebGL exposure preview for judging under/over-exposed frames (preview only, never writes pixels)
+- **Selects** — mark picks individually or promote everything at or above a rating in one action
+- **Denoise progress** — watches PureRAW output land and estimates time remaining
+- **Thumbnails** — embedded previews extracted with exiftool, resized by Sharp, cached in `.thumbs/`
+- **ZIP downloads** — any combination of raw, denoised, rated, selects and exports, with an optional minimum rating
 
-## Quick Start (Docker)
+## Quick start (Docker)
 
-1. Clone the repo and create a camera directory:
+```bash
+git clone https://github.com/RaphaelMitas/photopipe.git
+cd photopipe
+mkdir -p data/camera data/index
+docker compose up
+```
 
-   ```bash
-   git clone https://github.com/RaphaelMitas/photopipe.git
-   cd photopipe
-   mkdir -p data/camera
-   ```
+Open <http://localhost:3000>. Shoots live in `./data/camera` — point the volume at your real photo directory to use it.
 
-2. Start the container:
-
-   ```bash
-   docker compose up
-   ```
-
-3. Open [http://localhost:3000](http://localhost:3000)
-
-Your photo shoots will live in `./data/camera/`. To use an existing photo directory, update the volume mount in `docker-compose.yml`.
-
-## Quick Start (Development)
+## Quick start (development)
 
 ```bash
 pnpm install
-bash scripts/seed-test-data.sh
+cp .env.example .env      # then set CAMERA_BASE
 pnpm dev
 ```
 
-This seeds sample shoots into `./test-data/Camera/` and starts the dev server.
+Point `CAMERA_BASE` at a directory containing real ARW/DNG files. `pnpm seed` creates a placeholder tree, but those files are not real images, so thumbnails and rating writes will not work on them.
 
 ## Configuration
 
-| Variable           | Required | Default             | Description                                                     |
-| ------------------ | -------- | ------------------- | --------------------------------------------------------------- |
-| `CAMERA_BASE`      | Yes      | —                   | Path to the camera directory (inside container: `/data/camera`) |
-| `CAMERA_HOST_BASE` | No       | `~/pictures/Camera` | Host-side path shown in PureRAW instructions                    |
+| Variable           | Required | Default             | Description                                 |
+| ------------------ | -------- | ------------------- | ------------------------------------------- |
+| `CAMERA_BASE`      | Yes      | —                   | Directory holding the shoot folders         |
+| `CAMERA_HOST_BASE` | No       | `~/pictures/Camera` | Host path shown in the PureRAW instructions |
+| `PHOTOPIPE_DB`     | No       | `./data/index.db`   | Location of the disposable SQLite index     |
 
-Set these in `docker-compose.yml` (Docker) or `.env` (development). See `.env.example` for a template.
+## Migrating from v1
 
-## Architecture
+v1 kept ratings in Convex and used `rated/` and `selects/` directories. To convert a tree in place:
 
-- **SvelteKit** with adapter-node for server-side rendering and API routes
-- **Sharp** for on-demand WebP thumbnail generation
-- **Archiver** for streaming ZIP downloads
-- **Server-Sent Events** for real-time denoise progress monitoring
-- **Filesystem-based** — no database; shoot metadata stored as `.photopipe.json` per shoot
+```bash
+node scripts/migrate-v1.mjs /path/to/Camera --dry-run   # inspect first
+node scripts/migrate-v1.mjs /path/to/Camera
+```
 
-## Security
+It stamps the old ratings into the files as XMP, folds `rated/` and `selects/` back into `denoised/` (labelling the former selects), and rewrites each manifest at version 2.
 
-Photopipe has no built-in authentication. It is designed for trusted local networks.
+Back up your camera directory before running it.
 
-If you need to expose it to the internet, put it behind a reverse proxy with authentication (e.g., nginx basic auth, Authelia, Tailscale).
+## Notes
+
+- Writing XMP into DxO DNGs makes exiftool report `Error copying hidden data`. That is a warning: it drops a small block of DxO-proprietary data it cannot relocate. Image data, previews and standard metadata are unaffected.
+- Photopipe has **no authentication**. Run it on a trusted network or behind a reverse proxy that authenticates for it.
 
 ## License
 

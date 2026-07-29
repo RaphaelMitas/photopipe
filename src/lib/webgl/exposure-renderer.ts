@@ -1,4 +1,4 @@
-import { VERTEX_SHADER_SOURCE, FRAGMENT_SHADER_SOURCE } from './shaders.js';
+import { FRAGMENT_SHADER_SOURCE, VERTEX_SHADER_SOURCE } from '@/lib/webgl/shaders';
 
 export interface AdjustmentParams {
 	exposure: number;
@@ -50,6 +50,7 @@ function linkProgram(
 }
 
 export class ExposureRenderer {
+	private canvas: HTMLCanvasElement;
 	private gl: WebGL2RenderingContext;
 	private program: WebGLProgram;
 	private vertShader: WebGLShader;
@@ -71,6 +72,7 @@ export class ExposureRenderer {
 			premultipliedAlpha: false
 		});
 		if (!gl) throw new Error('WebGL2 not available');
+		this.canvas = canvas;
 		this.gl = gl;
 
 		this.vertShader = compileShader(gl, gl.VERTEX_SHADER, VERTEX_SHADER_SOURCE);
@@ -106,8 +108,7 @@ export class ExposureRenderer {
 	}
 
 	loadImage(image: HTMLImageElement): void {
-		const { gl } = this;
-		const canvas = gl.canvas as HTMLCanvasElement;
+		const { gl, canvas } = this;
 		canvas.width = image.naturalWidth;
 		canvas.height = image.naturalHeight;
 		gl.viewport(0, 0, canvas.width, canvas.height);
@@ -142,6 +143,7 @@ export class ExposureRenderer {
 		gl.deleteProgram(this.program);
 		gl.deleteShader(this.vertShader);
 		gl.deleteShader(this.fragShader);
-		gl.getExtension('WEBGL_lose_context')?.loseContext();
+		// Deliberately not calling WEBGL_lose_context here: StrictMode remounts
+		// reuse the same canvas, and a lost context would leave it unusable.
 	}
 }

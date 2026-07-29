@@ -1,13 +1,6 @@
-.vscode
 node_modules
-
-# Output
-.output
-.vercel
-.netlify
-.wrangler
-/.svelte-kit
-/build
+.next
+next-env.d.ts
 
 # OS
 .DS_Store
@@ -17,16 +10,11 @@ Thumbs.db
 .env
 .env.*
 !.env.example
-!.env.test
-
-# Vite
-vite.config.js.timestamp-*
-vite.config.ts.timestamp-*
 
 # Test data
 /test-data
 
-# Runtime data (camera photos mounted by docker-compose)
+# Runtime data: camera tree + the disposable SQLite index
 /data
 
 # Photo files (never commit)
@@ -35,3 +23,7 @@ vite.config.ts.timestamp-*
 *.dng
 *.DNG
 .thumbs/
+
+# Editor + build artifacts
+.vscode
+*.tsbuildinfo

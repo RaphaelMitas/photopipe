@@ -1,47 +1,44 @@
 #!/bin/bash
-# Creates a test folder structure for local development
+# Creates a v2 test tree for local development.
 set -e
 
-BASE="./test-data/Camera"
+BASE="${1:-./test-data/Camera}"
 rm -rf "$BASE"
+echo "Seeding $BASE..."
 
-echo "Creating test data at $BASE..."
+new_shoot() {
+	mkdir -p "$BASE/$1"/{raw,denoised,exports,.thumbs}
+	cat > "$BASE/$1/.photopipe.json" <<EOF
+{
+	"version": 2,
+	"name": "$2",
+	"date": "${1:0:10}",
+	"createdAt": "${1:0:10}T09:00:00.000Z",
+	"algorithm": ${3:-null},
+	"notes": "",
+	"rawCount": ${4:-null}
+}
+EOF
+}
 
-# Shoot 1: Empty shoot (just created, no files yet)
-mkdir -p "$BASE/2026-04-10_spring-concert/raw"
-mkdir -p "$BASE/2026-04-10_spring-concert/denoised"
-mkdir -p "$BASE/2026-04-10_spring-concert/exports"
-mkdir -p "$BASE/2026-04-10_spring-concert/.thumbs"
+# Empty shoot, freshly created.
+new_shoot "2026-04-10_spring-concert" "Spring Concert"
 
-# Shoot 2: Has raw ARWs + some denoised DNGs (denoising in progress)
-mkdir -p "$BASE/2026-04-05_dance-recital/raw"
-mkdir -p "$BASE/2026-04-05_dance-recital/denoised"
-mkdir -p "$BASE/2026-04-05_dance-recital/exports"
-mkdir -p "$BASE/2026-04-05_dance-recital/.thumbs"
+# Mid-denoise: raws uploaded, only some DNGs back from PureRAW.
+new_shoot "2026-04-05_dance-recital" "Dance Recital" '"DeepPRIME XD3"' 10
 for i in $(seq 1 10); do
-  dd if=/dev/zero of="$BASE/2026-04-05_dance-recital/raw/DSC$(printf '%05d' $i).ARW" bs=1024 count=50 2>/dev/null
+	dd if=/dev/zero of="$BASE/2026-04-05_dance-recital/raw/DSC$(printf '%05d' "$i").ARW" bs=1024 count=50 2>/dev/null
 done
-for i in $(seq 1 10); do
-  dd if=/dev/zero of="$BASE/2026-04-05_dance-recital/denoised/DSC$(printf '%05d' $i).dng" bs=1024 count=100 2>/dev/null
-done
-
-# Shoot 3: Has exports (fully done)
-mkdir -p "$BASE/2026-03-20_studio-session/raw"
-mkdir -p "$BASE/2026-03-20_studio-session/denoised"
-mkdir -p "$BASE/2026-03-20_studio-session/exports"
-mkdir -p "$BASE/2026-03-20_studio-session/.thumbs"
-for i in $(seq 1 8); do
-  dd if=/dev/zero of="$BASE/2026-03-20_studio-session/denoised/DSC$(printf '%05d' $i).dng" bs=1024 count=100 2>/dev/null
-done
-# Create minimal valid JPEG placeholders for thumbnail testing
-for i in $(seq 1 3); do
-  printf '\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xff\xd9' > "$BASE/2026-03-20_studio-session/exports/DSC$(printf '%05d' $i).jpg"
+for i in $(seq 1 6); do
+	dd if=/dev/zero of="$BASE/2026-04-05_dance-recital/denoised/DSC$(printf '%05d' "$i").dng" bs=1024 count=100 2>/dev/null
 done
 
-# Legacy folder (should be ignored — no YYYY-MM-DD_ prefix)
+# A folder that does not match YYYY-MM-DD_slug is ignored entirely.
 mkdir -p "$BASE/Bingen/Exports"
 
-echo "Done! Test data created at $BASE"
-echo ""
-echo "Shoots:"
-ls -1 "$BASE" | grep -v '^\.'
+echo "Done."
+echo
+echo "NOTE: these placeholder files are not real images, so thumbnails and XMP"
+echo "writes will fail on them. Point CAMERA_BASE at a folder of real ARW/DNG"
+echo "files to exercise rating, previews and downloads."
+ls -1 "$BASE"

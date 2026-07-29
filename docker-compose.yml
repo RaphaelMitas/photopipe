@@ -2,13 +2,17 @@ services:
   photopipe:
     build: .
     container_name: photopipe
-    # No built-in auth — only expose on trusted networks or behind a reverse proxy.
+    # No built-in auth — expose only on a trusted network or behind a proxy.
     ports:
       - '3000:3000'
     volumes:
+      # The shoot folders. Share this same directory over SMB/NFS to browse
+      # and edit the files from other machines.
       - ./data/camera:/data/camera
+      # The SQLite index. Disposable: delete it and it rebuilds on boot.
+      - ./data/index:/data/index
     environment:
       - CAMERA_BASE=/data/camera
       - CAMERA_HOST_BASE=./data/camera
-      - PUBLIC_CONVEX_URL=${PUBLIC_CONVEX_URL}
+      - PHOTOPIPE_DB=/data/index/index.db
     restart: unless-stopped

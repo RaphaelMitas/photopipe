@@ -1,6 +1,6 @@
 # Photopipe Rebuild — Target Architecture
 
-Companion to [`functional-spec.md`](./functional-spec.md) (what the app does). This doc defines *how* the rebuild should work.
+Companion to [`functional-spec.md`](./functional-spec.md) (what the app does). This doc defines _how_ the rebuild should work.
 
 ## Requirements (from the rebuild goals)
 
@@ -43,24 +43,24 @@ exports/    final edited images
 .thumbs/    regenerable cache
 ```
 
-The old `rated/` and `selects/` directories are **gone**. With metadata in the files, those stages stop being *places* and become *queries*:
+The old `rated/` and `selects/` directories are **gone**. With metadata in the files, those stages stop being _places_ and become _queries_:
 
 - **rated** = `xmp:Rating` is set (1–5)
-- **selects** = `xmp:Label == "Select"` — a standard XMP field (Lightroom/Bridge show it as a color/text label), toggled in the UI, written into the file like the rating. This preserves *manual* curation: promoting ≥4★ is just a bulk "set label" action, and individual files can be added/removed from selects regardless of rating.
+- **selects** = `xmp:Label == "Select"` — a standard XMP field (Lightroom/Bridge show it as a color/text label), toggled in the UI, written into the file like the rating. This preserves _manual_ curation: promoting ≥4★ is just a bulk "set label" action, and individual files can be added/removed from selects regardless of rating.
 
 Files never move during rate/curate; only `raw → denoised` (external PureRAW) and `→ exports` (external edit + upload) are physical transitions. Nothing is lost for network-share browsing because the website's download can materialize these views (see §6a). Additions:
 
 ### 2.1 Per-image metadata → XMP
 
-| File type | Where the metadata goes | Why |
-| --- | --- | --- |
-| `.dng` (denoised/) | **Embedded XMP packet** in the DNG | DNG is a TIFF-based container designed for this; Lightroom/Bridge/Photo Mechanic interoperate |
-| `.arw` (raw) | **`.xmp` sidecar** next to the file | Writing inside proprietary raw is unsafe; sidecars are the Adobe-standard convention (the current app already treats `.xmp` as a raw companion) |
-| exports (`.jpg` etc.) | Embedded XMP | trivial |
+| File type             | Where the metadata goes             | Why                                                                                                                                             |
+| --------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.dng` (denoised/)    | **Embedded XMP packet** in the DNG  | DNG is a TIFF-based container designed for this; Lightroom/Bridge/Photo Mechanic interoperate                                                   |
+| `.arw` (raw)          | **`.xmp` sidecar** next to the file | Writing inside proprietary raw is unsafe; sidecars are the Adobe-standard convention (the current app already treats `.xmp` as a raw companion) |
+| exports (`.jpg` etc.) | Embedded XMP                        | trivial                                                                                                                                         |
 
 Fields (all standard, no invention needed):
 
-- `xmp:Rating` (0–5) — the star rating. This replaces the Convex ratings table *as truth*.
+- `xmp:Rating` (0–5) — the star rating. This replaces the Convex ratings table _as truth_.
 - `xmp:Label` — `"Select"` marks curated selects (absent otherwise). Also usable for future color-label workflows.
 - A small custom namespace (`photopipe:`) only if we need app-specific flags later; start without it.
 
@@ -99,13 +99,17 @@ files(id, shoot_id, stage,          -- raw|denoised|exports
       xmp_mtime,                     -- sidecar or embedded-source mtime we last read
       UNIQUE(shoot_id, stage, file_name))
 
-pending_writes(id, path, expected_mtime, created_at)  -- echo suppression, see §4.3
 ```
+
+> **As built:** the planned `pending_writes` table turned out to be unnecessary.
+> A write-through mutation already records the post-write `mtime`/`xmp_mtime` on
+> the row, so the reconciler's ordinary "has this changed?" diff sees no change
+> and skips the re-read. The mtime mirror _is_ the echo suppression.
 
 Rules:
 
 - Reads for the UI **always** come from SQLite (fast, sortable, filterable — fixes the "stat every file per request" pattern).
-- The DB row's `rating` is a *mirror* of the file's XMP. On conflict, **the file wins** (see §4.4).
+- The DB row's `rating` is a _mirror_ of the file's XMP. On conflict, **the file wins** (see §4.4).
 - A schema version + "rebuild index" admin action (drop + full rescan) is a first-class feature, not a recovery hack.
 
 ## 4. Sync engine
@@ -114,7 +118,7 @@ One module, running inside the Next.js server process (instrumented to start onc
 
 ### 4.1 Change detection
 
-- **fs watcher** (chokidar) on the camera root. Note: because the disk is *local to the server* and shared **out** via SMB/NFS, writes made by network clients land through the server's filesystem and do emit local fs events — the watcher covers external edits too. (If the tree were instead a mount *from* elsewhere, events would be unreliable and polling would be primary; the design below degrades to that gracefully.)
+- **fs watcher** (chokidar) on the camera root. Note: because the disk is _local to the server_ and shared **out** via SMB/NFS, writes made by network clients land through the server's filesystem and do emit local fs events — the watcher covers external edits too. (If the tree were instead a mount _from_ elsewhere, events would be unreliable and polling would be primary; the design below degrades to that gracefully.)
 - **Debounced dirty-marking**: events mark `(shoot, stage)` dirty; a reconciler drains the dirty set after ~1–2 s of quiet. Bulk PureRAW output → one scan, not 200.
 - **Periodic full scan** (e.g. every 5 min, and on boot) as the safety net for missed events, plus stat-based file-stability detection (size unchanged across two passes) to avoid indexing half-written PureRAW output — same heuristic as today, but inside the reconciler instead of a bespoke SSE watcher.
 
@@ -143,7 +147,7 @@ Status derivation adapts to the query model: `exported` (exports non-empty) → 
 
 ### 4.4 Conflict rule
 
-Last writer wins, and the *disk* is the arbiter: if an external tool (e.g. Lightroom over the share) changed a file's XMP after our last read, the reconciler overwrites the DB mirror with the file's value. No merge logic — single-user tool, standard field, simplest correct behavior.
+Last writer wins, and the _disk_ is the arbiter: if an external tool (e.g. Lightroom over the share) changed a file's XMP after our last read, the reconciler overwrites the DB mirror with the file's value. No merge logic — single-user tool, standard field, simplest correct behavior.
 
 ## 5. Freshness to the UI ("quickly, not real-time")
 
@@ -157,7 +161,17 @@ This yields sub-second UI updates for own edits (optimistic + invalidation), and
 ## 6. Next.js application
 
 - **App Router**, RSC for reads: `/(dashboard)/page.tsx` (shoot list), `/shoot/[name]/page.tsx` (detail) — server components query SQLite directly; client components (rating view, galleries, upload) hydrate via React Query with initial data from the server.
-- **Route handlers** replace the SvelteKit endpoints ~1:1 (see functional-spec §4): shoots CRUD, upload (switch to **streamed** multipart writing to a temp file + atomic rename — kills the in-memory buffering), rate/label mutations (replacing move/rate/selects), ZIP download (Archiver streams fine in a Node route handler), thumbs (Sharp + exiftool preview extraction, same `.thumbs/` cache + in-flight dedup), events (SSE).
+- **Route handlers** replace the SvelteKit endpoints ~1:1 (see functional-spec §4): shoots CRUD, upload (**streamed** to a hidden `.part` file + atomic rename — kills the in-memory buffering), rate/label mutations (replacing move/rate/selects), ZIP download (Archiver streams fine in a Node route handler), thumbs (Sharp + exiftool preview extraction, same `.thumbs/` cache + in-flight dedup), events (SSE).
+
+> **As built:** uploads send the file as the raw request body with the name and
+> stage in the query string, rather than multipart. `request.formData()` buffers
+> the whole file in memory, which is exactly the v1 problem being fixed; a raw
+> body pipes straight from the request stream to disk.
+>
+> Also as built: a metadata write bumps the image's mtime, which would invalidate
+> a still-correct thumbnail. Since only metadata changed, `touchThumbs()` marks
+> the cached renders fresh instead of re-extracting a multi-megabyte preview on
+> every keystroke during a cull.
 
 ### 6a. Downloads with virtual folders
 
@@ -177,25 +191,26 @@ GET /api/shoots/[name]/download
 - With structure preserved, virtual sets materialize as `rated/` / `selects/` folders **inside the ZIP**, matching the old archive layout; `flat` merges everything. If `denoised` is requested alongside a virtual set, overlapping files appear once per requested grouping (explicit, predictable).
 
 The download dialog keeps its five checkboxes (with live counts/sizes now served from the index) plus an optional min-rating picker — the UX doesn't regress just because the disk layout got simpler.
+
 - **Validation**: Zod schemas shared between route handlers and client fetchers; keep the `PhotopipeError` code→status mapping.
 - **Tailwind** for all styling; port the existing visual language (dark, dense, status badges, filter pills) as components: `RatingView` (fullscreen culler — keyboard map, filters, filmstrip, debounced saves, zoom, and the WebGL2 exposure preview canvas port over intact), `RatedGallery`, `DenoiseProgress`, dialogs.
 - **Runtime**: Node runtime only (Sharp, exiftool, SQLite — no edge). Single Docker container: Next standalone output + `vips` + `exiftool` + the two volumes (`/data/camera`, `/data/index.db`).
 
 ## 7. What this deletes from the old design
 
-| Old | Replaced by |
-| --- | --- |
-| Convex (cloud DB, `PUBLIC_CONVEX_URL`) | local SQLite index + XMP in files |
-| 3 realtime channels (Convex live query, ratings SSE, watch SSE) | 1 SSE invalidation stream + React Query |
-| 2 s polling denoise watcher singleton | fs-event reconciler (denoise progress is just index updates) |
-| Client-side direct DB mutations bypassing the API | all writes through route handlers → sync engine |
-| Hand-rolled JPEG marker scan for DNG previews | exiftool preview extraction |
-| Ratings truth split across 3 stores, silent 3★ default | XMP is truth; unrated is null, no defaulting |
-| In-memory whole-file upload buffering | streamed upload → temp file → atomic rename |
+| Old                                                             | Replaced by                                                  |
+| --------------------------------------------------------------- | ------------------------------------------------------------ |
+| Convex (cloud DB, `PUBLIC_CONVEX_URL`)                          | local SQLite index + XMP in files                            |
+| 3 realtime channels (Convex live query, ratings SSE, watch SSE) | 1 SSE invalidation stream + React Query                      |
+| 2 s polling denoise watcher singleton                           | fs-event reconciler (denoise progress is just index updates) |
+| Client-side direct DB mutations bypassing the API               | all writes through route handlers → sync engine              |
+| Hand-rolled JPEG marker scan for DNG previews                   | exiftool preview extraction                                  |
+| Ratings truth split across 3 stores, silent 3★ default          | XMP is truth; unrated is null, no defaulting                 |
+| In-memory whole-file upload buffering                           | streamed upload → temp file → atomic rename                  |
 
 ## 8. Decisions taken (defaults, revisit if needed)
 
-- **exiftool as a runtime dependency** — the one new system dep; alternatives (exiv2 bindings, pure-JS XMP) are all weaker on safe in-place DNG writes.
+- **exiftool as a runtime dependency** — the one new system dep; alternatives (exiv2 bindings, pure-JS XMP) are all weaker on safe in-place DNG writes. Shipped via `exiftool-vendored`, which bundles the tool itself but runs it through Perl, so the Docker image installs `perl` and cannot use Next's `standalone` output (file tracing does not follow the vendored script).
 - **Sidecars for ARW, embedded for DNG/JPEG** — mixed mode, standard practice.
 - **SQLite over Postgres** — single-process self-hosted app; nothing here needs a server DB.
 - **No auth again** (LAN/reverse-proxy), but structure route handlers behind a single middleware so basic auth can be added in one place.

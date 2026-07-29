@@ -26,14 +26,14 @@ The unit of work. A shoot is a directory on disk plus a metadata record.
 - **Folder naming**: `YYYY-MM-DD_slug-name` (regex `^\d{4}-\d{2}-\d{2}_[a-z0-9][a-z0-9-]*$`). The slug is derived from a human name ("Spring Concert" → `spring-concert`; lowercase, spaces→hyphens, strip non-alphanumerics, collapse/trim hyphens). Display name is recovered by replacing hyphens with spaces.
 - **Subdirectories** (all created on shoot creation, `rated/` and `selects/` also lazily on read):
 
-| Dir         | Contents             | Allowed extensions                                 |
-| ----------- | -------------------- | -------------------------------------------------- |
-| `raw/`      | camera originals     | `.arw` (delete also allows `.xmp` sidecars)        |
-| `denoised/` | PureRAW output       | `.dng`                                             |
-| `rated/`    | rated DNGs           | `.dng`                                             |
-| `selects/`  | curated keepers      | `.dng`                                             |
-| `exports/`  | final edited images  | `.jpg .jpeg .png .tif .tiff .webp .dng`            |
-| `.thumbs/`  | thumbnail/preview cache | generated `.webp` (never listed as content)     |
+| Dir         | Contents                | Allowed extensions                          |
+| ----------- | ----------------------- | ------------------------------------------- |
+| `raw/`      | camera originals        | `.arw` (delete also allows `.xmp` sidecars) |
+| `denoised/` | PureRAW output          | `.dng`                                      |
+| `rated/`    | rated DNGs              | `.dng`                                      |
+| `selects/`  | curated keepers         | `.dng`                                      |
+| `exports/`  | final edited images     | `.jpg .jpeg .png .tif .tiff .webp .dng`     |
+| `.thumbs/`  | thumbnail/preview cache | generated `.webp` (never listed as content) |
 
 Directories that don't match the folder-name pattern are ignored entirely (legacy folders coexist safely in the camera dir).
 
@@ -43,7 +43,7 @@ Per shoot: `folderName` (unique key), `name`, `date`, `createdAt`, `algorithm` (
 
 Per rating: `(shootId, fileName) → rating 1–5`, unique per file.
 
-The filesystem is the source of truth for *files*; Convex is the source of truth for *ratings and shoot metadata*. (An earlier iteration stored metadata in a `.photopipe.json` per shoot — the README still says so.) Shoots discovered on disk that have no Convex record are lazily upserted on first listing/read.
+The filesystem is the source of truth for _files_; Convex is the source of truth for _ratings and shoot metadata_. (An earlier iteration stored metadata in a `.photopipe.json` per shoot — the README still says so.) Shoots discovered on disk that have no Convex record are lazily upserted on first listing/read.
 
 ### 2.3 Status (derived, never stored)
 
@@ -163,28 +163,28 @@ Edit denoise algorithm and notes (server form action `updateMeta`); shows folder
 
 ## 4. API summary
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| POST | `/api/shoots` | create shoot |
-| DELETE | `/api/shoots/[name]` | delete shoot (disk + DB) |
-| DELETE | `/api/shoots/[name]/files` | delete files in a folder |
-| POST | `/api/shoots/[name]/move` | move files between folders |
-| POST | `/api/shoots/[name]/rate` | rate + move denoised→rated |
-| PATCH | `/api/shoots/[name]/rate` | update ratings only |
-| POST | `/api/shoots/[name]/selects` | move rated→selects |
-| GET | `/api/shoots/[name]/download` | streaming ZIP |
-| GET | `/api/shoots/[name]/ratings-stream` | SSE: rating changes |
-| GET | `/api/watch/[name]` | SSE: denoise progress |
-| GET | `/api/thumbs/[name]/[file]` | thumb/preview WebP |
-| POST | `/api/upload/[name]` | upload one file |
-| PATCH | `/api/upload/[name]` | finalize (persist rawCount) |
+| Method | Path                                | Purpose                     |
+| ------ | ----------------------------------- | --------------------------- |
+| POST   | `/api/shoots`                       | create shoot                |
+| DELETE | `/api/shoots/[name]`                | delete shoot (disk + DB)    |
+| DELETE | `/api/shoots/[name]/files`          | delete files in a folder    |
+| POST   | `/api/shoots/[name]/move`           | move files between folders  |
+| POST   | `/api/shoots/[name]/rate`           | rate + move denoised→rated  |
+| PATCH  | `/api/shoots/[name]/rate`           | update ratings only         |
+| POST   | `/api/shoots/[name]/selects`        | move rated→selects          |
+| GET    | `/api/shoots/[name]/download`       | streaming ZIP               |
+| GET    | `/api/shoots/[name]/ratings-stream` | SSE: rating changes         |
+| GET    | `/api/watch/[name]`                 | SSE: denoise progress       |
+| GET    | `/api/thumbs/[name]/[file]`         | thumb/preview WebP          |
+| POST   | `/api/upload/[name]`                | upload one file             |
+| PATCH  | `/api/upload/[name]`                | finalize (persist rawCount) |
 
 Conventions: shoot name validated everywhere against the folder pattern + traversal checks (`..`, `/`, `\`); newer endpoints validate bodies with Zod; errors are a `PhotopipeError` (`NOT_FOUND` 404 / `INVALID_INPUT` 400 / `CONFLICT` 409 / `FS_ERROR` 500) mapped to SvelteKit `error()`.
 
 ## 5. Realtime — three coexisting mechanisms (rebuild target #1)
 
 1. **Convex live query** — shoot page's live ratings.
-2. **Custom SSE `ratings-stream`** — in-process broadcaster fed by the REST rate endpoints; Rating View's sync channel. *Not* fed by direct Convex client mutations (inline gallery edits reach Rating Views only via mechanism 1… which Rating View doesn't use).
+2. **Custom SSE `ratings-stream`** — in-process broadcaster fed by the REST rate endpoints; Rating View's sync channel. _Not_ fed by direct Convex client mutations (inline gallery edits reach Rating Views only via mechanism 1… which Rating View doesn't use).
 3. **Custom SSE `watch`** — the 2 s polling denoise watcher.
 
 A rebuild should pick **one** realtime primitive (single subscription/event bus; fs-events-based watcher instead of polling) and derive all live UI from it.
@@ -201,7 +201,7 @@ A rebuild should pick **one** realtime primitive (single subscription/event bus;
 
 **Architecture**
 
-- **Split brain**: files on disk, metadata/ratings in a cloud DB. Lazy upserts, orphaned records, and "rating without file / file without rating" states are all possible; rated files with no rating silently display as 3★. A rebuild should have one authoritative store (or an explicit reconciliation layer) — and question whether a *self-hosted* app should depend on a cloud DB at all.
+- **Split brain**: files on disk, metadata/ratings in a cloud DB. Lazy upserts, orphaned records, and "rating without file / file without rating" states are all possible; rated files with no rating silently display as 3★. A rebuild should have one authoritative store (or an explicit reconciliation layer) — and question whether a _self-hosted_ app should depend on a cloud DB at all.
 - **Three realtime channels** (see §5) with inconsistent coverage.
 - Client bypasses the API for inline rating edits (direct Convex mutation), so server-side invariants/broadcasts are skippable.
 - Status is derived from folder contents alone — moving files back "rewinds" status; `denoising` depends on a manually-finalized `rawCount` snapshot (skip the PATCH and status jumps straight to `ready`).

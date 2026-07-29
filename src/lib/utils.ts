@@ -1,17 +1,11 @@
-/**
- * Format bytes into a human-readable string (e.g. "1.5 GB")
- */
 export function formatBytes(bytes: number): string {
 	if (bytes === 0) return '0 B';
 	const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-	const i = Math.floor(Math.log(bytes) / Math.log(1024));
+	const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
 	const value = bytes / Math.pow(1024, i);
 	return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
-/**
- * Format seconds into a human-readable duration (e.g. "2 hrs 15 min")
- */
 export function formatDuration(totalSeconds: number): string {
 	if (totalSeconds < 60) return `${Math.round(totalSeconds)} sec`;
 	const hours = Math.floor(totalSeconds / 3600);
@@ -21,22 +15,14 @@ export function formatDuration(totalSeconds: number): string {
 	return `${hours} hr${hours > 1 ? 's' : ''} ${minutes} min`;
 }
 
-/**
- * Parse a shoot folder name into date and name parts.
- * Expected format: "YYYY-MM-DD_some-name"
- */
+/** "2026-04-10_spring-concert" → { date, name: "spring concert" } */
 export function parseShootFolder(folderName: string): { date: string; name: string } | null {
 	const match = folderName.match(/^(\d{4}-\d{2}-\d{2})_(.+)$/);
-	if (!match) return null;
-	// Convert hyphens back to spaces for display
-	const displayName = match[2].replace(/-/g, ' ');
-	return { date: match[1], name: displayName };
+	if (!match?.[1] || !match[2]) return null;
+	return { date: match[1], name: match[2].replace(/-/g, ' ') };
 }
 
-/**
- * Convert a human-readable shoot name into the folder-safe slug.
- * "Spring Concert" → "spring-concert"
- */
+/** "Spring Concert" → "spring-concert" */
 export function slugifyName(name: string): string {
 	return name
 		.trim()
@@ -47,20 +33,13 @@ export function slugifyName(name: string): string {
 		.replace(/^-|-$/g, '');
 }
 
-/**
- * Build the full folder name from date + name.
- * "Spring Concert" + "2026-04-10" → "2026-04-10_spring-concert"
- */
 export function buildFolderName(name: string, date: string): string {
 	return `${date}_${slugifyName(name)}`;
 }
 
-/**
- * Format a date string for display
- */
 export function formatDate(dateStr: string): string {
 	try {
-		return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
+		return new Date(`${dateStr}T00:00:00`).toLocaleDateString('en-US', {
 			weekday: 'short',
 			year: 'numeric',
 			month: 'short',
@@ -69,4 +48,14 @@ export function formatDate(dateStr: string): string {
 	} catch {
 		return dateStr;
 	}
+}
+
+export function fileExtension(fileName: string): string {
+	const dot = fileName.lastIndexOf('.');
+	return dot === -1 ? '' : fileName.slice(dot).toLowerCase();
+}
+
+export function stripExtension(fileName: string): string {
+	const dot = fileName.lastIndexOf('.');
+	return dot === -1 ? fileName : fileName.slice(0, dot);
 }
