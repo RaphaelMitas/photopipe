@@ -26,7 +26,7 @@
 	"dependencies": {
 		"@tanstack/react-query": "^5.101.4",
 		"archiver": "^8.0.0",
-		"better-sqlite3": "^13.0.2",
+		"better-sqlite3": "13.0.1",
 		"chokidar": "^5.0.0",
 		"drizzle-orm": "^0.45.2",
 		"exiftool-vendored": "^37.0.0",
@@ -43,7 +43,6 @@
 		"@types/node": "^26.1.2",
 		"@types/react": "^19.2.17",
 		"@types/react-dom": "^19.2.3",
-		"drizzle-kit": "^0.31.10",
 		"eslint": "^9.39.5",
 		"eslint-config-next": "^16.2.12",
 		"postcss": "^8.5.24",
@@ -52,5 +51,6 @@
 		"server-only": "^0.0.1",
 		"tailwindcss": "^4.3.3",
 		"typescript": "^5.9.3"
-	}
+	},
+	"packageManager": "pnpm@11.3.0+sha512.2c403d6594527287672b1f7056343a1f7c3634036a67ffabfcc2b3d7595d843768f8787148d1b57cf7956c90606bbd192857c363af19e96d2d0ec9ec5741d215"
 }

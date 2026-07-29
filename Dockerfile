@@ -3,7 +3,7 @@
 FROM node:24-bookworm-slim AS deps
 RUN corepack enable
 WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
 FROM node:24-bookworm-slim AS build
@@ -18,7 +18,7 @@ RUN pnpm build
 FROM node:24-bookworm-slim AS prod-deps
 RUN corepack enable
 WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile --prod
 
 FROM node:24-bookworm-slim
