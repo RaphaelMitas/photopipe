@@ -44,7 +44,7 @@ public func scanLibrary(root: String) throws -> LibrarySnapshot {
         let files = scanShootDirectory(dir)
         guard !files.isEmpty else { continue }
         fileCount += files.count
-        let images = buildImageGroups(files: files)
+        let images = buildImageGroups(files: files, ratingFor: XMP.readRating)
         let shoot = makeShoot(name: dir.lastPathComponent, path: dir.path, images: images)
         shoots.append(shoot)
         imagesByShoot[shoot.name] = images

@@ -53,7 +53,7 @@ public final class Dispatcher {
                     ])))
         case "shutdown":
             return .shutdown(.success(id: request.id, result: .object(["bye": .bool(true)])))
-        case "setRoot", "listShoots", "listImages", "thumbnail", "status":
+        case "setRoot", "listShoots", "listImages", "thumbnail", "render", "setRating", "status":
             return .respond(libraryResponse(request))
         default:
             return .respond(
@@ -97,6 +97,31 @@ public final class Dispatcher {
                 let maxPixel = request.params?["maxPixel"]?.intValue ?? 256
                 let cachePath = try library.thumbnail(path: path, maxPixel: maxPixel)
                 return .success(id: request.id, result: .object(["cachePath": .string(cachePath)]))
+            case "render":
+                guard let path = request.params?["path"]?.stringValue else {
+                    return .failure(id: request.id, code: "invalid_params", message: "path required")
+                }
+                let exposure = request.params?["exposure"]?.doubleValue ?? 0
+                let maxPixel = request.params?["maxPixel"]?.intValue ?? 2000
+                let cachePath = try library.render(
+                    path: path, exposure: exposure, maxPixel: maxPixel)
+                return .success(id: request.id, result: .object(["cachePath": .string(cachePath)]))
+            case "setRating":
+                guard let shoot = request.params?["shoot"]?.stringValue,
+                    let stem = request.params?["stem"]?.stringValue,
+                    let rating = request.params?["rating"]?.intValue
+                else {
+                    return .failure(
+                        id: request.id, code: "invalid_params",
+                        message: "shoot, stem and rating required")
+                }
+                let result = try library.setRating(shoot: shoot, stem: stem, rating: rating)
+                return .success(
+                    id: request.id,
+                    result: .object([
+                        "rating": .number(Double(result.rating)),
+                        "generation": .number(Double(result.generation)),
+                    ]))
             case "status":
                 let status = library.status()
                 return .success(
@@ -115,6 +140,17 @@ public final class Dispatcher {
             return .failure(id: request.id, code: "unknown_shoot", message: name)
         } catch LibraryService.ServiceError.pathOutsideRoot(let path) {
             return .failure(id: request.id, code: "path_outside_root", message: path)
+        } catch LibraryService.ServiceError.unknownImage(let stem) {
+            return .failure(id: request.id, code: "unknown_image", message: stem)
+        } catch LibraryService.ServiceError.invalidRating(let rating) {
+            return .failure(
+                id: request.id, code: "invalid_rating", message: "rating \(rating) not in 0...5")
+        } catch ExifTool.ExifToolError.notInstalled {
+            return .failure(
+                id: request.id, code: "exiftool_missing",
+                message: "exiftool not found — install it or set PHOTOPIPE_EXIFTOOL")
+        } catch ExifTool.ExifToolError.failed(let output) {
+            return .failure(id: request.id, code: "exiftool_failed", message: output)
         } catch ScanError.rootNotFound(let path) {
             return .failure(id: request.id, code: "root_not_found", message: path)
         } catch {

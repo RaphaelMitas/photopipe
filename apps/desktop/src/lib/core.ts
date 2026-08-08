@@ -13,7 +13,14 @@ export type FileRecord = {
 export type ImageGroup = {
   stem: string;
   stage: Stage;
+  /** XMP star rating, 0 = unrated. */
+  rating: number;
   files: FileRecord[];
+};
+
+export type SetRatingResult = {
+  rating: number;
+  generation: number;
 };
 
 export type Shoot = {

@@ -13,6 +13,7 @@ function makeImages(count: number): ImageGroup[] {
   return Array.from({ length: count }, (_, i) => ({
     stem: `DSC${String(i).padStart(5, "0")}`,
     stage: "raw" as const,
+    rating: 0,
     files: [
       {
         path: `/r/s/DSC${String(i).padStart(5, "0")}.ARW`,

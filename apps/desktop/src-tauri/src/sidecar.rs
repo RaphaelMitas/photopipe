@@ -1,21 +1,31 @@
-//! Manager for the photopipe-core Swift sidecar: spawn, request/response over
-//! line-delimited JSON (protocol v1), read timeout, crash-restart, graceful shutdown.
+//! Manager for the photopipe-core Swift sidecar.
+//!
+//! Protocol v1 envelope (line-delimited JSON with string ids), concurrent
+//! transport: requests from any thread interleave on one stdin pipe, a reader
+//! thread routes responses to waiters by id, so a slow render never blocks a
+//! ping. Crash/wedge recovery respawns the core, replays the library root, and
+//! re-sends only idempotent requests.
 
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
-use std::sync::Mutex;
+use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub const PROTOCOL_VERSION: u64 = 1;
 
-/// Generous default: v1 methods answer instantly; raw renders in later phases
-/// may take seconds cold. Per-method budgets can replace this when needed.
+/// Generous: v1 methods answer instantly, warm renders in ~35ms; the ceiling
+/// exists for cold full-res renders and giant library scans.
 const READ_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Requests that mutate state must never be silently re-sent after a respawn:
+/// the first send may have taken effect before the connection died.
+const MUTATING_METHODS: &[&str] = &["setRating"];
 
 #[derive(Debug, Deserialize)]
 struct WireError {
@@ -32,18 +42,38 @@ struct WireResponse {
     error: Option<WireError>,
 }
 
+type PendingMap = HashMap<u64, SyncSender<Result<WireResponse, String>>>;
+
 struct Running {
-    child: Child,
-    stdin: ChildStdin,
-    /// Fed by a dedicated reader thread; lets reads carry a timeout. The thread
-    /// exits on stdout EOF, so killed sidecars clean up after themselves.
-    lines: Receiver<std::io::Result<String>>,
+    child: Mutex<Child>,
+    stdin: Mutex<ChildStdin>,
+    /// `None` after the reader thread poisoned the connection (EOF, read
+    /// error, or a desynced/unparseable line): every waiter got an error and
+    /// no new request may register.
+    pending: Mutex<Option<PendingMap>>,
+}
+
+impl Running {
+    /// Fail all waiters and refuse new registrations. Idempotent.
+    fn poison(&self, reason: &str) {
+        if let Some(map) = self.pending.lock().unwrap().take() {
+            for (_, tx) in map {
+                let _ = tx.send(Err(reason.to_string()));
+            }
+        }
+    }
+
+    fn kill(&self) {
+        let mut child = self.child.lock().unwrap();
+        let _ = child.kill();
+        let _ = child.wait();
+    }
 }
 
 enum RoundTripError {
-    /// Pipe broke, sidecar died, stream desynced, or read timed out — worth a respawn.
+    /// Connection-level failure — worth a respawn.
     Io(String),
-    /// Sidecar answered with an error — respawning won't help.
+    /// The core answered with an error — respawning won't help.
     Remote(String),
 }
 
@@ -51,7 +81,10 @@ pub struct Sidecar {
     bin: PathBuf,
     read_timeout: Duration,
     next_id: AtomicU64,
-    running: Mutex<Option<Running>>,
+    running: Mutex<Option<Arc<Running>>>,
+    /// Params of the last successful `setRoot`, replayed after a respawn so
+    /// the fresh core regains its session state before other traffic.
+    last_root: Mutex<Option<Value>>,
 }
 
 impl Sidecar {
@@ -61,6 +94,7 @@ impl Sidecar {
             read_timeout: READ_TIMEOUT,
             next_id: AtomicU64::new(1),
             running: Mutex::new(None),
+            last_root: Mutex::new(None),
         }
     }
 
@@ -83,7 +117,7 @@ impl Sidecar {
         PathBuf::from("photopipe-core")
     }
 
-    fn spawn(&self) -> Result<Running, String> {
+    fn spawn(&self) -> Result<Arc<Running>, String> {
         let mut child = Command::new(&self.bin)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -92,29 +126,105 @@ impl Sidecar {
             .map_err(|e| format!("failed to spawn sidecar {}: {e}", self.bin.display()))?;
         let stdin = child.stdin.take().expect("piped stdin");
         let stdout = child.stdout.take().expect("piped stdout");
-        let (tx, lines) = mpsc::channel();
+        let running = Arc::new(Running {
+            child: Mutex::new(child),
+            stdin: Mutex::new(stdin),
+            pending: Mutex::new(Some(HashMap::new())),
+        });
+
+        let reader_handle = Arc::clone(&running);
         std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines() {
-                let failed = line.is_err();
-                if tx.send(line).is_err() || failed {
-                    break;
+                let text = match line {
+                    Ok(text) => text,
+                    Err(e) => {
+                        reader_handle.poison(&format!("read: {e}"));
+                        return;
+                    }
+                };
+                let response: WireResponse = match serde_json::from_str(&text) {
+                    Ok(response) => response,
+                    Err(e) => {
+                        // Desynced stream — nothing after this line is trustworthy.
+                        reader_handle.poison(&format!("unparseable response: {e}"));
+                        return;
+                    }
+                };
+                let Ok(id) = response.id.parse::<u64>() else {
+                    reader_handle.poison(&format!("response with foreign id {:?}", response.id));
+                    return;
+                };
+                if let Some(map) = reader_handle.pending.lock().unwrap().as_mut() {
+                    if let Some(tx) = map.remove(&id) {
+                        let _ = tx.send(Ok(response));
+                    }
+                    // No waiter: it timed out and deregistered — drop the late reply.
                 }
             }
+            reader_handle.poison("sidecar closed stdout");
         });
-        Ok(Running {
-            child,
-            stdin,
-            lines,
-        })
+
+        Ok(running)
+    }
+
+    /// Current connection, spawning (and replaying the root) if needed.
+    fn connection(&self) -> Result<Arc<Running>, String> {
+        {
+            let mut guard = self.running.lock().map_err(|e| e.to_string())?;
+            if let Some(running) = guard.as_ref() {
+                return Ok(Arc::clone(running));
+            }
+            let running = self.spawn()?;
+            *guard = Some(Arc::clone(&running));
+        }
+        // Outside the lock, best-effort: replay session state on the fresh
+        // connection. A concurrent request can slip in before the replay and
+        // eat one `no_root` error — that request fails visibly and the next
+        // succeeds, which is acceptable for a crash-recovery path.
+        let replay = self.last_root.lock().unwrap().clone();
+        if let Some(params) = replay {
+            let running = self.running.lock().unwrap().as_ref().map(Arc::clone);
+            if let Some(running) = running {
+                let _ = self.round_trip(&running, "setRoot", &Some(params));
+            }
+        }
+        self.running
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(Arc::clone)
+            .ok_or_else(|| "sidecar connection lost during setup".into())
+    }
+
+    /// Drop `failed` as the current connection (only if it still is) and kill it.
+    fn discard(&self, failed: &Arc<Running>) {
+        failed.poison("connection discarded");
+        if let Ok(mut guard) = self.running.lock() {
+            if let Some(current) = guard.as_ref() {
+                if Arc::ptr_eq(current, failed) {
+                    *guard = None;
+                }
+            }
+        }
+        failed.kill();
     }
 
     fn round_trip(
-        running: &mut Running,
-        id: u64,
+        &self,
+        running: &Arc<Running>,
         method: &str,
         params: &Option<Value>,
-        read_timeout: Duration,
     ) -> Result<Value, RoundTripError> {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let (tx, rx) = sync_channel(1);
+        {
+            let mut pending = running.pending.lock().unwrap();
+            match pending.as_mut() {
+                Some(map) => map.insert(id, tx),
+                None => return Err(RoundTripError::Io("connection already failed".into())),
+            };
+        }
+
         let request = json!({
             "v": PROTOCOL_VERSION,
             "id": id.to_string(),
@@ -123,34 +233,33 @@ impl Sidecar {
         });
         let mut line = request.to_string();
         line.push('\n');
-        running
-            .stdin
-            .write_all(line.as_bytes())
-            .map_err(|e| RoundTripError::Io(format!("write: {e}")))?;
+        {
+            let mut stdin = running.stdin.lock().unwrap();
+            if let Err(e) = stdin.write_all(line.as_bytes()) {
+                if let Some(map) = running.pending.lock().unwrap().as_mut() {
+                    map.remove(&id);
+                }
+                return Err(RoundTripError::Io(format!("write: {e}")));
+            }
+        }
 
-        let reply = match running.lines.recv_timeout(read_timeout) {
-            Ok(Ok(reply)) => reply,
-            Ok(Err(e)) => return Err(RoundTripError::Io(format!("read: {e}"))),
+        let response = match rx.recv_timeout(self.read_timeout) {
+            Ok(Ok(response)) => response,
+            Ok(Err(reason)) => return Err(RoundTripError::Io(reason)),
             Err(RecvTimeoutError::Timeout) => {
+                if let Some(map) = running.pending.lock().unwrap().as_mut() {
+                    map.remove(&id);
+                }
                 return Err(RoundTripError::Io(format!(
-                    "sidecar did not answer within {read_timeout:?}"
-                )))
+                    "sidecar did not answer within {:?}",
+                    self.read_timeout
+                )));
             }
             Err(RecvTimeoutError::Disconnected) => {
-                return Err(RoundTripError::Io("sidecar closed stdout".into()))
+                return Err(RoundTripError::Io("connection failed".into()))
             }
         };
 
-        // Unparseable output or a mismatched id means the stream is desynced —
-        // classify as Io so the kill-and-respawn path recovers the session.
-        let response: WireResponse = serde_json::from_str(&reply)
-            .map_err(|e| RoundTripError::Io(format!("unparseable response: {e}")))?;
-        if response.id != id.to_string() {
-            return Err(RoundTripError::Io(format!(
-                "response id {} does not match request id {id}",
-                response.id
-            )));
-        }
         if response.v != PROTOCOL_VERSION {
             return Err(RoundTripError::Remote(format!(
                 "protocol mismatch: sidecar speaks v{}",
@@ -169,31 +278,26 @@ impl Sidecar {
     }
 
     pub fn request(&self, method: &str, params: Option<Value>) -> Result<Value, String> {
-        let mut guard = self.running.lock().map_err(|e| e.to_string())?;
+        let retryable = !MUTATING_METHODS.contains(&method);
         let mut last_io_error = String::new();
-        // One respawn retry: a crashed or wedged sidecar is replaced transparently.
-        // NOTE: this re-sends the request — fine for idempotent v1 methods, must be
-        // revisited before mutating methods land (see IMPLEMENTATION.md, Phase 3).
         for _attempt in 0..2 {
-            if guard.is_none() {
-                *guard = Some(self.spawn()?);
-            }
-            let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-            match Self::round_trip(
-                guard.as_mut().expect("just spawned"),
-                id,
-                method,
-                &params,
-                self.read_timeout,
-            ) {
-                Ok(result) => return Ok(result),
+            let running = self.connection()?;
+            match self.round_trip(&running, method, &params) {
+                Ok(result) => {
+                    if method == "setRoot" {
+                        *self.last_root.lock().unwrap() = params.clone();
+                    }
+                    return Ok(result);
+                }
                 Err(RoundTripError::Remote(message)) => return Err(message),
                 Err(RoundTripError::Io(message)) => {
-                    if let Some(mut dead) = guard.take() {
-                        let _ = dead.child.kill();
-                        let _ = dead.child.wait();
-                    }
+                    self.discard(&running);
                     last_io_error = message;
+                    if !retryable {
+                        // The core may have applied the mutation before dying —
+                        // surface the failure instead of risking a double apply.
+                        return Err(format!("sidecar connection failed: {last_io_error}"));
+                    }
                 }
             }
         }
@@ -205,21 +309,33 @@ impl Sidecar {
         let Ok(mut guard) = self.running.lock() else {
             return;
         };
-        let Some(mut running) = guard.take() else {
+        let Some(running) = guard.take() else {
             return;
         };
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let _ = Self::round_trip(&mut running, id, "shutdown", &None, Duration::from_millis(500));
+        drop(guard);
+
+        let goodbye = json!({
+            "v": PROTOCOL_VERSION,
+            "id": self.next_id.fetch_add(1, Ordering::Relaxed).to_string(),
+            "method": "shutdown",
+        });
+        {
+            let mut stdin = running.stdin.lock().unwrap();
+            let _ = stdin.write_all(format!("{goodbye}\n").as_bytes());
+        }
         let deadline = Instant::now() + Duration::from_millis(500);
         while Instant::now() < deadline {
-            match running.child.try_wait() {
-                Ok(Some(_)) => return,
+            match running.child.lock().unwrap().try_wait() {
+                Ok(Some(_)) => {
+                    running.poison("shut down");
+                    return;
+                }
                 Ok(None) => std::thread::sleep(Duration::from_millis(10)),
                 Err(_) => break,
             }
         }
-        let _ = running.child.kill();
-        let _ = running.child.wait();
+        running.poison("shut down");
+        running.kill();
     }
 }
 
@@ -247,6 +363,32 @@ mod tests {
         None
     }
 
+    fn temp_tree(tag: &str, files: &[&str]) -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "photopipe-cargo-{tag}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let shoot = root.join("2026-01-01_cargotest");
+        std::fs::create_dir_all(&shoot).unwrap();
+        for name in files {
+            std::fs::write(shoot.join(name), b"fake").unwrap();
+        }
+        root
+    }
+
+    fn set_root(sidecar: &Sidecar, root: &std::path::Path) -> Value {
+        sidecar
+            .request(
+                "setRoot",
+                Some(json!({
+                    "path": root.to_str().unwrap(),
+                    "indexPath": root.join("index.sqlite").to_str().unwrap(),
+                })),
+            )
+            .expect("setRoot")
+    }
+
     #[test]
     fn ping_and_version_round_trip() {
         let Some(bin) = core_bin() else {
@@ -271,61 +413,74 @@ mod tests {
         let sidecar = Sidecar::new(bin);
         let error = sidecar.request("levitate", None).expect_err("unknown method");
         assert!(error.contains("unknown_method"), "got: {error}");
-        // Session still usable afterwards
         assert_eq!(sidecar.request("ping", None).expect("ping")["pong"], true);
         sidecar.shutdown();
     }
 
     #[test]
-    fn restarts_after_sidecar_crash() {
+    fn restarts_after_crash_and_replays_root() {
         let Some(bin) = core_bin() else {
             eprintln!("SKIP: build the Swift core first (cd core && swift build)");
             return;
         };
+        let root = temp_tree("replay", &["DSC00001.ARW"]);
         let sidecar = Sidecar::new(bin);
-        assert_eq!(sidecar.request("ping", None).expect("ping")["pong"], true);
-        // Kill the sidecar behind the manager's back
+        set_root(&sidecar, &root);
+        assert_eq!(
+            sidecar.request("listShoots", None).expect("listShoots")["shoots"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+
+        // Kill the core behind the manager's back.
         {
-            let mut guard = sidecar.running.lock().unwrap();
-            let running = guard.as_mut().expect("running");
-            running.child.kill().unwrap();
-            running.child.wait().unwrap();
+            let guard = sidecar.running.lock().unwrap();
+            let running = guard.as_ref().expect("running");
+            running.kill();
         }
-        // Next request must transparently respawn
-        assert_eq!(sidecar.request("ping", None).expect("respawned ping")["pong"], true);
+
+        // Next request must respawn AND replay the root — a bare respawn
+        // would answer `no_root` here.
+        let shoots = sidecar.request("listShoots", None).expect("respawned listShoots");
+        assert_eq!(shoots["shoots"].as_array().unwrap().len(), 1);
+        sidecar.shutdown();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn concurrent_requests_interleave_on_one_connection() {
+        let Some(bin) = core_bin() else {
+            eprintln!("SKIP: build the Swift core first (cd core && swift build)");
+            return;
+        };
+        let sidecar = Arc::new(Sidecar::new(bin));
+        let threads: Vec<_> = (0..8)
+            .map(|_| {
+                let sidecar = Arc::clone(&sidecar);
+                std::thread::spawn(move || {
+                    for _ in 0..25 {
+                        assert_eq!(sidecar.request("ping", None).expect("ping")["pong"], true);
+                    }
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().expect("worker");
+        }
         sidecar.shutdown();
     }
 
-    /// Drives the real binary end-to-end with a real (temp) shoot tree — this
-    /// exercises the stdio framing with multi-kilobyte response lines, the one
-    /// seam the in-process Swift tests can't cover.
     #[test]
     fn set_root_and_list_shoots_against_real_tree() {
         let Some(bin) = core_bin() else {
             eprintln!("SKIP: build the Swift core first (cd core && swift build)");
             return;
         };
-        let root = std::env::temp_dir().join(format!(
-            "photopipe-cargo-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let shoot = root.join("2026-01-01_cargotest");
-        std::fs::create_dir_all(&shoot).unwrap();
-        for name in ["DSC00001.ARW", "DSC00002.ARW", "DSC00003.JPG"] {
-            std::fs::write(shoot.join(name), b"fake").unwrap();
-        }
-
+        let root = temp_tree("list", &["DSC00001.ARW", "DSC00002.ARW", "DSC00003.JPG"]);
         let sidecar = Sidecar::new(bin);
-        let set = sidecar
-            .request(
-                "setRoot",
-                Some(json!({
-                    "path": root.to_str().unwrap(),
-                    "indexPath": root.join("index.sqlite").to_str().unwrap(),
-                })),
-            )
-            .expect("setRoot");
+        let set = set_root(&sidecar, &root);
         assert_eq!(set["shoots"], 1);
         assert_eq!(set["files"], 3);
 
@@ -344,7 +499,7 @@ mod tests {
 
     #[test]
     fn wedged_sidecar_times_out_instead_of_hanging() {
-        // A "sidecar" that reads forever and never answers.
+        // A "sidecar" that accepts requests but never answers.
         let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/wedged-sidecar.sh");
         let mut sidecar = Sidecar::new(script);
         sidecar.read_timeout = Duration::from_millis(200);
@@ -353,6 +508,25 @@ mod tests {
         assert!(error.contains("did not answer"), "got: {error}");
         // Two attempts (initial + respawn retry), each bounded by the timeout.
         assert!(start.elapsed() < Duration::from_secs(2), "took {:?}", start.elapsed());
+        sidecar.shutdown();
+    }
+
+    #[test]
+    fn mutating_methods_are_not_retried() {
+        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/wedged-sidecar.sh");
+        let mut sidecar = Sidecar::new(script);
+        sidecar.read_timeout = Duration::from_millis(200);
+        let start = Instant::now();
+        let error = sidecar
+            .request("setRating", Some(json!({"stem": "DSC1", "rating": 3})))
+            .expect_err("must fail");
+        // One attempt only — no silent re-send of a possibly-applied mutation.
+        assert!(error.contains("connection failed"), "got: {error}");
+        assert!(
+            start.elapsed() < Duration::from_millis(600),
+            "took {:?} — looks like it retried",
+            start.elapsed()
+        );
         sidecar.shutdown();
     }
 }

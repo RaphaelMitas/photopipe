@@ -1,0 +1,78 @@
+import { expect, test } from "@playwright/test";
+
+async function openZell(page: import("@playwright/test").Page) {
+  await page.goto("/");
+  await page.getByTestId("root-input").fill("/fake");
+  await page.getByTestId("root-submit").click();
+  await page.getByTestId("shoot-2026-07-12_zell").click();
+  await expect(page.getByTestId("grid")).toBeVisible();
+}
+
+test("clicking a thumb opens the loupe; keyboard rates and navigates", async ({
+  page,
+}) => {
+  await openZell(page);
+
+  await page.getByTestId("thumb").first().click();
+  await expect(page.getByTestId("loupe")).toBeVisible();
+  await expect(page.getByTestId("loupe-stem")).toHaveText("DSC00832");
+
+  // Rate with the keyboard — stars update optimistically.
+  await page.keyboard.press("3");
+  await expect(
+    page.getByTestId("loupe").locator("[data-rating='3']"),
+  ).toBeVisible();
+
+  // Navigate; the pre-rated image shows its stars.
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByTestId("loupe-stem")).toHaveText("DSC00938");
+  await expect(
+    page.getByTestId("loupe").locator("[data-rating='2']"),
+  ).toBeVisible();
+
+  // Escape returns to the grid, which now shows the new rating badge.
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("loupe")).toHaveCount(0);
+  await expect(
+    page.locator("[data-stem='DSC00832']").getByTestId("thumb-rating"),
+  ).toHaveText("★3");
+});
+
+test("rating filter narrows the grid and toggles off", async ({ page }) => {
+  await openZell(page);
+  await expect(page.getByTestId("thumb")).toHaveCount(4);
+
+  // DSC00938 ships with rating 2 in the mock dataset.
+  await page.getByTestId("filter-2").click();
+  await expect(page.getByTestId("thumb")).toHaveCount(1);
+  await expect(page.locator("[data-stem='DSC00938']")).toBeVisible();
+
+  await page.getByTestId("filter-5").click();
+  await expect(page.getByTestId("empty-library")).toHaveCount(0);
+  await expect(page.getByTestId("thumb")).toHaveCount(0);
+
+  await page.getByTestId("filter-5").click();
+  await expect(page.getByTestId("thumb")).toHaveCount(4);
+});
+
+test("arrow keys scrub exposure and the setting survives navigation", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("thumb").first().click();
+  await expect(page.getByTestId("loupe")).toBeVisible();
+
+  await page.keyboard.press("ArrowUp");
+  await expect(page.getByText("+0.25")).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByText("-0.25")).toBeVisible();
+
+  // Persists while flicking through the shoot.
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByTestId("loupe-stem")).toHaveText("DSC00938");
+  await expect(page.getByText("-0.25")).toBeVisible();
+
+  await page.keyboard.press("r");
+  await expect(page.getByText("+0.00")).toBeVisible();
+});

@@ -1,8 +1,9 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import {
   coreRequest,
   type ImageGroup,
+  type SetRatingResult,
   type Shoot,
   type StatusResult,
 } from "./core";
@@ -43,6 +44,76 @@ export function useThumbnail(
       ).cachePath,
     enabled: file !== undefined,
     staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+type RenderFile = { path: string; mtime: number } | undefined;
+
+function renderQueryOptions(file: RenderFile, exposure: number) {
+  return {
+    queryKey: ["render", file?.path, file?.mtime, exposure] as const,
+    queryFn: async () =>
+      (
+        await coreRequest<{ cachePath: string }>("render", {
+          path: file?.path,
+          exposure,
+          maxPixel: 2560,
+        })
+      ).cachePath,
+    staleTime: Number.POSITIVE_INFINITY,
+  };
+}
+
+/// Loupe render: raw-pipeline exposure happens core-side; the cache key is
+/// (path, mtime, exposure). The placeholder keeps the last frame on screen
+/// only while scrubbing the SAME image (continuous, no flicker) — navigating
+/// to a different photo must never show the previous photo's pixels, so
+/// there the caller falls back to the thumbnail instead.
+export function useRender(file: RenderFile, exposure: number) {
+  return useQuery({
+    ...renderQueryOptions(file, exposure),
+    enabled: file !== undefined,
+    placeholderData: (previous: string | undefined, previousQuery) =>
+      previousQuery?.queryKey[1] === file?.path ? previous : undefined,
+  });
+}
+
+/// Warm the render cache for a neighbor image so ← → lands on ready pixels
+/// instead of a cold multi-second raw decode.
+export function usePrefetchRender(file: RenderFile, exposure: number) {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (!file) return;
+    // No-op when already cached; the core dedups concurrent renders by key.
+    queryClient.prefetchQuery(renderQueryOptions(file, exposure));
+  }, [queryClient, file, exposure]);
+}
+
+/// Rating writes: optimistic (culling must feel instant), rolled back on
+/// error. The core bumps its generation, so other views converge via the poll.
+export function useSetRating(shoot: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ stem, rating }: { stem: string; rating: number }) =>
+      coreRequest<SetRatingResult>("setRating", { shoot, stem, rating }),
+    onMutate: async ({ stem, rating }) => {
+      await queryClient.cancelQueries({ queryKey: ["images", shoot] });
+      const previous = queryClient.getQueryData<ImageGroup[]>([
+        "images",
+        shoot,
+      ]);
+      queryClient.setQueryData<ImageGroup[]>(["images", shoot], (old) =>
+        old?.map((image) =>
+          image.stem === stem ? { ...image, rating } : image,
+        ),
+      );
+      return { previous };
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["images", shoot], context.previous);
+      }
+    },
   });
 }
 

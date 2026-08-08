@@ -59,6 +59,11 @@ extension JSONValue {
         return nil
     }
 
+    public var doubleValue: Double? {
+        if case .number(let value) = self { return value }
+        return nil
+    }
+
     /// Bridge any Encodable into the protocol's value type.
     public init(encoding value: some Encodable) throws {
         self = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(value))

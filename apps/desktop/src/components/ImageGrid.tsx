@@ -12,13 +12,16 @@ const STAGE_DOT: Record<Stage, string> = {
   export: "bg-emerald-400",
 };
 
-function Thumb({ image }: { image: ImageGroup }) {
+function Thumb({ image, onOpen }: { image: ImageGroup; onOpen?: () => void }) {
   const display = image.files[image.files.length - 1];
   const thumb = useThumbnail(display);
   return (
-    <figure
+    <button
+      type="button"
       data-testid="thumb"
-      className="relative overflow-hidden rounded-lg border border-border bg-card"
+      data-stem={image.stem}
+      onClick={onOpen}
+      className="relative overflow-hidden rounded-lg border border-border bg-card text-left transition-colors hover:border-ring"
       style={{ width: CELL, height: CELL }}
     >
       {thumb.data ? (
@@ -31,23 +34,33 @@ function Thumb({ image }: { image: ImageGroup }) {
       ) : (
         <div className="h-full w-full animate-pulse bg-card" />
       )}
-      <figcaption className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-background/70 px-2 py-1 font-mono text-[10px] text-foreground/80">
+      <span className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-background/70 px-2 py-1 font-mono text-[10px] text-foreground/80">
         <span
           className={`h-1.5 w-1.5 rounded-full ${STAGE_DOT[image.stage]}`}
         />
         <span className="truncate">{image.stem}</span>
-      </figcaption>
-    </figure>
+        {image.rating > 0 && (
+          <span
+            data-testid="thumb-rating"
+            className="ml-auto shrink-0 text-amber-400"
+          >
+            ★{image.rating}
+          </span>
+        )}
+      </span>
+    </button>
   );
 }
 
 type Props = {
   images: ImageGroup[];
+  /// Called with the image's index in `images` when a thumb is clicked.
+  onOpen?: (index: number) => void;
   /// Test hook: jsdom has no layout, so tests inject the viewport.
   initialRect?: { width: number; height: number };
 };
 
-export function ImageGrid({ images, initialRect }: Props) {
+export function ImageGrid({ images, onOpen, initialRect }: Props) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [columns, setColumns] = useState(() =>
     Math.max(1, Math.floor((initialRect?.width ?? 800) / (CELL + GAP))),
@@ -104,8 +117,14 @@ export function ImageGrid({ images, initialRect }: Props) {
           >
             {images
               .slice(row.index * columns, (row.index + 1) * columns)
-              .map((image) => (
-                <Thumb key={image.stem} image={image} />
+              .map((image, column) => (
+                <Thumb
+                  key={image.stem}
+                  image={image}
+                  onOpen={
+                    onOpen && (() => onOpen(row.index * columns + column))
+                  }
+                />
               ))}
           </div>
         ))}

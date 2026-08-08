@@ -55,6 +55,8 @@ jobs:
           key: fixtures-${{ hashFiles('fixtures/fetch.sh') }}
       - name: Fetch raw fixtures
         run: ./fixtures/fetch.sh
+      - name: Install exiftool (XMP round-trip tests)
+        run: brew install exiftool
       - name: Swift format lint
         working-directory: core
         run: swift format lint --strict --recursive .

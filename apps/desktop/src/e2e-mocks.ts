@@ -5,6 +5,7 @@ const zellImages: ImageGroup[] = [
   {
     stem: "DSC00832",
     stage: "export",
+    rating: 0,
     files: [
       {
         path: "/fake/z/DSC00832.ARW",
@@ -32,6 +33,7 @@ const zellImages: ImageGroup[] = [
   {
     stem: "DSC00938",
     stage: "denoised",
+    rating: 2,
     files: [
       {
         path: "/fake/z/DSC00938.ARW",
@@ -52,6 +54,7 @@ const zellImages: ImageGroup[] = [
   {
     stem: "DSC00943",
     stage: "raw",
+    rating: 0,
     files: [
       {
         path: "/fake/z/DSC00943.ARW",
@@ -65,6 +68,7 @@ const zellImages: ImageGroup[] = [
   {
     stem: "DSC00953",
     stage: "raw",
+    rating: 0,
     files: [
       {
         path: "/fake/z/DSC00953.ARW",
@@ -100,6 +104,7 @@ const miscImages: ImageGroup[] = [
   {
     stem: "IMG_0001",
     stage: "raw",
+    rating: 0,
     files: [
       {
         path: "/fake/misc/IMG_0001.ARW",
@@ -129,5 +134,15 @@ export const E2E_HANDLERS: Record<
   thumbnail: (params) => ({
     cachePath: `/fake/thumbs/${String(params.path)}.jpg`,
   }),
+  render: (params) => ({
+    cachePath: `/fake/renders/${String(params.path)}@${String(params.exposure)}.jpg`,
+  }),
+  setRating: (params) => {
+    const all = [...zellImages, ...miscImages];
+    const target = all.find((image) => image.stem === params.stem);
+    if (!target) throw `unknown_image: ${String(params.stem)}`;
+    target.rating = Number(params.rating);
+    return { rating: target.rating, generation: 1 };
+  },
   status: () => ({ generation: 1, root: "/fake", shoots: shoots.length }),
 };

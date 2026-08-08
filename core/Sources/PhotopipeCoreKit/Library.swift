@@ -50,7 +50,16 @@ public struct FileRecord: Codable, Equatable, Sendable {
 public struct ImageGroup: Codable, Equatable, Sendable {
     public let stem: String
     public let stage: Stage
+    /// XMP star rating, 0 = unrated. One rating per logical image.
+    public let rating: Int
     public let files: [FileRecord]
+
+    public init(stem: String, stage: Stage, rating: Int = 0, files: [FileRecord]) {
+        self.stem = stem
+        self.stage = stage
+        self.rating = rating
+        self.files = files
+    }
 
     /// The file to thumbnail: furthest-stage file wins (exports are what you
     /// delivered; raw embedded previews only when nothing else exists).
@@ -76,14 +85,18 @@ public func parseShootName(_ name: String) -> (day: String, project: String)? {
 }
 
 /// Group files of one shoot into logical images by filename stem.
-public func buildImageGroups(files: [FileRecord]) -> [ImageGroup] {
+/// `ratingFor` supplies the group's XMP rating (injected so grouping stays
+/// testable without disk).
+public func buildImageGroups(
+    files: [FileRecord], ratingFor: ([FileRecord]) -> Int = { _ in 0 }
+) -> [ImageGroup] {
     let grouped = Dictionary(grouping: files) { $0.stem.lowercased() }
     return grouped.values
         .map { group in
             let sorted = group.sorted { $0.stage.rank < $1.stage.rank }
             let stage = sorted.last?.stage ?? .raw
             let stem = sorted.first?.stem ?? ""
-            return ImageGroup(stem: stem, stage: stage, files: sorted)
+            return ImageGroup(stem: stem, stage: stage, rating: ratingFor(sorted), files: sorted)
         }
         .sorted { $0.stem.localizedStandardCompare($1.stem) == .orderedAscending }
 }

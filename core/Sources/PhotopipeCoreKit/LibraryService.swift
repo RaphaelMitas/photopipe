@@ -9,7 +9,9 @@ public final class LibraryService {
     public enum ServiceError: Error {
         case noRoot
         case unknownShoot(String)
+        case unknownImage(String)
         case pathOutsideRoot(String)
+        case invalidRating(Int)
     }
 
     private let lock = NSLock()
@@ -19,11 +21,16 @@ public final class LibraryService {
     private var watcher: Watcher?
     private var index: SQLiteIndex?
     private let thumbnailer: Thumbnailer
+    private let renderer: Renderer
     private let rescanQueue = DispatchQueue(label: "photopipe.rescan")
     private var pendingRescan: DispatchWorkItem?
 
-    public init(thumbnailer: Thumbnailer = Thumbnailer(cacheDir: Thumbnailer.defaultCacheDir())) {
+    public init(
+        thumbnailer: Thumbnailer = Thumbnailer(cacheDir: Thumbnailer.defaultCacheDir()),
+        renderer: Renderer = Renderer(cacheDir: Renderer.defaultCacheDir())
+    ) {
         self.thumbnailer = thumbnailer
+        self.renderer = renderer
     }
 
     public static func defaultIndexPath() -> String {
@@ -57,9 +64,12 @@ public final class LibraryService {
         self.index = index
         lock.unlock()
 
-        watcher = Watcher(path: path, queue: rescanQueue) { [weak self] in
+        let newWatcher = Watcher(path: path, queue: rescanQueue) { [weak self] in
             self?.scheduleRescan()
         }
+        lock.lock()
+        watcher = newWatcher
+        lock.unlock()
 
         return (scanned.shoots.count, scanned.fileCount, currentGeneration)
     }
@@ -89,6 +99,19 @@ public final class LibraryService {
     /// Thumbnail any file under the root. Stats the file directly so a path
     /// fresh from an external change works even before the rescan lands.
     public func thumbnail(path: String, maxPixel: Int) throws -> String {
+        try thumbnailer.thumbnail(for: recordUnderRoot(path: path), maxPixel: maxPixel).path
+    }
+
+    /// Loupe render with raw-pipeline exposure; same root discipline as
+    /// thumbnails.
+    public func render(path: String, exposure: Double, maxPixel: Int) throws -> String {
+        try renderer.render(
+            file: recordUnderRoot(path: path), exposure: exposure, maxPixel: maxPixel
+        ).path
+    }
+
+    /// Validate a path against the current root and stat it into a record.
+    private func recordUnderRoot(path: String) throws -> FileRecord {
         lock.lock()
         let currentRoot = root
         lock.unlock()
@@ -99,13 +122,51 @@ public final class LibraryService {
         }
         let attrs = try FileManager.default.attributesOfItem(atPath: canonical)
         let ext = (canonical as NSString).pathExtension
-        let record = FileRecord(
+        return FileRecord(
             path: canonical,
             ext: ext,
             stage: Stage(fileExtension: ext) ?? .export,
             size: (attrs[.size] as? Int64) ?? 0,
             mtime: ((attrs[.modificationDate] as? Date) ?? .distantPast).timeIntervalSince1970)
-        return try thumbnailer.thumbnail(for: record, maxPixel: maxPixel).path
+    }
+
+    /// Rate a logical image: XMP writes across its lineage (sidecar for raw,
+    /// embedded for the rest), then an in-place snapshot update so the UI sees
+    /// the new rating immediately — the FSEvents rescan that follows re-reads
+    /// the same truth from disk.
+    public func setRating(shoot shootName: String, stem: String, rating: Int) throws -> (
+        rating: Int, generation: Int
+    ) {
+        guard (0...5).contains(rating) else { throw ServiceError.invalidRating(rating) }
+
+        lock.lock()
+        let images = snapshot.imagesByShoot[shootName]
+        let hasRoot = root != nil
+        lock.unlock()
+        guard hasRoot else { throw ServiceError.noRoot }
+        guard let images else { throw ServiceError.unknownShoot(shootName) }
+        guard let image = images.first(where: { $0.stem.lowercased() == stem.lowercased() })
+        else { throw ServiceError.unknownImage(stem) }
+
+        // Disk first — it is the source of truth; the snapshot follows.
+        try XMP.writeRating(rating, files: image.files, tool: .shared)
+
+        lock.lock()
+        defer { lock.unlock() }
+        if var updated = snapshot.imagesByShoot[shootName],
+            let index = updated.firstIndex(where: { $0.stem.lowercased() == stem.lowercased() })
+        {
+            let old = updated[index]
+            updated[index] = ImageGroup(
+                stem: old.stem, stage: old.stage, rating: rating, files: old.files)
+            var imagesByShoot = snapshot.imagesByShoot
+            imagesByShoot[shootName] = updated
+            snapshot = LibrarySnapshot(
+                shoots: snapshot.shoots, imagesByShoot: imagesByShoot,
+                fileCount: snapshot.fileCount)
+            generation += 1
+        }
+        return (rating, generation)
     }
 
     // MARK: - Rescan (FSEvents)
