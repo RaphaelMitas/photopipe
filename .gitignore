@@ -1,0 +1,9 @@
+node_modules/
+dist/
+target/
+.build/
+fixtures/raw/
+test-results/
+playwright-report/
+.DS_Store
+*.local

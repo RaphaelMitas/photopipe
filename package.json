@@ -1,0 +1,13 @@
+{
+  "name": "photopipe",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.20.0",
+  "scripts": {
+    "check": "biome check .",
+    "check:fix": "biome check --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.0"
+  }
+}
