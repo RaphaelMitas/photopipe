@@ -52,6 +52,92 @@ test("rating filter narrows the grid and toggles off", async ({ page }) => {
   await expect(page.getByTestId("thumb")).toHaveCount(4);
 });
 
+test("rating filter comparators: eq and lte narrow differently", async ({
+  page,
+}) => {
+  await openZell(page);
+  await expect(page.getByTestId("thumb")).toHaveCount(4);
+
+  // = 2: only the one image rated exactly 2.
+  await page.getByTestId("filter-op-eq").click();
+  await page.getByTestId("filter-2").click();
+  await expect(page.getByTestId("thumb")).toHaveCount(1);
+  await expect(page.locator("[data-stem='DSC00938']")).toBeVisible();
+
+  // ≤ 2: unrated images (0) count too.
+  await page.getByTestId("filter-op-lte").click();
+  await expect(page.getByTestId("thumb")).toHaveCount(4);
+
+  // ≥ 3: nothing in the default dataset.
+  await page.getByTestId("filter-op-gte").click();
+  await page.getByTestId("filter-3").click();
+  await expect(page.getByTestId("thumb")).toHaveCount(0);
+});
+
+test("unrated mode shows only rating-0 images; a star click returns to threshold mode", async ({
+  page,
+}) => {
+  await openZell(page);
+  await expect(page.getByTestId("thumb")).toHaveCount(4);
+
+  // ∅: three of the four zell images are unrated.
+  await page.getByTestId("filter-op-unrated").click();
+  await expect(page.getByTestId("thumb")).toHaveCount(3);
+  await expect(page.locator("[data-stem='DSC00938']")).toHaveCount(0);
+
+  // Clicking a star hops back to ≥N.
+  await page.getByTestId("filter-2").click();
+  await expect(page.getByTestId("thumb")).toHaveCount(1);
+  await expect(page.locator("[data-stem='DSC00938']")).toBeVisible();
+});
+
+test("the filter is available inside the loupe and info toggle pins the grid overlay", async ({
+  page,
+}) => {
+  await openZell(page);
+
+  // Overlay is hover-only by default, pinned after the toggle.
+  const info = page.getByTestId("thumb-info").first();
+  await expect(info).toHaveCSS("opacity", "0");
+  await page.getByTestId("grid-info-toggle").click();
+  await expect(info).toHaveCSS("opacity", "1");
+
+  // The detail sidebar carries the same filter controls. Filtering away the
+  // current image must NOT eject the loupe — it stays pinned until you
+  // navigate, then ←→ moves within the matches.
+  await page.getByTestId("thumb").first().click();
+  await expect(page.getByTestId("loupe")).toBeVisible();
+  await page.getByTestId("filter-op-eq").click();
+  await page.getByTestId("filter-2").click();
+  await expect(page.getByTestId("loupe-stem")).toHaveText("DSC00832");
+  await expect(page.getByTestId("loupe-position")).toHaveText("1/2");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByTestId("loupe-stem")).toHaveText("DSC00938");
+  await expect(page.getByTestId("loupe-position")).toHaveText("1/1");
+});
+
+test("rating the current image below the filter keeps it in the loupe", async ({
+  page,
+}) => {
+  await openZell(page);
+  // ≥2 matches only DSC00938 (rated 2).
+  await page.getByTestId("filter-2").click();
+  await expect(page.getByTestId("thumb")).toHaveCount(1);
+  await page.getByTestId("thumb").first().click();
+  await expect(page.getByTestId("loupe-stem")).toHaveText("DSC00938");
+
+  // Clearing its rating un-matches it — the loupe must hold, not eject,
+  // even though the filtered list is now empty.
+  await page.keyboard.press("0");
+  await expect(page.getByTestId("loupe")).toBeVisible();
+  await expect(page.getByTestId("loupe-stem")).toHaveText("DSC00938");
+
+  // Leaving deliberately still works.
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("loupe")).toHaveCount(0);
+  await expect(page.getByTestId("thumb")).toHaveCount(0);
+});
+
 test("filmstrip jumps between images and cycles its three modes", async ({
   page,
 }) => {

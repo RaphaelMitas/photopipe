@@ -3,6 +3,11 @@ import type { ImageGroup } from "@/lib/core";
 import type { FilmstripMode } from "./Filmstrip";
 import { EXPOSURE_RANGE } from "./Loupe";
 import { Photopipe } from "./Photopipe";
+import {
+  RatingFilterOps,
+  RatingFilterStars,
+  type RatingOp,
+} from "./RatingFilter";
 import { Stars } from "./Stars";
 import { Button } from "./ui/button";
 import { ButtonGroup } from "./ui/button-group";
@@ -17,6 +22,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarSeparator,
 } from "./ui/sidebar";
 import { Slider } from "./ui/slider";
 
@@ -28,6 +34,10 @@ type Props = {
   exposure: number;
   filmstrip: FilmstripMode;
   onFilmstrip: (mode: FilmstripMode) => void;
+  ratingOp: RatingOp;
+  onRatingOp: (op: RatingOp) => void;
+  ratingStars: number;
+  onRatingStars: (stars: number) => void;
   onExposureChange: (ev: number) => void;
   onRate: (stem: string, rating: number) => void;
   onBackToGrid: () => void;
@@ -43,6 +53,10 @@ export function LoupeSidebar({
   exposure,
   filmstrip,
   onFilmstrip,
+  ratingOp,
+  onRatingOp,
+  ratingStars,
+  onRatingStars,
   onExposureChange,
   onRate,
   onBackToGrid,
@@ -77,6 +91,22 @@ export function LoupeSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
 
+        {/* List-level controls: the filter acts on the whole shoot. */}
+        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+          <SidebarGroupLabel>Rating filter</SidebarGroupLabel>
+          <SidebarGroupContent className="flex items-center gap-2 px-2 py-1">
+            <RatingFilterOps op={ratingOp} onOp={onRatingOp} />
+            <RatingFilterStars
+              stars={ratingStars}
+              muted={ratingOp === "unrated"}
+              onStars={onRatingStars}
+            />
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarSeparator className="group-data-[collapsible=icon]:hidden" />
+
+        {/* Photo-level: everything below concerns the current image. */}
         <SidebarGroup className="group-data-[collapsible=icon]:hidden">
           <SidebarGroupLabel>Photo</SidebarGroupLabel>
           <SidebarGroupContent className="flex flex-col gap-1 px-2 py-1">

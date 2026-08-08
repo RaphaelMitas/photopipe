@@ -61,11 +61,13 @@ function Thumb({
   image,
   width,
   height,
+  showInfo,
   onOpen,
 }: {
   image: ImageGroup;
   width: number;
   height: number;
+  showInfo?: boolean;
   onOpen?: () => void;
 }) {
   const display = image.files[image.files.length - 1];
@@ -89,7 +91,14 @@ function Thumb({
       ) : (
         <Skeleton className="h-full w-full rounded-none" />
       )}
-      <span className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-background/70 px-2 py-1 font-mono text-[10px] text-foreground/80 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+      <span
+        data-testid="thumb-info"
+        className={`absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-background/70 px-2 py-1 font-mono text-[10px] text-foreground/80 transition-opacity ${
+          showInfo
+            ? "opacity-100"
+            : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
+        }`}
+      >
         <span
           className={`h-1.5 w-1.5 rounded-full ${STAGE_DOT[image.stage]}`}
         />
@@ -112,11 +121,13 @@ type Props = {
   images: ImageGroup[];
   /// Called with the image's index in `images` when a thumb is clicked.
   onOpen?: (index: number) => void;
+  /// Overlay always visible instead of hover-only.
+  showInfo?: boolean;
   /// Test hook: jsdom has no layout, so tests inject the viewport.
   initialRect?: { width: number; height: number };
 };
 
-export function ImageGrid({ images, onOpen, initialRect }: Props) {
+export function ImageGrid({ images, onOpen, showInfo, initialRect }: Props) {
   const parentRef = useRef<HTMLDivElement>(null);
   const padding = 24; // p-6 on each side
   const [containerWidth, setContainerWidth] = useState(
@@ -195,6 +206,7 @@ export function ImageGrid({ images, onOpen, initialRect }: Props) {
                   image={cell.image}
                   width={cell.width}
                   height={row.height}
+                  showInfo={showInfo}
                   onOpen={onOpen && (() => onOpen(cell.index))}
                 />
               ))}

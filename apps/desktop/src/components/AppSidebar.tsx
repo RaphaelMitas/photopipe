@@ -1,7 +1,12 @@
-import { FolderOpen, Images, Star } from "lucide-react";
+import { FolderOpen, Images } from "lucide-react";
 import type { Shoot } from "@/lib/core";
 import { StageCounts } from "./Dashboard";
 import { Photopipe } from "./Photopipe";
+import {
+  RatingFilterOps,
+  RatingFilterStars,
+  type RatingOp,
+} from "./RatingFilter";
 import { Button } from "./ui/button";
 import {
   Sidebar,
@@ -15,15 +20,21 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "./ui/sidebar";
+import { Switch } from "./ui/switch";
 
 type Props = {
   shoots: Shoot[] | undefined;
   openShoot: string | null;
   onOpenShoot: (name: string) => void;
-  minRating: number;
-  onMinRating: (rating: number) => void;
+  ratingOp: RatingOp;
+  onRatingOp: (op: RatingOp) => void;
+  ratingStars: number;
+  onRatingStars: (rating: number) => void;
   /// Filter only applies inside a shoot.
   filterEnabled: boolean;
+  /// Grid overlay (stem, stage, rating): always visible vs hover-only.
+  showInfo: boolean;
+  onShowInfo: (show: boolean) => void;
   rootPath: string;
   onChangeRoot: () => void;
 };
@@ -36,9 +47,13 @@ export function AppSidebar({
   shoots,
   openShoot,
   onOpenShoot,
-  minRating,
-  onMinRating,
+  ratingOp,
+  onRatingOp,
+  ratingStars,
+  onRatingStars,
   filterEnabled,
+  showInfo,
+  onShowInfo,
   rootPath,
   onChangeRoot,
 }: Props) {
@@ -91,25 +106,33 @@ export function AppSidebar({
         </SidebarGroup>
         <SidebarGroup className="group-data-[collapsible=icon]:hidden">
           <SidebarGroupLabel>Rating filter</SidebarGroupLabel>
-          <SidebarGroupContent className="flex items-center gap-1 px-2 py-1">
-            {[1, 2, 3, 4, 5].map((star) => (
-              <button
-                key={star}
-                type="button"
-                data-testid={`filter-${star}`}
-                disabled={!filterEnabled}
-                onClick={() => onMinRating(minRating === star ? 0 : star)}
-                className="rounded p-0.5 transition-colors hover:text-amber-300 disabled:opacity-30"
-              >
-                <Star
-                  className={`size-4 ${
-                    filterEnabled && minRating >= star
-                      ? "fill-amber-400 text-amber-400"
-                      : "text-muted-foreground/50"
-                  }`}
-                />
-              </button>
-            ))}
+          <SidebarGroupContent className="flex items-center gap-2 px-2 py-1">
+            <RatingFilterOps
+              op={ratingOp}
+              disabled={!filterEnabled}
+              onOp={onRatingOp}
+            />
+            <RatingFilterStars
+              stars={ratingStars}
+              disabled={!filterEnabled}
+              muted={ratingOp === "unrated"}
+              onStars={onRatingStars}
+            />
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+          <SidebarGroupLabel>View</SidebarGroupLabel>
+          <SidebarGroupContent className="px-2 py-1">
+            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span>Always show info</span>
+              <Switch
+                data-testid="grid-info-toggle"
+                aria-label="Always show image info"
+                checked={showInfo}
+                onCheckedChange={onShowInfo}
+              />
+            </div>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
