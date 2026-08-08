@@ -158,7 +158,8 @@ public final class LibraryService {
         {
             let old = updated[index]
             updated[index] = ImageGroup(
-                stem: old.stem, stage: old.stage, rating: rating, files: old.files)
+                stem: old.stem, stage: old.stage, rating: rating,
+                width: old.width, height: old.height, files: old.files)
             var imagesByShoot = snapshot.imagesByShoot
             imagesByShoot[shootName] = updated
             snapshot = LibrarySnapshot(

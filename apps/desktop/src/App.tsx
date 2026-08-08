@@ -1,9 +1,19 @@
+import { ChevronLeft } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AppSidebar } from "@/components/AppSidebar";
 import { Dashboard, StageCounts } from "@/components/Dashboard";
+import type { FilmstripMode } from "@/components/Filmstrip";
 import { ImageGrid } from "@/components/ImageGrid";
 import { Loupe } from "@/components/Loupe";
-import { Photopipe } from "@/components/Photopipe";
-import { RootPicker } from "@/components/RootPicker";
+import { LoupeSidebar } from "@/components/LoupeSidebar";
+import { RootPicker, rememberRoot } from "@/components/RootPicker";
+import { Button } from "@/components/ui/button";
+import {
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+} from "@/components/ui/sidebar";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { coreRequest, type SetRootResult } from "@/lib/core";
 import {
   useGenerationPoll,
@@ -27,12 +37,26 @@ export default function App() {
   const [openShoot, setOpenShoot] = useState<string | null>(null);
   const [loupeIndex, setLoupeIndex] = useState<number | null>(null);
   const [minRating, setMinRating] = useState(0);
+  // Preview-only, persists across images and loupe sessions; `r` resets.
+  const [exposure, setExposure] = useState(0);
+  const [filmstrip, setFilmstrip] = useState<FilmstripMode>(() => {
+    const stored = localStorage.getItem("photopipe.filmstrip");
+    if (stored === "0") return "off"; // migrate the old boolean
+    if (stored === "off" || stored === "thumbs" || stored === "ratings")
+      return stored;
+    return "thumbs";
+  });
+  const changeFilmstrip = (mode: FilmstripMode) => {
+    setFilmstrip(mode);
+    localStorage.setItem("photopipe.filmstrip", mode);
+  };
 
   const connectRoot = useCallback(async (path: string) => {
     setRootState({ kind: "picking", error: null, busy: true });
     try {
       const result = await coreRequest<SetRootResult>("setRoot", { path });
       localStorage.setItem(ROOT_KEY, path);
+      rememberRoot(path);
       setRootState({ kind: "ready", path, generation: result.generation });
     } catch (error) {
       localStorage.removeItem(ROOT_KEY);
@@ -84,91 +108,95 @@ export default function App() {
   }
 
   const currentShoot = shoots.data?.find((s) => s.name === openShoot);
+  const clampedLoupe =
+    loupeIndex !== null && filteredImages.length > 0
+      ? Math.min(loupeIndex, filteredImages.length - 1)
+      : null;
+  const loupeImage =
+    clampedLoupe !== null ? filteredImages[clampedLoupe] : null;
+  const inLoupe = openShoot !== null && loupeImage !== null;
 
   return (
-    <main className="flex h-screen flex-col bg-background text-foreground">
-      <header className="flex items-center gap-3 border-b border-border px-4 py-2 text-sm">
-        {openShoot ? (
-          <>
-            <button
-              type="button"
-              data-testid="back"
-              onClick={() => enterShoot(null)}
-              className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              ← Library
-            </button>
-            <span className="font-medium">{openShoot}</span>
-            {currentShoot && <StageCounts counts={currentShoot.counts} />}
-            <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
-              filter
-              {[1, 2, 3, 4, 5].map((star) => (
-                <button
-                  key={star}
-                  type="button"
-                  data-testid={`filter-${star}`}
-                  onClick={() =>
-                    setMinRating((current) => (current === star ? 0 : star))
-                  }
-                  className={`rounded px-1 py-0.5 transition-colors hover:text-amber-300 ${
-                    minRating >= star
-                      ? "text-amber-400"
-                      : "text-muted-foreground/50"
-                  }`}
+    <TooltipProvider>
+      <SidebarProvider>
+        {inLoupe && loupeImage && clampedLoupe !== null ? (
+          <LoupeSidebar
+            image={loupeImage}
+            position={clampedLoupe + 1}
+            count={filteredImages.length}
+            exposure={exposure}
+            filmstrip={filmstrip}
+            onFilmstrip={changeFilmstrip}
+            onExposureChange={setExposure}
+            onRate={(stem, rating) => setRating.mutate({ stem, rating })}
+            onBackToGrid={() => setLoupeIndex(null)}
+          />
+        ) : (
+          <AppSidebar
+            shoots={shoots.data}
+            openShoot={openShoot}
+            onOpenShoot={enterShoot}
+            minRating={minRating}
+            onMinRating={setMinRating}
+            filterEnabled={openShoot !== null}
+            rootPath={rootState.path}
+            onChangeRoot={() =>
+              setRootState({ kind: "picking", error: null, busy: false })
+            }
+          />
+        )}
+        <SidebarInset className="flex h-screen min-w-0 flex-col bg-background text-foreground">
+          <header className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-2 text-sm">
+            <SidebarTrigger className="text-muted-foreground" />
+            {openShoot ? (
+              <>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  data-testid="back"
+                  onClick={() => enterShoot(null)}
+                  className="text-muted-foreground"
                 >
-                  ★
-                </button>
-              ))}
-            </span>
-          </>
-        ) : (
-          <>
-            <span className="flex items-center gap-2">
-              <Photopipe className="h-5 w-5" />
-              <span className="font-heading font-semibold tracking-tight">
-                Photopipe
-              </span>
-            </span>
-            <span className="truncate font-mono text-xs text-muted-foreground">
-              {rootState.path}
-            </span>
-            <button
-              type="button"
-              data-testid="change-root"
-              onClick={() =>
-                setRootState({ kind: "picking", error: null, busy: false })
-              }
-              className="ml-auto rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              change
-            </button>
-          </>
-        )}
-      </header>
-      <div className="min-h-0 flex-1">
-        {openShoot ? (
-          images.data ? (
-            <ImageGrid images={filteredImages} onOpen={setLoupeIndex} />
-          ) : (
-            <p className="p-8 text-sm text-muted-foreground">loading…</p>
-          )
-        ) : shoots.data ? (
-          <div className="h-full overflow-auto">
-            <Dashboard shoots={shoots.data} onOpen={enterShoot} />
+                  <ChevronLeft />
+                  Library
+                </Button>
+                <span className="truncate font-medium">{openShoot}</span>
+                {currentShoot && <StageCounts counts={currentShoot.counts} />}
+              </>
+            ) : (
+              <span className="text-muted-foreground">Library</span>
+            )}
+          </header>
+          <div className="min-h-0 flex-1">
+            {openShoot ? (
+              inLoupe && clampedLoupe !== null ? (
+                <Loupe
+                  images={filteredImages}
+                  index={clampedLoupe}
+                  exposure={exposure}
+                  filmstrip={filmstrip}
+                  onExposureChange={setExposure}
+                  onNavigate={setLoupeIndex}
+                  onClose={() => setLoupeIndex(null)}
+                  onRate={(stem, rating) => setRating.mutate({ stem, rating })}
+                />
+              ) : images.data ? (
+                <ImageGrid images={filteredImages} onOpen={setLoupeIndex} />
+              ) : (
+                <p className="p-8 text-sm text-muted-foreground">loading…</p>
+              )
+            ) : shoots.data ? (
+              <div className="h-full overflow-auto">
+                <Dashboard shoots={shoots.data} onOpen={enterShoot} />
+              </div>
+            ) : (
+              <p className="p-8 text-sm text-muted-foreground">
+                scanning library…
+              </p>
+            )}
           </div>
-        ) : (
-          <p className="p-8 text-sm text-muted-foreground">scanning library…</p>
-        )}
-      </div>
-      {loupeIndex !== null && filteredImages.length > 0 && (
-        <Loupe
-          images={filteredImages}
-          index={Math.min(loupeIndex, filteredImages.length - 1)}
-          onNavigate={setLoupeIndex}
-          onClose={() => setLoupeIndex(null)}
-          onRate={(stem, rating) => setRating.mutate({ stem, rating })}
-        />
-      )}
-    </main>
+        </SidebarInset>
+      </SidebarProvider>
+    </TooltipProvider>
   );
 }

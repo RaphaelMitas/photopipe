@@ -14,6 +14,8 @@ function makeImages(count: number): ImageGroup[] {
     stem: `DSC${String(i).padStart(5, "0")}`,
     stage: "raw" as const,
     rating: 0,
+    width: 3000,
+    height: 2000,
     files: [
       {
         path: `/r/s/DSC${String(i).padStart(5, "0")}.ARW`,

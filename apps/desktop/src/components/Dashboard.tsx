@@ -1,4 +1,5 @@
 import type { Shoot, Stage } from "@/lib/core";
+import { Card, CardContent } from "./ui/card";
 
 const STAGE_STYLE: Record<Stage, string> = {
   raw: "text-muted-foreground",
@@ -50,30 +51,36 @@ export function Dashboard({ shoots, onOpen }: Props) {
   return (
     <div className="grid grid-cols-1 gap-3 p-6 sm:grid-cols-2 lg:grid-cols-3">
       {shoots.map((shoot) => (
-        <button
-          type="button"
+        <Card
           key={shoot.name}
-          data-testid={`shoot-${shoot.name}`}
-          onClick={() => onOpen(shoot.name)}
-          className="rounded-xl border bg-card p-4 text-left text-card-foreground transition-colors hover:border-ring"
+          className="gap-0 py-0 transition-shadow hover:ring-ring"
         >
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="truncate font-heading font-medium">
-              {shoot.project ?? shoot.name}
-            </span>
-            {shoot.day && (
-              <span className="shrink-0 font-mono text-xs text-muted-foreground">
-                {shoot.day}
-              </span>
-            )}
-          </div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            {shoot.imageCount} photos
-          </div>
-          <div className="mt-3">
-            <StageCounts counts={shoot.counts} />
-          </div>
-        </button>
+          {/* No shoot-<name> testid here: the sidebar entry owns it. */}
+          <button
+            type="button"
+            onClick={() => onOpen(shoot.name)}
+            className="w-full text-left"
+          >
+            <CardContent className="p-4">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="truncate font-heading font-medium">
+                  {shoot.project ?? shoot.name}
+                </span>
+                {shoot.day && (
+                  <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                    {shoot.day}
+                  </span>
+                )}
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {shoot.imageCount} photos
+              </div>
+              <div className="mt-3">
+                <StageCounts counts={shoot.counts} />
+              </div>
+            </CardContent>
+          </button>
+        </Card>
       ))}
     </div>
   );

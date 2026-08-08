@@ -15,6 +15,9 @@ export type ImageGroup = {
   stage: Stage;
   /** XMP star rating, 0 = unrated. */
   rating: number;
+  /** Upright pixel dimensions of the display file; 3:2 fallback core-side. */
+  width: number;
+  height: number;
   files: FileRecord[];
 };
 

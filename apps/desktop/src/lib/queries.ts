@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
+import { toast } from "sonner";
 import {
   coreRequest,
   type ImageGroup,
@@ -39,7 +40,8 @@ export function useThumbnail(
       (
         await coreRequest<{ cachePath: string }>("thumbnail", {
           path: file?.path,
-          maxPixel: 256,
+          // Justified cells run up to ~370px wide; 512 keeps retina sharp.
+          maxPixel: 512,
         })
       ).cachePath,
     enabled: file !== undefined,
@@ -89,11 +91,17 @@ export function usePrefetchRender(file: RenderFile, exposure: number) {
   }, [queryClient, file, exposure]);
 }
 
+export const SET_RATING_KEY = ["setRating"];
+
 /// Rating writes: optimistic (culling must feel instant), rolled back on
-/// error. The core bumps its generation, so other views converge via the poll.
+/// error. Refetches are fenced while a rating burst is in flight — on the
+/// concurrent sidecar a listImages can execute before the newest setRating
+/// applies, and its stale snapshot would stomp the optimistic state — then a
+/// single reconciling invalidation runs when the burst settles.
 export function useSetRating(shoot: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
+    mutationKey: SET_RATING_KEY,
     mutationFn: ({ stem, rating }: { stem: string; rating: number }) =>
       coreRequest<SetRatingResult>("setRating", { shoot, stem, rating }),
     onMutate: async ({ stem, rating }) => {
@@ -109,9 +117,20 @@ export function useSetRating(shoot: string | null) {
       );
       return { previous };
     },
-    onError: (_error, _vars, context) => {
+    onError: (error, vars, context) => {
       if (context?.previous) {
         queryClient.setQueryData(["images", shoot], context.previous);
+      }
+      // A rolled-back rating must never be silent — the core's error names
+      // the actual cause (exiftool failure, unknown image, dead sidecar…).
+      toast.error(`Rating ${vars.stem} failed`, {
+        description: String(error),
+      });
+    },
+    onSettled: () => {
+      // Only the last mutation of a burst reconciles with the core.
+      if (queryClient.isMutating({ mutationKey: SET_RATING_KEY }) === 1) {
+        queryClient.invalidateQueries({ queryKey: ["images", shoot] });
       }
     },
   });
@@ -135,10 +154,15 @@ export function useGenerationPoll(
     const timer = setInterval(async () => {
       try {
         const status = await coreRequest<StatusResult>("status");
-        if (status.generation !== lastGeneration.current) {
-          queryClient.invalidateQueries({ queryKey: ["shoots"] });
-          queryClient.invalidateQueries({ queryKey: ["images"] });
+        if (status.generation === lastGeneration.current) return;
+        // Rating burst in flight: a refetch now could race the concurrent
+        // core and return a snapshot missing the newest writes. Leave
+        // lastGeneration untouched so the next quiet tick reconciles.
+        if (queryClient.isMutating({ mutationKey: SET_RATING_KEY }) > 0) {
+          return;
         }
+        queryClient.invalidateQueries({ queryKey: ["shoots"] });
+        queryClient.invalidateQueries({ queryKey: ["images"] });
         lastGeneration.current = status.generation;
       } catch {
         // Sidecar restarting — next tick will catch up.

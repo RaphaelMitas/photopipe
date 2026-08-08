@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
@@ -52,12 +52,12 @@ describe("App", () => {
     });
 
     renderWithQueries(<App />);
-    expect(
-      await screen.findByTestId("shoot-2026-07-12_zell"),
-    ).toBeInTheDocument();
-    expect(screen.getByText("2 raw")).toBeInTheDocument();
-    expect(screen.getByText("1 denoised")).toBeInTheDocument();
-    expect(screen.getByText("1 exported")).toBeInTheDocument();
+    // Counts render in the sidebar entry (and again in the overview cards) —
+    // scope to the canonical testid owner.
+    const entry = await screen.findByTestId("shoot-2026-07-12_zell");
+    expect(within(entry).getByText("2 raw")).toBeInTheDocument();
+    expect(within(entry).getByText("1 denoised")).toBeInTheDocument();
+    expect(within(entry).getByText("1 exported")).toBeInTheDocument();
   });
 
   it("drops back to the picker with the error when setRoot fails", async () => {

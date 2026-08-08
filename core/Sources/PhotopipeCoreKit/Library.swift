@@ -52,12 +52,21 @@ public struct ImageGroup: Codable, Equatable, Sendable {
     public let stage: Stage
     /// XMP star rating, 0 = unrated. One rating per logical image.
     public let rating: Int
+    /// Upright pixel dimensions of the display file (header-read at scan) so
+    /// the grid can lay out before any thumbnail loads. 3:2 when unreadable.
+    public let width: Int
+    public let height: Int
     public let files: [FileRecord]
 
-    public init(stem: String, stage: Stage, rating: Int = 0, files: [FileRecord]) {
+    public init(
+        stem: String, stage: Stage, rating: Int = 0, width: Int = 3000, height: Int = 2000,
+        files: [FileRecord]
+    ) {
         self.stem = stem
         self.stage = stage
         self.rating = rating
+        self.width = width
+        self.height = height
         self.files = files
     }
 
@@ -85,10 +94,12 @@ public func parseShootName(_ name: String) -> (day: String, project: String)? {
 }
 
 /// Group files of one shoot into logical images by filename stem.
-/// `ratingFor` supplies the group's XMP rating (injected so grouping stays
-/// testable without disk).
+/// `ratingFor`/`dimensionsFor` supply per-group disk reads (injected so
+/// grouping stays testable without disk).
 public func buildImageGroups(
-    files: [FileRecord], ratingFor: ([FileRecord]) -> Int = { _ in 0 }
+    files: [FileRecord],
+    ratingFor: ([FileRecord]) -> Int = { _ in 0 },
+    dimensionsFor: ([FileRecord]) -> (width: Int, height: Int) = { _ in Dimensions.fallback }
 ) -> [ImageGroup] {
     let grouped = Dictionary(grouping: files) { $0.stem.lowercased() }
     return grouped.values
@@ -96,7 +107,10 @@ public func buildImageGroups(
             let sorted = group.sorted { $0.stage.rank < $1.stage.rank }
             let stage = sorted.last?.stage ?? .raw
             let stem = sorted.first?.stem ?? ""
-            return ImageGroup(stem: stem, stage: stage, rating: ratingFor(sorted), files: sorted)
+            let dims = dimensionsFor(sorted)
+            return ImageGroup(
+                stem: stem, stage: stage, rating: ratingFor(sorted),
+                width: dims.width, height: dims.height, files: sorted)
         }
         .sorted { $0.stem.localizedStandardCompare($1.stem) == .orderedAscending }
 }

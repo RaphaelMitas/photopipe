@@ -1,6 +1,37 @@
 import { open } from "@tauri-apps/plugin-dialog";
+import { FolderOpen, History } from "lucide-react";
 import { useState } from "react";
 import { Photopipe } from "./Photopipe";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "./ui/tooltip";
+
+function folderName(path: string): string {
+  return path.replace(/\/+$/, "").split("/").pop() || path;
+}
+
+const RECENT_KEY = "photopipe.recentRoots";
+
+export function recentRoots(): string[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
+    return Array.isArray(parsed)
+      ? parsed.filter((r) => typeof r === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function rememberRoot(path: string) {
+  const next = [path, ...recentRoots().filter((r) => r !== path)].slice(0, 5);
+  localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+}
 
 type Props = {
   error?: string | null;
@@ -8,8 +39,13 @@ type Props = {
   onSubmit: (path: string) => void;
 };
 
+/// First-run welcome: one action on the happy path (the native folder
+/// dialog), recent roots one click away. The typed-path form stays as a
+/// deliberately quiet secondary affordance — it is also what e2e drives,
+/// since the browser has no native dialog.
 export function RootPicker({ error, busy, onSubmit }: Props) {
   const [path, setPath] = useState("");
+  const recents = recentRoots();
 
   async function pickFolder() {
     try {
@@ -24,55 +60,82 @@ export function RootPicker({ error, busy, onSubmit }: Props) {
   }
 
   return (
-    <main className="flex h-screen items-center justify-center bg-background text-foreground">
-      <div className="w-[28rem] rounded-xl border bg-card p-8 text-card-foreground">
-        <div className="flex items-center gap-3">
-          <Photopipe className="h-10 w-10" />
-          <h1 className="font-heading text-2xl font-semibold tracking-tight">
+    <TooltipProvider>
+      <main className="flex h-screen flex-col items-center justify-center gap-8 bg-background text-foreground">
+        <div className="flex flex-col items-center gap-3">
+          <Photopipe className="h-16 w-16" />
+          <h1 className="font-heading text-3xl font-semibold tracking-tight">
             Photopipe
           </h1>
+          <p className="text-sm text-muted-foreground">
+            Your shoots, from raw to export.
+          </p>
         </div>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Point me at the folder that holds your{" "}
-          <span className="font-mono">&lt;day&gt;_&lt;project&gt;</span> shoots.
-        </p>
-        <button
-          type="button"
-          onClick={pickFolder}
-          disabled={busy}
-          className="mt-6 w-full rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
-        >
-          Choose folder…
-        </button>
+
+        <div className="flex w-80 flex-col gap-2">
+          <Button size="lg" onClick={pickFolder} disabled={busy}>
+            <FolderOpen />
+            Choose your photos folder
+          </Button>
+          {recents.map((recent) => (
+            <Tooltip key={recent}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => onSubmit(recent)}
+                  className="justify-start text-muted-foreground"
+                >
+                  <History className="shrink-0" />
+                  <span className="truncate">{folderName(recent)}</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent
+                side="right"
+                collisionPadding={8}
+                className="max-w-[min(24rem,var(--radix-tooltip-content-available-width))] break-all font-mono text-xs"
+              >
+                {recent}
+              </TooltipContent>
+            </Tooltip>
+          ))}
+        </div>
+
         <form
-          className="mt-3 flex gap-2"
+          className="flex w-80 gap-2 opacity-60 transition-opacity focus-within:opacity-100 hover:opacity-100"
           onSubmit={(e) => {
             e.preventDefault();
             if (path.trim()) onSubmit(path.trim());
           }}
         >
-          <input
+          <Input
             data-testid="root-input"
             value={path}
             onChange={(e) => setPath(e.target.value)}
             placeholder="…or type a path"
-            className="flex-1 rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            className="h-8 text-xs"
           />
-          <button
+          <Button
             type="submit"
+            variant="outline"
+            size="sm"
             data-testid="root-submit"
             disabled={busy}
-            className="rounded-lg border px-4 py-2 text-sm transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+            className="h-8"
           >
             Open
-          </button>
+          </Button>
         </form>
+
         {error && (
-          <p data-testid="root-error" className="mt-4 text-sm text-destructive">
+          <p
+            data-testid="root-error"
+            className="max-w-96 text-sm text-destructive"
+          >
             {error}
           </p>
         )}
-      </div>
-    </main>
+      </main>
+    </TooltipProvider>
   );
 }

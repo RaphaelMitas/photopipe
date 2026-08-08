@@ -6,7 +6,13 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!brand", "!**/src-tauri/gen", "!**/src-tauri/target"]
+    "includes": [
+      "**",
+      "!brand",
+      "!**/src-tauri/gen",
+      "!**/src-tauri/target",
+      "!**/src/components/ui"
+    ]
   },
   "formatter": {
     "enabled": true,

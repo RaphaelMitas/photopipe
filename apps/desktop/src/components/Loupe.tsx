@@ -1,7 +1,10 @@
-import { useDeferredValue, useEffect, useState } from "react";
+import { useDeferredValue, useEffect } from "react";
 import { fileSrc, type ImageGroup } from "@/lib/core";
 import { usePrefetchRender, useRender, useThumbnail } from "@/lib/queries";
-import { Stars } from "./Stars";
+import { Filmstrip, type FilmstripMode } from "./Filmstrip";
+
+export const EXPOSURE_STEP = 0.25;
+export const EXPOSURE_RANGE = 3;
 
 /// The file worth rendering: raw for real exposure scrubbing, else the
 /// furthest-stage file.
@@ -15,22 +18,29 @@ function renderFileOf(image: ImageGroup | undefined) {
 type Props = {
   images: ImageGroup[];
   index: number;
+  exposure: number;
+  filmstrip: FilmstripMode;
+  onExposureChange: (ev: number) => void;
   onNavigate: (index: number) => void;
   onClose: () => void;
   onRate: (stem: string, rating: number) => void;
 };
 
-const EXPOSURE_STEP = 0.25;
-const EXPOSURE_RANGE = 3;
-
-/// Full-screen culling view. Exposure scrubs re-render through the raw
+/// Full-height culling canvas. Exposure scrubs re-render through the raw
 /// pipeline core-side (the whole reason this app is native); ratings are one
-/// keystroke. Preview adjustments are never written to any file.
-export function Loupe({ images, index, onNavigate, onClose, onRate }: Props) {
+/// keystroke. Preview adjustments are never written to any file. Controls
+/// live in the LoupeSidebar; this component owns the pixels and the keyboard.
+export function Loupe({
+  images,
+  index,
+  exposure,
+  filmstrip,
+  onExposureChange,
+  onNavigate,
+  onClose,
+  onRate,
+}: Props) {
   const image = images[index];
-  // Exposure persists across navigation: when culling a shoot that's all a
-  // stop under, you set it once and flick through. `r` resets.
-  const [exposure, setExposure] = useState(0);
   const deferredExposure = useDeferredValue(exposure);
 
   const renderFile = renderFileOf(image);
@@ -47,6 +57,15 @@ export function Loupe({ images, index, onNavigate, onClose, onRate }: Props) {
     if (!image) return;
     const handler = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
+      // A focused slider owns its own arrow keys (Radix adjusts the value
+      // internally); double-handling would step exposure twice per press.
+      const target = event.target as HTMLElement | null;
+      if (
+        event.key.startsWith("Arrow") &&
+        target?.closest?.("[data-slot='slider']")
+      ) {
+        return;
+      }
       switch (event.key) {
         case "Escape":
           onClose();
@@ -69,28 +88,34 @@ export function Loupe({ images, index, onNavigate, onClose, onRate }: Props) {
           break;
         case "ArrowUp":
           event.preventDefault();
-          setExposure((v) => Math.min(v + EXPOSURE_STEP, EXPOSURE_RANGE));
+          onExposureChange(Math.min(exposure + EXPOSURE_STEP, EXPOSURE_RANGE));
           break;
         case "ArrowDown":
           event.preventDefault();
-          setExposure((v) => Math.max(v - EXPOSURE_STEP, -EXPOSURE_RANGE));
+          onExposureChange(Math.max(exposure - EXPOSURE_STEP, -EXPOSURE_RANGE));
           break;
         case "r":
-          setExposure(0);
+          onExposureChange(0);
           break;
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [image, images.length, index, onClose, onNavigate, onRate]);
+  }, [
+    image,
+    images.length,
+    index,
+    exposure,
+    onClose,
+    onExposureChange,
+    onNavigate,
+    onRate,
+  ]);
 
   if (!image) return null;
 
   return (
-    <div
-      data-testid="loupe"
-      className="fixed inset-0 z-50 flex flex-col bg-black"
-    >
+    <div data-testid="loupe" className="flex h-full flex-col bg-black">
       <div className="relative min-h-0 flex-1">
         {render.data ? (
           <img
@@ -115,43 +140,14 @@ export function Loupe({ images, index, onNavigate, onClose, onRate }: Props) {
           <div className="absolute top-3 right-3 h-2 w-2 animate-pulse rounded-full bg-primary" />
         )}
       </div>
-
-      <div className="flex items-center gap-4 border-t border-border bg-background/90 px-4 py-2 text-sm">
-        <span
-          data-testid="loupe-position"
-          className="font-mono text-xs text-muted-foreground"
-        >
-          {index + 1}/{images.length}
-        </span>
-        <span data-testid="loupe-stem" className="font-mono">
-          {image.stem}
-        </span>
-        <Stars
-          value={image.rating}
-          onRate={(rating) => onRate(image.stem, rating)}
-          className="text-lg"
+      {filmstrip !== "off" && (
+        <Filmstrip
+          images={images}
+          index={index}
+          mode={filmstrip}
+          onNavigate={onNavigate}
         />
-        <label className="ml-auto flex items-center gap-2 font-mono text-xs text-muted-foreground">
-          EV
-          <input
-            data-testid="exposure"
-            type="range"
-            min={-EXPOSURE_RANGE}
-            max={EXPOSURE_RANGE}
-            step={0.1}
-            value={exposure}
-            onChange={(e) => setExposure(Number(e.target.value))}
-            className="w-40 accent-[var(--pp-accent,#FF7A2F)]"
-          />
-          <span className="w-10 text-right">
-            {exposure >= 0 ? "+" : ""}
-            {exposure.toFixed(2)}
-          </span>
-        </label>
-        <span className="text-xs text-muted-foreground">
-          ←→ navigate · 1–5 rate · 0 clear · ↑↓ EV · r reset · esc
-        </span>
-      </div>
+      )}
     </div>
   );
 }

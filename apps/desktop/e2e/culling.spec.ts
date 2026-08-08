@@ -17,25 +17,22 @@ test("clicking a thumb opens the loupe; keyboard rates and navigates", async ({
   await expect(page.getByTestId("loupe")).toBeVisible();
   await expect(page.getByTestId("loupe-stem")).toHaveText("DSC00832");
 
-  // Rate with the keyboard — stars update optimistically.
+  // Rate with the keyboard — stars update optimistically (they live in the
+  // options sidebar next to the loupe).
   await page.keyboard.press("3");
-  await expect(
-    page.getByTestId("loupe").locator("[data-rating='3']"),
-  ).toBeVisible();
+  await expect(page.locator("[data-rating='3']")).toBeVisible();
 
   // Navigate; the pre-rated image shows its stars.
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("loupe-stem")).toHaveText("DSC00938");
-  await expect(
-    page.getByTestId("loupe").locator("[data-rating='2']"),
-  ).toBeVisible();
+  await expect(page.locator("[data-rating='2']")).toBeVisible();
 
   // Escape returns to the grid, which now shows the new rating badge.
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("loupe")).toHaveCount(0);
   await expect(
     page.locator("[data-stem='DSC00832']").getByTestId("thumb-rating"),
-  ).toHaveText("★3");
+  ).toHaveText("3");
 });
 
 test("rating filter narrows the grid and toggles off", async ({ page }) => {
@@ -53,6 +50,35 @@ test("rating filter narrows the grid and toggles off", async ({ page }) => {
 
   await page.getByTestId("filter-5").click();
   await expect(page.getByTestId("thumb")).toHaveCount(4);
+});
+
+test("filmstrip jumps between images and cycles its three modes", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("thumb").first().click();
+  await expect(page.getByTestId("loupe")).toBeVisible();
+
+  const filmstrip = page.getByTestId("filmstrip");
+  await expect(filmstrip).toBeVisible();
+  await expect(filmstrip).toHaveAttribute("data-mode", "thumbs");
+
+  // Click a far frame in the wheel — the loupe jumps there.
+  await filmstrip.locator("[data-stem='DSC00943']").click();
+  await expect(page.getByTestId("loupe-stem")).toHaveText("DSC00943");
+
+  // Ratings mode: fixed cells with a star row (DSC00938 ships rated 2).
+  await page.getByTestId("filmstrip-ratings").click();
+  await expect(filmstrip).toHaveAttribute("data-mode", "ratings");
+  await expect(
+    filmstrip.locator("[data-stem='DSC00938']").getByTestId("filmstrip-rating"),
+  ).toHaveText("2");
+
+  // Off hides it entirely; back to thumbs restores.
+  await page.getByTestId("filmstrip-off").click();
+  await expect(filmstrip).toHaveCount(0);
+  await page.getByTestId("filmstrip-thumbs").click();
+  await expect(page.getByTestId("filmstrip")).toBeVisible();
 });
 
 test("arrow keys scrub exposure and the setting survives navigation", async ({
