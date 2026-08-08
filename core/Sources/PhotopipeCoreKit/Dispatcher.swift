@@ -12,39 +12,113 @@ public enum DispatchOutcome: Equatable, Sendable {
     }
 }
 
-/// Pure request dispatch — no I/O, fully unit-testable.
-public func dispatch(line: String) -> DispatchOutcome {
-    let request: Request
-    do {
-        request = try JSONDecoder().decode(Request.self, from: Data(line.utf8))
-    } catch {
-        return .respond(
-            .failure(id: "", code: "bad_request", message: "malformed request: \(error.localizedDescription)")
-        )
+/// Routes protocol requests. Envelope handling is pure; library methods hit
+/// the stateful service.
+public final class Dispatcher {
+    private let library: LibraryService
+
+    public init(library: LibraryService = LibraryService()) {
+        self.library = library
     }
 
-    guard request.v == protocolVersion else {
-        return .respond(
-            .failure(
-                id: request.id, code: "unsupported_protocol",
-                message: "protocol v\(request.v) not supported, this core speaks v\(protocolVersion)"))
+    public func dispatch(line: String) -> DispatchOutcome {
+        let request: Request
+        do {
+            request = try JSONDecoder().decode(Request.self, from: Data(line.utf8))
+        } catch {
+            return .respond(
+                .failure(
+                    id: "", code: "bad_request",
+                    message: "malformed request: \(error.localizedDescription)"))
+        }
+
+        guard request.v == protocolVersion else {
+            return .respond(
+                .failure(
+                    id: request.id, code: "unsupported_protocol",
+                    message: "protocol v\(request.v) not supported, this core speaks v\(protocolVersion)"
+                ))
+        }
+
+        switch request.method {
+        case "ping":
+            return .respond(.success(id: request.id, result: .object(["pong": .bool(true)])))
+        case "version":
+            return .respond(
+                .success(
+                    id: request.id,
+                    result: .object([
+                        "version": .string(coreVersion),
+                        "protocol": .number(Double(protocolVersion)),
+                    ])))
+        case "shutdown":
+            return .shutdown(.success(id: request.id, result: .object(["bye": .bool(true)])))
+        case "setRoot", "listShoots", "listImages", "thumbnail", "status":
+            return .respond(libraryResponse(request))
+        default:
+            return .respond(
+                .failure(
+                    id: request.id, code: "unknown_method",
+                    message: "unknown method: \(request.method)"))
+        }
     }
 
-    switch request.method {
-    case "ping":
-        return .respond(.success(id: request.id, result: .object(["pong": .bool(true)])))
-    case "version":
-        return .respond(
-            .success(
-                id: request.id,
-                result: .object([
-                    "version": .string(coreVersion),
-                    "protocol": .number(Double(protocolVersion)),
-                ])))
-    case "shutdown":
-        return .shutdown(.success(id: request.id, result: .object(["bye": .bool(true)])))
-    default:
-        return .respond(
-            .failure(id: request.id, code: "unknown_method", message: "unknown method: \(request.method)"))
+    private func libraryResponse(_ request: Request) -> Response {
+        do {
+            switch request.method {
+            case "setRoot":
+                guard let path = request.params?["path"]?.stringValue else {
+                    return .failure(id: request.id, code: "invalid_params", message: "path required")
+                }
+                let indexPath = request.params?["indexPath"]?.stringValue
+                let summary = try library.setRoot(path: path, indexPath: indexPath)
+                return .success(
+                    id: request.id,
+                    result: .object([
+                        "shoots": .number(Double(summary.shoots)),
+                        "files": .number(Double(summary.files)),
+                        "generation": .number(Double(summary.generation)),
+                    ]))
+            case "listShoots":
+                return .success(
+                    id: request.id,
+                    result: .object(["shoots": try JSONValue(encoding: library.listShoots())]))
+            case "listImages":
+                guard let shoot = request.params?["shoot"]?.stringValue else {
+                    return .failure(id: request.id, code: "invalid_params", message: "shoot required")
+                }
+                let images = try library.listImages(shoot: shoot)
+                return .success(
+                    id: request.id, result: .object(["images": try JSONValue(encoding: images)]))
+            case "thumbnail":
+                guard let path = request.params?["path"]?.stringValue else {
+                    return .failure(id: request.id, code: "invalid_params", message: "path required")
+                }
+                let maxPixel = request.params?["maxPixel"]?.intValue ?? 256
+                let cachePath = try library.thumbnail(path: path, maxPixel: maxPixel)
+                return .success(id: request.id, result: .object(["cachePath": .string(cachePath)]))
+            case "status":
+                let status = library.status()
+                return .success(
+                    id: request.id,
+                    result: .object([
+                        "generation": .number(Double(status.generation)),
+                        "root": status.root.map { .string($0) } ?? .null,
+                        "shoots": .number(Double(status.shoots)),
+                    ]))
+            default:
+                return .failure(id: request.id, code: "unknown_method", message: request.method)
+            }
+        } catch LibraryService.ServiceError.noRoot {
+            return .failure(id: request.id, code: "no_root", message: "call setRoot first")
+        } catch LibraryService.ServiceError.unknownShoot(let name) {
+            return .failure(id: request.id, code: "unknown_shoot", message: name)
+        } catch LibraryService.ServiceError.pathOutsideRoot(let path) {
+            return .failure(id: request.id, code: "path_outside_root", message: path)
+        } catch ScanError.rootNotFound(let path) {
+            return .failure(id: request.id, code: "root_not_found", message: path)
+        } catch {
+            return .failure(id: request.id, code: "io_error", message: "\(error)")
+        }
     }
 }

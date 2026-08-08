@@ -8,12 +8,12 @@ func request(_ method: String, id: String = "1", v: Int = protocolVersion) -> St
 }
 
 @Test func pingRespondsPong() {
-    let outcome = dispatch(line: request("ping"))
+    let outcome = Dispatcher().dispatch(line: request("ping"))
     #expect(outcome == .respond(.success(id: "1", result: .object(["pong": .bool(true)]))))
 }
 
 @Test func versionReportsSemverAndProtocol() throws {
-    let response = dispatch(line: request("version", id: "42")).response
+    let response = Dispatcher().dispatch(line: request("version", id: "42")).response
     #expect(response.ok)
     #expect(response.id == "42")
     #expect(response.result?["protocol"] == .number(1))
@@ -25,7 +25,7 @@ func request(_ method: String, id: String = "1", v: Int = protocolVersion) -> St
 }
 
 @Test func shutdownRespondsThenSignalsExit() {
-    let outcome = dispatch(line: request("shutdown"))
+    let outcome = Dispatcher().dispatch(line: request("shutdown"))
     guard case .shutdown(let response) = outcome else {
         Issue.record("expected shutdown outcome")
         return
@@ -34,26 +34,26 @@ func request(_ method: String, id: String = "1", v: Int = protocolVersion) -> St
 }
 
 @Test func unknownMethodFails() {
-    let response = dispatch(line: request("levitate")).response
+    let response = Dispatcher().dispatch(line: request("levitate")).response
     #expect(!response.ok)
     #expect(response.error?.code == "unknown_method")
     #expect(response.id == "1")
 }
 
 @Test func malformedJSONFailsAsBadRequest() {
-    let response = dispatch(line: "{not json").response
+    let response = Dispatcher().dispatch(line: "{not json").response
     #expect(!response.ok)
     #expect(response.error?.code == "bad_request")
 }
 
 @Test func futureProtocolVersionIsRejected() {
-    let response = dispatch(line: request("ping", v: 99)).response
+    let response = Dispatcher().dispatch(line: request("ping", v: 99)).response
     #expect(!response.ok)
     #expect(response.error?.code == "unsupported_protocol")
 }
 
 @Test func encodedResponseIsSingleLine() throws {
-    let line = try dispatch(line: request("version")).response.encodedLine()
+    let line = try Dispatcher().dispatch(line: request("version")).response.encodedLine()
     #expect(!line.contains("\n"))
     #expect(line.hasPrefix("{"))
 }

@@ -296,6 +296,52 @@ mod tests {
         sidecar.shutdown();
     }
 
+    /// Drives the real binary end-to-end with a real (temp) shoot tree — this
+    /// exercises the stdio framing with multi-kilobyte response lines, the one
+    /// seam the in-process Swift tests can't cover.
+    #[test]
+    fn set_root_and_list_shoots_against_real_tree() {
+        let Some(bin) = core_bin() else {
+            eprintln!("SKIP: build the Swift core first (cd core && swift build)");
+            return;
+        };
+        let root = std::env::temp_dir().join(format!(
+            "photopipe-cargo-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let shoot = root.join("2026-01-01_cargotest");
+        std::fs::create_dir_all(&shoot).unwrap();
+        for name in ["DSC00001.ARW", "DSC00002.ARW", "DSC00003.JPG"] {
+            std::fs::write(shoot.join(name), b"fake").unwrap();
+        }
+
+        let sidecar = Sidecar::new(bin);
+        let set = sidecar
+            .request(
+                "setRoot",
+                Some(json!({
+                    "path": root.to_str().unwrap(),
+                    "indexPath": root.join("index.sqlite").to_str().unwrap(),
+                })),
+            )
+            .expect("setRoot");
+        assert_eq!(set["shoots"], 1);
+        assert_eq!(set["files"], 3);
+
+        let shoots = sidecar.request("listShoots", None).expect("listShoots");
+        let list = shoots["shoots"].as_array().expect("shoots array");
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0]["name"], "2026-01-01_cargotest");
+        assert_eq!(list[0]["day"], "2026-01-01");
+        assert_eq!(list[0]["project"], "cargotest");
+        assert_eq!(list[0]["counts"]["raw"], 2);
+        assert_eq!(list[0]["counts"]["export"], 1);
+
+        sidecar.shutdown();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn wedged_sidecar_times_out_instead_of_hanging() {
         // A "sidecar" that reads forever and never answers.

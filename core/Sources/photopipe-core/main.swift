@@ -3,9 +3,11 @@ import PhotopipeCoreKit
 
 setvbuf(stdout, nil, _IOLBF, 0)
 
+let dispatcher = Dispatcher()
+
 while let line = readLine(strippingNewline: true) {
     if line.isEmpty { continue }
-    let outcome = dispatch(line: line)
+    let outcome = dispatcher.dispatch(line: line)
     do {
         print(try outcome.response.encodedLine())
     } catch {

@@ -1,3 +1,5 @@
+import Foundation
+
 /// Minimal JSON value type for protocol params/results.
 public enum JSONValue: Equatable, Sendable {
     case null
@@ -45,5 +47,20 @@ extension JSONValue {
     public subscript(key: String) -> JSONValue? {
         if case .object(let dict) = self { return dict[key] }
         return nil
+    }
+
+    public var stringValue: String? {
+        if case .string(let value) = self { return value }
+        return nil
+    }
+
+    public var intValue: Int? {
+        if case .number(let value) = self { return Int(value) }
+        return nil
+    }
+
+    /// Bridge any Encodable into the protocol's value type.
+    public init(encoding value: some Encodable) throws {
+        self = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(value))
     }
 }
