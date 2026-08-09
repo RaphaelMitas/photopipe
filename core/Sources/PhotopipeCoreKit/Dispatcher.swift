@@ -261,6 +261,10 @@ public final class Dispatcher {
             return .failure(
                 id: request.id, code: "invalid_project_name",
                 message: "\(name) is not a usable project name")
+        } catch LibraryService.ServiceError.invalidProjectDay(let day) {
+            return .failure(
+                id: request.id, code: "invalid_project_day",
+                message: "\(day) is not a YYYY-MM-DD date")
         } catch LibraryService.ServiceError.projectExists(let folder) {
             return .failure(
                 id: request.id, code: "project_exists", message: "\(folder) already exists")

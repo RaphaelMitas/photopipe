@@ -13,6 +13,7 @@ public final class LibraryService {
         case pathOutsideRoot(String)
         case invalidRating(Int)
         case invalidProjectName(String)
+        case invalidProjectDay(String)
         case projectExists(String)
     }
 
@@ -174,6 +175,24 @@ public final class LibraryService {
 
     // MARK: - Creating projects
 
+    /// The one rule for what a project folder may be called. Both creating and
+    /// renaming go through here: `day` is interpolated into a path, so an
+    /// unchecked one ("../elsewhere") would create folders outside the library
+    /// — or move an existing project out of it.
+    static func projectFolder(day: String, name: String) throws -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains("/"), !trimmed.contains(":") else {
+            throw ServiceError.invalidProjectName(name)
+        }
+        let folder = "\(day)_\(trimmed)"
+        // The YYYY-MM-DD prefix parseShootName demands is also what rules out
+        // separators and "..".
+        guard parseShootName(folder) != nil else {
+            throw ServiceError.invalidProjectDay(day)
+        }
+        return folder
+    }
+
     /// Edit a project's metadata: notes and the cover image. Both live in
     /// `photopipe.json` because no image file can carry them.
     public func updateProject(shoot shootName: String, notes: String?, cover: String??) throws
@@ -205,11 +224,7 @@ public final class LibraryService {
         guard let currentRoot else { throw ServiceError.noRoot }
         guard let path else { throw ServiceError.unknownShoot(shootName) }
 
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.contains("/") else {
-            throw ServiceError.invalidProjectName(name)
-        }
-        let folder = "\(day)_\(trimmed)"
+        let folder = try Self.projectFolder(day: day, name: name)
         guard folder != shootName else { return (shootName, status().generation) }
 
         let destination = URL(fileURLWithPath: currentRoot).appendingPathComponent(folder)
@@ -238,11 +253,7 @@ public final class LibraryService {
         lock.unlock()
         guard let currentRoot else { throw ServiceError.noRoot }
 
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.contains("/") else {
-            throw ServiceError.invalidProjectName(name)
-        }
-        let folder = "\(day)_\(trimmed)"
+        let folder = try Self.projectFolder(day: day, name: name)
         let path = URL(fileURLWithPath: currentRoot).appendingPathComponent(folder)
         guard !FileManager.default.fileExists(atPath: path.path) else {
             throw ServiceError.projectExists(folder)

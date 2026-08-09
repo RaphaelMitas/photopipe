@@ -161,3 +161,47 @@ private func makeService(in dir: URL) -> LibraryService {
         try service.renameProject(shoot: "2026-10-10_after", day: "2026-10-10", name: " ")
     }
 }
+
+@Test func aHostileDayCannotEscapeTheLibrary() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let root = dir.appendingPathComponent("library")
+    let outside = dir.appendingPathComponent("outside")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+
+    let service = makeService(in: dir)
+    _ = try service.setRoot(path: root.path, indexPath: nil)
+
+    // `day` is interpolated into a path, so it gets the same scrutiny `name`
+    // has always had. Creating must not reach outside the library...
+    for hostile in ["../outside", "..", "2026-09-09/../..", "nope", ""] {
+        #expect(throws: LibraryService.ServiceError.self) {
+            try service.createProject(day: hostile, name: "escape", notes: "")
+        }
+    }
+    #expect(try FileManager.default.contentsOfDirectory(atPath: outside.path).isEmpty)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+
+    // ...and renaming must not move an existing project out of it.
+    let created = try service.createProject(day: "2026-09-09", name: "keep", notes: "")
+    #expect(throws: LibraryService.ServiceError.self) {
+        try service.renameProject(shoot: created.shoot, day: "../outside", name: "gone")
+    }
+    #expect(FileManager.default.fileExists(atPath: created.path), "the project stayed put")
+    #expect(try FileManager.default.contentsOfDirectory(atPath: outside.path).isEmpty)
+    #expect(service.listShoots().map(\.name) == ["2026-09-09_keep"])
+}
+
+@Test func projectFolderNamesAreCheckedInOnePlace() throws {
+    #expect(try LibraryService.projectFolder(day: "2026-09-09", name: " zell ") == "2026-09-09_zell")
+    #expect(throws: LibraryService.ServiceError.self) {
+        try LibraryService.projectFolder(day: "2026-9-9", name: "zell")
+    }
+    #expect(throws: LibraryService.ServiceError.self) {
+        try LibraryService.projectFolder(day: "2026-09-09", name: "a/b")
+    }
+    #expect(throws: LibraryService.ServiceError.self) {
+        try LibraryService.projectFolder(day: "2026-09-09", name: "  ")
+    }
+}
