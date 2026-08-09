@@ -1,4 +1,4 @@
-import { ChevronLeft, Download, FolderOpen } from "lucide-react";
+import { ChevronLeft, Download, FolderOpen, Settings2 } from "lucide-react";
 import type { Shoot } from "@/lib/core";
 import { StageCounts } from "./Dashboard";
 import { Photopipe } from "./Photopipe";
@@ -31,6 +31,8 @@ type Props = {
   /// Imports into the current page's stage folder.
   onImport: () => void;
   onRevealShoot: (path: string) => void;
+  onShootSettings: () => void;
+  onAppSettings: () => void;
   ratingOp: RatingOp;
   onRatingOp: (op: RatingOp) => void;
   ratingStars: number;
@@ -52,6 +54,8 @@ export function AppSidebar({
   onBack,
   onImport,
   onRevealShoot,
+  onShootSettings,
+  onAppSettings,
   ratingOp,
   onRatingOp,
   ratingStars,
@@ -118,28 +122,43 @@ export function AppSidebar({
                   {currentShoot.notes}
                 </p>
               )}
-              <div className="mt-2 flex gap-1.5">
+              {/* Three buttons do not fit a sidebar's width. Import leads on
+                  its own row; the two occasional actions share the next. */}
+              <div className="mt-2 flex flex-col gap-1.5">
                 <Button
                   size="sm"
                   variant="outline"
                   data-testid="import-files"
-                  onClick={onImport}
-                  className="flex-1 text-xs"
+                  onClick={() => onImport()}
+                  className="w-full text-xs"
                 >
                   <Download />
-                  Import
+                  Import photos
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  data-testid="reveal-shoot"
-                  title="Reveal project folder in Finder"
-                  onClick={() => onRevealShoot(currentShoot.path)}
-                  className="flex-1 text-xs"
-                >
-                  <FolderOpen />
-                  Reveal
-                </Button>
+                <div className="flex gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    data-testid="shoot-settings"
+                    title="Project settings"
+                    onClick={() => onShootSettings()}
+                    className="min-w-0 flex-1 text-xs"
+                  >
+                    <Settings2 />
+                    Settings
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    data-testid="reveal-shoot"
+                    title="Reveal project folder in Finder"
+                    onClick={() => onRevealShoot(currentShoot.path)}
+                    className="min-w-0 flex-1 text-xs"
+                  >
+                    <FolderOpen />
+                    Reveal
+                  </Button>
+                </div>
               </div>
             </SidebarGroupContent>
           </SidebarGroup>
@@ -181,6 +200,16 @@ export function AppSidebar({
           <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">
             {rootPath}
           </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            data-testid="app-settings"
+            onClick={onAppSettings}
+            title="Settings"
+            className="size-7 text-muted-foreground"
+          >
+            <Settings2 />
+          </Button>
           <Button
             variant="ghost"
             size="icon"

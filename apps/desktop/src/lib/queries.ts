@@ -201,6 +201,46 @@ export function useTrash(shoot: string | null) {
   });
 }
 
+/// Edit a project's metadata. `cover: null` clears the choice back to "first
+/// image"; omitting a field leaves it alone.
+export function useUpdateProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["write", "updateProject"],
+    mutationFn: (vars: {
+      shoot: string;
+      notes?: string;
+      cover?: string | null;
+    }) => coreRequest<{ generation: number }>("updateProject", vars),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["shoots"] });
+    },
+    onError: (error) => {
+      toast.error("Could not save the project", { description: String(error) });
+    },
+  });
+}
+
+/// Rename a project, which renames its folder on disk.
+export function useRenameProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["write", "renameProject"],
+    mutationFn: (vars: { shoot: string; day: string; name: string }) =>
+      coreRequest<{ shoot: string; generation: number }>("renameProject", vars),
+    onSuccess: (result) => {
+      toast.success(`Renamed to ${result.shoot}`);
+      queryClient.invalidateQueries({ queryKey: ["shoots"] });
+      queryClient.invalidateQueries({ queryKey: ["images"] });
+    },
+    onError: (error) => {
+      toast.error("Could not rename the project", {
+        description: String(error),
+      });
+    },
+  });
+}
+
 /// Copy outside files into a stage's folder. Every page can import: fresh
 /// originals, or processed/edited results a tool saved somewhere else.
 export function useImportFiles(shoot: string | null) {

@@ -14,6 +14,8 @@ import { PAGES, type Page, PageNav } from "@/components/PageNav";
 import { matchesRatingFilter, type RatingOp } from "@/components/RatingFilter";
 import { RootPicker, rememberRoot } from "@/components/RootPicker";
 import { SelectionBar } from "@/components/SelectionBar";
+import { SettingsDialog } from "@/components/SettingsDialog";
+import { ShootSettingsDialog } from "@/components/ShootSettingsDialog";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -35,10 +37,9 @@ import {
   useTrash,
 } from "@/lib/queries";
 import { useSelection } from "@/lib/selection";
+import { appName, processingEnabled, useSettings } from "@/lib/settings";
 
 const ROOT_KEY = "photopipe.root";
-/// The app each stage hands off to, remembered so you pick it once.
-const appKey = (page: Page) => `photopipe.app.${page}`;
 
 type RootState =
   | { kind: "picking"; error: string | null; busy: boolean }
@@ -71,8 +72,28 @@ const STAGE_PAGES: Record<
   },
 };
 
-const MEDIA_PURPOSE =
-  "Your originals. Rate and cull, then send keepers to your denoiser.";
+/// Page copy depends on whether a denoise step exists at all.
+function purposeFor(page: Page, processing: boolean): string {
+  if (page === "media") {
+    return processing
+      ? "Your originals. Rate and cull, then send keepers to your denoiser."
+      : "Your originals. Rate and cull, then open keepers in your editor.";
+  }
+  if (page === "edit" && !processing) {
+    return "Your working set. Open in your editor; finished exports land in Export.";
+  }
+  return STAGE_PAGES[page as "edit" | "export"].purpose;
+}
+
+function emptyFor(page: Page, processing: boolean): string {
+  if (page === "media") {
+    return "No photos in this project yet. Import them here or drop files into the original/ folder.";
+  }
+  if (page === "edit" && !processing) {
+    return "No photos to edit yet. Import them on Media first.";
+  }
+  return STAGE_PAGES[page as "edit" | "export"].empty;
+}
 
 const VIEW_KEY = (page: Page) => `photopipe.view.${page}`;
 
@@ -85,6 +106,10 @@ export default function App() {
   const [page, setPageRaw] = useState<Page>("media");
   const [openShoot, setOpenShoot] = useState<string | null>(null);
   const [newProject, setNewProject] = useState(false);
+  const [appSettings, setAppSettings] = useState(false);
+  const [shootSettings, setShootSettings] = useState<string | null>(null);
+  const { settings, save: saveSettings } = useSettings();
+  const processing = processingEnabled(settings);
   const setPage = useCallback((next: Page) => {
     setPageRaw(next);
   }, []);
@@ -178,11 +203,14 @@ export default function App() {
       );
     }
     // Stage pages are folder views: empty until files land at that stage.
-    const atStage = STAGE_PAGES[page].produces;
+    // Without a denoise step nothing ever reaches processed/, so Edit works
+    // from the originals instead of sitting permanently empty.
+    const atStage =
+      page === "edit" && !processing ? "raw" : STAGE_PAGES[page].produces;
     return (images.data ?? []).filter((image) =>
       image.files.some((file) => file.stage === atStage),
     );
-  }, [page, filteredImages, images.data]);
+  }, [page, filteredImages, images.data, processing]);
 
   const orderedStems = useMemo(
     () => pageImages.map((image) => image.stem),
@@ -223,16 +251,21 @@ export default function App() {
     };
   }, [openShoot, images.data]);
 
-  const [appLabels, setAppLabels] = useState<Record<string, string | null>>(
-    () =>
-      Object.fromEntries(
-        PAGES.map((name) => [name, localStorage.getItem(appKey(name))]),
-      ),
-  );
+  /// Which tool this page hands off to. With processing switched off there
+  /// is no denoiser, so Media hands straight to the editor.
+  const handoffApp = (target: Page): string | null =>
+    target === "media" && processing ? settings.processor : settings.editor;
 
-  const handoff = async (paths: string[] = selectedPaths) => {
-    let app = appLabels[page];
+  const handoff = async (
+    paths: string[] = selectedPaths,
+    target: Page = page,
+  ) => {
+    // Guard against a caller wiring this straight to onClick: a DOM event
+    // would arrive here as `paths` and reach JSON.stringify as a cycle.
+    const files = Array.isArray(paths) ? paths : selectedPaths;
+    let app = handoffApp(target);
     if (!app) {
+      // Nothing configured yet: pick it here, then remember it app-wide.
       const chosen = await openDialog({
         title: "Choose an application",
         directory: false,
@@ -241,17 +274,13 @@ export default function App() {
       }).catch(() => null);
       if (typeof chosen !== "string") return;
       app = chosen;
-      localStorage.setItem(appKey(page), app);
-      setAppLabels((current) => ({ ...current, [page]: app }));
+      saveSettings(
+        target === "media" && processing
+          ? { ...settings, processor: app }
+          : { ...settings, editor: app },
+      );
     }
-    openIn.mutate({
-      paths,
-      app,
-      label: app
-        .split("/")
-        .pop()
-        ?.replace(/\.app$/, ""),
-    });
+    openIn.mutate({ paths: files, app, label: appName(app) ?? undefined });
   };
 
   const runExport = async () => {
@@ -299,11 +328,6 @@ export default function App() {
   /// The always-visible next step. Empty selection: the button *starts* the
   /// step (arming select mode, or preselecting the waiting work). With a
   /// selection it becomes the action itself — the action is the transition.
-  const appName = (name: Page) =>
-    appLabels[name]
-      ?.split("/")
-      .pop()
-      ?.replace(/\.app$/, "");
   const cta = (() => {
     if (!openShoot || !images.data) return null;
     const count = selection.selected.size;
@@ -319,9 +343,14 @@ export default function App() {
     // to the denoiser, Process sends DNGs to the editor, Edit walks on to
     // Export, Export zips.
     switch (page) {
-      case "media":
+      case "media": {
+        // With processing on, originals go to the denoiser; with it off they
+        // go straight to the editor, because there is no denoise step.
+        const target = appName(handoffApp("media"));
         return {
-          label: `Send ${count} to ${appName("media") ?? "denoiser"}`,
+          label: processing
+            ? `Send ${count} to ${target ?? "denoiser"}`
+            : `Open ${count} in ${target ?? "editor"}`,
           onClick: () =>
             handoff(
               selectedImages.flatMap((image) =>
@@ -331,9 +360,10 @@ export default function App() {
               ),
             ),
         };
+      }
       case "edit":
         return {
-          label: `Open ${count} in ${appName("edit") ?? "editor"}`,
+          label: `Open ${count} in ${appName(settings.editor) ?? "editor"}`,
           onClick: () => handoff(),
         };
       case "export":
@@ -418,6 +448,17 @@ export default function App() {
 
   return (
     <TooltipProvider>
+      <SettingsDialog open={appSettings} onOpenChange={setAppSettings} />
+      <ShootSettingsDialog
+        open={shootSettings !== null}
+        onOpenChange={(next) => !next && setShootSettings(null)}
+        shoot={shoots.data?.find((s) => s.name === shootSettings)}
+        onRenamed={(renamed) => {
+          // The folder moved, so anything holding the old name must follow.
+          setShootSettings(null);
+          if (openShoot === shootSettings) setOpenShoot(renamed);
+        }}
+      />
       <NewProjectDialog
         open={newProject}
         onOpenChange={setNewProject}
@@ -446,6 +487,8 @@ export default function App() {
             onBack={() => enterShoot(null)}
             onImport={runImport}
             onRevealShoot={(path) => reveal.mutate([path])}
+            onShootSettings={() => setShootSettings(openShoot)}
+            onAppSettings={() => setAppSettings(true)}
             ratingOp={ratingOp}
             onRatingOp={setRatingOp}
             ratingStars={ratingStars}
@@ -467,7 +510,7 @@ export default function App() {
           <SelectionBar
             count={selection.selected.size}
             appLabel={
-              appLabels[page]
+              handoffApp(page)
                 ?.split("/")
                 .pop()
                 ?.replace(/\.app$/, "") ?? null
@@ -492,6 +535,8 @@ export default function App() {
               onView={(view) => changeView(page, view)}
               cta={cta}
               onImport={runImport}
+              processing={processing}
+              onShootSettings={setShootSettings}
               inLoupe={inLoupe}
               loupeImages={loupeImages}
               loupeIndex={loupeIndex}
@@ -528,6 +573,8 @@ type ContentProps = {
   onView: (view: ViewMode) => void;
   cta: { label: string; disabled?: boolean; onClick: () => void } | null;
   onImport: () => void;
+  processing: boolean;
+  onShootSettings: (shoot: string) => void;
   inLoupe: boolean;
   loupeImages: ImageGroup[];
   loupeIndex: number;
@@ -554,6 +601,8 @@ function PageContent({
   onView,
   cta,
   onImport,
+  processing,
+  onShootSettings,
   inLoupe,
   loupeImages,
   loupeIndex,
@@ -586,6 +635,7 @@ function PageContent({
           shoots={shoots}
           onOpen={onOpenShoot}
           onNewProject={onNewProject}
+          onSettings={onShootSettings}
         />
       </div>
     ) : (
@@ -614,14 +664,12 @@ function PageContent({
 
   const selectMode = !selection.isEmpty;
   const media = page === "media";
-  const emptyMessage = media
-    ? "No photos in this project yet. Import them here or drop files into the original/ folder."
-    : STAGE_PAGES[page].empty;
+  const emptyMessage = emptyFor(page, processing);
   if (pageImages.length === 0) {
     return (
       <div className="flex h-full min-h-0 flex-col">
         <BrowserToolbar
-          purpose={media ? MEDIA_PURPOSE : STAGE_PAGES[page].purpose}
+          purpose={purposeFor(page, processing)}
           view={view}
           onView={onView}
           cta={null}
@@ -652,7 +700,7 @@ function PageContent({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <BrowserToolbar
-        purpose={media ? MEDIA_PURPOSE : STAGE_PAGES[page].purpose}
+        purpose={purposeFor(page, processing)}
         view={view}
         onView={onView}
         cta={cta}

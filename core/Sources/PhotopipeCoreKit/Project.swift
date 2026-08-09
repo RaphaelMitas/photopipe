@@ -7,10 +7,14 @@ import Foundation
 public struct ProjectFile: Codable, Equatable, Sendable {
     public var notes: String
     public var created: String?
+    /// Stem of the image to show as the project's cover. Nil means "use the
+    /// first one", so a project always has a face without needing a choice.
+    public var cover: String?
 
-    public init(notes: String = "", created: String? = nil) {
+    public init(notes: String = "", created: String? = nil, cover: String? = nil) {
         self.notes = notes
         self.created = created
+        self.cover = cover
     }
 
     public static let fileName = "photopipe.json"

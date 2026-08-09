@@ -174,6 +174,59 @@ public final class LibraryService {
 
     // MARK: - Creating projects
 
+    /// Edit a project's metadata: notes and the cover image. Both live in
+    /// `photopipe.json` because no image file can carry them.
+    public func updateProject(shoot shootName: String, notes: String?, cover: String??) throws
+        -> Int
+    {
+        lock.lock()
+        let path = snapshot.shoots.first { $0.name == shootName }?.path
+        lock.unlock()
+        guard let path else { throw ServiceError.unknownShoot(shootName) }
+
+        var file = ProjectFile.read(inShoot: path)
+        if let notes { file.notes = notes }
+        // Double optional: `.some(nil)` clears the cover, `nil` leaves it be.
+        if let cover { file.cover = cover }
+        try file.write(inShoot: path)
+        rescanNow()
+        return status().generation
+    }
+
+    /// Rename a project, which means renaming its folder: the folder *is* the
+    /// project, so the name on disk and the name in the app can never drift.
+    public func renameProject(shoot shootName: String, day: String, name: String) throws -> (
+        shoot: String, generation: Int
+    ) {
+        lock.lock()
+        let currentRoot = root
+        let path = snapshot.shoots.first { $0.name == shootName }?.path
+        lock.unlock()
+        guard let currentRoot else { throw ServiceError.noRoot }
+        guard let path else { throw ServiceError.unknownShoot(shootName) }
+
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains("/") else {
+            throw ServiceError.invalidProjectName(name)
+        }
+        let folder = "\(day)_\(trimmed)"
+        guard folder != shootName else { return (shootName, status().generation) }
+
+        let destination = URL(fileURLWithPath: currentRoot).appendingPathComponent(folder)
+        guard !FileManager.default.fileExists(atPath: destination.path) else {
+            throw ServiceError.projectExists(folder)
+        }
+        try FileManager.default.moveItem(at: URL(fileURLWithPath: path), to: destination)
+
+        // Keep the metadata's date in step with the folder name.
+        var file = ProjectFile.read(inShoot: destination.path)
+        file.created = day
+        try? file.write(inShoot: destination.path)
+
+        rescanNow()
+        return (folder, status().generation)
+    }
+
     /// Create `<root>/<day>_<name>/` with an `original/` folder for photos to
     /// land in and a metadata file for the notes. The folder *is* the project
     /// — there is no registry to fall out of sync with the disk.

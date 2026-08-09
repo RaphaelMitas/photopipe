@@ -35,6 +35,10 @@ export type Shoot = {
   imageCount: number;
   /** From photopipe.json; empty when the project has none. */
   notes: string;
+  /** Stem of the chosen cover, if the project names one. */
+  cover: string | null;
+  /** File to thumbnail for the card: chosen cover, else the first image. */
+  coverPath: string | null;
 };
 
 export type CreateProjectResult = {

@@ -86,6 +86,11 @@ public struct Shoot: Codable, Equatable, Sendable {
     public let imageCount: Int
     /// From photopipe.json; empty when the project has none.
     public let notes: String
+    /// Stem of the chosen cover, if the project names one.
+    public let cover: String?
+    /// File to thumbnail for the project's cover: the chosen image, else the
+    /// first one. Nil only when the project has no images at all.
+    public let coverPath: String?
 }
 
 /// `<YYYY-MM-DD>_<project>` → (day, project); anything else is nil.
@@ -162,10 +167,16 @@ public func stageCounts(images: [ImageGroup]) -> [String: Int] {
     return counts
 }
 
-public func makeShoot(name: String, path: String, images: [ImageGroup], notes: String = "")
-    -> Shoot
-{
+public func makeShoot(
+    name: String, path: String, images: [ImageGroup], notes: String = "", cover: String? = nil
+) -> Shoot {
     let parsed = parseShootName(name)
+    // A named cover that no longer exists falls back to the first image
+    // rather than leaving the card blank.
+    let chosen =
+        cover.flatMap { stem in
+            images.first { $0.stem.lowercased() == stem.lowercased() }
+        } ?? images.first
     return Shoot(
         name: name,
         path: path,
@@ -173,5 +184,7 @@ public func makeShoot(name: String, path: String, images: [ImageGroup], notes: S
         project: parsed?.project,
         counts: stageCounts(images: images),
         imageCount: images.count,
-        notes: notes)
+        notes: notes,
+        cover: cover,
+        coverPath: chosen?.displayFile?.path)
 }

@@ -98,6 +98,8 @@ const shoots: Shoot[] = [
     counts: { raw: 2, denoised: 1, export: 1 },
     imageCount: 4,
     notes: "Golden hour at the river",
+    cover: null,
+    coverPath: "/fake/z/DSC00832.jpg",
   },
   {
     name: "misc",
@@ -107,6 +109,8 @@ const shoots: Shoot[] = [
     counts: { raw: 1, denoised: 0, export: 0 },
     imageCount: 1,
     notes: "",
+    cover: null,
+    coverPath: "/fake/misc/IMG_0001.ARW",
   },
 ];
 
@@ -155,6 +159,8 @@ shoots.push({
   counts: { raw: 200, denoised: 0, export: 0 },
   imageCount: 200,
   notes: "",
+  cover: null,
+  coverPath: "/fake/big/BIG00000.ARW",
 });
 
 /// Projects created during the test run have no images.
@@ -231,9 +237,38 @@ export const E2E_HANDLERS: Record<
       counts: { raw: 0, denoised: 0, export: 0 },
       imageCount: 0,
       notes: String(params.notes ?? ""),
+      cover: null,
+      coverPath: null,
     });
     emptyShoots.add(shoot);
     return { shoot, path: `/fake/${shoot}`, generation: 1 };
+  },
+  updateProject: (params) => {
+    const shoot = shoots.find((s) => s.name === params.shoot);
+    if (shoot) {
+      if (params.notes !== undefined) shoot.notes = String(params.notes);
+      if ("cover" in params) {
+        shoot.cover = (params.cover as string | null) ?? null;
+        const match = imagesFor(shoot.name).find(
+          (image) => image.stem === shoot.cover,
+        );
+        shoot.coverPath =
+          match?.files[match.files.length - 1]?.path ??
+          imagesFor(shoot.name)[0]?.files[0]?.path ??
+          null;
+      }
+    }
+    return { generation: 1 };
+  },
+  renameProject: (params) => {
+    const shoot = shoots.find((s) => s.name === params.shoot);
+    const renamed = `${String(params.day)}_${String(params.name)}`;
+    if (shoot) {
+      shoot.name = renamed;
+      shoot.day = String(params.day);
+      shoot.project = String(params.name);
+    }
+    return { shoot: renamed, generation: 1 };
   },
   status: () => ({ generation: 1, root: "/fake", shoots: shoots.length }),
 };

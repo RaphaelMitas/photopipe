@@ -54,7 +54,8 @@ public final class Dispatcher {
         case "shutdown":
             return .shutdown(.success(id: request.id, result: .object(["bye": .bool(true)])))
         case "setRoot", "listShoots", "listImages", "thumbnail", "render", "setRating", "status",
-            "openIn", "reveal", "trash", "exportFiles", "createProject", "importFiles":
+            "openIn", "reveal", "trash", "exportFiles", "createProject", "importFiles",
+            "updateProject", "renameProject":
             return .respond(libraryResponse(request))
         default:
             return .respond(
@@ -201,6 +202,37 @@ public final class Dispatcher {
                         "imported": .number(Double(result.imported)),
                         "skipped": .number(Double(result.skipped)),
                         "generation": .number(Double(result.generation)),
+                    ]))
+            case "updateProject":
+                guard let shoot = request.params?["shoot"]?.stringValue else {
+                    return .failure(
+                        id: request.id, code: "invalid_params", message: "shoot required")
+                }
+                // An absent key leaves the field alone; an explicit null
+                // clears the cover back to "first image".
+                let coverParam = request.params?["cover"]
+                let generation = try library.updateProject(
+                    shoot: shoot,
+                    notes: request.params?["notes"]?.stringValue,
+                    cover: coverParam.map { $0.stringValue })
+                return .success(
+                    id: request.id,
+                    result: .object(["generation": .number(Double(generation))]))
+            case "renameProject":
+                guard let shoot = request.params?["shoot"]?.stringValue,
+                    let day = request.params?["day"]?.stringValue,
+                    let name = request.params?["name"]?.stringValue
+                else {
+                    return .failure(
+                        id: request.id, code: "invalid_params",
+                        message: "shoot, day and name required")
+                }
+                let renamed = try library.renameProject(shoot: shoot, day: day, name: name)
+                return .success(
+                    id: request.id,
+                    result: .object([
+                        "shoot": .string(renamed.shoot),
+                        "generation": .number(Double(renamed.generation)),
                     ]))
             case "status":
                 let status = library.status()

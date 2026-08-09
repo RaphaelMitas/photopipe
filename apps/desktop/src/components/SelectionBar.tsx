@@ -15,6 +15,10 @@ type Props = {
 
 /// Actions on the current selection. Appears only when something is selected,
 /// so the workspace stays out of the way while you're just looking.
+///
+/// Every handler is invoked with no arguments on purpose: these props are
+/// `() => void`, and passing them straight to onClick would feed the DOM
+/// event in as a parameter — which then travels to the core as data.
 export function SelectionBar({
   count,
   appLabel,
@@ -43,7 +47,7 @@ export function SelectionBar({
           variant="secondary"
           data-testid="action-open-in"
           disabled={busy}
-          onClick={onOpenIn}
+          onClick={() => onOpenIn()}
           className="h-7 text-xs"
         >
           <AppWindow />
@@ -54,7 +58,7 @@ export function SelectionBar({
           variant="outline"
           data-testid="action-export"
           disabled={busy}
-          onClick={onExport}
+          onClick={() => onExport()}
           className="h-7 text-xs"
         >
           <Upload />
@@ -64,7 +68,7 @@ export function SelectionBar({
           size="sm"
           variant="ghost"
           data-testid="action-reveal"
-          onClick={onReveal}
+          onClick={() => onReveal()}
           className="h-7 text-xs text-muted-foreground"
         >
           <FolderOpen />
@@ -74,7 +78,7 @@ export function SelectionBar({
           size="sm"
           variant="ghost"
           data-testid="action-delete"
-          onClick={onDelete}
+          onClick={() => onDelete()}
           title="Move to Trash"
           className="h-7 text-xs text-muted-foreground hover:text-destructive"
         >
@@ -86,7 +90,7 @@ export function SelectionBar({
         size="icon"
         variant="ghost"
         data-testid="action-clear"
-        onClick={onClear}
+        onClick={() => onClear()}
         title="Clear selection (esc)"
         className="ml-auto size-7 text-muted-foreground"
       >

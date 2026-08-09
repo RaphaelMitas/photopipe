@@ -268,3 +268,61 @@ test("import sits next to reveal in the sidebar, on every page", async ({
   await expect(page.getByTestId("empty-import")).toBeVisible();
   await expect(page.getByTestId("import-files")).toBeVisible();
 });
+
+test("library cards show a cover and open project settings", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByTestId("root-input").fill("/fake");
+  await page.getByTestId("root-submit").click();
+
+  // Every project wears a face: its chosen cover, else its first photo.
+  await expect(page.getByTestId("shoot-cover").first()).toBeVisible();
+
+  await page.getByTestId("shoot-settings-2026-07-12_zell").click();
+  await expect(page.getByTestId("shoot-name")).toHaveValue("zell");
+  await expect(page.getByTestId("shoot-day")).toHaveValue("2026-07-12");
+  await expect(page.getByTestId("shoot-notes")).toHaveValue(
+    "Golden hour at the river",
+  );
+
+  // Picking a cover, and the rename preview appearing only on a real change.
+  await expect(page.getByTestId("rename-preview")).toHaveCount(0);
+  await page.getByTestId("shoot-name").fill("zell-revisited");
+  await expect(page.getByTestId("rename-preview")).toContainText(
+    "2026-07-12_zell-revisited",
+  );
+
+  const covers = page.getByTestId("cover-choice");
+  await covers.nth(1).click();
+  await expect(covers.nth(1)).toHaveAttribute("data-chosen", "true");
+
+  await page.getByTestId("save-shoot-settings").click();
+  await expect(
+    page.getByText(/Renamed to 2026-07-12_zell-revisited/),
+  ).toBeVisible();
+});
+
+test("settings switch the flow between denoise and edit-only", async ({
+  page,
+}) => {
+  await openZell(page);
+  // Denoise is part of the flow by default, so Media sends to the denoiser
+  // and Edit shows only what came back.
+  await page.getByTestId("next-step").click();
+  await expect(page.getByTestId("next-step")).toHaveText(/Send 4 to denoiser/);
+  await page.getByTestId("page-edit").click();
+  await expect(page.getByTestId("stage-row")).toHaveCount(2);
+
+  // Opting out of processing rewires both.
+  await page.getByTestId("app-settings").click();
+  await page.getByTestId("processing-mode").click();
+  await page.getByRole("option", { name: "No processing step" }).click();
+  await page.getByTestId("settings-done").click();
+
+  // Edit now works from the originals rather than sitting permanently empty.
+  await expect(page.getByTestId("stage-row")).toHaveCount(4);
+  await page.getByTestId("page-media").click();
+  await page.keyboard.press("ControlOrMeta+a");
+  await expect(page.getByTestId("next-step")).toHaveText(/Open 4 in editor/);
+});
