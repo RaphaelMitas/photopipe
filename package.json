@@ -10,6 +10,6 @@
     "screenshots": "pnpm --filter desktop screenshots"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.3.0"
+    "@biomejs/biome": "2.5.7"
   }
 }
