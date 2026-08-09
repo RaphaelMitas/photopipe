@@ -175,7 +175,12 @@ private func makeService(in dir: URL) -> LibraryService {
 
     // `day` is interpolated into a path, so it gets the same scrutiny `name`
     // has always had. Creating must not reach outside the library...
-    for hostile in ["../outside", "..", "2026-09-09/../..", "nope", ""] {
+    // The last shape is the subtle one: it satisfies the YYYY-MM-DD_… pattern
+    // (parseShootName ends in `.+`, which matches slashes) yet still escapes.
+    for hostile in [
+        "../outside", "..", "2026-09-09/../..", "nope", "",
+        "2026-09-09_a/../../x",
+    ] {
         #expect(throws: LibraryService.ServiceError.self) {
             try service.createProject(day: hostile, name: "escape", notes: "")
         }
@@ -185,8 +190,10 @@ private func makeService(in dir: URL) -> LibraryService {
 
     // ...and renaming must not move an existing project out of it.
     let created = try service.createProject(day: "2026-09-09", name: "keep", notes: "")
-    #expect(throws: LibraryService.ServiceError.self) {
-        try service.renameProject(shoot: created.shoot, day: "../outside", name: "gone")
+    for hostile in ["../outside", "2026-09-09_a/../../x"] {
+        #expect(throws: LibraryService.ServiceError.self) {
+            try service.renameProject(shoot: created.shoot, day: hostile, name: "gone")
+        }
     }
     #expect(FileManager.default.fileExists(atPath: created.path), "the project stayed put")
     #expect(try FileManager.default.contentsOfDirectory(atPath: outside.path).isEmpty)
@@ -204,4 +211,20 @@ private func makeService(in dir: URL) -> LibraryService {
     #expect(throws: LibraryService.ServiceError.self) {
         try LibraryService.projectFolder(day: "2026-09-09", name: "  ")
     }
+    // Why the separator check exists: the date pattern alone accepts this,
+    // because parseShootName ends in `.+` and `.` matches a slash. Deleting
+    // the separator guard would reopen the escape.
+    #expect(parseShootName("2026-09-09_a/../../x_n") != nil)
+    // Matches the date pattern, but is not a single path component.
+    #expect(throws: LibraryService.ServiceError.self) {
+        try LibraryService.projectFolder(day: "2026-09-09_a/../../x", name: "n")
+    }
+    // And the composed path must land directly inside the root.
+    #expect(throws: LibraryService.ServiceError.self) {
+        try LibraryService.projectURL(
+            root: "/tmp/library", day: "2026-09-09_a/../../x", name: "n")
+    }
+    #expect(
+        try LibraryService.projectURL(root: "/tmp/library", day: "2026-09-09", name: "zell")
+            .url.path == "/tmp/library/2026-09-09_zell")
 }

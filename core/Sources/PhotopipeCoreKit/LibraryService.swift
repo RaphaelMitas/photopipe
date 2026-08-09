@@ -177,20 +177,39 @@ public final class LibraryService {
 
     /// The one rule for what a project folder may be called. Both creating and
     /// renaming go through here: `day` is interpolated into a path, so an
-    /// unchecked one ("../elsewhere") would create folders outside the library
-    /// — or move an existing project out of it.
+    /// unchecked one would create folders outside the library — or move an
+    /// existing project out of it.
+    ///
+    /// The property that matters is that the composed name is a *single path
+    /// component*. The date prefix alone does not give that: `parseShootName`
+    /// ends in `.+`, which happily matches slashes, so a day carrying its own
+    /// underscore ("2026-09-09_a/../../x") satisfies the pattern while still
+    /// escaping. Hence the separator check on the composed string.
     static func projectFolder(day: String, name: String) throws -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !trimmed.contains("/"), !trimmed.contains(":") else {
             throw ServiceError.invalidProjectName(name)
         }
         let folder = "\(day)_\(trimmed)"
-        // The YYYY-MM-DD prefix parseShootName demands is also what rules out
-        // separators and "..".
-        guard parseShootName(folder) != nil else {
+        guard !folder.contains("/"), !folder.contains(":"), parseShootName(folder) != nil else {
             throw ServiceError.invalidProjectDay(day)
         }
         return folder
+    }
+
+    /// Where a project folder lives, proven to sit directly inside the root.
+    /// Guards the composed path itself rather than trusting the input checks,
+    /// the same discipline `pathsUnderRoot` applies to file actions.
+    static func projectURL(root: String, day: String, name: String) throws -> (
+        folder: String, url: URL
+    ) {
+        let folder = try projectFolder(day: day, name: name)
+        let rootURL = URL(fileURLWithPath: root).standardizedFileURL
+        let url = rootURL.appendingPathComponent(folder).standardizedFileURL
+        guard url.deletingLastPathComponent().path == rootURL.path else {
+            throw ServiceError.invalidProjectDay(day)
+        }
+        return (folder, url)
     }
 
     /// Edit a project's metadata: notes and the cover image. Both live in
@@ -224,10 +243,10 @@ public final class LibraryService {
         guard let currentRoot else { throw ServiceError.noRoot }
         guard let path else { throw ServiceError.unknownShoot(shootName) }
 
-        let folder = try Self.projectFolder(day: day, name: name)
+        let (folder, destination) = try Self.projectURL(
+            root: currentRoot, day: day, name: name)
         guard folder != shootName else { return (shootName, status().generation) }
 
-        let destination = URL(fileURLWithPath: currentRoot).appendingPathComponent(folder)
         guard !FileManager.default.fileExists(atPath: destination.path) else {
             throw ServiceError.projectExists(folder)
         }
@@ -253,8 +272,7 @@ public final class LibraryService {
         lock.unlock()
         guard let currentRoot else { throw ServiceError.noRoot }
 
-        let folder = try Self.projectFolder(day: day, name: name)
-        let path = URL(fileURLWithPath: currentRoot).appendingPathComponent(folder)
+        let (folder, path) = try Self.projectURL(root: currentRoot, day: day, name: name)
         guard !FileManager.default.fileExists(atPath: path.path) else {
             throw ServiceError.projectExists(folder)
         }
