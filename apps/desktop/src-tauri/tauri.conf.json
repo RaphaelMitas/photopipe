@@ -21,9 +21,7 @@
       "csp": null,
       "assetProtocol": {
         "enable": true,
-        "scope": [
-          "$HOME/Library/Caches/Photopipe/**"
-        ]
+        "scope": ["$HOME/Library/Caches/Photopipe/**"]
       }
     }
   },
@@ -37,9 +35,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": [
-      "binaries/photopipe-core"
-    ],
+    "externalBin": ["binaries/photopipe-core"],
     "macOS": {
       "minimumSystemVersion": "15.0"
     },
