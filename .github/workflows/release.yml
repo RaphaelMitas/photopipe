@@ -21,6 +21,8 @@ jobs:
       is-release: ${{ steps.decide.outputs.is-release }}
       version: ${{ steps.decide.outputs.version }}
       tag: ${{ steps.decide.outputs.tag }}
+      tag-exists: ${{ steps.decide.outputs.tag-exists }}
+      ref: ${{ steps.decide.outputs.ref }}
     steps:
       - uses: actions/checkout@v4
       - name: Compare the app version against existing tags
@@ -31,15 +33,32 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            EXISTS=true
+          else
+            EXISTS=false
+          fi
+          echo "tag-exists=$EXISTS" >> $GITHUB_OUTPUT
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "Manual run: releasing $TAG regardless of tags."
             echo "is-release=true" >> $GITHUB_OUTPUT
-          elif git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            if [ "$EXISTS" = true ]; then
+              # Retry of a release that already tagged: rebuild exactly what
+              # that tag points at. Building main instead would ship different
+              # code under a version someone may already have installed.
+              echo "Retrying $TAG; building the tagged commit."
+              echo "ref=$TAG" >> $GITHUB_OUTPUT
+            else
+              echo "Manual release of $TAG from this commit."
+              echo "ref=${{ github.sha }}" >> $GITHUB_OUTPUT
+            fi
+          elif [ "$EXISTS" = true ]; then
             echo "$TAG already exists; this push is not a release."
             echo "is-release=false" >> $GITHUB_OUTPUT
           else
             echo "$TAG is new; releasing."
             echo "is-release=true" >> $GITHUB_OUTPUT
+            echo "ref=${{ github.sha }}" >> $GITHUB_OUTPUT
           fi
 
   release:
@@ -55,16 +74,20 @@ jobs:
       TAP_TOKEN: ${{ secrets.TAP_DISPATCH_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.check.outputs.ref }}
 
-      # Tag the merge commit itself, so the release points at exactly what
-      # was built. Pushed with GITHUB_TOKEN, which deliberately does not
-      # re-trigger workflows.
+      # Tag the commit being built, so the release points at exactly what
+      # shipped. Never forced: once a version is tagged that tag is what
+      # v<version> means, and a retry rebuilds it rather than moving it.
+      # Pushed with GITHUB_TOKEN, which deliberately does not re-trigger.
       - name: Tag the release
+        if: needs.check.outputs.tag-exists != 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -f "${{ needs.check.outputs.tag }}"
-          git push -f origin "${{ needs.check.outputs.tag }}"
+          git tag "${{ needs.check.outputs.tag }}"
+          git push origin "${{ needs.check.outputs.tag }}"
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -92,11 +115,16 @@ jobs:
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          if [ -z "$APPLE_CERTIFICATE" ]; then
-            echo "::error::APPLE_CERTIFICATE is not set (base64 of a Developer ID Application .p12)."
-            exit 1
-          fi
+          for required in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!required}" ]; then
+              echo "::error::$required is not set. See docs/engineering.md for the six release secrets."
+              exit 1
+            fi
+          done
           KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
           KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
 

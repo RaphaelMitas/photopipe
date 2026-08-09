@@ -110,8 +110,11 @@ Secrets: `APPLE_CERTIFICATE` (base64 .p12), `APPLE_CERTIFICATE_PASSWORD`,
 `TAP_DISPATCH_TOKEN`. The tap step is guarded, so a release succeeds without
 the last one.
 
-Retry a failed release with `gh workflow run release.yml` — the manual
-trigger re-releases the current version even though the tag now exists.
+Retry a failed release with `gh workflow run release.yml`. If the tag was
+already created, the retry checks out **that tag** and rebuilds it, rather
+than whatever main has become: shipping different code under a version
+someone may already have installed would be worse than the original failure.
+Tags are never forced, so a released version always means one commit.
 
 ### Screenshots
 
