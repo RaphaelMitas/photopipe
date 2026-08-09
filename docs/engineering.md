@@ -82,6 +82,11 @@ equal; if the bundle allows an older OS than the core was built for, the app
 installs, opens, and then every request fails. `scripts/build-core.sh` builds
 the host triple only, so an Intel Mac would get a sidecar that cannot run.
 
+`externalBin` makes the Swift core a build-time dependency of the Rust crate:
+`tauri-build` resolves the path, so `cargo clippy` and `cargo test` fail on a
+fresh clone until it is staged. Run `./scripts/build-core.sh release` once
+(the bundle build does it automatically).
+
 ```bash
 pnpm release            # patch
 pnpm release minor
