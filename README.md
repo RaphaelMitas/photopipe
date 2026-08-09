@@ -1,72 +1,102 @@
+<div align="center">
+
+<img src="brand/mark/photopipe.svg" width="72" alt="">
+
 # Photopipe
 
-A self-hosted photo pipeline for organizing camera shoots, running DxO PureRAW denoising workflows, and managing image exports.
+Culling and pipeline manager for photo shoots, on macOS.
 
-Built with SvelteKit, Sharp, and deployed via Docker. No database — everything lives on the filesystem.
+</div>
 
-## Features
+Photopipe is for the part of photography that happens between the shoot and
+the delivery: looking at a few hundred raws, deciding which ones are worth
+keeping, and moving those through denoising, editing and export without
+losing track of where anything is.
 
-- **Shoot management** — Create dated shoots (`YYYY-MM-DD_slug-name`) with `raw/`, `denoised/`, and `exports/` subdirectories
-- **Drag-and-drop uploads** — Upload ARW, DNG, and export files with progress tracking
-- **Live denoise monitoring** — SSE-powered real-time progress as PureRAW processes your files
-- **Thumbnail generation** — On-demand WebP thumbnails via Sharp with disk caching
-- **ZIP downloads** — Download any combination of raw, denoised, and export folders as a single archive
-- **PureRAW integration** — Shows host paths and settings for external denoising
-- **Status tracking** — Shoots display their current state: empty, uploading, denoising, ready, or exported
+It is built around one rule: **your folders are the truth.** Photopipe reads
+what is on disk and shows it to you. It never maintains a catalogue that can
+disagree with reality, and the only files it changes are the ones you ask it
+to.
 
-## Quick Start (Docker)
+![The media page: a justified grid of originals with a selection](docs/screenshots/media.png)
 
-1. Clone the repo and create a camera directory:
+## Install
 
-   ```bash
-   git clone https://github.com/RaphaelMitas/photopipe.git
-   cd photopipe
-   mkdir -p data/camera
-   ```
+Requires **macOS 15 (Sequoia) or later** on **Apple Silicon**.
 
-2. Start the container:
+```bash
+brew install --cask raphaelmitas/tap/photopipe
+```
 
-   ```bash
-   docker compose up
-   ```
+Or download the DMG from [Releases](https://github.com/RaphaelMitas/photopipe/releases).
+Everything is signed and notarized, so it opens with a double-click. There is
+nothing else to install: the raw pipeline and the metadata writer ship inside
+the app.
 
-3. Open [http://localhost:3000](http://localhost:3000)
+## How it works
 
-Your photo shoots will live in `./data/camera/`. To use an existing photo directory, update the volume mount in `docker-compose.yml`.
+A project is a folder named `<date>_<name>` with three stage folders inside:
 
-## Quick Start (Development)
+```
+2026-07-12_zell/
+├── original/     ARW straight off the card
+├── processed/    DNG back from your denoiser
+└── export/       finished JPEG
+```
+
+The app is three workspaces across the top, and you move between them freely.
+Nothing is ever "complete", nothing is gated, and no status is stored
+anywhere: a photo's stage is simply which folder its files are in.
+
+| Page | What it holds | What it does |
+|---|---|---|
+| **Media** | your originals | rate, cull, and send keepers to your denoiser |
+| **Edit** | the DNGs that came back | open them in your editor |
+| **Export** | the finished files | zip them for hand-over |
+
+Processing and editing happen in whatever tools you already use. Photopipe
+hands files over and notices what comes back, linking a renamed
+`DSC00001-DxO.dng` to the `DSC00001.ARW` it came from.
+
+### Culling
+
+![The loupe: full-bleed photo, exposure slider, filmstrip](docs/screenshots/loupe.png)
+
+Click a photo to open it full-bleed. Rate with `1`–`5`, clear with `0`,
+navigate with `←`/`→`, adjust exposure with `↑`/`↓` to judge a dark frame
+fairly. Exposure is preview-only and never touches the file.
+
+Ratings are written as XMP: a sidecar next to a raw, embedded in a DNG or
+JPEG. Lightroom, Capture One and Photo Mechanic read the same stars, so
+nothing you decide here is locked inside this app.
+
+Hold, or ⌘-click, to start selecting. Then **Open in…**, **Export…**,
+**Reveal in Finder**, or **Delete** — which means the Trash, with the whole
+lineage group and its sidecars, never an unlink.
+
+## Development
 
 ```bash
 pnpm install
-bash scripts/seed-test-data.sh
-pnpm dev
+pnpm --filter desktop tauri dev
 ```
 
-This seeds sample shoots into `./test-data/Camera/` and starts the dev server.
+You need Rust, Swift (Xcode command line tools) and Node 24. `exiftool` comes
+from Homebrew in development and is bundled for releases.
 
-## Configuration
+```bash
+pnpm check                      # lint and format
+cd core && swift test           # the Swift core
+cd apps/desktop && pnpm test    # component tests
+cd apps/desktop && pnpm e2e     # browser e2e against a mocked core
+./scripts/smoke-bundle.sh       # prove a built .app is self-contained
+```
 
-| Variable           | Required | Default             | Description                                                     |
-| ------------------ | -------- | ------------------- | --------------------------------------------------------------- |
-| `CAMERA_BASE`      | Yes      | —                   | Path to the camera directory (inside container: `/data/camera`) |
-| `CAMERA_HOST_BASE` | No       | `~/pictures/Camera` | Host-side path shown in PureRAW instructions                    |
+Releases are cut with `pnpm release [patch|minor|major]`, which opens a PR;
+merging it builds, signs, notarizes and publishes. See
+[docs/engineering.md](docs/engineering.md).
 
-Set these in `docker-compose.yml` (Docker) or `.env` (development). See `.env.example` for a template.
+## Docs
 
-## Architecture
-
-- **SvelteKit** with adapter-node for server-side rendering and API routes
-- **Sharp** for on-demand WebP thumbnail generation
-- **Archiver** for streaming ZIP downloads
-- **Server-Sent Events** for real-time denoise progress monitoring
-- **Filesystem-based** — no database; shoot metadata stored as `.photopipe.json` per shoot
-
-## Security
-
-Photopipe has no built-in authentication. It is designed for trusted local networks.
-
-If you need to expose it to the internet, put it behind a reverse proxy with authentication (e.g., nginx basic auth, Authelia, Tailscale).
-
-## License
-
-[MIT](LICENSE)
+- [docs/design.md](docs/design.md) — what the app is, and the decisions behind it
+- [docs/engineering.md](docs/engineering.md) — stack, testing, CI, releases

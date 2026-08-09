@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-label="Photopipe">
+  <style>
+    .pp-s { animation: pp-in 1.05s cubic-bezier(.22,.9,.28,1) both }
+    .pp-s1 { transform-origin: 39px 32px; --peak: 1; --travel: -4px; animation-delay: 0.30s }
+    .pp-s2 { transform-origin: 49px 32px; --peak: 0.6; --travel: -7.2px; animation-delay: 0.38s }
+    .pp-s3 { transform-origin: 57.4px 32px; --peak: 0.3; --travel: -10.4px; animation-delay: 0.46s }
+    .pp-b { animation: pp-bin 0.65s cubic-bezier(.65,0,.35,1) 0s both; transform-origin: 22px 32px }
+    @keyframes pp-in {
+      0%   { transform: translateX(var(--travel)) scaleY(0.45); opacity: 0 }
+      100% { transform: translateX(0) scaleY(1); opacity: var(--peak) }
+    }
+    @keyframes pp-bin {
+      0%   { transform: scale(0.48); opacity: 0 }
+      20%  { opacity: 1 }
+      68%  { transform: scale(1.01) }
+      100% { transform: scale(1); opacity: 1 }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .pp-s, .pp-b { animation: none }
+      .pp-s2 { opacity: .6 } .pp-s3 { opacity: .3 }
+    }
+  </style>
+  <path stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" d="M28 13H20a13 13 0 0 0-13 13v12a13 13 0 0 0 13 13h8"/>
+  <rect class="pp-b" fill="var(--pp-accent, #FF7A2F)" x="16" y="24" width="12" height="16" rx="6"/>
+  <g class="pp-s pp-s1"><path stroke="currentColor" stroke-width="4" stroke-linecap="round" d="M39 16.0v32"/></g>
+  <g class="pp-s pp-s2"><path stroke="currentColor" stroke-width="4" stroke-linecap="round" d="M49 22.0v20"/></g>
+  <g class="pp-s pp-s3"><path stroke="currentColor" stroke-width="4" stroke-linecap="round" d="M57.4 27.0v10"/></g>
+</svg>

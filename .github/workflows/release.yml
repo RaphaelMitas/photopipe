@@ -1,0 +1,256 @@
+name: Release
+
+# Every push to main asks whether the version in tauri.conf.json already has
+# a tag. When it does not, a release PR from `pnpm release` just landed, so
+# this tags the commit and ships it. workflow_dispatch re-runs the release for
+# the current version even if the tag exists, for retrying a failed run.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Is this a release?
+    runs-on: ubuntu-latest
+    outputs:
+      is-release: ${{ steps.decide.outputs.is-release }}
+      version: ${{ steps.decide.outputs.version }}
+      tag: ${{ steps.decide.outputs.tag }}
+      tag-exists: ${{ steps.decide.outputs.tag-exists }}
+      ref: ${{ steps.decide.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare the app version against existing tags
+        id: decide
+        run: |
+          VERSION=$(python3 -c "import json;print(json.load(open('apps/desktop/src-tauri/tauri.conf.json'))['version'])")
+          TAG="v$VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            EXISTS=true
+          else
+            EXISTS=false
+          fi
+          echo "tag-exists=$EXISTS" >> $GITHUB_OUTPUT
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "is-release=true" >> $GITHUB_OUTPUT
+            if [ "$EXISTS" = true ]; then
+              # Retry of a release that already tagged: rebuild exactly what
+              # that tag points at. Building main instead would ship different
+              # code under a version someone may already have installed.
+              echo "Retrying $TAG; building the tagged commit."
+              echo "ref=$TAG" >> $GITHUB_OUTPUT
+            else
+              echo "Manual release of $TAG from this commit."
+              echo "ref=${{ github.sha }}" >> $GITHUB_OUTPUT
+            fi
+          elif [ "$EXISTS" = true ]; then
+            echo "$TAG already exists; this push is not a release."
+            echo "is-release=false" >> $GITHUB_OUTPUT
+          else
+            echo "$TAG is new; releasing."
+            echo "is-release=true" >> $GITHUB_OUTPUT
+            echo "ref=${{ github.sha }}" >> $GITHUB_OUTPUT
+          fi
+
+  release:
+    name: Build, sign, notarize
+    needs: check
+    if: needs.check.outputs.is-release == 'true'
+    runs-on: macos-15
+    permissions:
+      contents: write
+    env:
+      # Job-level so the tap step can guard on it: neither `secrets` nor a
+      # step's own `env` are readable from a step-level `if`.
+      TAP_TOKEN: ${{ secrets.TAP_DISPATCH_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.check.outputs.ref }}
+
+      # Tag the commit being built, so the release points at exactly what
+      # shipped. Never forced: once a version is tagged that tag is what
+      # v<version> means, and a retry rebuilds it rather than moving it.
+      # Pushed with GITHUB_TOKEN, which deliberately does not re-trigger.
+      - name: Tag the release
+        if: needs.check.outputs.tag-exists != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ needs.check.outputs.tag }}"
+          git push origin "${{ needs.check.outputs.tag }}"
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - name: Cache vendored exiftool
+        uses: actions/cache@v4
+        with:
+          path: apps/desktop/src-tauri/resources/exiftool
+          key: exiftool-${{ hashFiles('scripts/fetch-exiftool.sh') }}
+
+      - run: pnpm install --frozen-lockfile
+
+      # Only the .app here. The DMG is built after notarization, because a
+      # DMG made now would wrap an unsigned app and be thrown away.
+      - name: Build the app
+        run: pnpm --filter desktop tauri build --bundles app
+
+      - name: Import signing certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for required in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!required}" ]; then
+              echo "::error::$required is not set. See docs/engineering.md for the six release secrets."
+              exit 1
+            fi
+          done
+          KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "$APPLE_CERTIFICATE" | base64 --decode > $RUNNER_TEMP/certificate.p12
+          security import $RUNNER_TEMP/certificate.p12 -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          rm $RUNNER_TEMP/certificate.p12
+
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+            | grep "Developer ID Application" | head -1 | awk -F'"' '{print $2}')
+          if [ -z "$IDENTITY" ]; then
+            echo "::error::No Developer ID Application identity in the imported certificate."
+            exit 1
+          fi
+          echo "SIGNING_IDENTITY=$IDENTITY" >> $GITHUB_ENV
+
+      # Inside-out, deliberately. `--deep` is deprecated and does not sign
+      # nested helpers reliably, and this bundle has one: the Swift core in
+      # Contents/MacOS. Sign it first, then seal the app around it.
+      # exiftool needs no signature of its own: it is a Perl script, not a
+      # Mach-O, and the app's seal covers it as a resource.
+      - name: Sign
+        run: |
+          APP="apps/desktop/src-tauri/target/release/bundle/macos/Photopipe.app"
+          codesign --force --options runtime --timestamp \
+            --sign "$SIGNING_IDENTITY" "$APP/Contents/MacOS/photopipe-core"
+          codesign --force --options runtime --timestamp \
+            --sign "$SIGNING_IDENTITY" "$APP"
+
+          codesign --verify --strict --verbose=2 "$APP"
+          # Prove the nested binary is signed in its own right, not just
+          # swept up by the outer seal.
+          codesign --verify --strict --verbose=2 "$APP/Contents/MacOS/photopipe-core"
+
+      - name: Notarize the app
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          APP="apps/desktop/src-tauri/target/release/bundle/macos/Photopipe.app"
+          ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/Photopipe.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/Photopipe.zip" \
+            --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" \
+            --wait
+          xcrun stapler staple "$APP"
+
+      # Built from the stapled app, so the DMG carries a ticket even offline.
+      - name: Build the DMG
+        id: dmg
+        run: |
+          APP="apps/desktop/src-tauri/target/release/bundle/macos/Photopipe.app"
+          DMG="$RUNNER_TEMP/Photopipe-${{ needs.check.outputs.version }}.dmg"
+          STAGE="$RUNNER_TEMP/dmg-root"
+          mkdir -p "$STAGE"
+          cp -R "$APP" "$STAGE/"
+          ln -s /Applications "$STAGE/Applications"
+          hdiutil create -volname Photopipe -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+          echo "PATH=$DMG" >> $GITHUB_OUTPUT
+
+      # The DMG is its own distributable and needs its own ticket, or the
+      # first open still shows a Gatekeeper warning on a machine that has
+      # never seen the app.
+      - name: Sign and notarize the DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          DMG="${{ steps.dmg.outputs.PATH }}"
+          codesign --force --timestamp --sign "$SIGNING_IDENTITY" "$DMG"
+          xcrun notarytool submit "$DMG" \
+            --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" \
+            --wait
+          xcrun stapler staple "$DMG"
+          # What a user's Mac will conclude before it opens the thing.
+          spctl --assess --type open --context context:primary-signature -vv "$DMG"
+
+      # The Homebrew tap's update-cask workflow fetches
+      # `<repo>-<version>.zip`, so the cask asset has to carry that exact
+      # name. It wraps the stapled app, so it is notarized by construction.
+      - name: Zip the app for the cask
+        id: zip
+        run: |
+          APP="apps/desktop/src-tauri/target/release/bundle/macos/Photopipe.app"
+          ZIP="$RUNNER_TEMP/photopipe-${{ needs.check.outputs.version }}.zip"
+          ditto -c -k --keepParent "$APP" "$ZIP"
+          echo "PATH=$ZIP" >> $GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: photopipe-release
+          path: |
+            ${{ steps.dmg.outputs.PATH }}
+            ${{ steps.zip.outputs.PATH }}
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.check.outputs.tag }}
+          files: |
+            ${{ steps.dmg.outputs.PATH }}
+            ${{ steps.zip.outputs.PATH }}
+          generate_release_notes: true
+          body: |
+            Requires macOS 15 (Sequoia) or later on Apple Silicon.
+
+            `brew install --cask raphaelmitas/tap/photopipe`, or download the
+            DMG below.
+
+      # Guarded so a release still succeeds when the token is absent; the tap
+      # can always be updated by hand. `secrets` cannot be read in a step
+      # `if:`, hence the env indirection.
+      - name: Update the Homebrew tap
+        if: ${{ env.TAP_TOKEN != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.TAP_DISPATCH_TOKEN }}
+          TAG: ${{ needs.check.outputs.tag }}
+        run: |
+          gh workflow run update-cask.yml -R RaphaelMitas/homebrew-tap \
+            -f cask_name=photopipe \
+            -f release_tag="$TAG" \
+            -f source_repo=RaphaelMitas/photopipe

@@ -1,34 +1,51 @@
 {
-	"$schema": "https://docs.renovatebot.com/renovate-schema.json",
-	"extends": ["config:recommended", ":separateMajorReleases", ":combinePatchMinorReleases"],
-	"baseBranchPatterns": ["main"],
-	"rangeStrategy": "bump",
-	"labels": ["dependencies"],
-	"lockFileMaintenance": {
-		"enabled": true,
-		"schedule": ["before 5am on the first day of the month"]
-	},
-	"packageRules": [
-		{
-			"description": "Automerge non-major updates",
-			"matchUpdateTypes": ["minor", "patch", "digest"],
-			"automerge": true
-		},
-		{
-			"description": "Group SvelteKit",
-			"groupName": "sveltekit",
-			"matchPackageNames": ["/^@sveltejs//", "/^svelte$/", "svelte-check"]
-		},
-		{
-			"description": "Group Vite",
-			"groupName": "vite",
-			"matchPackageNames": ["/^vite$/", "@sveltejs/vite-plugin-svelte"]
-		},
-		{
-			"description": "Group type definitions",
-			"groupName": "types",
-			"automerge": true,
-			"matchPackageNames": ["/^@types//"]
-		}
-	]
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:best-practices",
+    ":semanticCommits",
+    ":dependencyDashboard"
+  ],
+  "timezone": "Europe/Berlin",
+  "schedule": ["before 7am on monday"],
+  "minimumReleaseAge": "3 days",
+  "prConcurrentLimit": 5,
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 7am on the first day of the month"]
+  },
+  "packageRules": [
+    {
+      "groupName": "Tauri",
+      "matchPackageNames": ["/tauri/"],
+      "description": "tauri, @tauri-apps/*, tauri-build, tauri-plugin-* move in lockstep across npm and cargo"
+    },
+    {
+      "groupName": "React",
+      "matchPackageNames": [
+        "react",
+        "react-dom",
+        "@types/react",
+        "@types/react-dom"
+      ]
+    },
+    {
+      "groupName": "linters & formatters",
+      "matchPackageNames": ["/biome/", "/swift-format/"],
+      "automerge": true
+    },
+    {
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "automerge": true
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true,
+      "description": "Majors wait for manual approval from the dashboard — no surprise breaking PRs"
+    }
+  ]
 }

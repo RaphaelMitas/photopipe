@@ -1,37 +1,14 @@
-.vscode
-node_modules
-
-# Output
-.output
-.vercel
-.netlify
-.wrangler
-/.svelte-kit
-/build
-
-# OS
+node_modules/
+dist/
+target/
+.build/
+fixtures/raw/
+test-results/
+playwright-report/
 .DS_Store
-Thumbs.db
+*.local
 
-# Env
-.env
-.env.*
-!.env.example
-!.env.test
-
-# Vite
-vite.config.js.timestamp-*
-vite.config.ts.timestamp-*
-
-# Test data
-/test-data
-
-# Runtime data (camera photos mounted by docker-compose)
-/data
-
-# Photo files (never commit)
-*.arw
-*.ARW
-*.dng
-*.DNG
-.thumbs/
+# Vendored into the bundle by scripts/fetch-exiftool.sh (21MB)
+apps/desktop/src-tauri/resources/exiftool/
+# Staged by scripts/build-core.sh
+apps/desktop/src-tauri/binaries/

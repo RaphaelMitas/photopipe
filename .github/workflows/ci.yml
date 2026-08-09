@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quick:
+    name: Lint, unit & e2e (web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm --filter desktop test
+      - run: pnpm --filter desktop exec playwright install --with-deps chromium
+      - run: pnpm --filter desktop e2e
+
+  native:
+    name: Swift, Rust & app build (macOS)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: core/.build
+          key: swiftpm-${{ runner.os }}-${{ hashFiles('core/Package.swift') }}
+          restore-keys: swiftpm-${{ runner.os }}-
+      - name: Cache vendored exiftool
+        uses: actions/cache@v4
+        with:
+          path: apps/desktop/src-tauri/resources/exiftool
+          key: exiftool-${{ hashFiles('scripts/fetch-exiftool.sh') }}
+      - name: Cache raw fixtures
+        uses: actions/cache@v4
+        with:
+          path: fixtures/raw
+          key: fixtures-${{ hashFiles('fixtures/fetch.sh') }}
+      - name: Fetch raw fixtures
+        run: ./fixtures/fetch.sh
+      - name: Install exiftool (XMP round-trip tests)
+        run: brew install exiftool
+      - name: Swift format lint
+        working-directory: core
+        run: swift format lint --strict --recursive .
+      - name: Swift build & test
+        working-directory: core
+        run: |
+          swift build
+          swift test
+      # tauri-build resolves externalBin and bundle.resources at compile
+      # time, so a missing sidecar or exiftool fails every cargo command, not
+      # just the bundle. Both are staged before the Rust steps.
+      - name: Prepare bundle inputs
+        run: ./scripts/prepare-bundle.sh
+      - run: pnpm install --frozen-lockfile
+      - name: Clippy (deny warnings)
+        working-directory: apps/desktop/src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Cargo tests (sidecar integration against real core)
+        working-directory: apps/desktop/src-tauri
+        run: cargo test
+      # A real bundle, not --no-bundle: packaging is where the sidecar and
+      # exiftool get staged, so a build that skips it cannot catch the
+      # breakage that makes a shipped app useless.
+      - name: Build the app bundle
+        run: pnpm --filter desktop tauri build --bundles app
+      - name: Smoke test the bundle
+        run: ./scripts/smoke-bundle.sh
