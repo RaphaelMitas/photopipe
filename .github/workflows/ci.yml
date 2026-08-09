@@ -70,12 +70,11 @@ jobs:
         run: |
           swift build
           swift test
-      # externalBin makes the sidecar a build-time dependency of the crate:
-      # tauri-build resolves it, so *any* cargo command fails without it, not
-      # just the bundle. Stage it before the Rust steps rather than leaving it
-      # to the bundle build's beforeBuildCommand.
-      - name: Stage the sidecar
-        run: ./scripts/build-core.sh release
+      # tauri-build resolves externalBin and bundle.resources at compile
+      # time, so a missing sidecar or exiftool fails every cargo command, not
+      # just the bundle. Both are staged before the Rust steps.
+      - name: Prepare bundle inputs
+        run: ./scripts/prepare-bundle.sh
       - run: pnpm install --frozen-lockfile
       - name: Clippy (deny warnings)
         working-directory: apps/desktop/src-tauri
