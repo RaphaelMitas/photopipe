@@ -136,14 +136,14 @@ const miscImages: ImageGroup[] = [
 /// A shoot big enough that grid and filmstrip virtualization actually
 /// virtualize (the small zell dataset mounts every cell).
 const bigImages: ImageGroup[] = Array.from({ length: 200 }, (_, i) => ({
-  stem: `BIG${String(i).padStart(5, "0")}`,
+  stem: `DSC0${String(1200 + i)}`,
   stage: "raw" as const,
   rating: 0,
   width: i % 3 === 0 ? 4672 : 7008,
   height: i % 3 === 0 ? 7008 : 4672,
   files: [
     {
-      path: `/fake/big/BIG${String(i).padStart(5, "0")}.ARW`,
+      path: `/fake/dolomites/DSC0${String(1200 + i)}.ARW`,
       ext: "ARW",
       stage: "raw" as const,
       size: 1,
@@ -152,15 +152,15 @@ const bigImages: ImageGroup[] = Array.from({ length: 200 }, (_, i) => ({
   ],
 }));
 shoots.push({
-  name: "2026-08-01_big",
-  path: "/fake/2026-08-01_big",
+  name: "2026-08-01_dolomites",
+  path: "/fake/2026-08-01_dolomites",
   day: "2026-08-01",
-  project: "big",
+  project: "dolomites",
   counts: { raw: 200, denoised: 0, export: 0 },
   imageCount: 200,
-  notes: "",
+  notes: "Two days above Cortina",
   cover: null,
-  coverPath: "/fake/big/BIG00000.ARW",
+  coverPath: "/fake/dolomites/DSC01200.ARW",
 });
 
 /// Projects created during the test run have no images.
@@ -169,7 +169,7 @@ const emptyShoots = new Set<string>();
 function imagesFor(shoot: string): ImageGroup[] {
   if (emptyShoots.has(shoot)) return [];
   if (shoot === "2026-07-12_zell") return zellImages;
-  if (shoot === "2026-08-01_big") return bigImages;
+  if (shoot === "2026-08-01_dolomites") return bigImages;
   return miscImages;
 }
 
