@@ -97,6 +97,7 @@ const shoots: Shoot[] = [
     project: "zell",
     counts: { raw: 2, denoised: 1, export: 1 },
     imageCount: 4,
+    notes: "Golden hour at the river",
   },
   {
     name: "misc",
@@ -105,6 +106,7 @@ const shoots: Shoot[] = [
     project: null,
     counts: { raw: 1, denoised: 0, export: 0 },
     imageCount: 1,
+    notes: "",
   },
 ];
 
@@ -152,7 +154,18 @@ shoots.push({
   project: "big",
   counts: { raw: 200, denoised: 0, export: 0 },
   imageCount: 200,
+  notes: "",
 });
+
+/// Projects created during the test run have no images.
+const emptyShoots = new Set<string>();
+
+function imagesFor(shoot: string): ImageGroup[] {
+  if (emptyShoots.has(shoot)) return [];
+  if (shoot === "2026-07-12_zell") return zellImages;
+  if (shoot === "2026-08-01_big") return bigImages;
+  return miscImages;
+}
 
 export const E2E_HANDLERS: Record<
   string,
@@ -166,12 +179,9 @@ export const E2E_HANDLERS: Record<
   },
   listShoots: () => ({ shoots }),
   listImages: (params) => ({
-    images:
-      params.shoot === "2026-07-12_zell"
-        ? zellImages
-        : params.shoot === "2026-08-01_big"
-          ? bigImages
-          : miscImages,
+    // A fresh array each call, like the real transport: returning the same
+    // reference would let the query cache short-circuit and miss mutations.
+    images: [...imagesFor(String(params.shoot))],
   }),
   thumbnail: (params) => ({
     cachePath: `/fake/thumbs/${String(params.path)}.jpg`,
@@ -185,6 +195,45 @@ export const E2E_HANDLERS: Record<
     if (!target) throw `unknown_image: ${String(params.stem)}`;
     target.rating = Number(params.rating);
     return { rating: target.rating, generation: 1 };
+  },
+  openIn: (params) => ({ opened: (params.paths as string[]).length }),
+  reveal: () => ({ revealed: true }),
+  trash: (params) => {
+    const stems = new Set(params.stems as string[]);
+    // Mirror the core: the whole lineage group goes.
+    let files = 0;
+    for (const list of [zellImages, miscImages, bigImages]) {
+      for (let i = list.length - 1; i >= 0; i -= 1) {
+        if (stems.has(list[i].stem)) {
+          files += list[i].files.length;
+          list.splice(i, 1);
+        }
+      }
+    }
+    return { files, generation: 1 };
+  },
+  exportFiles: (params) => ({ files: (params.paths as string[]).length }),
+  importFiles: (params) => ({
+    imported: (params.paths as string[]).length,
+    skipped: 0,
+    generation: 1,
+  }),
+  createProject: (params) => {
+    const shoot = `${String(params.day)}_${String(params.name)}`;
+    if (shoots.some((existing) => existing.name === shoot)) {
+      throw `project_exists: ${shoot}`;
+    }
+    shoots.unshift({
+      name: shoot,
+      path: `/fake/${shoot}`,
+      day: String(params.day),
+      project: String(params.name),
+      counts: { raw: 0, denoised: 0, export: 0 },
+      imageCount: 0,
+      notes: String(params.notes ?? ""),
+    });
+    emptyShoots.add(shoot);
+    return { shoot, path: `/fake/${shoot}`, generation: 1 };
   },
   status: () => ({ generation: 1, root: "/fake", shoots: shoots.length }),
 };

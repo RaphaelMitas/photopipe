@@ -12,6 +12,8 @@ public final class LibraryService {
         case unknownImage(String)
         case pathOutsideRoot(String)
         case invalidRating(Int)
+        case invalidProjectName(String)
+        case projectExists(String)
     }
 
     private let lock = NSLock()
@@ -168,6 +170,136 @@ public final class LibraryService {
             generation += 1
         }
         return (rating, generation)
+    }
+
+    // MARK: - Creating projects
+
+    /// Create `<root>/<day>_<name>/` with an `original/` folder for photos to
+    /// land in and a metadata file for the notes. The folder *is* the project
+    /// — there is no registry to fall out of sync with the disk.
+    public func createProject(day: String, name: String, notes: String) throws -> (
+        shoot: String, path: String, generation: Int
+    ) {
+        lock.lock()
+        let currentRoot = root
+        lock.unlock()
+        guard let currentRoot else { throw ServiceError.noRoot }
+
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains("/") else {
+            throw ServiceError.invalidProjectName(name)
+        }
+        let folder = "\(day)_\(trimmed)"
+        let path = URL(fileURLWithPath: currentRoot).appendingPathComponent(folder)
+        guard !FileManager.default.fileExists(atPath: path.path) else {
+            throw ServiceError.projectExists(folder)
+        }
+        // All stage folders from the start, so files can be pasted straight
+        // into the right place from Finder.
+        for stageFolder in ["original", "processed", "export"] {
+            try FileManager.default.createDirectory(
+                at: path.appendingPathComponent(stageFolder), withIntermediateDirectories: true)
+        }
+        try ProjectFile(notes: notes, created: day).write(inShoot: path.path)
+
+        rescanNow()
+        return (folder, path.path, status().generation)
+    }
+
+    /// Copy outside files into a stage's folder. Every page can import: the
+    /// originals at the start, but also processed or edited files coming
+    /// back from tools that saved them elsewhere. Non-image files are
+    /// skipped, names never overwrite, and the source is only read.
+    public func importFiles(shoot shootName: String, stage: Stage, paths: [String]) throws -> (
+        imported: Int, skipped: Int, generation: Int
+    ) {
+        lock.lock()
+        let path = snapshot.shoots.first { $0.name == shootName }?.path
+        lock.unlock()
+        guard let path else { throw ServiceError.unknownShoot(shootName) }
+
+        let folder =
+            switch stage {
+            case .raw: "original"
+            case .denoised: "processed"
+            case .export: "export"
+            }
+        let images = paths.filter {
+            Stage(fileExtension: ($0 as NSString).pathExtension) != nil
+        }
+        guard !images.isEmpty else { throw FileActions.ActionError.noFiles }
+        let copied = try FileActions.copy(paths: images, toFolder: path + "/" + folder)
+        rescanNow()
+        return (copied, paths.count - images.count, status().generation)
+    }
+
+    // MARK: - Explicit file actions
+
+    /// Hand files to another application. The stage pages use this to send
+    /// work out to a denoiser or editor; whatever comes back is picked up by
+    /// the watcher, no bookkeeping required.
+    public func openIn(paths: [String], app: String) throws {
+        try FileActions.open(paths: try pathsUnderRoot(paths), inApp: app)
+    }
+
+    public func reveal(paths: [String]) throws {
+        try FileActions.reveal(paths: try pathsUnderRoot(paths))
+    }
+
+    /// Trash whole logical images: every file of the lineage group plus its
+    /// XMP sidecar. Deleting "a photo" and leaving its sidecar or its DNG
+    /// behind would be a lie about what you asked for.
+    public func trashImages(shoot shootName: String, stems: [String]) throws -> (
+        files: Int, generation: Int
+    ) {
+        lock.lock()
+        let images = snapshot.imagesByShoot[shootName]
+        let hasRoot = root != nil
+        lock.unlock()
+        guard hasRoot else { throw ServiceError.noRoot }
+        guard let images else { throw ServiceError.unknownShoot(shootName) }
+
+        let wanted = Set(stems.map { $0.lowercased() })
+        var targets: [String] = []
+        for image in images where wanted.contains(image.stem.lowercased()) {
+            for file in image.files {
+                targets.append(file.path)
+                let sidecar = XMP.sidecarURL(forImagePath: file.path)
+                if FileManager.default.fileExists(atPath: sidecar.path) {
+                    targets.append(sidecar.path)
+                }
+            }
+        }
+        guard !targets.isEmpty else { throw ServiceError.unknownImage(stems.first ?? "") }
+
+        let trashed = try FileActions.trash(paths: try pathsUnderRoot(targets))
+        rescanNow()
+        return (trashed.count, status().generation)
+    }
+
+    /// Copy files to a folder, or zip them flat.
+    public func exportFiles(paths: [String], destination: String, zip: Bool) throws -> Int {
+        let validated = try pathsUnderRoot(paths)
+        return zip
+            ? try FileActions.zip(paths: validated, to: destination)
+            : try FileActions.copy(paths: validated, toFolder: destination)
+    }
+
+    /// Every path must sit inside the library root — the UI supplies paths it
+    /// read from us, and this is what keeps a malformed request from touching
+    /// anything else on disk.
+    private func pathsUnderRoot(_ paths: [String]) throws -> [String] {
+        lock.lock()
+        let currentRoot = root
+        lock.unlock()
+        guard let currentRoot else { throw ServiceError.noRoot }
+        return try paths.map { path in
+            let canonical = URL(fileURLWithPath: path).standardizedFileURL.path
+            guard canonical.hasPrefix(currentRoot + "/") else {
+                throw ServiceError.pathOutsideRoot(path)
+            }
+            return canonical
+        }
     }
 
     // MARK: - Rescan (FSEvents)

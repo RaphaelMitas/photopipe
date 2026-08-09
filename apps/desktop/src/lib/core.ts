@@ -33,6 +33,14 @@ export type Shoot = {
   project: string | null;
   counts: Record<Stage, number>;
   imageCount: number;
+  /** From photopipe.json; empty when the project has none. */
+  notes: string;
+};
+
+export type CreateProjectResult = {
+  shoot: string;
+  path: string;
+  generation: number;
 };
 
 export type SetRootResult = {

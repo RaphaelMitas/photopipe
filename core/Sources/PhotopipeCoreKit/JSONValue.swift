@@ -64,6 +64,16 @@ extension JSONValue {
         return nil
     }
 
+    public var boolValue: Bool? {
+        if case .bool(let value) = self { return value }
+        return nil
+    }
+
+    public var stringArrayValue: [String]? {
+        guard case .array(let values) = self else { return nil }
+        return values.compactMap(\.stringValue)
+    }
+
     /// Bridge any Encodable into the protocol's value type.
     public init(encoding value: some Encodable) throws {
         self = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(value))

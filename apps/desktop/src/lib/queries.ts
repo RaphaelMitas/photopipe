@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import {
+  type CreateProjectResult,
   coreRequest,
   type ImageGroup,
   type SetRatingResult,
@@ -132,6 +133,151 @@ export function useSetRating(shoot: string | null) {
       if (queryClient.isMutating({ mutationKey: SET_RATING_KEY }) === 1) {
         queryClient.invalidateQueries({ queryKey: ["images", shoot] });
       }
+    },
+  });
+}
+
+/// Hand files to another app. Which files depends on the page — the stage
+/// pages pick the working file, Media sends whatever you selected — so the
+/// caller resolves paths and the core just opens them.
+export function useOpenIn() {
+  return useMutation({
+    mutationKey: ["write", "openIn"],
+    mutationFn: ({
+      paths,
+      app,
+    }: {
+      paths: string[];
+      app: string;
+      label?: string;
+    }) => coreRequest<{ opened: number }>("openIn", { paths, app }),
+    onSuccess: (result, vars) => {
+      toast.success(
+        `Opened ${result.opened} ${result.opened === 1 ? "file" : "files"}${
+          vars.label ? ` in ${vars.label}` : ""
+        }`,
+      );
+    },
+    onError: (error) => {
+      toast.error("Could not open the files", { description: String(error) });
+    },
+  });
+}
+
+export function useReveal() {
+  return useMutation({
+    mutationKey: ["write", "reveal"],
+    mutationFn: (paths: string[]) =>
+      coreRequest<{ revealed: boolean }>("reveal", { paths }),
+    onError: (error) => {
+      toast.error("Could not reveal in Finder", { description: String(error) });
+    },
+  });
+}
+
+/// Delete means Trash — recoverable, never an unlink. Trashes the whole
+/// lineage group and its XMP sidecars, because that is what "delete this
+/// photo" means.
+export function useTrash(shoot: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["write", "trash"],
+    mutationFn: (stems: string[]) =>
+      coreRequest<{ files: number; generation: number }>("trash", {
+        shoot,
+        stems,
+      }),
+    onSuccess: (result, stems) => {
+      toast.success(
+        `Moved ${stems.length} ${stems.length === 1 ? "photo" : "photos"} to the Trash`,
+        { description: `${result.files} files` },
+      );
+      queryClient.invalidateQueries({ queryKey: ["images", shoot] });
+      queryClient.invalidateQueries({ queryKey: ["shoots"] });
+    },
+    onError: (error) => {
+      toast.error("Could not delete", { description: String(error) });
+    },
+  });
+}
+
+/// Copy outside files into a stage's folder. Every page can import: fresh
+/// originals, or processed/edited results a tool saved somewhere else.
+export function useImportFiles(shoot: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["write", "importFiles"],
+    mutationFn: ({ stage, paths }: { stage: string; paths: string[] }) =>
+      coreRequest<{ imported: number; skipped: number }>("importFiles", {
+        shoot,
+        stage,
+        paths,
+      }),
+    onSuccess: (result) => {
+      toast.success(
+        `Imported ${result.imported} ${result.imported === 1 ? "file" : "files"}`,
+        {
+          description:
+            result.skipped > 0
+              ? `${result.skipped} skipped (not photos)`
+              : undefined,
+        },
+      );
+      queryClient.invalidateQueries({ queryKey: ["images", shoot] });
+      queryClient.invalidateQueries({ queryKey: ["shoots"] });
+    },
+    onError: (error) => {
+      toast.error("Import failed", { description: String(error) });
+    },
+  });
+}
+
+/// Copy files to a folder, or zip them flat for handing over.
+export function useExportFiles() {
+  return useMutation({
+    mutationKey: ["write", "exportFiles"],
+    mutationFn: ({
+      paths,
+      destination,
+      zip,
+    }: {
+      paths: string[];
+      destination: string;
+      zip: boolean;
+    }) =>
+      coreRequest<{ files: number }>("exportFiles", {
+        paths,
+        destination,
+        zip,
+      }),
+    onSuccess: (result, vars) => {
+      toast.success(
+        `Exported ${result.files} ${result.files === 1 ? "file" : "files"}`,
+        { description: vars.destination },
+      );
+    },
+    onError: (error) => {
+      toast.error("Export failed", { description: String(error) });
+    },
+  });
+}
+
+/// Create `<date>_<name>/raw/` plus the metadata file. The folder is the
+/// project — nothing else is registered anywhere.
+export function useCreateProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["write", "createProject"],
+    mutationFn: (vars: { day: string; name: string; notes: string }) =>
+      coreRequest<CreateProjectResult>("createProject", vars),
+    onSuccess: (result) => {
+      toast.success(`Created ${result.shoot}`);
+      queryClient.invalidateQueries({ queryKey: ["shoots"] });
+    },
+    onError: (error) => {
+      toast.error("Could not create the project", {
+        description: String(error),
+      });
     },
   });
 }

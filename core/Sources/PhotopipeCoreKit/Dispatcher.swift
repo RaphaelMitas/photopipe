@@ -53,7 +53,8 @@ public final class Dispatcher {
                     ])))
         case "shutdown":
             return .shutdown(.success(id: request.id, result: .object(["bye": .bool(true)])))
-        case "setRoot", "listShoots", "listImages", "thumbnail", "render", "setRating", "status":
+        case "setRoot", "listShoots", "listImages", "thumbnail", "render", "setRating", "status",
+            "openIn", "reveal", "trash", "exportFiles", "createProject", "importFiles":
             return .respond(libraryResponse(request))
         default:
             return .respond(
@@ -122,6 +123,85 @@ public final class Dispatcher {
                         "rating": .number(Double(result.rating)),
                         "generation": .number(Double(result.generation)),
                     ]))
+            case "openIn":
+                guard let paths = request.params?["paths"]?.stringArrayValue,
+                    let app = request.params?["app"]?.stringValue
+                else {
+                    return .failure(
+                        id: request.id, code: "invalid_params", message: "paths and app required")
+                }
+                try library.openIn(paths: paths, app: app)
+                return .success(
+                    id: request.id, result: .object(["opened": .number(Double(paths.count))]))
+            case "reveal":
+                guard let paths = request.params?["paths"]?.stringArrayValue else {
+                    return .failure(
+                        id: request.id, code: "invalid_params", message: "paths required")
+                }
+                try library.reveal(paths: paths)
+                return .success(id: request.id, result: .object(["revealed": .bool(true)]))
+            case "trash":
+                guard let shoot = request.params?["shoot"]?.stringValue,
+                    let stems = request.params?["stems"]?.stringArrayValue
+                else {
+                    return .failure(
+                        id: request.id, code: "invalid_params", message: "shoot and stems required")
+                }
+                let result = try library.trashImages(shoot: shoot, stems: stems)
+                return .success(
+                    id: request.id,
+                    result: .object([
+                        "files": .number(Double(result.files)),
+                        "generation": .number(Double(result.generation)),
+                    ]))
+            case "exportFiles":
+                guard let paths = request.params?["paths"]?.stringArrayValue,
+                    let destination = request.params?["destination"]?.stringValue
+                else {
+                    return .failure(
+                        id: request.id, code: "invalid_params",
+                        message: "paths and destination required")
+                }
+                let zip = request.params?["zip"]?.boolValue ?? false
+                let count = try library.exportFiles(
+                    paths: paths, destination: destination, zip: zip)
+                return .success(
+                    id: request.id, result: .object(["files": .number(Double(count))]))
+            case "createProject":
+                guard let day = request.params?["day"]?.stringValue,
+                    let name = request.params?["name"]?.stringValue
+                else {
+                    return .failure(
+                        id: request.id, code: "invalid_params", message: "day and name required")
+                }
+                let result = try library.createProject(
+                    day: day, name: name,
+                    notes: request.params?["notes"]?.stringValue ?? "")
+                return .success(
+                    id: request.id,
+                    result: .object([
+                        "shoot": .string(result.shoot),
+                        "path": .string(result.path),
+                        "generation": .number(Double(result.generation)),
+                    ]))
+            case "importFiles":
+                guard let shoot = request.params?["shoot"]?.stringValue,
+                    let stageName = request.params?["stage"]?.stringValue,
+                    let stage = Stage(rawValue: stageName),
+                    let paths = request.params?["paths"]?.stringArrayValue
+                else {
+                    return .failure(
+                        id: request.id, code: "invalid_params",
+                        message: "shoot, stage and paths required")
+                }
+                let result = try library.importFiles(shoot: shoot, stage: stage, paths: paths)
+                return .success(
+                    id: request.id,
+                    result: .object([
+                        "imported": .number(Double(result.imported)),
+                        "skipped": .number(Double(result.skipped)),
+                        "generation": .number(Double(result.generation)),
+                    ]))
             case "status":
                 let status = library.status()
                 return .success(
@@ -145,6 +225,21 @@ public final class Dispatcher {
         } catch LibraryService.ServiceError.invalidRating(let rating) {
             return .failure(
                 id: request.id, code: "invalid_rating", message: "rating \(rating) not in 0...5")
+        } catch LibraryService.ServiceError.invalidProjectName(let name) {
+            return .failure(
+                id: request.id, code: "invalid_project_name",
+                message: "\(name) is not a usable project name")
+        } catch LibraryService.ServiceError.projectExists(let folder) {
+            return .failure(
+                id: request.id, code: "project_exists", message: "\(folder) already exists")
+        } catch FileActions.ActionError.noFiles {
+            return .failure(id: request.id, code: "no_files", message: "nothing selected")
+        } catch FileActions.ActionError.noApp {
+            return .failure(id: request.id, code: "no_app", message: "no application chosen")
+        } catch FileActions.ActionError.openFailed(let output) {
+            return .failure(id: request.id, code: "open_failed", message: output)
+        } catch FileActions.ActionError.zipFailed(let output) {
+            return .failure(id: request.id, code: "zip_failed", message: output)
         } catch ExifTool.ExifToolError.notInstalled {
             return .failure(
                 id: request.id, code: "exiftool_missing",

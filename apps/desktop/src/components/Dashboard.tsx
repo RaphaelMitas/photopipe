@@ -1,3 +1,4 @@
+import { Plus } from "lucide-react";
 import type { Shoot, Stage } from "@/lib/core";
 import { Card, CardContent } from "./ui/card";
 
@@ -33,31 +34,31 @@ export function StageCounts({ counts }: { counts: Record<Stage, number> }) {
 type Props = {
   shoots: Shoot[];
   onOpen: (shoot: string) => void;
+  onNewProject: () => void;
 };
 
-export function Dashboard({ shoots, onOpen }: Props) {
-  if (shoots.length === 0) {
-    return (
-      <p
-        className="p-8 text-sm text-muted-foreground"
-        data-testid="empty-library"
-      >
-        No shoots found — folders named{" "}
-        <span className="font-mono">&lt;YYYY-MM-DD&gt;_&lt;project&gt;</span>{" "}
-        with ARW/DNG/JPG files appear here.
-      </p>
-    );
-  }
+export function Dashboard({ shoots, onOpen, onNewProject }: Props) {
   return (
     <div className="grid grid-cols-1 gap-3 p-6 sm:grid-cols-2 lg:grid-cols-3">
+      {/* Starting a shoot is the first thing this page offers, not a
+          hidden menu item — the project structure comes ready to go. */}
+      <button
+        type="button"
+        data-testid="new-project"
+        onClick={onNewProject}
+        className="flex min-h-24 items-center justify-center gap-2 rounded-xl border border-dashed text-muted-foreground text-sm transition-colors hover:border-ring hover:text-foreground"
+      >
+        <Plus className="size-4" />
+        New project
+      </button>
       {shoots.map((shoot) => (
         <Card
           key={shoot.name}
           className="gap-0 py-0 transition-shadow hover:ring-ring"
         >
-          {/* No shoot-<name> testid here: the sidebar entry owns it. */}
           <button
             type="button"
+            data-testid={`shoot-${shoot.name}`}
             onClick={() => onOpen(shoot.name)}
             className="w-full text-left"
           >
@@ -75,6 +76,14 @@ export function Dashboard({ shoots, onOpen }: Props) {
               <div className="mt-1 text-xs text-muted-foreground">
                 {shoot.imageCount} photos
               </div>
+              {shoot.notes && (
+                <p
+                  data-testid="shoot-notes"
+                  className="mt-1 truncate text-xs text-muted-foreground/70"
+                >
+                  {shoot.notes}
+                </p>
+              )}
               <div className="mt-3">
                 <StageCounts counts={shoot.counts} />
               </div>

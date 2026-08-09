@@ -28,8 +28,12 @@ test("opening a shoot shows its grid; back returns to the library", async ({
   await expect(page.getByTestId("thumb")).toHaveCount(4);
   await expect(page.getByText("DSC00832")).toBeVisible();
 
-  await page.getByTestId("back").click();
-  await expect(page.getByTestId("shoot-2026-07-12_zell")).toBeVisible();
+  // The sidebar shows only the current shoot; the library page is where
+  // shoots are browsed, and "All shoots" is the way back.
+  await expect(page.getByTestId("current-shoot")).toContainText("zell");
+  await expect(page.getByTestId("shoot-misc")).toHaveCount(0);
+  await page.getByTestId("back-to-shoots").click();
+  await expect(page.getByTestId("shoot-misc")).toBeVisible();
 });
 
 test("a bad root surfaces the core error instead of hanging", async ({

@@ -42,11 +42,16 @@ public func scanLibrary(root: String) throws -> LibrarySnapshot {
 
     for dir in shootDirs {
         let files = scanShootDirectory(dir)
-        guard !files.isEmpty else { continue }
+        // A project the wizard just created has no photos yet but is still a
+        // real project — its photopipe.json says so.
+        let isProject = fm.fileExists(atPath: ProjectFile.url(inShoot: dir.path).path)
+        guard !files.isEmpty || isProject else { continue }
         fileCount += files.count
         let images = buildImageGroups(
             files: files, ratingFor: XMP.readRating, dimensionsFor: Dimensions.forGroup)
-        let shoot = makeShoot(name: dir.lastPathComponent, path: dir.path, images: images)
+        let shoot = makeShoot(
+            name: dir.lastPathComponent, path: dir.path, images: images,
+            notes: isProject ? ProjectFile.read(inShoot: dir.path).notes : "")
         shoots.append(shoot)
         imagesByShoot[shoot.name] = images
     }
@@ -62,6 +67,25 @@ public func scanLibrary(root: String) throws -> LibrarySnapshot {
     }
 
     return LibrarySnapshot(shoots: shoots, imagesByShoot: imagesByShoot, fileCount: fileCount)
+}
+
+/// Stage of a file. The containing folder wins — external tools rename
+/// their output (`DSC00001-DxO.dng`), so location is the reliable signal;
+/// the extension is only a fallback for files outside the known folders
+/// (legacy shoots, loose files in the project root).
+func stageFor(url: URL, shootDir: URL) -> Stage? {
+    // Only pipeline formats are images at all, wherever they sit.
+    guard Stage(fileExtension: url.pathExtension) != nil else { return nil }
+    let prefix = shootDir.path + "/"
+    guard url.path.hasPrefix(prefix) else { return Stage(fileExtension: url.pathExtension) }
+    let components = url.path.dropFirst(prefix.count).split(separator: "/")
+    let folder = components.count > 1 ? components.first?.lowercased() : nil
+    switch folder {
+    case "original", "media", "raw": return .raw
+    case "processed", "denoised": return .denoised
+    case "export", "exports": return .export
+    default: return Stage(fileExtension: url.pathExtension)
+    }
 }
 
 private func scanShootDirectory(_ dir: URL) -> [FileRecord] {
@@ -80,7 +104,7 @@ private func scanShootDirectory(_ dir: URL) -> [FileRecord] {
                 .isRegularFileKey, .fileSizeKey, .contentModificationDateKey,
             ]),
             values.isRegularFile == true,
-            let stage = Stage(fileExtension: url.pathExtension)
+            let stage = stageFor(url: url, shootDir: dir)
         else { continue }
         files.append(
             FileRecord(

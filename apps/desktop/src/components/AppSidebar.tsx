@@ -1,4 +1,4 @@
-import { FolderOpen, Images } from "lucide-react";
+import { ChevronLeft, Download, FolderOpen } from "lucide-react";
 import type { Shoot } from "@/lib/core";
 import { StageCounts } from "./Dashboard";
 import { Photopipe } from "./Photopipe";
@@ -19,13 +19,18 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarTrigger,
 } from "./ui/sidebar";
 import { Switch } from "./ui/switch";
 
 type Props = {
-  shoots: Shoot[] | undefined;
-  openShoot: string | null;
-  onOpenShoot: (name: string) => void;
+  /// The open shoot, or null at the library. The sidebar shows only the
+  /// current shoot — the library page is where shoots are browsed.
+  currentShoot: Shoot | undefined;
+  onBack: () => void;
+  /// Imports into the current page's stage folder.
+  onImport: () => void;
+  onRevealShoot: (path: string) => void;
   ratingOp: RatingOp;
   onRatingOp: (op: RatingOp) => void;
   ratingStars: number;
@@ -39,14 +44,14 @@ type Props = {
   onChangeRoot: () => void;
 };
 
-/// Primary navigation: the shoot list lives here (replacing the old
-/// dashboard-as-home), plus the rating filter and the root switcher.
-/// Collapses to an icon rail (⌘B). Phase 4's import/denoise entries slot
-/// into the footer.
+/// Context for the open shoot: what you're in, the way back, the filters.
+/// The shoot *list* deliberately lives on the library page, not here — one
+/// place to browse, one place to work. Collapses to an icon rail (⌘B).
 export function AppSidebar({
-  shoots,
-  openShoot,
-  onOpenShoot,
+  currentShoot,
+  onBack,
+  onImport,
+  onRevealShoot,
   ratingOp,
   onRatingOp,
   ratingStars,
@@ -65,45 +70,80 @@ export function AppSidebar({
           <span className="font-heading font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
             Photopipe
           </span>
+          {/* The trigger lives here, not in the top bar: that strip is
+              navigation only. The icon rail keeps it reachable when collapsed. */}
+          <SidebarTrigger className="ml-auto text-muted-foreground" />
         </div>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Shoots</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {(shoots ?? []).map((shoot) => (
-                <SidebarMenuItem key={shoot.name}>
-                  <SidebarMenuButton
-                    data-testid={`shoot-${shoot.name}`}
-                    isActive={openShoot === shoot.name}
-                    onClick={() => onOpenShoot(shoot.name)}
-                    tooltip={shoot.project ?? shoot.name}
-                    className="h-auto"
-                  >
-                    <Images className="shrink-0" />
-                    <span className="flex min-w-0 flex-1 flex-col gap-0.5 group-data-[collapsible=icon]:hidden">
-                      <span className="flex items-baseline justify-between gap-2">
-                        <span className="truncate font-medium">
-                          {shoot.project ?? shoot.name}
-                        </span>
-                        {shoot.day && (
-                          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                            {shoot.day}
-                          </span>
-                        )}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {shoot.imageCount} photos
-                      </span>
-                      <StageCounts counts={shoot.counts} />
-                    </span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  data-testid="back-to-shoots"
+                  onClick={onBack}
+                  tooltip="All shoots"
+                >
+                  <ChevronLeft className="shrink-0" />
+                  <span className="group-data-[collapsible=icon]:hidden">
+                    All shoots
+                  </span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        {currentShoot && (
+          <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+            <SidebarGroupLabel>Project</SidebarGroupLabel>
+            <SidebarGroupContent
+              data-testid="current-shoot"
+              className="flex flex-col gap-1 px-2 py-1"
+            >
+              <span className="truncate font-medium text-sm">
+                {currentShoot.project ?? currentShoot.name}
+              </span>
+              {currentShoot.day && (
+                <span className="font-mono text-[10px] text-muted-foreground">
+                  {currentShoot.day}
+                </span>
+              )}
+              <span className="text-[10px] text-muted-foreground">
+                {currentShoot.imageCount} photos
+              </span>
+              <StageCounts counts={currentShoot.counts} />
+              {currentShoot.notes && (
+                <p className="mt-1 text-muted-foreground/70 text-xs">
+                  {currentShoot.notes}
+                </p>
+              )}
+              <div className="mt-2 flex gap-1.5">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  data-testid="import-files"
+                  onClick={onImport}
+                  className="flex-1 text-xs"
+                >
+                  <Download />
+                  Import
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  data-testid="reveal-shoot"
+                  title="Reveal project folder in Finder"
+                  onClick={() => onRevealShoot(currentShoot.path)}
+                  className="flex-1 text-xs"
+                >
+                  <FolderOpen />
+                  Reveal
+                </Button>
+              </div>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
         <SidebarGroup className="group-data-[collapsible=icon]:hidden">
           <SidebarGroupLabel>Rating filter</SidebarGroupLabel>
           <SidebarGroupContent className="flex items-center gap-2 px-2 py-1">

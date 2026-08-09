@@ -1,4 +1,4 @@
-import { LayoutGrid, RotateCcw } from "lucide-react";
+import { ChevronLeft, RotateCcw } from "lucide-react";
 import type { ImageGroup } from "@/lib/core";
 import type { FilmstripMode } from "./Filmstrip";
 import { EXPOSURE_RANGE } from "./Loupe";
@@ -23,6 +23,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarSeparator,
+  SidebarTrigger,
 } from "./ui/sidebar";
 import { Slider } from "./ui/slider";
 
@@ -69,6 +70,9 @@ export function LoupeSidebar({
           <span className="font-heading font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
             Photopipe
           </span>
+          {/* Same place as the library sidebar's: the top bar is navigation
+              only, so collapsing lives in the sidebar on every page. */}
+          <SidebarTrigger className="ml-auto text-muted-foreground" />
         </div>
       </SidebarHeader>
       <SidebarContent>
@@ -81,7 +85,7 @@ export function LoupeSidebar({
                   onClick={onBackToGrid}
                   tooltip="Back to grid (esc)"
                 >
-                  <LayoutGrid className="shrink-0" />
+                  <ChevronLeft className="shrink-0" />
                   <span className="group-data-[collapsible=icon]:hidden">
                     Back to grid
                   </span>
@@ -158,7 +162,7 @@ export function LoupeSidebar({
               onValueChange={([value]) => onExposureChange(value)}
             />
             <p className="text-[10px] text-muted-foreground">
-              Preview only — never written to the file.
+              Preview only. Never written to the file.
             </p>
           </SidebarGroupContent>
         </SidebarGroup>

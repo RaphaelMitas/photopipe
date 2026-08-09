@@ -57,28 +57,92 @@ function packRows(images: ImageGroup[], containerWidth: number): Row[] {
   return rows;
 }
 
+/// Hold this long to start selecting instead of opening the photo.
+const LONG_PRESS_MS = 400;
+
 function Thumb({
   image,
   width,
   height,
   showInfo,
+  selected,
+  selectMode,
+  displayOriginal,
   onOpen,
+  onSelect,
 }: {
   image: ImageGroup;
   width: number;
   height: number;
   showInfo?: boolean;
+  selected?: boolean;
+  selectMode?: boolean;
+  displayOriginal?: boolean;
   onOpen?: () => void;
+  onSelect?: (modifiers: { meta: boolean; shift: boolean }) => void;
 }) {
-  const display = image.files[image.files.length - 1];
+  // Files are rank-sorted: first is the original capture, last the export.
+  const display = displayOriginal
+    ? image.files[0]
+    : image.files[image.files.length - 1];
   const thumb = useThumbnail(display);
+  const pressTimer = useRef<number | null>(null);
+  // A long press already acted; the click that follows must not also open
+  // the loupe.
+  const pressFired = useRef(false);
+
+  const cancelPress = () => {
+    if (pressTimer.current !== null) {
+      clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+  };
+  // Unmounting mid-press must not fire a selection afterwards. Reads the ref
+  // directly so it needs no dependency on the (per-render) helper above.
+  useEffect(
+    () => () => {
+      if (pressTimer.current !== null) clearTimeout(pressTimer.current);
+    },
+    [],
+  );
+
   return (
     <button
       type="button"
       data-testid="thumb"
       data-stem={image.stem}
-      onClick={onOpen}
-      className="group relative shrink-0 overflow-hidden rounded-md bg-card transition-shadow focus-visible:ring-2 focus-visible:ring-ring hover:shadow-lg"
+      data-selected={selected ? "true" : "false"}
+      onPointerDown={() => {
+        pressFired.current = false;
+        cancelPress();
+        pressTimer.current = window.setTimeout(() => {
+          pressFired.current = true;
+          onSelect?.({ meta: true, shift: false });
+        }, LONG_PRESS_MS);
+      }}
+      onPointerUp={cancelPress}
+      onPointerLeave={cancelPress}
+      onPointerCancel={cancelPress}
+      // A plain click opens the photo — that's the common case. Selecting is
+      // deliberate: hold, or use ⌘/shift. Once anything is selected you're in
+      // select mode, and plain clicks toggle until you clear it.
+      onClick={(event) => {
+        if (pressFired.current) {
+          pressFired.current = false;
+          return;
+        }
+        const meta = event.metaKey || event.ctrlKey;
+        if (meta || event.shiftKey) {
+          onSelect?.({ meta, shift: event.shiftKey });
+        } else if (selectMode) {
+          onSelect?.({ meta: true, shift: false });
+        } else {
+          onOpen?.();
+        }
+      }}
+      className={`group relative shrink-0 overflow-hidden rounded-md bg-card transition-shadow focus-visible:ring-2 focus-visible:ring-ring hover:shadow-lg ${
+        selected ? "ring-2 ring-primary" : ""
+      }`}
       style={{ width, height }}
     >
       {thumb.data ? (
@@ -119,15 +183,36 @@ function Thumb({
 
 type Props = {
   images: ImageGroup[];
-  /// Called with the image's index in `images` when a thumb is clicked.
+  /// Called with the image's index in `images` when a thumb is clicked
+  /// outside select mode.
   onOpen?: (index: number) => void;
   /// Overlay always visible instead of hover-only.
   showInfo?: boolean;
+  selected?: ReadonlySet<string>;
+  /// Anything selected means select mode: plain clicks toggle rather than
+  /// opening the photo.
+  selectMode?: boolean;
+  /// Show the original capture instead of the furthest-stage file — the
+  /// Media page is about what you shot, not what you exported.
+  displayOriginal?: boolean;
+  onSelect?: (
+    stem: string,
+    modifiers: { meta: boolean; shift: boolean },
+  ) => void;
   /// Test hook: jsdom has no layout, so tests inject the viewport.
   initialRect?: { width: number; height: number };
 };
 
-export function ImageGrid({ images, onOpen, showInfo, initialRect }: Props) {
+export function ImageGrid({
+  images,
+  onOpen,
+  showInfo,
+  selected,
+  selectMode,
+  displayOriginal,
+  onSelect,
+  initialRect,
+}: Props) {
   const parentRef = useRef<HTMLDivElement>(null);
   const padding = 24; // p-6 on each side
   const [containerWidth, setContainerWidth] = useState(
@@ -207,7 +292,13 @@ export function ImageGrid({ images, onOpen, showInfo, initialRect }: Props) {
                   width={cell.width}
                   height={row.height}
                   showInfo={showInfo}
+                  selected={selected?.has(cell.image.stem)}
+                  selectMode={selectMode}
+                  displayOriginal={displayOriginal}
                   onOpen={onOpen && (() => onOpen(cell.index))}
+                  onSelect={
+                    onSelect && ((mods) => onSelect(cell.image.stem, mods))
+                  }
                 />
               ))}
             </div>

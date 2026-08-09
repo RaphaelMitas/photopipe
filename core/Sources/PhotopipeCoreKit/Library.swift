@@ -84,6 +84,8 @@ public struct Shoot: Codable, Equatable, Sendable {
     public let project: String?
     public let counts: [String: Int]
     public let imageCount: Int
+    /// From photopipe.json; empty when the project has none.
+    public let notes: String
 }
 
 /// `<YYYY-MM-DD>_<project>` → (day, project); anything else is nil.
@@ -96,13 +98,46 @@ public func parseShootName(_ name: String) -> (day: String, project: String)? {
 /// Group files of one shoot into logical images by filename stem.
 /// `ratingFor`/`dimensionsFor` supply per-group disk reads (injected so
 /// grouping stays testable without disk).
+/// Does `derived` extend `anchor` past a separator — `dsc00001-dxo` from
+/// `dsc00001`, but never `dsc00010` from `dsc0001` (the boundary is a digit)?
+func stemExtends(_ derived: String, anchor: String) -> Bool {
+    guard derived.count > anchor.count, derived.hasPrefix(anchor) else { return false }
+    let boundary = derived[derived.index(derived.startIndex, offsetBy: anchor.count)]
+    return !boundary.isLetter && !boundary.isNumber
+}
+
 public func buildImageGroups(
     files: [FileRecord],
     ratingFor: ([FileRecord]) -> Int = { _ in 0 },
     dimensionsFor: ([FileRecord]) -> (width: Int, height: Int) = { _ in Dimensions.fallback }
 ) -> [ImageGroup] {
-    let grouped = Dictionary(grouping: files) { $0.stem.lowercased() }
-    return grouped.values
+    let exact = Dictionary(grouping: files) { $0.stem.lowercased() }
+
+    // Originals anchor the groups. A derived file whose (renamed) stem
+    // extends an original's stem — "DSC00001-DxO" from "DSC00001", the way
+    // denoisers name their output — joins that original's group; longest
+    // anchor wins. A derived file matching nothing stands alone.
+    var anchored: [String: [FileRecord]] = [:]
+    var derived: [(key: String, files: [FileRecord])] = []
+    for (key, group) in exact {
+        if group.contains(where: { $0.stage == .raw }) {
+            anchored[key] = group
+        } else {
+            derived.append((key, group))
+        }
+    }
+    for (key, group) in derived {
+        let match = anchored.keys
+            .filter { stemExtends(key, anchor: $0) }
+            .max { $0.count < $1.count }
+        if let match {
+            anchored[match, default: []].append(contentsOf: group)
+        } else {
+            anchored[key] = group
+        }
+    }
+
+    return anchored.values
         .map { group in
             let sorted = group.sorted { $0.stage.rank < $1.stage.rank }
             let stage = sorted.last?.stage ?? .raw
@@ -127,7 +162,9 @@ public func stageCounts(images: [ImageGroup]) -> [String: Int] {
     return counts
 }
 
-public func makeShoot(name: String, path: String, images: [ImageGroup]) -> Shoot {
+public func makeShoot(name: String, path: String, images: [ImageGroup], notes: String = "")
+    -> Shoot
+{
     let parsed = parseShootName(name)
     return Shoot(
         name: name,
@@ -135,5 +172,6 @@ public func makeShoot(name: String, path: String, images: [ImageGroup]) -> Shoot
         day: parsed?.day,
         project: parsed?.project,
         counts: stageCounts(images: images),
-        imageCount: images.count)
+        imageCount: images.count,
+        notes: notes)
 }
