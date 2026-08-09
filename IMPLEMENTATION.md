@@ -130,6 +130,15 @@ This phase makes the artifact real, in dependency order.
    sidecar, missing exiftool, permission denied — deserve an explanation in
    the window, not a toast that scrolls away.
 
+**Stated requirements: macOS 15 (Sequoia) or later, Apple Silicon.** The
+bundle's `minimumSystemVersion` and the Swift package's platform floor must
+stay equal — if the bundle allows an older OS than the core was built for, the
+app installs and opens and then every request fails, which is the exact
+condition this phase exists to remove. `build-core.sh` builds the host triple
+only, so an Intel Mac would get a sidecar that cannot run; a universal build
+means compiling both arches and `lipo`-ing them, and is only worth doing when
+someone actually needs it.
+
 - **Exit criteria:** a notarized DMG that opens with a double-click on a Mac
   that has never had Homebrew, developer tools or this repo; the smoke test
   runs against the exact artifact that ships.

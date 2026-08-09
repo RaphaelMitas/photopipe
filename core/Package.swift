@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "PhotopipeCore",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v15)],
     targets: [
         .target(name: "PhotopipeCoreKit"),
         .executableTarget(name: "photopipe-core", dependencies: ["PhotopipeCoreKit"]),

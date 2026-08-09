@@ -48,6 +48,11 @@ jobs:
           path: core/.build
           key: swiftpm-${{ runner.os }}-${{ hashFiles('core/Package.swift') }}
           restore-keys: swiftpm-${{ runner.os }}-
+      - name: Cache vendored exiftool
+        uses: actions/cache@v4
+        with:
+          path: apps/desktop/src-tauri/resources/exiftool
+          key: exiftool-${{ hashFiles('scripts/fetch-exiftool.sh') }}
       - name: Cache raw fixtures
         uses: actions/cache@v4
         with:

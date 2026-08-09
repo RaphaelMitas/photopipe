@@ -37,7 +37,7 @@
     ],
     "externalBin": ["binaries/photopipe-core"],
     "macOS": {
-      "minimumSystemVersion": "13.0"
+      "minimumSystemVersion": "15.0"
     },
     "resources": {
       "resources/exiftool": "exiftool"
