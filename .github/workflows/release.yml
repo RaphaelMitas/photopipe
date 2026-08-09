@@ -30,7 +30,17 @@ jobs:
         id: version
         run: |
           TAG="${{ inputs.tag || github.ref_name }}"
-          echo "VERSION=${TAG#v}" >> $GITHUB_OUTPUT
+          VERSION="${TAG#v}"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+          # The asset names and the cask come from the tag, but the app's own
+          # version comes from tauri.conf.json. Let those drift and you ship
+          # photopipe-0.2.0.zip containing an app that calls itself 0.1.0.
+          CONF=$(python3 -c "import json;print(json.load(open('apps/desktop/src-tauri/tauri.conf.json'))['version'])")
+          if [ "$VERSION" != "$CONF" ]; then
+            echo "::error::Tag $TAG says $VERSION but tauri.conf.json says $CONF. Bump the version files and re-tag."
+            exit 1
+          fi
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
