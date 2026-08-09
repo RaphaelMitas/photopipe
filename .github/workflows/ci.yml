@@ -77,5 +77,10 @@ jobs:
       - name: Cargo tests (sidecar integration against real core)
         working-directory: apps/desktop/src-tauri
         run: cargo test
-      - name: Tauri debug build
-        run: pnpm --filter desktop tauri build --debug --no-bundle
+      # A real bundle, not --no-bundle: packaging is where the sidecar and
+      # exiftool get staged, so a build that skips it cannot catch the
+      # breakage that makes a shipped app useless.
+      - name: Build the app bundle
+        run: pnpm --filter desktop tauri build --bundles app
+      - name: Smoke test the bundle
+        run: ./scripts/smoke-bundle.sh
