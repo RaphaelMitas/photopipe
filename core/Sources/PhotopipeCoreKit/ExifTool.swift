@@ -18,12 +18,21 @@ public final class ExifTool: @unchecked Sendable {
     private var stdoutPipe: Pipe?
     private var executeCount = 0
 
-    /// Resolution order: env override → Homebrew/MacPorts locations → PATH.
+    /// Resolution order: env override → the copy bundled beside us in the app
+    /// → Homebrew/MacPorts → PATH.
+    ///
+    /// The bundled copy comes first because it is the only one a shipped app
+    /// can count on: ratings are what this app writes into your files, and
+    /// they must work on a Mac that has never installed anything. The later
+    /// candidates keep `swift test` working from a checkout.
     public static func findBinary() -> String? {
         if let env = ProcessInfo.processInfo.environment["PHOTOPIPE_EXIFTOOL"],
             !env.isEmpty
         {
             return env
+        }
+        if let bundled = bundledBinary() {
+            return bundled
         }
         let candidates = [
             "/opt/homebrew/bin/exiftool", "/usr/local/bin/exiftool", "/opt/local/bin/exiftool",
@@ -39,6 +48,20 @@ public final class ExifTool: @unchecked Sendable {
             }
         }
         return nil
+    }
+
+    /// This sidecar runs from `Contents/MacOS`, and Tauri stages bundle
+    /// resources in `Contents/Resources`, so the vendored copy is one hop up
+    /// and over.
+    static func bundledBinary() -> String? {
+        guard let exe = Bundle.main.executableURL?.resolvingSymlinksInPath() else { return nil }
+        let candidate =
+            exe
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Resources/exiftool/exiftool")
+        return FileManager.default.isExecutableFile(atPath: candidate.path)
+            ? candidate.path : nil
     }
 
     public var available: Bool { Self.findBinary() != nil }

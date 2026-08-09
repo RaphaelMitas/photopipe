@@ -98,11 +98,24 @@ impl Sidecar {
         }
     }
 
-    /// Resolution order: env override → dev build in the repo's core/ package →
-    /// bare name on PATH (bundled sidecar comes in a later phase).
+    /// Resolution order: env override → the sidecar Tauri bundled next to the
+    /// app executable → dev build in the repo's core/ package → bare name on
+    /// PATH.
+    ///
+    /// The bundled copy comes first because that is the only one a shipped
+    /// app has; the dev paths exist so `cargo test` and `tauri dev` keep
+    /// working from a checkout.
     pub fn default_bin() -> PathBuf {
         if let Ok(path) = std::env::var("PHOTOPIPE_CORE_BIN") {
             return path.into();
+        }
+        // externalBin lands the binary in Contents/MacOS, beside this one.
+        if let Some(sibling) = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|dir| dir.join("photopipe-core")))
+            .filter(|path| path.exists())
+        {
+            return sibling;
         }
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         for profile in ["release", "debug"] {

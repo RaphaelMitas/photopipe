@@ -95,11 +95,44 @@ Throwaway code, keep only measurements and learnings.
 - Tests: ingest unit tests (collision, partial-copy resume, checksum mismatch) on temp dirs; hand-off integration test with a *fake denoiser* script that emits DNG fixtures; Playwright import flow.
 - **Exit criteria:** a real card imports verified and correctly named; a denoised DNG appearing on disk shows up linked and rated within seconds.
 
-### Phase 5 — Packaging & hardening
-- `codesign` + `notarytool` in CI (no Xcode IDE); packaged-app smoke e2e; auto-update via Tauri updater (optional); crash/error surfacing.
-- Perf pass with a synthetic 10,000-photo library; memory profile of long culling sessions.
-- Legacy-layout migration or read support (FEATURES.md open question #2).
-- **Exit criteria:** a notarized DMG a friend could install; smoke test runs against the exact artifact that ships.
+### Phase 5 — Ship it
+
+The app only runs from the repo today: the Rust shell finds the Swift core
+through `core/.build/...`, and exiftool through Homebrew. A packaged build
+would open a window where every request fails and no rating could be written.
+This phase makes the artifact real, in dependency order.
+
+1. **Bundle the sidecar.** `externalBin` in `tauri.conf.json`; a build step
+   compiling the Swift core in release and copying it to the target-triple
+   name Tauri expects; `default_bin()` preferring the binary next to the app
+   executable, dev path as fallback. Nothing else here is verifiable until a
+   built `.app` talks to its core.
+2. **Bundle exiftool.** Ship the official Image-ExifTool distribution as a
+   bundle resource and run it with the system `/usr/bin/perl`, so rating works
+   on a Mac that has never seen Homebrew. Discovery order becomes: env
+   override → bundled → Homebrew → PATH, keeping `swift test` working against
+   a dev machine's copy.
+3. **Sign and notarize.** Hardened runtime, then sign **inside-out**: exiftool
+   and the sidecar first, the app last. `--deep` is deprecated and unreliable
+   for nested helpers, which is exactly what we have. Then `notarytool
+   submit --wait` and `stapler staple`, credentials as repo secrets, in a
+   tag-triggered release workflow.
+4. **Build the real thing in CI, and smoke it.** CI runs
+   `tauri build --debug --no-bundle` today, so it never produces a bundle and
+   cannot catch packaging breakage. Add a job that builds the actual `.app`,
+   launches it, and asserts the sidecar handshake.
+5. **Permissions.** A library under Documents, Desktop or Downloads is gated
+   by TCC. Needs usage-description strings and a first-run failure that
+   explains itself instead of an empty library.
+6. **Perf and memory.** Synthetic 10,000-photo library: scan time, memory
+   across a long culling session, render-cache growth.
+7. **Error surfacing.** The three failures a user can actually hit — dead
+   sidecar, missing exiftool, permission denied — deserve an explanation in
+   the window, not a toast that scrolls away.
+
+- **Exit criteria:** a notarized DMG that opens with a double-click on a Mac
+  that has never had Homebrew, developer tools or this repo; the smoke test
+  runs against the exact artifact that ships.
 
 ## CI (GitHub Actions)
 
