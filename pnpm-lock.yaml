@@ -70,7 +70,7 @@ importers:
         specifier: ^4.1.11
         version: 4.3.3(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.32.0))
       '@tauri-apps/cli':
-        specifier: ^2
+        specifier: 2.11.4
         version: 2.11.4
       '@testing-library/jest-dom':
         specifier: ^6.6.3
