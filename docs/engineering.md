@@ -142,6 +142,11 @@ AppleDouble `._` sidecars would end up inside the extracted bundle and break
 its seal, while the ticket and `_CodeSignature` are ordinary files that
 survive a plain tar.
 
+Signing by hand also skips the mismatch check the CLI would do, so the step
+compares the minisign key id in the signature against the one in the shipped
+`pubkey`. Without it a rotated or mistyped key publishes a release that every
+installed app rejects in silence.
+
 The cask in `RaphaelMitas/homebrew-tap` needs `auto_updates true`, or
 `brew upgrade` will reinstall over an app that has already updated itself.
 

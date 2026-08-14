@@ -50,12 +50,23 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   updater: Updater;
+  onInstall: () => void;
+  blocked: string | null;
 };
 
-export function AboutDialog({ open, onOpenChange, updater }: Props) {
+export function AboutDialog({
+  open,
+  onOpenChange,
+  updater,
+  onInstall,
+  blocked,
+}: Props) {
   const version = useAppVersion(open);
-  const { state } = updater;
-  const busy = state.kind === "checking" || state.kind === "downloading";
+  const { state, check } = updater;
+  const busy =
+    state.kind === "checking" ||
+    state.kind === "downloading" ||
+    state.kind === "installed";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -77,11 +88,18 @@ export function AboutDialog({ open, onOpenChange, updater }: Props) {
 
         <p data-testid="update-status" className="text-sm empty:hidden">
           <Status state={state} />
+          {state.kind === "available" && blocked && (
+            <span className="mt-1 block text-muted-foreground">{blocked}</span>
+          )}
         </p>
 
         <DialogFooter>
           {state.kind === "available" ? (
-            <Button data-testid="install-update" onClick={updater.install}>
+            <Button
+              data-testid="install-update"
+              disabled={blocked !== null}
+              onClick={onInstall}
+            >
               Install and restart
             </Button>
           ) : (
@@ -89,7 +107,7 @@ export function AboutDialog({ open, onOpenChange, updater }: Props) {
               variant="outline"
               data-testid="check-updates"
               disabled={busy}
-              onClick={updater.check}
+              onClick={check}
             >
               {busy && <Loader2 className="animate-spin" />}
               Check for updates

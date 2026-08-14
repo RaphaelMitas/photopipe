@@ -17,8 +17,6 @@ export type Updater = {
   install: () => Promise<void>;
 };
 
-// A dev build has no signed bundle to replace and the e2e mock only answers
-// core_request, so a check in either would only ever produce a red herring.
 function updatable(): boolean {
   return import.meta.env.PROD && import.meta.env.VITE_E2E !== "1";
 }
@@ -27,11 +25,6 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/**
- * Checks once on mount, silently: no network, no release yet or a malformed
- * manifest all mean "nothing to offer", which is not worth interrupting anyone
- * over. A check the user asked for reports what went wrong.
- */
 export function useUpdater(): Updater {
   const [state, setState] = useState<UpdateState>({ kind: "idle" });
   const pending = useRef<Update | null>(null);
@@ -44,6 +37,7 @@ export function useUpdater(): Updater {
     if (!silent) setState({ kind: "checking" });
     try {
       const update = await check();
+      await pending.current?.close();
       pending.current = update;
       setState(
         update
@@ -65,6 +59,7 @@ export function useUpdater(): Updater {
 
   const install = useCallback(async () => {
     const update = pending.current;
+    pending.current = null;
     if (!update) return;
     setState({ kind: "downloading", percent: null });
     try {

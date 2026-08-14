@@ -64,23 +64,6 @@ export default function App() {
   const [shootSettings, setShootSettings] = useState<string | null>(null);
   const [about, setAbout] = useState(false);
   const updater = useUpdater();
-  const offered = useRef(false);
-  useEffect(() => {
-    if (updater.state.kind !== "available" || offered.current) return;
-    offered.current = true;
-    toast(`Photopipe ${updater.state.version} is available`, {
-      duration: Number.POSITIVE_INFINITY,
-      action: {
-        // Opening the dialog too, so the progress and the restart land
-        // somewhere visible once the toast is gone.
-        label: "Install",
-        onClick: () => {
-          setAbout(true);
-          void updater.install();
-        },
-      },
-    });
-  }, [updater]);
   const [view, setView] = useState<ViewMode>(() =>
     localStorage.getItem(VIEW_KEY) === "list" ? "list" : "grid",
   );
@@ -178,6 +161,32 @@ export default function App() {
   );
   const changeExposure = (image: ImageFile, value: number) =>
     scrubExposure(image.path, value);
+
+  const installBlocked = jobs.some((job) => job.status === "running")
+    ? "Finish the running export first; installing restarts Photopipe."
+    : null;
+  const startInstall = useCallback(() => {
+    if (installBlocked) return;
+    flushExposure();
+    void updater.install();
+  }, [installBlocked, flushExposure, updater]);
+
+  const { state: updateState } = updater;
+  const offered = useRef(false);
+  useEffect(() => {
+    if (updateState.kind !== "available" || offered.current) return;
+    offered.current = true;
+    toast(`Photopipe ${updateState.version} is available`, {
+      duration: Number.POSITIVE_INFINITY,
+      action: {
+        label: "Install",
+        onClick: () => {
+          setAbout(true);
+          startInstall();
+        },
+      },
+    });
+  }, [updateState, startInstall]);
 
   const runImport = async () => {
     const chosen = await openDialog({
@@ -352,7 +361,13 @@ export default function App() {
         onOpenChange={setNewProject}
         onCreated={enterShoot}
       />
-      <AboutDialog open={about} onOpenChange={setAbout} updater={updater} />
+      <AboutDialog
+        open={about}
+        onOpenChange={setAbout}
+        updater={updater}
+        onInstall={startInstall}
+        blocked={installBlocked}
+      />
       <SidebarProvider>
         {inLoupe && loupeImage ? (
           <LoupeSidebar

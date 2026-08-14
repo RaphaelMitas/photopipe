@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -7,7 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useUpdater } from "@/lib/useUpdater";
+import { type Updater, useUpdater } from "@/lib/useUpdater";
 import { AboutDialog } from "./AboutDialog";
 
 const { check, relaunch, getVersion, downloadAndInstall } = vi.hoisted(() => ({
@@ -21,22 +22,38 @@ vi.mock("@tauri-apps/plugin-updater", () => ({ check }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch }));
 vi.mock("@tauri-apps/api/app", () => ({ getVersion }));
 
-// The hook refuses to touch the network outside a release build, which is
-// exactly what a test run is.
 vi.stubEnv("PROD", true);
 
-function Harness() {
+function Harness({
+  blocked,
+  capture,
+}: {
+  blocked: string | null;
+  capture?: (updater: Updater) => void;
+}) {
   const updater = useUpdater();
-  return <AboutDialog open onOpenChange={() => {}} updater={updater} />;
+  capture?.(updater);
+  return (
+    <AboutDialog
+      open
+      onOpenChange={() => {}}
+      updater={updater}
+      onInstall={updater.install}
+      blocked={blocked}
+    />
+  );
 }
 
-function renderDialog() {
+function renderDialog(
+  blocked: string | null = null,
+  capture?: (updater: Updater) => void,
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={client}>
-      <Harness />
+      <Harness blocked={blocked} capture={capture} />
     </QueryClientProvider>,
   );
 }
@@ -87,6 +104,31 @@ describe("AboutDialog", () => {
 
     await waitFor(() => expect(relaunch).toHaveBeenCalled());
     expect(downloadAndInstall).toHaveBeenCalled();
+  });
+
+  it("will not install while an export is running", async () => {
+    check.mockResolvedValue({ version: "2.0.0", downloadAndInstall });
+    renderDialog("Finish the running export first.");
+
+    await hasStatus("Finish the running export first.");
+    fireEvent.click(screen.getByTestId("install-update"));
+    expect(downloadAndInstall).not.toHaveBeenCalled();
+  });
+
+  it("installs once even when install is called twice", async () => {
+    check.mockResolvedValue({ version: "2.0.0", downloadAndInstall });
+    let updater!: Updater;
+    renderDialog(null, (u) => {
+      updater = u;
+    });
+
+    await hasStatus("Photopipe 2.0.0 is available");
+    await act(async () => {
+      await Promise.all([updater.install(), updater.install()]);
+    });
+
+    expect(downloadAndInstall).toHaveBeenCalledTimes(1);
+    expect(relaunch).toHaveBeenCalledTimes(1);
   });
 
   it("surfaces the reason a manual check failed", async () => {

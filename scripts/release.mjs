@@ -3,7 +3,8 @@
  * Cuts a release: bumps the version everywhere, refreshes the README
  * screenshots, pushes a release/vX.Y.Z branch and opens an auto-merging PR.
  * Once that PR lands on main, .github/workflows/release.yml tags the commit,
- * builds, signs, notarizes, publishes the DMG and bumps the Homebrew cask.
+ * builds, signs, notarizes, publishes the DMG, the update feed, and bumps
+ * the Homebrew cask.
  *
  * Usage: pnpm release [patch|minor|major|<x.y.z>] [--direct] [--dry-run]
  *   --direct     commit the bump straight to main (skips the PR)
@@ -102,7 +103,8 @@ Dry run; nothing written or pushed. A real run would:
   3. push branch release/v${next} and open a PR with auto-merge`
   }
   4. on merge to main, the Release workflow tags v${next}, builds, signs and
-     notarizes the app, publishes the DMG and zip, and bumps the Homebrew cask`);
+     notarizes the app, publishes the DMG, zip and update feed, and bumps the
+     Homebrew cask`);
   process.exit(0);
 }
 
@@ -157,7 +159,7 @@ if (direct) {
     "Once this lands on main, the Release workflow will:",
     `1. tag the merge commit as v${next}`,
     "2. build the app, sign it inside-out and notarize it with Apple",
-    "3. publish the stapled DMG and zip to a GitHub release",
+    "3. publish the stapled DMG and zip, plus the signed update feed",
     "4. bump `Casks/photopipe.rb` in RaphaelMitas/homebrew-tap",
     "",
     "The screenshots in this diff are what the README will show.",
