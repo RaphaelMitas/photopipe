@@ -1,4 +1,4 @@
-import type { ImageFile } from "./core";
+import { type ImageFile, identityEdit } from "./core";
 
 /// `path` defaults to `/r/s/<rel>`; override anything.
 export function makeImage(
@@ -12,7 +12,7 @@ export function makeImage(
     size: 1,
     mtime: 1,
     rating: 0,
-    exposure: 0,
+    edit: { ...identityEdit },
     width: 3000,
     height: 2000,
     ...overrides,

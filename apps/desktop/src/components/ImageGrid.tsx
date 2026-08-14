@@ -146,7 +146,7 @@ function Thumb({
         </span>
       )}
       <ExposureBadge
-        exposure={image.exposure}
+        exposure={image.edit.exposure}
         unit=" EV"
         testid="thumb-edited"
         className="absolute top-1.5 right-1.5 rounded-full bg-background/70 px-1.5 py-0.5 font-mono text-[9px] text-foreground/80 backdrop-blur"

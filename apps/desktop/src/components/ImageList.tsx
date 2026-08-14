@@ -121,7 +121,7 @@ export function ImageList({
                 </span>
                 <span className="flex w-24 shrink-0 items-center justify-end gap-1.5 text-xs">
                   <ExposureBadge
-                    exposure={image.exposure}
+                    exposure={image.edit.exposure}
                     className="font-mono text-[10px] text-muted-foreground"
                   />
                   <RatingBadge rating={image.rating} />

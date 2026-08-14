@@ -26,6 +26,7 @@ export function Stars({ value, onRate, className }: Props) {
         type="button"
         data-testid={`star-${star}`}
         onClick={() => onRate(star === value ? 0 : star)}
+        title={star === value ? "Clear rating (0)" : `Rate ${star} (${star})`}
         className="transition-transform hover:scale-110"
       >
         <StarIcon filled={star <= value} />

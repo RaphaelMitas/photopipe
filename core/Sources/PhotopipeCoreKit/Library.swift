@@ -2,6 +2,8 @@ import Foundation
 
 public let imageExtensions: Set<String> = ["arw", "dng", "jpg", "jpeg", "png"]
 
+public let rawExtensions: Set<String> = ["arw", "dng", "cr2", "cr3", "nef", "raf", "orf", "rw2"]
+
 public let sidecarExtensions: Set<String> = ["arw"]
 
 public func isImagePath(_ path: String) -> Bool {
@@ -15,13 +17,13 @@ public struct ImageFile: Codable, Equatable, Sendable {
     public let size: Int64
     public let mtime: Double
     public let rating: Int
-    public let exposure: Double
+    public let edit: Edit
     public let width: Int
     public let height: Int
 
     public init(
         path: String, rel: String, ext: String, size: Int64, mtime: Double,
-        rating: Int = 0, exposure: Double = 0, width: Int = 3000, height: Int = 2000
+        rating: Int = 0, edit: Edit = .identity, width: Int = 3000, height: Int = 2000
     ) {
         self.path = path
         self.rel = rel
@@ -29,7 +31,7 @@ public struct ImageFile: Codable, Equatable, Sendable {
         self.size = size
         self.mtime = mtime
         self.rating = rating
-        self.exposure = exposure
+        self.edit = edit
         self.width = width
         self.height = height
     }
@@ -38,10 +40,14 @@ public struct ImageFile: Codable, Equatable, Sendable {
         sidecarExtensions.contains(ext.lowercased())
     }
 
-    public func with(rating: Int? = nil, exposure: Double? = nil) -> ImageFile {
+    public var isRaw: Bool {
+        rawExtensions.contains(ext.lowercased())
+    }
+
+    public func with(rating: Int? = nil, edit: Edit? = nil) -> ImageFile {
         ImageFile(
             path: path, rel: rel, ext: ext, size: size, mtime: mtime,
-            rating: rating ?? self.rating, exposure: exposure ?? self.exposure,
+            rating: rating ?? self.rating, edit: edit ?? self.edit,
             width: width, height: height)
     }
 }

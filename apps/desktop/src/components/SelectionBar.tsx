@@ -37,6 +37,7 @@ export function SelectionBar({
           data-testid="action-export"
           disabled={busy}
           onClick={() => onExport()}
+          title="Export selection (⌘E)"
           className="h-7 text-xs"
         >
           <Upload />

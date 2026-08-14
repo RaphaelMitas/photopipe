@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect } from "react";
-import { fileSrc, type ImageFile } from "@/lib/core";
+import { type Edit, fileSrc, type ImageFile } from "@/lib/core";
 import { usePrefetchRender, useRender, useThumbnail } from "@/lib/queries";
 import { Filmstrip, type FilmstripMode } from "./Filmstrip";
 
@@ -9,9 +9,9 @@ export const EXPOSURE_RANGE = 3;
 type Props = {
   images: ImageFile[];
   index: number;
-  exposure: number;
+  edit: Edit;
   filmstrip: FilmstripMode;
-  onExposureChange: (ev: number) => void;
+  onEditChange: (edit: Edit) => void;
   onNavigate: (index: number) => void;
   onClose: () => void;
   onRate: (path: string, rating: number) => void;
@@ -20,20 +20,20 @@ type Props = {
 export function Loupe({
   images,
   index,
-  exposure,
+  edit,
   filmstrip,
-  onExposureChange,
+  onEditChange,
   onNavigate,
   onClose,
   onRate,
 }: Props) {
   const image = images[index];
-  const deferredExposure = useDeferredValue(exposure);
+  const deferredEdit = useDeferredValue(edit);
 
-  const render = useRender(image, deferredExposure);
+  const render = useRender(image, deferredEdit);
   const thumb = useThumbnail(image);
-  usePrefetchRender(images[index + 1], images[index + 1]?.exposure ?? 0);
-  usePrefetchRender(images[index - 1], images[index - 1]?.exposure ?? 0);
+  usePrefetchRender(images[index + 1], images[index + 1]?.edit);
+  usePrefetchRender(images[index - 1], images[index - 1]?.edit);
 
   useEffect(() => {
     if (!image) return;
@@ -68,14 +68,20 @@ export function Loupe({
           break;
         case "ArrowUp":
           event.preventDefault();
-          onExposureChange(Math.min(exposure + EXPOSURE_STEP, EXPOSURE_RANGE));
+          onEditChange({
+            ...edit,
+            exposure: Math.min(edit.exposure + EXPOSURE_STEP, EXPOSURE_RANGE),
+          });
           break;
         case "ArrowDown":
           event.preventDefault();
-          onExposureChange(Math.max(exposure - EXPOSURE_STEP, -EXPOSURE_RANGE));
+          onEditChange({
+            ...edit,
+            exposure: Math.max(edit.exposure - EXPOSURE_STEP, -EXPOSURE_RANGE),
+          });
           break;
         case "r":
-          onExposureChange(0);
+          onEditChange({ ...edit, exposure: 0 });
           break;
       }
     };
@@ -85,9 +91,9 @@ export function Loupe({
     image,
     images.length,
     index,
-    exposure,
+    edit,
     onClose,
-    onExposureChange,
+    onEditChange,
     onNavigate,
     onRate,
   ]);

@@ -1,7 +1,6 @@
-import { ChevronLeft, RotateCcw } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import type { ImageFile } from "@/lib/core";
 import type { FilmstripMode } from "./Filmstrip";
-import { EXPOSURE_RANGE } from "./Loupe";
 import { Photopipe } from "./Photopipe";
 import {
   RatingFilterOps,
@@ -9,7 +8,6 @@ import {
   type RatingOp,
 } from "./RatingFilter";
 import { Stars } from "./Stars";
-import { Button } from "./ui/button";
 import { Segmented } from "./ui/segmented";
 import {
   Sidebar,
@@ -25,13 +23,11 @@ import {
   SidebarSeparator,
   SidebarTrigger,
 } from "./ui/sidebar";
-import { Slider } from "./ui/slider";
 
 type Props = {
   image: ImageFile;
   position: number;
   count: number;
-  exposure: number;
   filmstrip: FilmstripMode;
   onFilmstrip: (mode: FilmstripMode) => void;
   ratingCounts: number[];
@@ -39,7 +35,6 @@ type Props = {
   onRatingOp: (op: RatingOp) => void;
   ratingStars: number;
   onRatingStars: (stars: number) => void;
-  onExposureChange: (ev: number) => void;
   onRate: (path: string, rating: number) => void;
   onBackToGrid: () => void;
 };
@@ -48,7 +43,6 @@ export function LoupeSidebar({
   image,
   position,
   count,
-  exposure,
   filmstrip,
   onFilmstrip,
   ratingCounts,
@@ -56,7 +50,6 @@ export function LoupeSidebar({
   onRatingOp,
   ratingStars,
   onRatingStars,
-  onExposureChange,
   onRate,
   onBackToGrid,
 }: Props) {
@@ -134,39 +127,6 @@ export function LoupeSidebar({
         </SidebarGroup>
 
         <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-          <SidebarGroupLabel>Edit</SidebarGroupLabel>
-          <SidebarGroupContent className="flex flex-col gap-2 px-2 py-1">
-            <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
-              <span>Exposure</span>
-              <span className="flex-1 text-right">
-                {exposure >= 0 ? "+" : ""}
-                {exposure.toFixed(2)}
-              </span>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => onExposureChange(0)}
-                title="Reset exposure (r)"
-                className="size-6 text-muted-foreground"
-              >
-                <RotateCcw />
-              </Button>
-            </div>
-            <Slider
-              data-testid="exposure"
-              min={-EXPOSURE_RANGE}
-              max={EXPOSURE_RANGE}
-              step={0.1}
-              value={[exposure]}
-              onValueChange={([value]) => onExposureChange(value)}
-            />
-            <p className="text-[10px] text-muted-foreground">
-              Saved with the photo. JPEG exports apply it.
-            </p>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
           <SidebarGroupLabel>View</SidebarGroupLabel>
           <SidebarGroupContent className="px-2 py-1">
             <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
@@ -187,7 +147,8 @@ export function LoupeSidebar({
       </SidebarContent>
       <SidebarFooter className="group-data-[collapsible=icon]:hidden">
         <p className="px-2 py-1 text-[10px] text-muted-foreground">
-          ←→ navigate · 1–5 rate · 0 clear · ↑↓ exposure · r reset · esc
+          ←→ navigate · 1–5 rate · 0 clear · ↑↓ exposure · r reset · e edit ·
+          esc
         </p>
       </SidebarFooter>
     </Sidebar>

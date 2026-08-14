@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ImageFile } from "@/lib/core";
+import { type ImageFile, identityEdit } from "@/lib/core";
 import { makeImage as image } from "@/lib/test-image";
 import { ImageList } from "./ImageList";
 
@@ -38,7 +38,7 @@ describe("ImageList", () => {
     renderList([
       image("A.ARW"),
       image("A.jpg", { rating: 4 }),
-      image("Tag2/A.ARW", { exposure: 0.5 }),
+      image("Tag2/A.ARW", { edit: { ...identityEdit, exposure: 0.5 } }),
     ]);
 
     const rows = screen.getAllByTestId("image-row");
