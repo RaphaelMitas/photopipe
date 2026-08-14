@@ -1,14 +1,13 @@
 import Foundation
 
-/// A full scan snapshot: shoots (sorted newest day first) with their images.
 public struct LibrarySnapshot: Equatable, Sendable {
     public let shoots: [Shoot]
-    public let imagesByShoot: [String: [ImageGroup]]
+    public let imagesByShoot: [String: [ImageFile]]
     public let fileCount: Int
 
     public static let empty = LibrarySnapshot(shoots: [], imagesByShoot: [:], fileCount: 0)
 
-    public init(shoots: [Shoot], imagesByShoot: [String: [ImageGroup]], fileCount: Int) {
+    public init(shoots: [Shoot], imagesByShoot: [String: [ImageFile]], fileCount: Int) {
         self.shoots = shoots
         self.imagesByShoot = imagesByShoot
         self.fileCount = fileCount
@@ -19,8 +18,6 @@ public enum ScanError: Error {
     case rootNotFound(String)
 }
 
-/// Scan `<root>/<shoot>/**` for pipeline files. Disk is the source of truth;
-/// this is a read-only pass and must tolerate anything it finds.
 public func scanLibrary(root: String) throws -> LibrarySnapshot {
     let fm = FileManager.default
     var isDirectory: ObjCBool = false
@@ -37,18 +34,14 @@ public func scanLibrary(root: String) throws -> LibrarySnapshot {
         .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
 
     var shoots: [Shoot] = []
-    var imagesByShoot: [String: [ImageGroup]] = [:]
+    var imagesByShoot: [String: [ImageFile]] = [:]
     var fileCount = 0
 
     for dir in shootDirs {
-        let files = scanShootDirectory(dir)
-        // A project the wizard just created has no photos yet but is still a
-        // real project — its photopipe.json says so.
+        let images = scanShootDirectory(dir)
         let isProject = fm.fileExists(atPath: ProjectFile.url(inShoot: dir.path).path)
-        guard !files.isEmpty || isProject else { continue }
-        fileCount += files.count
-        let images = buildImageGroups(
-            files: files, ratingFor: XMP.readRating, dimensionsFor: Dimensions.forGroup)
+        guard !images.isEmpty || isProject else { continue }
+        fileCount += images.count
         let project = isProject ? ProjectFile.read(inShoot: dir.path) : ProjectFile()
         let shoot = makeShoot(
             name: dir.lastPathComponent, path: dir.path, images: images,
@@ -57,7 +50,6 @@ public func scanLibrary(root: String) throws -> LibrarySnapshot {
         imagesByShoot[shoot.name] = images
     }
 
-    // Newest day first, undated shoots last, ties by name.
     shoots.sort {
         switch ($0.day, $1.day) {
         case (let a?, let b?) where a != b: a > b
@@ -70,26 +62,7 @@ public func scanLibrary(root: String) throws -> LibrarySnapshot {
     return LibrarySnapshot(shoots: shoots, imagesByShoot: imagesByShoot, fileCount: fileCount)
 }
 
-/// Stage of a file. The containing folder wins — external tools rename
-/// their output (`DSC00001-DxO.dng`), so location is the reliable signal;
-/// the extension is only a fallback for files outside the known folders
-/// (legacy shoots, loose files in the project root).
-func stageFor(url: URL, shootDir: URL) -> Stage? {
-    // Only pipeline formats are images at all, wherever they sit.
-    guard Stage(fileExtension: url.pathExtension) != nil else { return nil }
-    let prefix = shootDir.path + "/"
-    guard url.path.hasPrefix(prefix) else { return Stage(fileExtension: url.pathExtension) }
-    let components = url.path.dropFirst(prefix.count).split(separator: "/")
-    let folder = components.count > 1 ? components.first?.lowercased() : nil
-    switch folder {
-    case "original", "media", "raw": return .raw
-    case "processed", "denoised": return .denoised
-    case "export", "exports": return .export
-    default: return Stage(fileExtension: url.pathExtension)
-    }
-}
-
-private func scanShootDirectory(_ dir: URL) -> [FileRecord] {
+private func scanShootDirectory(_ dir: URL) -> [ImageFile] {
     let fm = FileManager.default
     guard
         let enumerator = fm.enumerator(
@@ -98,22 +71,31 @@ private func scanShootDirectory(_ dir: URL) -> [FileRecord] {
             options: [.skipsHiddenFiles])
     else { return [] }
 
-    var files: [FileRecord] = []
+    let prefix = dir.path + "/"
+    var images: [ImageFile] = []
     for case let url as URL in enumerator {
         guard
             let values = try? url.resourceValues(forKeys: [
                 .isRegularFileKey, .fileSizeKey, .contentModificationDateKey,
             ]),
             values.isRegularFile == true,
-            let stage = stageFor(url: url, shootDir: dir)
+            isImagePath(url.path)
         else { continue }
-        files.append(
-            FileRecord(
-                path: url.path,
-                ext: url.pathExtension,
-                stage: stage,
-                size: Int64(values.fileSize ?? 0),
-                mtime: values.contentModificationDate?.timeIntervalSince1970 ?? 0))
+        let path = url.path
+        let stub = ImageFile(
+            path: path,
+            rel: String(path.dropFirst(prefix.count)),
+            ext: url.pathExtension,
+            size: Int64(values.fileSize ?? 0),
+            mtime: values.contentModificationDate?.timeIntervalSince1970 ?? 0)
+        let dims = Dimensions.cached(for: stub) ?? Dimensions.fallback
+        images.append(
+            ImageFile(
+                path: stub.path, rel: stub.rel, ext: stub.ext,
+                size: stub.size, mtime: stub.mtime,
+                rating: XMP.readRating(file: stub),
+                exposure: XMP.readExposure(file: stub),
+                width: dims.width, height: dims.height))
     }
-    return files
+    return images.sorted { $0.rel.localizedStandardCompare($1.rel) == .orderedAscending }
 }

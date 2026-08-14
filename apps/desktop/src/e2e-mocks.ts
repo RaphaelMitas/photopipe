@@ -1,93 +1,42 @@
-// Fake core dataset for Playwright runs (VITE_E2E=1). Only imported there.
-import type { ImageGroup, Shoot } from "./lib/core";
+import type { ImageFile, Shoot } from "./lib/core";
+import { makeImage } from "./lib/test-image";
 
-const zellImages: ImageGroup[] = [
-  {
-    stem: "DSC00832",
-    stage: "export",
-    rating: 0,
-    width: 4672,
-    height: 7008,
-    files: [
-      {
-        path: "/fake/z/DSC00832.ARW",
-        ext: "ARW",
-        stage: "raw",
-        size: 1,
-        mtime: 1,
-      },
-      {
-        path: "/fake/z/DSC00832.dng",
-        ext: "dng",
-        stage: "denoised",
-        size: 1,
-        mtime: 2,
-      },
-      {
-        path: "/fake/z/DSC00832.jpg",
-        ext: "jpg",
-        stage: "export",
-        size: 1,
-        mtime: 3,
-      },
-    ],
-  },
-  {
-    stem: "DSC00938",
-    stage: "denoised",
-    rating: 2,
+function image(
+  shootPath: string,
+  rel: string,
+  overrides: Partial<ImageFile> = {},
+): ImageFile {
+  return makeImage(rel, {
+    path: `${shootPath}/${rel}`,
     width: 7008,
     height: 4672,
-    files: [
-      {
-        path: "/fake/z/DSC00938.ARW",
-        ext: "ARW",
-        stage: "raw",
-        size: 1,
-        mtime: 1,
-      },
-      {
-        path: "/fake/z/DSC00938.dng",
-        ext: "dng",
-        stage: "denoised",
-        size: 1,
-        mtime: 2,
-      },
-    ],
-  },
-  {
-    stem: "DSC00943",
-    stage: "raw",
-    rating: 0,
+    ...overrides,
+  });
+}
+
+const zellImages: ImageFile[] = [
+  image("/fake/2026-07-12_zell", "DSC00832.ARW", {
     width: 4672,
     height: 7008,
-    files: [
-      {
-        path: "/fake/z/DSC00943.ARW",
-        ext: "ARW",
-        stage: "raw",
-        size: 1,
-        mtime: 1,
-      },
-    ],
-  },
-  {
-    stem: "DSC00953",
-    stage: "raw",
-    rating: 0,
-    width: 7008,
-    height: 4672,
-    files: [
-      {
-        path: "/fake/z/DSC00953.ARW",
-        ext: "ARW",
-        stage: "raw",
-        size: 1,
-        mtime: 1,
-      },
-    ],
-  },
+  }),
+  image("/fake/2026-07-12_zell", "DSC00832.jpg", { exposure: 0.5 }),
+  image("/fake/2026-07-12_zell", "abends/DSC00938.ARW", { rating: 2 }),
+  image("/fake/2026-07-12_zell", "abends/DSC00943.ARW", {
+    width: 4672,
+    height: 7008,
+  }),
 ];
+
+const miscImages: ImageFile[] = [
+  image("/fake/misc", "IMG_0001.ARW", { width: 4672, height: 7008 }),
+];
+
+const bigImages: ImageFile[] = Array.from({ length: 200 }, (_, i) =>
+  image("/fake/2026-08-01_dolomites", `DSC0${String(1200 + i)}.ARW`, {
+    width: i % 3 === 0 ? 4672 : 7008,
+    height: i % 3 === 0 ? 7008 : 4672,
+  }),
+);
 
 const shoots: Shoot[] = [
   {
@@ -95,78 +44,36 @@ const shoots: Shoot[] = [
     path: "/fake/2026-07-12_zell",
     day: "2026-07-12",
     project: "zell",
-    counts: { raw: 2, denoised: 1, export: 1 },
-    imageCount: 4,
+    imageCount: zellImages.length,
     notes: "Golden hour at the river",
     cover: null,
-    coverPath: "/fake/z/DSC00832.jpg",
+    coverPath: "/fake/2026-07-12_zell/DSC00832.jpg",
   },
   {
     name: "misc",
     path: "/fake/misc",
     day: null,
     project: null,
-    counts: { raw: 1, denoised: 0, export: 0 },
     imageCount: 1,
     notes: "",
     cover: null,
     coverPath: "/fake/misc/IMG_0001.ARW",
   },
-];
-
-const miscImages: ImageGroup[] = [
   {
-    stem: "IMG_0001",
-    stage: "raw",
-    rating: 0,
-    width: 4672,
-    height: 7008,
-    files: [
-      {
-        path: "/fake/misc/IMG_0001.ARW",
-        ext: "ARW",
-        stage: "raw",
-        size: 1,
-        mtime: 1,
-      },
-    ],
+    name: "2026-08-01_dolomites",
+    path: "/fake/2026-08-01_dolomites",
+    day: "2026-08-01",
+    project: "dolomites",
+    imageCount: 200,
+    notes: "Two days above Cortina",
+    cover: null,
+    coverPath: "/fake/2026-08-01_dolomites/DSC01200.ARW",
   },
 ];
 
-/// A shoot big enough that grid and filmstrip virtualization actually
-/// virtualize (the small zell dataset mounts every cell).
-const bigImages: ImageGroup[] = Array.from({ length: 200 }, (_, i) => ({
-  stem: `DSC0${String(1200 + i)}`,
-  stage: "raw" as const,
-  rating: 0,
-  width: i % 3 === 0 ? 4672 : 7008,
-  height: i % 3 === 0 ? 7008 : 4672,
-  files: [
-    {
-      path: `/fake/dolomites/DSC0${String(1200 + i)}.ARW`,
-      ext: "ARW",
-      stage: "raw" as const,
-      size: 1,
-      mtime: 1,
-    },
-  ],
-}));
-shoots.push({
-  name: "2026-08-01_dolomites",
-  path: "/fake/2026-08-01_dolomites",
-  day: "2026-08-01",
-  project: "dolomites",
-  counts: { raw: 200, denoised: 0, export: 0 },
-  imageCount: 200,
-  notes: "Two days above Cortina",
-  cover: null,
-  coverPath: "/fake/dolomites/DSC01200.ARW",
-});
-
-/// Projects created during the test run have no images.
 const emptyShoots = new Set<string>();
 
-function imagesFor(shoot: string): ImageGroup[] {
+function imagesFor(shoot: string): ImageFile[] {
   if (emptyShoots.has(shoot)) return [];
   if (shoot === "2026-07-12_zell") return zellImages;
   if (shoot === "2026-08-01_dolomites") return bigImages;
@@ -185,8 +92,6 @@ export const E2E_HANDLERS: Record<
   },
   listShoots: () => ({ shoots }),
   listImages: (params) => ({
-    // A fresh array each call, like the real transport: returning the same
-    // reference would let the query cache short-circuit and miss mutations.
     images: [...imagesFor(String(params.shoot))],
   }),
   thumbnail: (params) => ({
@@ -197,21 +102,26 @@ export const E2E_HANDLERS: Record<
   }),
   setRating: (params) => {
     const all = [...zellImages, ...miscImages, ...bigImages];
-    const target = all.find((image) => image.stem === params.stem);
-    if (!target) throw `unknown_image: ${String(params.stem)}`;
+    const target = all.find((entry) => entry.path === params.path);
+    if (!target) throw `unknown_image: ${String(params.path)}`;
     target.rating = Number(params.rating);
     return { rating: target.rating, generation: 1 };
   },
-  openIn: (params) => ({ opened: (params.paths as string[]).length }),
+  setExposure: (params) => {
+    const all = [...zellImages, ...miscImages, ...bigImages];
+    const target = all.find((entry) => entry.path === params.path);
+    if (!target) throw `unknown_image: ${String(params.path)}`;
+    target.exposure = Number(params.exposure);
+    return { exposure: target.exposure, generation: 1 };
+  },
   reveal: () => ({ revealed: true }),
   trash: (params) => {
-    const stems = new Set(params.stems as string[]);
-    // Mirror the core: the whole lineage group goes.
+    const paths = new Set(params.paths as string[]);
     let files = 0;
     for (const list of [zellImages, miscImages, bigImages]) {
       for (let i = list.length - 1; i >= 0; i -= 1) {
-        if (stems.has(list[i].stem)) {
-          files += list[i].files.length;
+        if (paths.has(list[i].path)) {
+          files += 1;
           list.splice(i, 1);
         }
       }
@@ -234,7 +144,6 @@ export const E2E_HANDLERS: Record<
       path: `/fake/${shoot}`,
       day: String(params.day),
       project: String(params.name),
-      counts: { raw: 0, denoised: 0, export: 0 },
       imageCount: 0,
       notes: String(params.notes ?? ""),
       cover: null,
@@ -250,12 +159,9 @@ export const E2E_HANDLERS: Record<
       if ("cover" in params) {
         shoot.cover = (params.cover as string | null) ?? null;
         const match = imagesFor(shoot.name).find(
-          (image) => image.stem === shoot.cover,
+          (entry) => entry.rel === shoot.cover,
         );
-        shoot.coverPath =
-          match?.files[match.files.length - 1]?.path ??
-          imagesFor(shoot.name)[0]?.files[0]?.path ??
-          null;
+        shoot.coverPath = match?.path ?? imagesFor(shoot.name)[0]?.path ?? null;
       }
     }
     return { generation: 1 };

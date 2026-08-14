@@ -1,101 +1,54 @@
-import { open as openDialog, save } from "@tauri-apps/plugin-dialog";
-import { Download } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { AlertCircle, Check, Download, Upload } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppSidebar } from "@/components/AppSidebar";
 import { BrowserToolbar, type ViewMode } from "@/components/BrowserToolbar";
 import { Dashboard } from "@/components/Dashboard";
+import {
+  ExportDrawer,
+  type ExportJob,
+  type ExportOptions,
+} from "@/components/ExportDrawer";
 import type { FilmstripMode } from "@/components/Filmstrip";
 import { ImageGrid } from "@/components/ImageGrid";
-import { ImageList, type ListInfo } from "@/components/ImageList";
+import { ImageList } from "@/components/ImageList";
 import { Loupe } from "@/components/Loupe";
 import { LoupeSidebar } from "@/components/LoupeSidebar";
 import { NewProjectDialog } from "@/components/NewProjectDialog";
-import { PAGES, type Page, PageNav } from "@/components/PageNav";
-import { matchesRatingFilter, type RatingOp } from "@/components/RatingFilter";
+import {
+  matchesRatingFilter,
+  type RatingOp,
+  ratingCounts,
+} from "@/components/RatingFilter";
 import { RootPicker, rememberRoot } from "@/components/RootPicker";
 import { SelectionBar } from "@/components/SelectionBar";
-import { SettingsDialog } from "@/components/SettingsDialog";
 import { ShootSettingsDialog } from "@/components/ShootSettingsDialog";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import {
-  coreRequest,
-  type ImageGroup,
-  type SetRootResult,
-  type Stage,
-} from "@/lib/core";
+import { coreRequest, type ImageFile, type SetRootResult } from "@/lib/core";
 import {
   useExportFiles,
   useGenerationPoll,
   useImages,
   useImportFiles,
-  useOpenIn,
   useReveal,
+  useSetExposure,
   useSetRating,
   useShoots,
   useTrash,
 } from "@/lib/queries";
 import { useSelection } from "@/lib/selection";
-import { appName, processingEnabled, useSettings } from "@/lib/settings";
+import { useDebouncedExposure } from "@/lib/useDebouncedExposure";
 
 const ROOT_KEY = "photopipe.root";
+const VIEW_KEY = "photopipe.view";
 
 type RootState =
   | { kind: "picking"; error: string | null; busy: boolean }
   | { kind: "ready"; path: string; generation: number };
 
-/// What each stage page is waiting for, and which file it sends out. A
-/// denoiser wants the raw; an editor wants the DNG if one came back.
-const STAGE_PAGES: Record<
-  "edit" | "export",
-  {
-    produces: Stage;
-    sends: Stage[];
-    empty: string;
-    purpose: string;
-  }
-> = {
-  edit: {
-    produces: "denoised",
-    sends: ["denoised"],
-    empty:
-      "Nothing to edit yet. Send originals from Media to your denoiser, or import DNGs here.",
-    purpose:
-      "Back from the denoiser. Open in your editor; finished exports land in Export.",
-  },
-  export: {
-    produces: "export",
-    sends: ["export"],
-    empty: "Nothing exported yet. Finished files show up here.",
-    purpose: "Deliver: finished exports, ready to zip for hand-over.",
-  },
-};
-
-/// Page copy depends on whether a denoise step exists at all.
-function purposeFor(page: Page, processing: boolean): string {
-  if (page === "media") {
-    return processing
-      ? "Your originals. Rate and cull, then send keepers to your denoiser."
-      : "Your originals. Rate and cull, then open keepers in your editor.";
-  }
-  if (page === "edit" && !processing) {
-    return "Your working set. Open in your editor; finished exports land in Export.";
-  }
-  return STAGE_PAGES[page as "edit" | "export"].purpose;
-}
-
-function emptyFor(page: Page, processing: boolean): string {
-  if (page === "media") {
-    return "No photos in this project yet. Import them here or drop files into the original/ folder.";
-  }
-  if (page === "edit" && !processing) {
-    return "No photos to edit yet. Import them on Media first.";
-  }
-  return STAGE_PAGES[page as "edit" | "export"].empty;
-}
-
-const VIEW_KEY = (page: Page) => `photopipe.view.${page}`;
+const EXPOSURE_COMMIT_MS = 400;
 
 export default function App() {
   const [rootState, setRootState] = useState<RootState>({
@@ -103,34 +56,17 @@ export default function App() {
     error: null,
     busy: false,
   });
-  const [page, setPageRaw] = useState<Page>("media");
   const [openShoot, setOpenShoot] = useState<string | null>(null);
   const [newProject, setNewProject] = useState(false);
-  const [appSettings, setAppSettings] = useState(false);
   const [shootSettings, setShootSettings] = useState<string | null>(null);
-  const { settings, save: saveSettings } = useSettings();
-  const processing = processingEnabled(settings);
-  const setPage = useCallback((next: Page) => {
-    setPageRaw(next);
-  }, []);
-  const [views, setViews] = useState<Record<Page, ViewMode>>(
-    () =>
-      Object.fromEntries(
-        PAGES.map((name) => {
-          const stored = localStorage.getItem(VIEW_KEY(name));
-          const fallback: ViewMode = name === "media" ? "grid" : "list";
-          return [
-            name,
-            stored === "grid" || stored === "list" ? stored : fallback,
-          ];
-        }),
-      ) as Record<Page, ViewMode>,
+  const [view, setView] = useState<ViewMode>(() =>
+    localStorage.getItem(VIEW_KEY) === "list" ? "list" : "grid",
   );
-  const changeView = (name: Page, view: ViewMode) => {
-    setViews((current) => ({ ...current, [name]: view }));
-    localStorage.setItem(VIEW_KEY(name), view);
+  const changeView = (next: ViewMode) => {
+    setView(next);
+    localStorage.setItem(VIEW_KEY, next);
   };
-  const [loupeStem, setLoupeStem] = useState<string | null>(null);
+  const [loupePath, setLoupePath] = useState<string | null>(null);
   const [ratingOp, setRatingOp] = useState<RatingOp>("gte");
   const [ratingStars, setRatingStars] = useState(0);
   const [showInfo, setShowInfo] = useState(
@@ -140,11 +76,9 @@ export default function App() {
     setShowInfo(show);
     localStorage.setItem("photopipe.gridInfo", show ? "always" : "hover");
   };
-  // Preview-only, persists across images and loupe sessions; `r` resets.
-  const [exposure, setExposure] = useState(0);
   const [filmstrip, setFilmstrip] = useState<FilmstripMode>(() => {
     const stored = localStorage.getItem("photopipe.filmstrip");
-    if (stored === "0") return "off"; // migrate the old boolean
+    if (stored === "0") return "off";
     if (stored === "off" || stored === "thumbs" || stored === "ratings")
       return stored;
     return "thumbs";
@@ -153,6 +87,9 @@ export default function App() {
     setFilmstrip(mode);
     localStorage.setItem("photopipe.filmstrip", mode);
   };
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [jobs, setJobs] = useState<ExportJob[]>([]);
+  const nextJobId = useRef(1);
 
   const connectRoot = useCallback(async (path: string) => {
     setRootState({ kind: "picking", error: null, busy: true });
@@ -176,138 +113,50 @@ export default function App() {
   const shoots = useShoots(ready);
   const images = useImages(openShoot);
   const setRating = useSetRating(openShoot);
-  const openIn = useOpenIn();
+  const setExposure = useSetExposure(openShoot);
   const reveal = useReveal();
   const trash = useTrash(openShoot);
   const exportFiles = useExportFiles();
   const importFiles = useImportFiles(openShoot);
   useGenerationPoll(ready, ready ? rootState.generation : null);
 
+  const allImages = images.data ?? [];
   const filteredImages = useMemo(
     () =>
-      (images.data ?? []).filter((image) =>
+      allImages.filter((image) =>
         matchesRatingFilter(image.rating, ratingOp, ratingStars),
       ),
-    [images.data, ratingOp, ratingStars],
+    [allImages, ratingOp, ratingStars],
   );
+  const counts = useMemo(() => ratingCounts(allImages), [allImages]);
+  const filterActive = ratingOp === "unrated" || ratingStars > 0;
 
-  // The Export page only concerns finished files; the other stages show the
-  // whole project so you can see what's still missing.
-  const pageImages = useMemo(() => {
-    // Media is the original/ stage: images that have an original capture
-    // (ARW — or JPEG for a JPEG-first shoot). Derived-only groups (an
-    // orphan DNG from a renaming tool) belong to the later pages.
-    if (page === "media") {
-      return filteredImages.filter((image) =>
-        image.files.some((file) => file.stage === "raw"),
-      );
-    }
-    // Stage pages are folder views: empty until files land at that stage.
-    // Without a denoise step nothing ever reaches processed/, so Edit works
-    // from the originals instead of sitting permanently empty.
-    const atStage =
-      page === "edit" && !processing ? "raw" : STAGE_PAGES[page].produces;
-    return (images.data ?? []).filter((image) =>
-      image.files.some((file) => file.stage === atStage),
-    );
-  }, [page, filteredImages, images.data, processing]);
-
-  const orderedStems = useMemo(
-    () => pageImages.map((image) => image.stem),
-    [pageImages],
+  const orderedPaths = useMemo(
+    () => filteredImages.map((image) => image.path),
+    [filteredImages],
   );
-  const selection = useSelection(orderedStems);
+  const selection = useSelection(orderedPaths);
 
   const selectedImages = useMemo(
-    () => pageImages.filter((image) => selection.selected.has(image.stem)),
-    [pageImages, selection.selected],
+    () => filteredImages.filter((image) => selection.selected.has(image.path)),
+    [filteredImages, selection.selected],
+  );
+  const editedCount = useMemo(
+    () => selectedImages.filter((image) => image.exposure !== 0).length,
+    [selectedImages],
   );
 
-  /// Which file of each selected image this page sends out.
-  const selectedPaths = useMemo(() => {
-    const stages =
-      page === "media" ? null : STAGE_PAGES[page as "edit" | "export"].sends;
-    return selectedImages.flatMap((image) => {
-      if (!stages) return image.files.map((file) => file.path);
-      for (const stage of stages) {
-        const match = image.files.find((file) => file.stage === stage);
-        if (match) return [match.path];
-      }
-      return [];
-    });
-  }, [selectedImages, page]);
+  const {
+    draft: exposureDraft,
+    scrub: scrubExposure,
+    flush: flushExposure,
+  } = useDebouncedExposure(
+    (path, value) => setExposure.mutate({ path, exposure: value }),
+    EXPOSURE_COMMIT_MS,
+  );
+  const changeExposure = (image: ImageFile, value: number) =>
+    scrubExposure(image.path, value);
 
-  /// Tab badges: how many images sit at each stage. Zero stays hidden, so a
-  /// fresh project shows nothing in Process and Edit until files land there.
-  const badges = useMemo(() => {
-    if (!openShoot) return {};
-    const all = images.data ?? [];
-    const at = (stage: Stage) =>
-      all.filter((image) => image.files.some((file) => file.stage === stage))
-        .length;
-    return {
-      edit: at("denoised"),
-      export: at("export"),
-    };
-  }, [openShoot, images.data]);
-
-  /// Which tool this page hands off to. With processing switched off there
-  /// is no denoiser, so Media hands straight to the editor.
-  const handoffApp = (target: Page): string | null =>
-    target === "media" && processing ? settings.processor : settings.editor;
-
-  const handoff = async (
-    paths: string[] = selectedPaths,
-    target: Page = page,
-  ) => {
-    // Guard against a caller wiring this straight to onClick: a DOM event
-    // would arrive here as `paths` and reach JSON.stringify as a cycle.
-    const files = Array.isArray(paths) ? paths : selectedPaths;
-    let app = handoffApp(target);
-    if (!app) {
-      // Nothing configured yet: pick it here, then remember it app-wide.
-      const chosen = await openDialog({
-        title: "Choose an application",
-        directory: false,
-        filters: [{ name: "Applications", extensions: ["app"] }],
-        defaultPath: "/Applications",
-      }).catch(() => null);
-      if (typeof chosen !== "string") return;
-      app = chosen;
-      saveSettings(
-        target === "media" && processing
-          ? { ...settings, processor: app }
-          : { ...settings, editor: app },
-      );
-    }
-    openIn.mutate({ paths: files, app, label: appName(app) ?? undefined });
-  };
-
-  const runExport = async () => {
-    // Several files want a folder; a single one may as well be a zip too, so
-    // the folder is the honest default either way.
-    const destination = await openDialog({
-      title: "Export to folder",
-      directory: true,
-    }).catch(() => null);
-    if (typeof destination !== "string") return;
-    exportFiles.mutate({ paths: selectedPaths, destination, zip: false });
-  };
-
-  const runZip = async () => {
-    const destination = await save({
-      title: "Save zip",
-      defaultPath: `${openShoot ?? "export"}.zip`,
-      filters: [{ name: "Zip archive", extensions: ["zip"] }],
-    }).catch(() => null);
-    if (typeof destination !== "string") return;
-    exportFiles.mutate({ paths: selectedPaths, destination, zip: true });
-  };
-
-  /// Each page imports into its own stage folder: originals on Media,
-  /// DNGs coming back on Process, finished files on Edit and Export.
-  const importStage: Stage =
-    page === "media" ? "raw" : STAGE_PAGES[page].produces;
   const runImport = async () => {
     const chosen = await openDialog({
       title: "Import photos",
@@ -322,94 +171,102 @@ export default function App() {
         ? [chosen]
         : [];
     if (paths.length === 0) return;
-    importFiles.mutate({ stage: importStage, paths });
+    importFiles.mutate(paths);
   };
 
-  /// The always-visible next step. Empty selection: the button *starts* the
-  /// step (arming select mode, or preselecting the waiting work). With a
-  /// selection it becomes the action itself — the action is the transition.
-  const cta = (() => {
-    if (!openShoot || !images.data) return null;
-    const count = selection.selected.size;
-    // Empty: one click selects everything the page (and filter) shows.
-    if (count === 0) {
-      return {
-        label: `Select all ${pageImages.length}`,
-        disabled: pageImages.length === 0,
-        onClick: selection.selectAll,
-      };
-    }
-    // With a selection the button is the hand-off itself: Media sends raws
-    // to the denoiser, Process sends DNGs to the editor, Edit walks on to
-    // Export, Export zips.
-    switch (page) {
-      case "media": {
-        // With processing on, originals go to the denoiser; with it off they
-        // go straight to the editor, because there is no denoise step.
-        const target = appName(handoffApp("media"));
-        return {
-          label: processing
-            ? `Send ${count} to ${target ?? "denoiser"}`
-            : `Open ${count} in ${target ?? "editor"}`,
-          onClick: () =>
-            handoff(
-              selectedImages.flatMap((image) =>
-                image.files
-                  .filter((file) => file.stage === "raw")
-                  .map((file) => file.path),
-              ),
+  const runExport = (options: ExportOptions, destination: string) => {
+    if (!openShoot) return;
+    const id = nextJobId.current++;
+    const label = `Export ${selectedImages.length} ${
+      options.format === "jpeg" ? "as JPEG" : "originals"
+    }`;
+    setJobs((current) => [
+      { id, label, destination, status: "running" as const },
+      ...current,
+    ]);
+    exportFiles.mutate(
+      {
+        shoot: openShoot,
+        paths: selectedImages.map((image) => image.path),
+        destination,
+        zip: options.zip,
+        flatten: options.flatten,
+        format: options.format,
+        quality: options.quality,
+      },
+      {
+        onSuccess: (result) => {
+          setJobs((current) =>
+            current.map((job) =>
+              job.id === id
+                ? { ...job, status: "done" as const, files: result.files }
+                : job,
             ),
-        };
-      }
-      case "edit":
-        return {
-          label: `Open ${count} in ${appName(settings.editor) ?? "editor"}`,
-          onClick: () => handoff(),
-        };
-      case "export":
-        return { label: `Export ${count}`, onClick: runZip };
-    }
-  })();
+          );
+        },
+        onError: (error) => {
+          setJobs((current) =>
+            current.map((job) =>
+              job.id === id
+                ? { ...job, status: "failed" as const, detail: String(error) }
+                : job,
+            ),
+          );
+        },
+      },
+    );
+  };
 
   const loupeImages = useMemo(() => {
-    if (!loupeStem) return filteredImages;
-    if (filteredImages.some((image) => image.stem === loupeStem)) {
+    if (!loupePath) return filteredImages;
+    if (filteredImages.some((image) => image.path === loupePath)) {
       return filteredImages;
     }
-    const all = images.data ?? [];
-    const position = new Map(all.map((image, i) => [image.stem, i]));
-    const pinnedAt = position.get(loupeStem);
+    const position = new Map(allImages.map((image, i) => [image.path, i]));
+    const pinnedAt = position.get(loupePath);
     if (pinnedAt === undefined) return filteredImages;
     const result = [...filteredImages];
     const insertAt = result.findIndex(
-      (image) => (position.get(image.stem) ?? -1) > pinnedAt,
+      (image) => (position.get(image.path) ?? -1) > pinnedAt,
     );
-    if (insertAt === -1) result.push(all[pinnedAt]);
-    else result.splice(insertAt, 0, all[pinnedAt]);
+    if (insertAt === -1) result.push(allImages[pinnedAt]);
+    else result.splice(insertAt, 0, allImages[pinnedAt]);
     return result;
-  }, [filteredImages, images.data, loupeStem]);
+  }, [filteredImages, allImages, loupePath]);
 
-  const loupeIndex = loupeStem
-    ? loupeImages.findIndex((image) => image.stem === loupeStem)
+  const loupeIndex = loupePath
+    ? loupeImages.findIndex((image) => image.path === loupePath)
     : -1;
 
   useEffect(() => {
-    if (loupeStem && loupeIndex === -1) setLoupeStem(null);
-  }, [loupeStem, loupeIndex]);
+    if (loupePath && loupeIndex === -1) setLoupePath(null);
+  }, [loupePath, loupeIndex]);
 
-  // ⌘1–⌘4 switch workspace; ⌘A selects everything on the page; Esc clears.
+  const openExport = useCallback(() => {
+    const loupeImage = loupeIndex >= 0 ? loupeImages[loupeIndex] : null;
+    if (loupeImage) {
+      setLoupePath(null);
+      if (!filteredImages.some((image) => image.path === loupeImage.path)) {
+        setRatingStars(0);
+        setRatingOp((op) => (op === "unrated" ? "gte" : op));
+      }
+      selection.select([loupeImage.path]);
+      setDrawerOpen(true);
+      return;
+    }
+    setDrawerOpen((open) => !open);
+  }, [loupeIndex, loupeImages, filteredImages, selection]);
+
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey) {
-        const index = Number(event.key) - 1;
-        if (PAGES[index]) {
-          event.preventDefault();
-          setPage(PAGES[index]);
-          return;
-        }
         if (event.key === "a" && loupeIndex === -1) {
           event.preventDefault();
           selection.selectAll();
+        }
+        if (event.key === "e" && openShoot) {
+          event.preventDefault();
+          openExport();
         }
         return;
       }
@@ -419,7 +276,7 @@ export default function App() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [selection, loupeIndex, setPage]);
+  }, [selection, loupeIndex, openShoot, openExport]);
 
   const changeRatingStars = (stars: number) => {
     setRatingStars(stars);
@@ -427,9 +284,10 @@ export default function App() {
   };
 
   const enterShoot = (shoot: string | null) => {
+    flushExposure();
     setOpenShoot(shoot);
-    setLoupeStem(null);
-    setRatingStars(0); // comparator choice sticks; the threshold resets
+    setLoupePath(null);
+    setRatingStars(0);
     selection.clear();
   };
 
@@ -444,17 +302,25 @@ export default function App() {
   }
 
   const loupeImage = loupeIndex >= 0 ? loupeImages[loupeIndex] : null;
-  const inLoupe = page === "media" && openShoot !== null && loupeImage !== null;
+  const inLoupe = openShoot !== null && loupeImage !== null;
+  const loupeExposure =
+    loupeImage === null
+      ? 0
+      : exposureDraft?.path === loupeImage.path
+        ? exposureDraft.value
+        : loupeImage.exposure;
+
+  const currentShoot = shoots.data?.find((s) => s.name === openShoot);
+  const runningJobs = jobs.filter((job) => job.status === "running").length;
+  const latestJob = jobs[0];
 
   return (
     <TooltipProvider>
-      <SettingsDialog open={appSettings} onOpenChange={setAppSettings} />
       <ShootSettingsDialog
         open={shootSettings !== null}
         onOpenChange={(next) => !next && setShootSettings(null)}
         shoot={shoots.data?.find((s) => s.name === shootSettings)}
         onRenamed={(renamed) => {
-          // The folder moved, so anything holding the old name must follow.
           setShootSettings(null);
           if (openShoot === shootSettings) setOpenShoot(renamed);
         }}
@@ -470,30 +336,31 @@ export default function App() {
             image={loupeImage}
             position={loupeIndex + 1}
             count={loupeImages.length}
-            exposure={exposure}
+            exposure={loupeExposure}
             filmstrip={filmstrip}
             onFilmstrip={changeFilmstrip}
+            ratingCounts={counts}
             ratingOp={ratingOp}
             onRatingOp={setRatingOp}
             ratingStars={ratingStars}
             onRatingStars={changeRatingStars}
-            onExposureChange={setExposure}
-            onRate={(stem, rating) => setRating.mutate({ stem, rating })}
-            onBackToGrid={() => setLoupeStem(null)}
+            onExposureChange={(value) => changeExposure(loupeImage, value)}
+            onRate={(path, rating) => setRating.mutate({ path, rating })}
+            onBackToGrid={() => setLoupePath(null)}
           />
         ) : (
           <AppSidebar
-            currentShoot={shoots.data?.find((s) => s.name === openShoot)}
+            currentShoot={currentShoot}
             onBack={() => enterShoot(null)}
             onImport={runImport}
             onRevealShoot={(path) => reveal.mutate([path])}
             onShootSettings={() => setShootSettings(openShoot)}
-            onAppSettings={() => setAppSettings(true)}
+            ratingCounts={counts}
             ratingOp={ratingOp}
             onRatingOp={setRatingOp}
             ratingStars={ratingStars}
             onRatingStars={changeRatingStars}
-            filterEnabled={openShoot !== null && page === "media"}
+            filterEnabled={openShoot !== null}
             showInfo={showInfo}
             onShowInfo={toggleShowInfo}
             rootPath={rootState.path}
@@ -503,57 +370,125 @@ export default function App() {
           />
         )}
         <SidebarInset className="flex h-screen min-w-0 flex-col bg-background text-foreground">
-          {/* Navigation only — everything informational lives in the sidebar. */}
-          <header className="flex h-10 shrink-0 items-center border-b border-border px-2">
-            <PageNav page={page} onPage={setPage} badges={badges} />
+          <header className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
+            {currentShoot ? (
+              <>
+                <span className="truncate font-medium text-sm">
+                  {currentShoot.project ?? currentShoot.name}
+                </span>
+                <span className="font-mono text-[10px] text-muted-foreground">
+                  {currentShoot.imageCount} photos
+                </span>
+              </>
+            ) : (
+              <span className="text-muted-foreground text-sm">Library</span>
+            )}
+            <span className="flex-1" />
+            {jobs.length > 0 && (
+              <Button
+                size="sm"
+                variant="ghost"
+                data-testid="activity-pill"
+                onClick={() => setDrawerOpen(true)}
+                className="h-7 text-xs text-muted-foreground"
+              >
+                {runningJobs > 0 ? (
+                  <>
+                    <span className="size-2 animate-pulse rounded-full bg-primary" />
+                    Exporting…
+                  </>
+                ) : latestJob?.status === "failed" ? (
+                  <>
+                    <AlertCircle className="text-destructive" />
+                    Activity
+                  </>
+                ) : (
+                  <>
+                    <Check className="text-emerald-400" />
+                    Activity
+                  </>
+                )}
+              </Button>
+            )}
+            {openShoot && (
+              <Button
+                size="sm"
+                data-testid="open-export"
+                onClick={() => openExport()}
+                className="h-7 text-xs"
+              >
+                <Upload />
+                Export
+                {selection.selected.size > 0 && ` ${selection.selected.size}`}…
+              </Button>
+            )}
           </header>
           <SelectionBar
             count={selection.selected.size}
-            appLabel={
-              handoffApp(page)
-                ?.split("/")
-                .pop()
-                ?.replace(/\.app$/, "") ?? null
+            busy={exportFiles.isPending}
+            onExport={() => setDrawerOpen(true)}
+            onReveal={() =>
+              reveal.mutate(selectedImages.map((image) => image.path))
             }
-            busy={openIn.isPending || exportFiles.isPending}
-            onOpenIn={handoff}
-            onExport={page === "export" ? runZip : runExport}
-            onReveal={() => reveal.mutate(selectedPaths)}
-            onDelete={() => trash.mutate([...selection.selected])}
+            onDelete={() =>
+              trash.mutate(selectedImages.map((image) => image.path))
+            }
             onClear={selection.clear}
           />
-          <div className="min-h-0 flex-1">
-            <PageContent
-              page={page}
-              openShoot={openShoot}
-              images={images.data}
-              pageImages={pageImages}
-              shoots={shoots.data}
-              onOpenShoot={enterShoot}
-              onNewProject={() => setNewProject(true)}
-              view={views[page]}
-              onView={(view) => changeView(page, view)}
-              cta={cta}
-              onImport={runImport}
-              processing={processing}
-              onShootSettings={setShootSettings}
-              inLoupe={inLoupe}
-              loupeImages={loupeImages}
-              loupeIndex={loupeIndex}
-              exposure={exposure}
-              filmstrip={filmstrip}
-              showInfo={showInfo}
-              selection={selection}
-              onExposureChange={setExposure}
-              onNavigate={(next) =>
-                setLoupeStem(loupeImages[next]?.stem ?? null)
-              }
-              onCloseLoupe={() => setLoupeStem(null)}
-              onRate={(stem, rating) => setRating.mutate({ stem, rating })}
-              onOpenLoupe={(index) =>
-                setLoupeStem(pageImages[index]?.stem ?? null)
-              }
-            />
+          <div className="flex min-h-0 flex-1">
+            <div className="min-w-0 flex-1">
+              <Content
+                openShoot={openShoot}
+                loaded={images.data !== undefined}
+                filteredImages={filteredImages}
+                shoots={shoots.data}
+                onOpenShoot={enterShoot}
+                onNewProject={() => setNewProject(true)}
+                view={view}
+                onView={changeView}
+                onImport={runImport}
+                onShootSettings={setShootSettings}
+                filterActive={filterActive}
+                inLoupe={inLoupe}
+                loupeImages={loupeImages}
+                loupeIndex={loupeIndex}
+                loupeExposure={loupeExposure}
+                filmstrip={filmstrip}
+                showInfo={showInfo}
+                selection={selection}
+                onExposureChange={changeExposure}
+                onNavigate={(next) =>
+                  setLoupePath(loupeImages[next]?.path ?? null)
+                }
+                onCloseLoupe={() => setLoupePath(null)}
+                onRate={(path, rating) => setRating.mutate({ path, rating })}
+                onOpenLoupe={(index) =>
+                  setLoupePath(filteredImages[index]?.path ?? null)
+                }
+              />
+            </div>
+            {drawerOpen && openShoot && !inLoupe && (
+              <ExportDrawer
+                shoot={openShoot}
+                selectedCount={selection.selected.size}
+                editedCount={editedCount}
+                filteredCount={filteredImages.length}
+                totalCount={allImages.length}
+                filterActive={filterActive}
+                jobs={jobs}
+                busy={exportFiles.isPending}
+                onSelectFiltered={() => selection.select(orderedPaths)}
+                onSelectAll={() => {
+                  setRatingStars(0);
+                  if (ratingOp === "unrated") setRatingOp("gte");
+                  selection.select(allImages.map((image) => image.path));
+                }}
+                onClearSelection={selection.clear}
+                onExport={runExport}
+                onReveal={(path) => reveal.mutate([path])}
+                onClose={() => setDrawerOpen(false)}
+              />
+            )}
           </div>
         </SidebarInset>
       </SidebarProvider>
@@ -562,51 +497,47 @@ export default function App() {
 }
 
 type ContentProps = {
-  page: Page;
   openShoot: string | null;
-  images: ImageGroup[] | undefined;
-  pageImages: ImageGroup[];
+  loaded: boolean;
+  filteredImages: ImageFile[];
   shoots: ReturnType<typeof useShoots>["data"];
   onOpenShoot: (shoot: string) => void;
   onNewProject: () => void;
   view: ViewMode;
   onView: (view: ViewMode) => void;
-  cta: { label: string; disabled?: boolean; onClick: () => void } | null;
   onImport: () => void;
-  processing: boolean;
   onShootSettings: (shoot: string) => void;
+  filterActive: boolean;
   inLoupe: boolean;
-  loupeImages: ImageGroup[];
+  loupeImages: ImageFile[];
   loupeIndex: number;
-  exposure: number;
+  loupeExposure: number;
   filmstrip: FilmstripMode;
   showInfo: boolean;
   selection: ReturnType<typeof useSelection>;
-  onExposureChange: (ev: number) => void;
+  onExposureChange: (image: ImageFile, ev: number) => void;
   onNavigate: (index: number) => void;
   onCloseLoupe: () => void;
-  onRate: (stem: string, rating: number) => void;
+  onRate: (path: string, rating: number) => void;
   onOpenLoupe: (index: number) => void;
 };
 
-function PageContent({
-  page,
+function Content({
   openShoot,
-  images,
-  pageImages,
+  loaded,
+  filteredImages,
   shoots,
   onOpenShoot,
   onNewProject,
   view,
   onView,
-  cta,
   onImport,
-  processing,
   onShootSettings,
+  filterActive,
   inLoupe,
   loupeImages,
   loupeIndex,
-  exposure,
+  loupeExposure,
   filmstrip,
   showInfo,
   selection,
@@ -617,18 +548,6 @@ function PageContent({
   onOpenLoupe,
 }: ContentProps) {
   if (!openShoot) {
-    // Without a project the pages have nothing to work on; Media doubles as
-    // the library so there's always somewhere to go.
-    if (page !== "media") {
-      return (
-        <p
-          data-testid="no-project"
-          className="p-8 text-sm text-muted-foreground"
-        >
-          Open a shoot to use {page}.
-        </p>
-      );
-    }
     return shoots ? (
       <div className="h-full overflow-auto">
         <Dashboard
@@ -643,18 +562,19 @@ function PageContent({
     );
   }
 
-  if (!images) {
+  if (!loaded) {
     return <p className="p-8 text-sm text-muted-foreground">loading…</p>;
   }
 
   if (inLoupe) {
+    const image = loupeImages[loupeIndex];
     return (
       <Loupe
         images={loupeImages}
         index={loupeIndex}
-        exposure={exposure}
+        exposure={loupeExposure}
         filmstrip={filmstrip}
-        onExposureChange={onExposureChange}
+        onExposureChange={(value) => onExposureChange(image, value)}
         onNavigate={onNavigate}
         onClose={onCloseLoupe}
         onRate={onRate}
@@ -662,69 +582,60 @@ function PageContent({
     );
   }
 
-  const selectMode = !selection.isEmpty;
-  const media = page === "media";
-  const emptyMessage = emptyFor(page, processing);
-  if (pageImages.length === 0) {
+  const emptyMessage = filterActive
+    ? "Nothing matches the rating filter."
+    : "No photos in this project yet. Import them, or drop files into the folder — subfolders are fine.";
+  if (filteredImages.length === 0) {
     return (
       <div className="flex h-full min-h-0 flex-col">
         <BrowserToolbar
-          purpose={purposeFor(page, processing)}
+          purpose="Cull and rate. Click a photo for the loupe; Export takes the selection."
           view={view}
           onView={onView}
-          cta={null}
         />
         <div className="flex flex-col items-start gap-3 p-8">
           <p
-            data-testid="stage-empty"
+            data-testid="browser-empty"
             className="text-muted-foreground text-sm"
           >
             {emptyMessage}
           </p>
-          <Button size="sm" data-testid="empty-import" onClick={onImport}>
-            <Download />
-            Import photos
-          </Button>
+          {!filterActive && (
+            <Button size="sm" data-testid="empty-import" onClick={onImport}>
+              <Download />
+              Import photos
+            </Button>
+          )}
         </div>
       </div>
     );
   }
-  const listInfo: ListInfo = media
-    ? { kind: "media" }
-    : {
-        kind: "stage",
-        produces: "export",
-        label: "Edited",
-      };
 
+  const selectMode = !selection.isEmpty;
   return (
     <div className="flex h-full min-h-0 flex-col">
       <BrowserToolbar
-        purpose={purposeFor(page, processing)}
+        purpose="Cull and rate. Click a photo for the loupe; Export takes the selection."
         view={view}
         onView={onView}
-        cta={cta}
       />
       <div className="min-h-0 flex-1">
         {view === "grid" ? (
           <ImageGrid
-            images={pageImages}
-            onOpen={media ? onOpenLoupe : undefined}
+            images={filteredImages}
+            onOpen={onOpenLoupe}
             showInfo={showInfo}
             selected={selection.selected}
-            selectMode={selectMode || !media}
-            displayOriginal={media}
+            selectMode={selectMode}
             onSelect={selection.click}
           />
         ) : (
           <ImageList
-            images={pageImages}
-            info={listInfo}
+            images={filteredImages}
             selected={selection.selected}
             selectMode={selectMode}
             onSelect={selection.click}
-            onOpen={media ? onOpenLoupe : undefined}
-            displayOriginal={media}
+            onOpen={onOpenLoupe}
             emptyMessage={emptyMessage}
           />
         )}

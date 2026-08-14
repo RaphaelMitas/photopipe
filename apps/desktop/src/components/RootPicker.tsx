@@ -39,10 +39,6 @@ type Props = {
   onSubmit: (path: string) => void;
 };
 
-/// First-run welcome: one action on the happy path (the native folder
-/// dialog), recent roots one click away. The typed-path form stays as a
-/// deliberately quiet secondary affordance — it is also what e2e drives,
-/// since the browser has no native dialog.
 export function RootPicker({ error, busy, onSubmit }: Props) {
   const [path, setPath] = useState("");
   const recents = recentRoots();
@@ -54,9 +50,7 @@ export function RootPicker({ error, busy, onSubmit }: Props) {
         title: "Choose your photos folder",
       });
       if (typeof dir === "string") onSubmit(dir);
-    } catch {
-      // Dialog unavailable (e2e browser) — the text input still works.
-    }
+    } catch {}
   }
 
   return (

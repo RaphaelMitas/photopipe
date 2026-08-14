@@ -1,10 +1,5 @@
 import Foundation
 
-/// Session state for one library root: current snapshot, generation counter,
-/// SQLite index, FSEvents-driven rescans, thumbnail cache.
-///
-/// Threading: protocol requests arrive on the main read loop; FSEvents rescans
-/// run on `rescanQueue`. All mutable state is guarded by `lock`.
 public final class LibraryService {
     public enum ServiceError: Error {
         case noRoot
@@ -41,13 +36,9 @@ public final class LibraryService {
             .appendingPathComponent("Photopipe/index.sqlite").path
     }
 
-    // MARK: - Requests
-
     public func setRoot(path: String, indexPath: String?) throws -> (
         shoots: Int, files: Int, generation: Int
     ) {
-        // Standardize once (drops trailing slashes, resolves "..") so prefix
-        // checks like `thumbnail`'s stay robust against typed-in paths.
         let path = URL(fileURLWithPath: path).standardizedFileURL.path
         let scanned = try scanLibrary(root: path)
 
@@ -58,9 +49,6 @@ public final class LibraryService {
         let currentGeneration = generation
         lock.unlock()
 
-        // Index is best-effort cache: failures must never break the session.
-        // Write-only for now — nothing reads it in production. It exists so a
-        // later phase can serve instant startup from it; disk stays the truth.
         let index = try? SQLiteIndex(path: indexPath ?? Self.defaultIndexPath())
         try? index?.save(root: path, filesByShoot: Self.filesByShoot(scanned))
         lock.lock()
@@ -83,7 +71,7 @@ public final class LibraryService {
         return snapshot.shoots
     }
 
-    public func listImages(shoot: String) throws -> [ImageGroup] {
+    public func listImages(shoot: String) throws -> [ImageFile] {
         lock.lock()
         defer { lock.unlock() }
         guard root != nil else { throw ServiceError.noRoot }
@@ -99,22 +87,17 @@ public final class LibraryService {
         return (generation, root, snapshot.shoots.count)
     }
 
-    /// Thumbnail any file under the root. Stats the file directly so a path
-    /// fresh from an external change works even before the rescan lands.
     public func thumbnail(path: String, maxPixel: Int) throws -> String {
         try thumbnailer.thumbnail(for: recordUnderRoot(path: path), maxPixel: maxPixel).path
     }
 
-    /// Loupe render with raw-pipeline exposure; same root discipline as
-    /// thumbnails.
     public func render(path: String, exposure: Double, maxPixel: Int) throws -> String {
         try renderer.render(
             file: recordUnderRoot(path: path), exposure: exposure, maxPixel: maxPixel
         ).path
     }
 
-    /// Validate a path against the current root and stat it into a record.
-    private func recordUnderRoot(path: String) throws -> FileRecord {
+    private func recordUnderRoot(path: String) throws -> ImageFile {
         lock.lock()
         let currentRoot = root
         lock.unlock()
@@ -124,45 +107,42 @@ public final class LibraryService {
             throw ServiceError.pathOutsideRoot(path)
         }
         let attrs = try FileManager.default.attributesOfItem(atPath: canonical)
-        let ext = (canonical as NSString).pathExtension
-        return FileRecord(
+        return ImageFile(
             path: canonical,
-            ext: ext,
-            stage: Stage(fileExtension: ext) ?? .export,
+            rel: String(canonical.dropFirst(currentRoot.count + 1)),
+            ext: (canonical as NSString).pathExtension,
             size: (attrs[.size] as? Int64) ?? 0,
             mtime: ((attrs[.modificationDate] as? Date) ?? .distantPast).timeIntervalSince1970)
     }
 
-    /// Rate a logical image: XMP writes across its lineage (sidecar for raw,
-    /// embedded for the rest), then an in-place snapshot update so the UI sees
-    /// the new rating immediately — the FSEvents rescan that follows re-reads
-    /// the same truth from disk.
-    public func setRating(shoot shootName: String, stem: String, rating: Int) throws -> (
-        rating: Int, generation: Int
-    ) {
-        guard (0...5).contains(rating) else { throw ServiceError.invalidRating(rating) }
-
+    private func image(shoot shootName: String, path: String) throws -> ImageFile {
         lock.lock()
         let images = snapshot.imagesByShoot[shootName]
         let hasRoot = root != nil
         lock.unlock()
         guard hasRoot else { throw ServiceError.noRoot }
         guard let images else { throw ServiceError.unknownShoot(shootName) }
-        guard let image = images.first(where: { $0.stem.lowercased() == stem.lowercased() })
-        else { throw ServiceError.unknownImage(stem) }
+        let canonical = URL(fileURLWithPath: path).standardizedFileURL.path
+        guard
+            let image = images.first(where: {
+                $0.path == path
+                    || URL(fileURLWithPath: $0.path).standardizedFileURL.path == canonical
+            })
+        else {
+            throw ServiceError.unknownImage(path)
+        }
+        return image
+    }
 
-        // Disk first — it is the source of truth; the snapshot follows.
-        try XMP.writeRating(rating, files: image.files, tool: .shared)
-
+    private func updateSnapshot(
+        shoot shootName: String, path: String, _ transform: (ImageFile) -> ImageFile
+    ) {
         lock.lock()
         defer { lock.unlock() }
         if var updated = snapshot.imagesByShoot[shootName],
-            let index = updated.firstIndex(where: { $0.stem.lowercased() == stem.lowercased() })
+            let index = updated.firstIndex(where: { $0.path == path })
         {
-            let old = updated[index]
-            updated[index] = ImageGroup(
-                stem: old.stem, stage: old.stage, rating: rating,
-                width: old.width, height: old.height, files: old.files)
+            updated[index] = transform(updated[index])
             var imagesByShoot = snapshot.imagesByShoot
             imagesByShoot[shootName] = updated
             snapshot = LibrarySnapshot(
@@ -170,21 +150,31 @@ public final class LibraryService {
                 fileCount: snapshot.fileCount)
             generation += 1
         }
-        return (rating, generation)
     }
 
-    // MARK: - Creating projects
+    public func setRating(shoot shootName: String, path: String, rating: Int) throws -> (
+        rating: Int, generation: Int
+    ) {
+        guard (0...5).contains(rating) else { throw ServiceError.invalidRating(rating) }
+        let image = try image(shoot: shootName, path: path)
 
-    /// The one rule for what a project folder may be called. Both creating and
-    /// renaming go through here: `day` is interpolated into a path, so an
-    /// unchecked one would create folders outside the library — or move an
-    /// existing project out of it.
-    ///
-    /// The property that matters is that the composed name is a *single path
-    /// component*. The date prefix alone does not give that: `parseShootName`
-    /// ends in `.+`, which happily matches slashes, so a day carrying its own
-    /// underscore ("2026-09-09_a/../../x") satisfies the pattern while still
-    /// escaping. Hence the separator check on the composed string.
+        try XMP.writeRating(rating, file: image, tool: .shared)
+
+        updateSnapshot(shoot: shootName, path: image.path) { $0.with(rating: rating) }
+        return (rating, status().generation)
+    }
+
+    public func setExposure(shoot shootName: String, path: String, exposure: Double) throws -> (
+        exposure: Double, generation: Int
+    ) {
+        let image = try image(shoot: shootName, path: path)
+
+        try XMP.writeExposure(exposure, file: image, tool: .shared)
+
+        updateSnapshot(shoot: shootName, path: image.path) { $0.with(exposure: exposure) }
+        return (exposure, status().generation)
+    }
+
     static func projectFolder(day: String, name: String) throws -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !trimmed.contains("/"), !trimmed.contains(":") else {
@@ -197,9 +187,6 @@ public final class LibraryService {
         return folder
     }
 
-    /// Where a project folder lives, proven to sit directly inside the root.
-    /// Guards the composed path itself rather than trusting the input checks,
-    /// the same discipline `pathsUnderRoot` applies to file actions.
     static func projectURL(root: String, day: String, name: String) throws -> (
         folder: String, url: URL
     ) {
@@ -212,8 +199,6 @@ public final class LibraryService {
         return (folder, url)
     }
 
-    /// Edit a project's metadata: notes and the cover image. Both live in
-    /// `photopipe.json` because no image file can carry them.
     public func updateProject(shoot shootName: String, notes: String?, cover: String??) throws
         -> Int
     {
@@ -224,15 +209,12 @@ public final class LibraryService {
 
         var file = ProjectFile.read(inShoot: path)
         if let notes { file.notes = notes }
-        // Double optional: `.some(nil)` clears the cover, `nil` leaves it be.
         if let cover { file.cover = cover }
         try file.write(inShoot: path)
         rescanNow()
         return status().generation
     }
 
-    /// Rename a project, which means renaming its folder: the folder *is* the
-    /// project, so the name on disk and the name in the app can never drift.
     public func renameProject(shoot shootName: String, day: String, name: String) throws -> (
         shoot: String, generation: Int
     ) {
@@ -252,7 +234,6 @@ public final class LibraryService {
         }
         try FileManager.default.moveItem(at: URL(fileURLWithPath: path), to: destination)
 
-        // Keep the metadata's date in step with the folder name.
         var file = ProjectFile.read(inShoot: destination.path)
         file.created = day
         try? file.write(inShoot: destination.path)
@@ -261,9 +242,6 @@ public final class LibraryService {
         return (folder, status().generation)
     }
 
-    /// Create `<root>/<day>_<name>/` with an `original/` folder for photos to
-    /// land in and a metadata file for the notes. The folder *is* the project
-    /// — there is no registry to fall out of sync with the disk.
     public func createProject(day: String, name: String, notes: String) throws -> (
         shoot: String, path: String, generation: Int
     ) {
@@ -276,23 +254,14 @@ public final class LibraryService {
         guard !FileManager.default.fileExists(atPath: path.path) else {
             throw ServiceError.projectExists(folder)
         }
-        // All stage folders from the start, so files can be pasted straight
-        // into the right place from Finder.
-        for stageFolder in ["original", "processed", "export"] {
-            try FileManager.default.createDirectory(
-                at: path.appendingPathComponent(stageFolder), withIntermediateDirectories: true)
-        }
+        try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
         try ProjectFile(notes: notes, created: day).write(inShoot: path.path)
 
         rescanNow()
         return (folder, path.path, status().generation)
     }
 
-    /// Copy outside files into a stage's folder. Every page can import: the
-    /// originals at the start, but also processed or edited files coming
-    /// back from tools that saved them elsewhere. Non-image files are
-    /// skipped, names never overwrite, and the source is only read.
-    public func importFiles(shoot shootName: String, stage: Stage, paths: [String]) throws -> (
+    public func importFiles(shoot shootName: String, paths: [String]) throws -> (
         imported: Int, skipped: Int, generation: Int
     ) {
         lock.lock()
@@ -300,76 +269,111 @@ public final class LibraryService {
         lock.unlock()
         guard let path else { throw ServiceError.unknownShoot(shootName) }
 
-        let folder =
-            switch stage {
-            case .raw: "original"
-            case .denoised: "processed"
-            case .export: "export"
-            }
-        let images = paths.filter {
-            Stage(fileExtension: ($0 as NSString).pathExtension) != nil
-        }
+        let images = paths.filter(isImagePath)
         guard !images.isEmpty else { throw FileActions.ActionError.noFiles }
-        let copied = try FileActions.copy(paths: images, toFolder: path + "/" + folder)
+        let copied = try FileActions.copy(paths: images, toFolder: path)
         rescanNow()
         return (copied, paths.count - images.count, status().generation)
     }
 
-    // MARK: - Explicit file actions
-
-    /// Hand files to another application. The stage pages use this to send
-    /// work out to a denoiser or editor; whatever comes back is picked up by
-    /// the watcher, no bookkeeping required.
-    public func openIn(paths: [String], app: String) throws {
-        try FileActions.open(paths: try pathsUnderRoot(paths), inApp: app)
-    }
-
     public func reveal(paths: [String]) throws {
-        try FileActions.reveal(paths: try pathsUnderRoot(paths))
+        try FileActions.reveal(
+            paths: paths.map { URL(fileURLWithPath: $0).standardizedFileURL.path })
     }
 
-    /// Trash whole logical images: every file of the lineage group plus its
-    /// XMP sidecar. Deleting "a photo" and leaving its sidecar or its DNG
-    /// behind would be a lie about what you asked for.
-    public func trashImages(shoot shootName: String, stems: [String]) throws -> (
+    public func trashImages(shoot shootName: String, paths: [String]) throws -> (
         files: Int, generation: Int
     ) {
-        lock.lock()
-        let images = snapshot.imagesByShoot[shootName]
-        let hasRoot = root != nil
-        lock.unlock()
-        guard hasRoot else { throw ServiceError.noRoot }
-        guard let images else { throw ServiceError.unknownShoot(shootName) }
-
-        let wanted = Set(stems.map { $0.lowercased() })
         var targets: [String] = []
-        for image in images where wanted.contains(image.stem.lowercased()) {
-            for file in image.files {
-                targets.append(file.path)
-                let sidecar = XMP.sidecarURL(forImagePath: file.path)
-                if FileManager.default.fileExists(atPath: sidecar.path) {
-                    targets.append(sidecar.path)
-                }
+        for path in paths {
+            let found = try image(shoot: shootName, path: path)
+            targets.append(found.path)
+            let sidecar = XMP.sidecarURL(forImagePath: found.path)
+            if FileManager.default.fileExists(atPath: sidecar.path) {
+                targets.append(sidecar.path)
             }
         }
-        guard !targets.isEmpty else { throw ServiceError.unknownImage(stems.first ?? "") }
+        guard !targets.isEmpty else { throw ServiceError.unknownImage(paths.first ?? "") }
 
         let trashed = try FileActions.trash(paths: try pathsUnderRoot(targets))
         rescanNow()
         return (trashed.count, status().generation)
     }
 
-    /// Copy files to a folder, or zip them flat.
-    public func exportFiles(paths: [String], destination: String, zip: Bool) throws -> Int {
-        let validated = try pathsUnderRoot(paths)
-        return zip
-            ? try FileActions.zip(paths: validated, to: destination)
-            : try FileActions.copy(paths: validated, toFolder: destination)
+    public enum ExportFormat: String, Sendable {
+        case original
+        case jpeg
     }
 
-    /// Every path must sit inside the library root — the UI supplies paths it
-    /// read from us, and this is what keeps a malformed request from touching
-    /// anything else on disk.
+    public func exportFiles(
+        shoot shootName: String, paths: [String], destination: String,
+        zip: Bool, flatten: Bool, format: ExportFormat, quality: Int
+    ) throws -> Int {
+        let images = try pathsUnderRoot(paths).map { try image(shoot: shootName, path: $0) }
+        guard !images.isEmpty else { throw FileActions.ActionError.noFiles }
+
+        var used: Set<String> = []
+        let items: [(image: ImageFile, rel: String)] = images.map { image in
+            var rel = image.rel
+            if format == .jpeg {
+                rel = (rel as NSString).deletingPathExtension + ".jpg"
+            }
+            if flatten {
+                rel = (rel as NSString).lastPathComponent
+            }
+            let name = FileActions.uniqueName(rel) { used.contains($0.lowercased()) }
+            used.insert(name.lowercased())
+            return (image, name)
+        }
+
+        let fm = FileManager.default
+        if zip {
+            let staging = fm.temporaryDirectory
+                .appendingPathComponent("photopipe-export-\(UUID().uuidString)")
+            defer { try? fm.removeItem(at: staging) }
+            for (image, rel) in items {
+                try write(
+                    image, format: format, quality: quality,
+                    to: staging.appendingPathComponent(rel), staging: true)
+            }
+            try FileActions.zipDirectory(at: staging, to: destination)
+        } else {
+            let base = URL(fileURLWithPath: destination)
+            for (image, rel) in items {
+                let target = FileActions.uniqueURL(for: base.appendingPathComponent(rel))
+                try write(image, format: format, quality: quality, to: target, staging: false)
+            }
+        }
+        return items.count
+    }
+
+    private func write(
+        _ image: ImageFile, format: ExportFormat, quality: Int, to target: URL, staging: Bool
+    ) throws {
+        let fm = FileManager.default
+        try fm.createDirectory(
+            at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        switch format {
+        case .original:
+            let source = URL(fileURLWithPath: image.path)
+            if staging {
+                do { try fm.linkItem(at: source, to: target) } catch {
+                    try fm.copyItem(at: source, to: target)
+                }
+            } else {
+                try fm.copyItem(at: source, to: target)
+            }
+        case .jpeg:
+            try renderer.exportJPEG(
+                file: image, exposure: image.exposure,
+                quality: Double(quality) / 100, to: target)
+            if image.rating > 0 {
+                try? ExifTool.shared.write(
+                    ["-overwrite_original", "-XMP:Rating=\(image.rating)", target.path])
+            }
+        }
+    }
+
     private func pathsUnderRoot(_ paths: [String]) throws -> [String] {
         lock.lock()
         let currentRoot = root
@@ -384,17 +388,13 @@ public final class LibraryService {
         }
     }
 
-    // MARK: - Rescan (FSEvents)
-
     private func scheduleRescan() {
-        // Runs on rescanQueue (watcher's queue) — pendingRescan only touched here.
         pendingRescan?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.rescanNow() }
         pendingRescan = work
         rescanQueue.asyncAfter(deadline: .now() + 0.5, execute: work)
     }
 
-    /// Synchronous rescan; also called directly by tests for determinism.
     public func rescanNow() {
         lock.lock()
         let currentRoot = root
@@ -415,7 +415,7 @@ public final class LibraryService {
         }
     }
 
-    static func filesByShoot(_ snapshot: LibrarySnapshot) -> [String: [FileRecord]] {
-        snapshot.imagesByShoot.mapValues { images in images.flatMap(\.files) }
+    static func filesByShoot(_ snapshot: LibrarySnapshot) -> [String: [ImageFile]] {
+        snapshot.imagesByShoot
     }
 }

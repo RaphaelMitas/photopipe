@@ -31,7 +31,7 @@ test("@screenshots library", async ({ page }) => {
   await page.screenshot({ path: `${SHOTS}/library.png` });
 });
 
-test("@screenshots media grid with a selection", async ({ page }) => {
+test("@screenshots browse grid with a selection", async ({ page }) => {
   await openLibrary(page);
   await page.getByTestId("shoot-2026-08-01_dolomites").click();
   await expect(page.getByTestId("grid")).toBeVisible();
@@ -42,7 +42,7 @@ test("@screenshots media grid with a selection", async ({ page }) => {
   await thumbs.nth(7).click();
   await expect(page.getByTestId("selection-count")).toHaveText("3 selected");
   await page.waitForTimeout(300);
-  await page.screenshot({ path: `${SHOTS}/media.png` });
+  await page.screenshot({ path: `${SHOTS}/browse.png` });
 });
 
 test("@screenshots loupe with the filmstrip", async ({ page }) => {
@@ -56,11 +56,13 @@ test("@screenshots loupe with the filmstrip", async ({ page }) => {
   await page.screenshot({ path: `${SHOTS}/loupe.png` });
 });
 
-test("@screenshots edit stage", async ({ page }) => {
+test("@screenshots export drawer", async ({ page }) => {
   await openLibrary(page);
-  await page.getByTestId("shoot-2026-07-12_zell").click();
-  await page.getByTestId("page-edit").click();
-  await expect(page.getByTestId("stage-table")).toBeVisible();
+  await page.getByTestId("shoot-2026-08-01_dolomites").click();
+  await expect(page.getByTestId("grid")).toBeVisible();
+  await page.getByTestId("open-export").click();
+  await page.getByTestId("select-all").click();
+  await expect(page.getByTestId("drawer-count")).toHaveText("200");
   await page.waitForTimeout(300);
-  await page.screenshot({ path: `${SHOTS}/edit.png` });
+  await page.screenshot({ path: `${SHOTS}/export.png` });
 });

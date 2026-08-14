@@ -1,6 +1,5 @@
 import "@testing-library/jest-dom/vitest";
 
-// jsdom has no ResizeObserver; the grid only needs it to exist.
 class ResizeObserverStub {
   observe() {}
   unobserve() {}
@@ -9,7 +8,6 @@ class ResizeObserverStub {
 globalThis.ResizeObserver ??=
   ResizeObserverStub as unknown as typeof ResizeObserver;
 
-// jsdom has no matchMedia; the sidebar's use-mobile hook queries it.
 globalThis.matchMedia ??= ((query: string) => ({
   matches: false,
   media: query,

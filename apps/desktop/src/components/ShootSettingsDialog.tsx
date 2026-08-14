@@ -1,6 +1,6 @@
 import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
-import { fileSrc, type ImageGroup, type Shoot } from "@/lib/core";
+import { fileSrc, type ImageFile, type Shoot } from "@/lib/core";
 import {
   useImages,
   useRenameProject,
@@ -27,18 +27,18 @@ function CoverChoice({
   chosen,
   onChoose,
 }: {
-  image: ImageGroup;
+  image: ImageFile;
   chosen: boolean;
   onChoose: () => void;
 }) {
-  const thumb = useThumbnail(image.files[image.files.length - 1]);
+  const thumb = useThumbnail(image);
   return (
     <button
       type="button"
       data-testid="cover-choice"
-      data-stem={image.stem}
+      data-path={image.rel}
       data-chosen={chosen}
-      title={image.stem}
+      title={image.rel}
       onClick={onChoose}
       className={cn(
         "relative size-16 shrink-0 overflow-hidden rounded-md",
@@ -48,7 +48,7 @@ function CoverChoice({
       {thumb.data ? (
         <img
           src={fileSrc(thumb.data)}
-          alt={image.stem}
+          alt={image.rel}
           loading="lazy"
           className="h-full w-full object-cover"
         />
@@ -68,13 +68,9 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   shoot: Shoot | undefined;
-  /// Renaming changes the folder, so the app has to follow it.
   onRenamed: (shoot: string) => void;
 };
 
-/// Everything about one project: what it's called, when it was, what it says,
-/// and which frame represents it. Name and date rename the folder on disk,
-/// because the folder is the project.
 export function ShootSettingsDialog({
   open: isOpen,
   onOpenChange,
@@ -90,7 +86,6 @@ export function ShootSettingsDialog({
   const [notes, setNotes] = useState("");
   const [cover, setCover] = useState<string | null>(null);
 
-  // Reload the draft each time the dialog opens on a project.
   useEffect(() => {
     if (!isOpen || !shoot) return;
     setName(shoot.project ?? shoot.name);
@@ -188,11 +183,11 @@ export function ShootSettingsDialog({
               <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
                 {images.data.map((image) => (
                   <CoverChoice
-                    key={image.stem}
+                    key={image.path}
                     image={image}
-                    chosen={cover === image.stem}
+                    chosen={cover === image.rel}
                     onChoose={() =>
-                      setCover(cover === image.stem ? null : image.stem)
+                      setCover(cover === image.rel ? null : image.rel)
                     }
                   />
                 ))}

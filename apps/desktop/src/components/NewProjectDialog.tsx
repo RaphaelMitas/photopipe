@@ -23,12 +23,9 @@ function today(): string {
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /// Called with the new shoot's folder name once it exists on disk.
   onCreated: (shoot: string) => void;
 };
 
-/// Name it, date it, note it — creates `<date>_<name>/original/` and a metadata
-/// file, then opens the fresh project so photos can land in it.
 export function NewProjectDialog({ open, onOpenChange, onCreated }: Props) {
   const [name, setName] = useState("");
   const [day, setDay] = useState(today);

@@ -4,8 +4,7 @@ import Testing
 @testable import PhotopipeCoreKit
 
 private func tempDir() throws -> URL {
-    let dir = FileManager.default.temporaryDirectory
-        .appendingPathComponent("photopipe-project-\(UUID().uuidString)")
+    let dir = scratchDir("project")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     return dir
 }
@@ -16,7 +15,7 @@ private func makeService(in dir: URL) -> LibraryService {
         renderer: Renderer(cacheDir: dir.appendingPathComponent("renders")))
 }
 
-@Test func createProjectMakesFolderRawAndNotes() throws {
+@Test func createProjectMakesFolderAndNotes() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
 
@@ -29,15 +28,12 @@ private func makeService(in dir: URL) -> LibraryService {
     #expect(created.generation > before.generation)
 
     let fm = FileManager.default
-    // Every stage folder exists from the start, so files can be pasted
-    // straight into the right place from Finder.
-    for stageFolder in ["original", "processed", "export"] {
-        var isDir: ObjCBool = false
-        #expect(
-            fm.fileExists(atPath: created.path + "/" + stageFolder, isDirectory: &isDir)
-                && isDir.boolValue,
-            "\(stageFolder)/ should exist")
-    }
+    var isDir: ObjCBool = false
+    #expect(fm.fileExists(atPath: created.path, isDirectory: &isDir) && isDir.boolValue)
+    // Just the folder and its metadata — no scaffolding the flat model
+    // doesn't need.
+    #expect(
+        try fm.contentsOfDirectory(atPath: created.path) == [ProjectFile.fileName])
     let file = ProjectFile.read(inShoot: created.path)
     #expect(file.notes == "client wants 12 finals")
     #expect(file.created == "2026-08-10")
@@ -95,10 +91,10 @@ private func makeService(in dir: URL) -> LibraryService {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
     let shoot = dir.appendingPathComponent("2026-09-09_cover")
-    let originals = shoot.appendingPathComponent("original")
-    try FileManager.default.createDirectory(at: originals, withIntermediateDirectories: true)
+    let selects = shoot.appendingPathComponent("selects")
+    try FileManager.default.createDirectory(at: selects, withIntermediateDirectories: true)
     for stem in ["DSC00001", "DSC00002"] {
-        try Data("x".utf8).write(to: originals.appendingPathComponent("\(stem).ARW"))
+        try Data("x".utf8).write(to: selects.appendingPathComponent("\(stem).ARW"))
     }
     try ProjectFile(notes: "n").write(inShoot: shoot.path)
 
@@ -108,12 +104,14 @@ private func makeService(in dir: URL) -> LibraryService {
     // No choice yet: the first image is the project's face.
     #expect(service.listShoots()[0].coverPath?.hasSuffix("DSC00001.ARW") == true)
 
-    _ = try service.updateProject(shoot: "2026-09-09_cover", notes: nil, cover: "DSC00002")
-    #expect(service.listShoots()[0].cover == "DSC00002")
+    _ = try service.updateProject(
+        shoot: "2026-09-09_cover", notes: nil, cover: "selects/DSC00002.ARW")
+    #expect(service.listShoots()[0].cover == "selects/DSC00002.ARW")
     #expect(service.listShoots()[0].coverPath?.hasSuffix("DSC00002.ARW") == true)
 
     // The chosen cover is deleted: fall back rather than show a blank card.
-    _ = try service.trashImages(shoot: "2026-09-09_cover", stems: ["DSC00002"])
+    _ = try service.trashImages(
+        shoot: "2026-09-09_cover", paths: [selects.appendingPathComponent("DSC00002.ARW").path])
     #expect(service.listShoots()[0].coverPath?.hasSuffix("DSC00001.ARW") == true)
 
     // Clearing the choice explicitly is different from leaving it alone.

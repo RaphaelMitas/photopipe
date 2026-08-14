@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ImageGroup, Stage } from "@/lib/core";
-import { ImageList, type ListInfo } from "./ImageList";
+import type { ImageFile } from "@/lib/core";
+import { makeImage as image } from "@/lib/test-image";
+import { ImageList } from "./ImageList";
 
 afterEach(cleanup);
 
@@ -11,28 +12,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => `asset://${path}`,
 }));
 
-function image(stem: string, stages: Stage[]): ImageGroup {
-  return {
-    stem,
-    stage: stages[stages.length - 1],
-    rating: 0,
-    width: 3000,
-    height: 2000,
-    files: stages.map((stage) => ({
-      path: `/r/s/${stem}.${stage}`,
-      ext: stage,
-      stage,
-      size: 1,
-      mtime: 1,
-    })),
-  };
-}
-
-function renderStage(
-  images: ImageGroup[],
-  info: ListInfo = { kind: "stage", produces: "denoised", label: "DNG" },
-  onOpen?: (index: number) => void,
-) {
+function renderList(images: ImageFile[], onOpen?: (index: number) => void) {
   const onSelect = vi.fn();
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -41,8 +21,7 @@ function renderStage(
     <QueryClientProvider client={client}>
       <ImageList
         images={images}
-        info={info}
-        selected={new Set(["B"])}
+        selected={new Set(["/r/s/B.ARW"])}
         selectMode={false}
         onSelect={onSelect}
         onOpen={onOpen}
@@ -55,43 +34,42 @@ function renderStage(
 }
 
 describe("ImageList", () => {
-  it("shows which images this stage is still waiting for", () => {
-    renderStage([
-      image("A", ["raw"]),
-      image("B", ["raw", "denoised"]),
-      image("C", ["raw"]),
+  it("shows every file as its own row, subfolders included", () => {
+    renderList([
+      image("A.ARW"),
+      image("A.jpg", { rating: 4 }),
+      image("Tag2/A.ARW", { exposure: 0.5 }),
     ]);
 
-    const rows = screen.getAllByTestId("stage-row");
+    const rows = screen.getAllByTestId("image-row");
     expect(rows).toHaveLength(3);
-    // Presence of the produced file *is* the state — nothing is stored.
-    expect(rows[0].dataset.done).toBe("false");
-    expect(rows[1].dataset.done).toBe("true");
-    expect(rows[0].textContent).toContain("waiting");
-    expect(rows[1].textContent).toContain("done");
+    expect(rows[0].dataset.path).toBe("A.ARW");
+    expect(rows[1].dataset.path).toBe("A.jpg");
+    expect(rows[1].textContent).toContain("4");
+    expect(rows[2].dataset.path).toBe("Tag2/A.ARW");
+    expect(rows[2].textContent).toContain("+0.5");
   });
 
   it("reflects and reports selection", () => {
-    const { onSelect } = renderStage([
-      image("A", ["raw"]),
-      image("B", ["raw", "denoised"]),
-    ]);
-    const rows = screen.getAllByTestId("stage-row");
+    const { onSelect } = renderList([image("A.ARW"), image("B.ARW")]);
+    const rows = screen.getAllByTestId("image-row");
     expect(rows[1].dataset.selected).toBe("true");
 
     fireEvent.click(rows[0], { metaKey: true });
-    expect(onSelect).toHaveBeenCalledWith("A", { meta: true, shift: false });
+    expect(onSelect).toHaveBeenCalledWith("/r/s/A.ARW", {
+      meta: true,
+      shift: false,
+    });
 
-    // Without an opener even a plain click toggle-selects.
     fireEvent.click(rows[1]);
-    expect(onSelect).toHaveBeenLastCalledWith("B", {
+    expect(onSelect).toHaveBeenLastCalledWith("/r/s/B.ARW", {
       meta: true,
       shift: false,
     });
   });
 
   it("says so when there is nothing to work on", () => {
-    renderStage([]);
-    expect(screen.getByTestId("stage-empty").textContent).toBe("nothing here");
+    renderList([]);
+    expect(screen.getByTestId("list-empty").textContent).toBe("nothing here");
   });
 });

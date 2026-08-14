@@ -1,11 +1,8 @@
-import { AppWindow, FolderOpen, Trash2, Upload, X } from "lucide-react";
+import { FolderOpen, Trash2, Upload, X } from "lucide-react";
 import { Button } from "./ui/button";
 
 type Props = {
   count: number;
-  /// Label of the app this page hands off to, if one is remembered.
-  appLabel?: string | null;
-  onOpenIn: () => void;
   onExport: () => void;
   onReveal: () => void;
   onDelete: () => void;
@@ -13,16 +10,8 @@ type Props = {
   busy?: boolean;
 };
 
-/// Actions on the current selection. Appears only when something is selected,
-/// so the workspace stays out of the way while you're just looking.
-///
-/// Every handler is invoked with no arguments on purpose: these props are
-/// `() => void`, and passing them straight to onClick would feed the DOM
-/// event in as a parameter — which then travels to the core as data.
 export function SelectionBar({
   count,
-  appLabel,
-  onOpenIn,
   onExport,
   onReveal,
   onDelete,
@@ -45,17 +34,6 @@ export function SelectionBar({
         <Button
           size="sm"
           variant="secondary"
-          data-testid="action-open-in"
-          disabled={busy}
-          onClick={() => onOpenIn()}
-          className="h-7 text-xs"
-        >
-          <AppWindow />
-          {appLabel ? `Open in ${appLabel}` : "Open in…"}
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
           data-testid="action-export"
           disabled={busy}
           onClick={() => onExport()}

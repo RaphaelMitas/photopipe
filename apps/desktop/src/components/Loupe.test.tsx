@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ImageGroup } from "@/lib/core";
+import type { ImageFile } from "@/lib/core";
+import { makeImage } from "@/lib/test-image";
 import { Loupe } from "./Loupe";
 import { LoupeSidebar } from "./LoupeSidebar";
 import { SidebarProvider } from "./ui/sidebar";
@@ -14,23 +15,10 @@ vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => `asset://${path}`,
 }));
 
-function makeImages(): ImageGroup[] {
-  return ["DSC00001", "DSC00002", "DSC00003"].map((stem) => ({
-    stem,
-    stage: "raw" as const,
-    rating: 0,
-    width: 3000,
-    height: 2000,
-    files: [
-      {
-        path: `/r/s/${stem}.ARW`,
-        ext: "ARW",
-        stage: "raw" as const,
-        size: 1,
-        mtime: 1,
-      },
-    ],
-  }));
+function makeImages(): ImageFile[] {
+  return ["DSC00001", "DSC00002", "DSC00003"].map((stem) =>
+    makeImage(`${stem}.ARW`),
+  );
 }
 
 function renderLoupe(index = 0, exposure = 0) {
@@ -62,9 +50,9 @@ describe("Loupe keyboard culling", () => {
   it("rates with digit keys and clears with 0", () => {
     const { onRate } = renderLoupe();
     fireEvent.keyDown(window, { key: "3" });
-    expect(onRate).toHaveBeenCalledWith("DSC00001", 3);
+    expect(onRate).toHaveBeenCalledWith("/r/s/DSC00001.ARW", 3);
     fireEvent.keyDown(window, { key: "0" });
-    expect(onRate).toHaveBeenCalledWith("DSC00001", 0);
+    expect(onRate).toHaveBeenCalledWith("/r/s/DSC00001.ARW", 0);
   });
 
   it("navigates with arrows and clamps at the edges", () => {
@@ -113,7 +101,7 @@ describe("Loupe keyboard culling", () => {
 });
 
 describe("LoupeSidebar", () => {
-  it("shows stem, position and exposure; rates and resets", () => {
+  it("shows name, position and exposure; rates and resets", () => {
     const onRate = vi.fn();
     const onExposureChange = vi.fn();
     render(
@@ -126,6 +114,7 @@ describe("LoupeSidebar", () => {
             exposure={0.25}
             filmstrip="thumbs"
             onFilmstrip={vi.fn()}
+            ratingCounts={[3, 0, 0, 0, 0, 0]}
             ratingOp="gte"
             onRatingOp={vi.fn()}
             ratingStars={0}
@@ -137,12 +126,12 @@ describe("LoupeSidebar", () => {
         </SidebarProvider>
       </TooltipProvider>,
     );
-    expect(screen.getByTestId("loupe-stem").textContent).toBe("DSC00002");
+    expect(screen.getByTestId("loupe-name").textContent).toBe("DSC00002.ARW");
     expect(screen.getByTestId("loupe-position").textContent).toBe("2/3");
     expect(screen.getByText("+0.25")).toBeVisible();
 
     fireEvent.click(screen.getByTestId("star-4"));
-    expect(onRate).toHaveBeenCalledWith("DSC00002", 4);
+    expect(onRate).toHaveBeenCalledWith("/r/s/DSC00002.ARW", 4);
     fireEvent.click(screen.getByTitle("Reset exposure (r)"));
     expect(onExposureChange).toHaveBeenCalledWith(0);
   });

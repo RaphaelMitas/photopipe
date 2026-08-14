@@ -503,8 +503,7 @@ mod tests {
         assert_eq!(list[0]["name"], "2026-01-01_cargotest");
         assert_eq!(list[0]["day"], "2026-01-01");
         assert_eq!(list[0]["project"], "cargotest");
-        assert_eq!(list[0]["counts"]["raw"], 2);
-        assert_eq!(list[0]["counts"]["export"], 1);
+        assert_eq!(list[0]["imageCount"], 3);
 
         sidecar.shutdown();
         let _ = std::fs::remove_dir_all(&root);
@@ -531,7 +530,7 @@ mod tests {
         sidecar.read_timeout = Duration::from_millis(200);
         let start = Instant::now();
         let error = sidecar
-            .request("setRating", Some(json!({"stem": "DSC1", "rating": 3})))
+            .request("setRating", Some(json!({"path": "/r/DSC1.ARW", "rating": 3})))
             .expect_err("must fail");
         // One attempt only — no silent re-send of a possibly-applied mutation.
         assert!(error.contains("connection failed"), "got: {error}");

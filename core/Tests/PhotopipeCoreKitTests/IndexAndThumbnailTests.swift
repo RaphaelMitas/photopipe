@@ -11,13 +11,17 @@ private func tempFile(_ name: String) -> String {
         .appendingPathComponent("photopipe-\(UUID().uuidString)-\(name)").path
 }
 
-private let sampleFiles: [String: [FileRecord]] = [
+private let sampleFiles: [String: [ImageFile]] = [
     "2026-07-12_zell": [
-        FileRecord(path: "/r/2026-07-12_zell/DSC001.ARW", ext: "ARW", stage: .raw, size: 10, mtime: 1),
-        FileRecord(path: "/r/2026-07-12_zell/DSC001.jpg", ext: "jpg", stage: .export, size: 2, mtime: 2),
+        ImageFile(
+            path: "/r/2026-07-12_zell/DSC001.ARW", rel: "DSC001.ARW", ext: "ARW",
+            size: 10, mtime: 1),
+        ImageFile(
+            path: "/r/2026-07-12_zell/selects/DSC001.jpg", rel: "selects/DSC001.jpg", ext: "jpg",
+            size: 2, mtime: 2),
     ],
     "misc": [
-        FileRecord(path: "/r/misc/x.dng", ext: "dng", stage: .denoised, size: 5, mtime: 3)
+        ImageFile(path: "/r/misc/x.dng", rel: "x.dng", ext: "dng", size: 5, mtime: 3)
     ],
 ]
 
@@ -33,9 +37,13 @@ private let sampleFiles: [String: [FileRecord]] = [
     #expect(loaded.root == "/r")
     #expect(loaded.filesByShoot.count == 2)
     #expect(loaded.filesByShoot["2026-07-12_zell"]?.count == 2)
+    let nested = try #require(
+        loaded.filesByShoot["2026-07-12_zell"]?.first { $0.rel == "selects/DSC001.jpg" })
+    #expect(nested.path == "/r/2026-07-12_zell/selects/DSC001.jpg")
+    #expect(nested.ext == "jpg")
     let dng = try #require(loaded.filesByShoot["misc"]?.first)
-    #expect(dng.stage == .denoised)
     #expect(dng.size == 5)
+    #expect(dng.mtime == 3)
 }
 
 @Test func indexSaveReplacesFully() throws {
@@ -85,7 +93,7 @@ private let sampleFiles: [String: [FileRecord]] = [
 
 // MARK: - Thumbnailer
 
-private func makePNG(width: Int = 64, height: Int = 48) throws -> (FileRecord, URL) {
+private func makePNG(width: Int = 64, height: Int = 48) throws -> (ImageFile, URL) {
     let path = tempFile("img.png")
     let url = URL(fileURLWithPath: path)
     let context = CGContext(
@@ -100,23 +108,23 @@ private func makePNG(width: Int = 64, height: Int = 48) throws -> (FileRecord, U
     CGImageDestinationAddImage(destination, image, nil)
     CGImageDestinationFinalize(destination)
     let attrs = try FileManager.default.attributesOfItem(atPath: path)
-    let record = FileRecord(
-        path: path, ext: "png", stage: .export,
+    let file = ImageFile(
+        path: path, rel: url.lastPathComponent, ext: "png",
         size: (attrs[.size] as? Int64) ?? 0,
         mtime: ((attrs[.modificationDate] as? Date) ?? Date(timeIntervalSince1970: 0)).timeIntervalSince1970)
-    return (record, url)
+    return (file, url)
 }
 
 @Test func thumbnailGeneratesAndCaches() throws {
     let cacheDir = URL(fileURLWithPath: tempFile("thumbs"))
-    let (record, source) = try makePNG()
+    let (file, source) = try makePNG()
     defer {
         try? FileManager.default.removeItem(at: cacheDir)
         try? FileManager.default.removeItem(at: source)
     }
 
     let thumbnailer = Thumbnailer(cacheDir: cacheDir)
-    let first = try thumbnailer.thumbnail(for: record, maxPixel: 32)
+    let first = try thumbnailer.thumbnail(for: file, maxPixel: 32)
     #expect(FileManager.default.fileExists(atPath: first.path))
     let producedSource = CGImageSourceCreateWithURL(first as CFURL, nil)
     let produced = try #require(
@@ -125,7 +133,7 @@ private func makePNG(width: Int = 64, height: Int = 48) throws -> (FileRecord, U
 
     // Cache hit: same path, file untouched.
     let stamp = try FileManager.default.attributesOfItem(atPath: first.path)[.modificationDate] as? Date
-    let second = try thumbnailer.thumbnail(for: record, maxPixel: 32)
+    let second = try thumbnailer.thumbnail(for: file, maxPixel: 32)
     #expect(second == first)
     let stampAfter = try FileManager.default.attributesOfItem(atPath: first.path)[.modificationDate] as? Date
     #expect(stamp == stampAfter)
@@ -133,8 +141,8 @@ private func makePNG(width: Int = 64, height: Int = 48) throws -> (FileRecord, U
 
 @Test func thumbnailKeyChangesWithMtimeAndSize() throws {
     let thumbnailer = Thumbnailer(cacheDir: URL(fileURLWithPath: tempFile("thumbs")))
-    let a = FileRecord(path: "/x.jpg", ext: "jpg", stage: .export, size: 1, mtime: 1)
-    let b = FileRecord(path: "/x.jpg", ext: "jpg", stage: .export, size: 1, mtime: 2)
+    let a = ImageFile(path: "/x.jpg", rel: "x.jpg", ext: "jpg", size: 1, mtime: 1)
+    let b = ImageFile(path: "/x.jpg", rel: "x.jpg", ext: "jpg", size: 1, mtime: 2)
     #expect(thumbnailer.cachePath(for: a, maxPixel: 256) != thumbnailer.cachePath(for: b, maxPixel: 256))
     #expect(
         thumbnailer.cachePath(for: a, maxPixel: 256) != thumbnailer.cachePath(for: a, maxPixel: 512))
@@ -157,15 +165,15 @@ private func makePNG(width: Int = 64, height: Int = 48) throws -> (FileRecord, U
         return
     }
     let attrs = try FileManager.default.attributesOfItem(atPath: fixture.path)
-    let record = FileRecord(
-        path: fixture.path, ext: "arw", stage: .raw,
+    let file = ImageFile(
+        path: fixture.path, rel: fixture.lastPathComponent, ext: "arw",
         size: (attrs[.size] as? Int64) ?? 0,
         mtime: ((attrs[.modificationDate] as? Date) ?? .distantPast).timeIntervalSince1970)
 
     let cacheDir = URL(fileURLWithPath: tempFile("thumbs"))
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let start = Date()
-    let thumb = try Thumbnailer(cacheDir: cacheDir).thumbnail(for: record, maxPixel: 512)
+    let thumb = try Thumbnailer(cacheDir: cacheDir).thumbnail(for: file, maxPixel: 512)
     let elapsed = Date().timeIntervalSince(start)
     #expect(FileManager.default.fileExists(atPath: thumb.path))
     // Embedded-preview extraction must stay far from full raw decode territory.

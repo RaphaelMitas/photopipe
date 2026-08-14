@@ -1,28 +1,20 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Star } from "lucide-react";
+import { Check } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fileSrc, type ImageGroup, type Stage } from "@/lib/core";
+import { fileSrc, type ImageFile } from "@/lib/core";
 import { useThumbnail } from "@/lib/queries";
+import { ExposureBadge, RatingBadge } from "./PhotoBadges";
 import { Skeleton } from "./ui/skeleton";
 
 const TARGET_ROW_HEIGHT = 220;
 const GAP = 8;
 
-const STAGE_DOT: Record<Stage, string> = {
-  raw: "bg-muted-foreground",
-  denoised: "bg-sky-400",
-  export: "bg-emerald-400",
-};
-
-type Cell = { image: ImageGroup; index: number; width: number };
+type Cell = { image: ImageFile; index: number; width: number };
 type Row = { cells: Cell[]; height: number };
 
-/// Justified layout: fill each row greedily at the target height, then scale
-/// the row so it exactly spans the container. Verticals keep their full
-/// aspect — nothing is cropped.
-function packRows(images: ImageGroup[], containerWidth: number): Row[] {
+function packRows(images: ImageFile[], containerWidth: number): Row[] {
   const rows: Row[] = [];
-  let current: { image: ImageGroup; index: number; ratio: number }[] = [];
+  let current: { image: ImageFile; index: number; ratio: number }[] = [];
   let ratioSum = 0;
 
   const flush = (justify: boolean) => {
@@ -52,12 +44,16 @@ function packRows(images: ImageGroup[], containerWidth: number): Row[] {
       ratioSum * TARGET_ROW_HEIGHT + GAP * (current.length - 1);
     if (naturalWidth >= containerWidth) flush(true);
   });
-  flush(false); // trailing partial row stays at target height, left-aligned
+  flush(false);
 
   return rows;
 }
 
-/// Hold this long to start selecting instead of opening the photo.
+function splitRel(rel: string): [string, string] {
+  const cut = rel.lastIndexOf("/");
+  return cut === -1 ? ["", rel] : [rel.slice(0, cut + 1), rel.slice(cut + 1)];
+}
+
 const LONG_PRESS_MS = 400;
 
 function Thumb({
@@ -67,28 +63,20 @@ function Thumb({
   showInfo,
   selected,
   selectMode,
-  displayOriginal,
   onOpen,
   onSelect,
 }: {
-  image: ImageGroup;
+  image: ImageFile;
   width: number;
   height: number;
   showInfo?: boolean;
   selected?: boolean;
   selectMode?: boolean;
-  displayOriginal?: boolean;
   onOpen?: () => void;
   onSelect?: (modifiers: { meta: boolean; shift: boolean }) => void;
 }) {
-  // Files are rank-sorted: first is the original capture, last the export.
-  const display = displayOriginal
-    ? image.files[0]
-    : image.files[image.files.length - 1];
-  const thumb = useThumbnail(display);
+  const thumb = useThumbnail(image);
   const pressTimer = useRef<number | null>(null);
-  // A long press already acted; the click that follows must not also open
-  // the loupe.
   const pressFired = useRef(false);
 
   const cancelPress = () => {
@@ -97,8 +85,6 @@ function Thumb({
       pressTimer.current = null;
     }
   };
-  // Unmounting mid-press must not fire a selection afterwards. Reads the ref
-  // directly so it needs no dependency on the (per-render) helper above.
   useEffect(
     () => () => {
       if (pressTimer.current !== null) clearTimeout(pressTimer.current);
@@ -106,11 +92,13 @@ function Thumb({
     [],
   );
 
+  const [dir, name] = splitRel(image.rel);
+
   return (
     <button
       type="button"
       data-testid="thumb"
-      data-stem={image.stem}
+      data-path={image.rel}
       data-selected={selected ? "true" : "false"}
       onPointerDown={() => {
         pressFired.current = false;
@@ -123,9 +111,6 @@ function Thumb({
       onPointerUp={cancelPress}
       onPointerLeave={cancelPress}
       onPointerCancel={cancelPress}
-      // A plain click opens the photo — that's the common case. Selecting is
-      // deliberate: hold, or use ⌘/shift. Once anything is selected you're in
-      // select mode, and plain clicks toggle until you clear it.
       onClick={(event) => {
         if (pressFired.current) {
           pressFired.current = false;
@@ -148,58 +133,56 @@ function Thumb({
       {thumb.data ? (
         <img
           src={fileSrc(thumb.data)}
-          alt={image.stem}
+          alt={image.rel}
           loading="lazy"
           className="h-full w-full object-cover"
         />
       ) : (
         <Skeleton className="h-full w-full rounded-none" />
       )}
+      {selected && (
+        <span className="absolute top-1.5 left-1.5 flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
+          <Check className="size-3" />
+        </span>
+      )}
+      <ExposureBadge
+        exposure={image.exposure}
+        unit=" EV"
+        testid="thumb-edited"
+        className="absolute top-1.5 right-1.5 rounded-full bg-background/70 px-1.5 py-0.5 font-mono text-[9px] text-foreground/80 backdrop-blur"
+      />
       <span
         data-testid="thumb-info"
-        className={`absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-background/70 px-2 py-1 font-mono text-[10px] text-foreground/80 transition-opacity ${
+        className={`absolute inset-x-0 bottom-0 flex items-center gap-1 bg-background/70 px-2 py-1 font-mono text-[10px] text-foreground/80 transition-opacity ${
           showInfo
             ? "opacity-100"
             : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
         }`}
       >
-        <span
-          className={`h-1.5 w-1.5 rounded-full ${STAGE_DOT[image.stage]}`}
+        <span className="truncate">
+          {dir && <span className="text-muted-foreground/70">{dir}</span>}
+          {name}
+        </span>
+        <RatingBadge
+          rating={image.rating}
+          testid="thumb-rating"
+          className="ml-auto shrink-0"
         />
-        <span className="truncate">{image.stem}</span>
-        {image.rating > 0 && (
-          <span
-            data-testid="thumb-rating"
-            className="ml-auto flex shrink-0 items-center gap-0.5 text-amber-400"
-          >
-            <Star className="size-3 fill-amber-400" />
-            {image.rating}
-          </span>
-        )}
       </span>
     </button>
   );
 }
 
 type Props = {
-  images: ImageGroup[];
-  /// Called with the image's index in `images` when a thumb is clicked
-  /// outside select mode.
+  images: ImageFile[];
   onOpen?: (index: number) => void;
-  /// Overlay always visible instead of hover-only.
   showInfo?: boolean;
   selected?: ReadonlySet<string>;
-  /// Anything selected means select mode: plain clicks toggle rather than
-  /// opening the photo.
   selectMode?: boolean;
-  /// Show the original capture instead of the furthest-stage file — the
-  /// Media page is about what you shot, not what you exported.
-  displayOriginal?: boolean;
   onSelect?: (
-    stem: string,
+    path: string,
     modifiers: { meta: boolean; shift: boolean },
   ) => void;
-  /// Test hook: jsdom has no layout, so tests inject the viewport.
   initialRect?: { width: number; height: number };
 };
 
@@ -209,12 +192,11 @@ export function ImageGrid({
   showInfo,
   selected,
   selectMode,
-  displayOriginal,
   onSelect,
   initialRect,
 }: Props) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const padding = 24; // p-6 on each side
+  const padding = 24;
   const [containerWidth, setContainerWidth] = useState(
     () => (initialRect?.width ?? 800) - padding * 2,
   );
@@ -243,8 +225,6 @@ export function ImageGrid({
     estimateSize: (index) => rows[index].height + GAP,
     overscan: 4,
     initialRect,
-    // With an injected rect (tests: jsdom measures everything 0×0), trust it
-    // instead of observing the real element.
     ...(initialRect && {
       observeElementRect: (
         _instance: unknown,
@@ -256,7 +236,6 @@ export function ImageGrid({
     }),
   });
 
-  // Row heights depend on the packing; re-measure when it changes.
   // biome-ignore lint/correctness/useExhaustiveDependencies: measure() on rows change is the point
   useEffect(() => {
     virtualizer.measure();
@@ -278,8 +257,6 @@ export function ImageGrid({
             <div
               key={virtualRow.key}
               className="absolute top-0 left-0 flex"
-              // translateY for the same WKWebView repaint reason as the
-              // filmstrip's translateX.
               style={{
                 transform: `translateY(${virtualRow.start}px)`,
                 gap: GAP,
@@ -287,17 +264,16 @@ export function ImageGrid({
             >
               {row.cells.map((cell) => (
                 <Thumb
-                  key={cell.image.stem}
+                  key={cell.image.path}
                   image={cell.image}
                   width={cell.width}
                   height={row.height}
                   showInfo={showInfo}
-                  selected={selected?.has(cell.image.stem)}
+                  selected={selected?.has(cell.image.path)}
                   selectMode={selectMode}
-                  displayOriginal={displayOriginal}
                   onOpen={onOpen && (() => onOpen(cell.index))}
                   onSelect={
-                    onSelect && ((mods) => onSelect(cell.image.stem, mods))
+                    onSelect && ((mods) => onSelect(cell.image.path, mods))
                   }
                 />
               ))}

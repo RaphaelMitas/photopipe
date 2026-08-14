@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { ImageGroup } from "@/lib/core";
+import type { ImageFile } from "@/lib/core";
+import { makeImage } from "@/lib/test-image";
 import { ImageGrid } from "./ImageGrid";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -9,29 +10,14 @@ vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => `asset://${path}`,
 }));
 
-function makeImages(count: number): ImageGroup[] {
-  return Array.from({ length: count }, (_, i) => ({
-    stem: `DSC${String(i).padStart(5, "0")}`,
-    stage: "raw" as const,
-    rating: 0,
-    width: 3000,
-    height: 2000,
-    files: [
-      {
-        path: `/r/s/DSC${String(i).padStart(5, "0")}.ARW`,
-        ext: "ARW",
-        stage: "raw" as const,
-        size: 1,
-        mtime: 1,
-      },
-    ],
-  }));
+function makeImages(count: number): ImageFile[] {
+  return Array.from({ length: count }, (_, i) =>
+    makeImage(`DSC${String(i).padStart(5, "0")}.ARW`),
+  );
 }
 
 describe("ImageGrid virtualization", () => {
   it("renders only the visible window of a large shoot", () => {
-    // jsdom has no layout: give every element an 800x600 box so the
-    // virtualizer and the column calculation see a real viewport.
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
       width: 800,
       height: 600,
@@ -64,7 +50,6 @@ describe("ImageGrid virtualization", () => {
     );
     const rendered = screen.getAllByTestId("thumb").length;
     expect(rendered).toBeGreaterThan(0);
-    // 800px wide → 4 columns; 600px tall + overscan → a handful of rows, never 500 cells.
     expect(rendered).toBeLessThan(50);
   });
 });

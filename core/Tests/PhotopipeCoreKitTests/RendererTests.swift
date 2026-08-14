@@ -22,10 +22,10 @@ private func fixtureARW() -> URL? {
     return fixture
 }
 
-private func record(for url: URL) throws -> FileRecord {
+private func imageFile(for url: URL) throws -> ImageFile {
     let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
-    return FileRecord(
-        path: url.path, ext: url.pathExtension.lowercased(), stage: .raw,
+    return ImageFile(
+        path: url.path, rel: url.lastPathComponent, ext: url.pathExtension.lowercased(),
         size: (attrs[.size] as? Int64) ?? 0,
         mtime: ((attrs[.modificationDate] as? Date) ?? .distantPast).timeIntervalSince1970)
 }
@@ -53,7 +53,7 @@ private func tempCacheDir() -> URL {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
-    let file = try record(for: fixture)
+    let file = try imageFile(for: fixture)
 
     let dark = try renderer.render(file: file, exposure: -2, maxPixel: 800)
     let neutral = try renderer.render(file: file, exposure: 0, maxPixel: 800)
@@ -71,7 +71,7 @@ private func tempCacheDir() -> URL {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
-    let file = try record(for: fixture)
+    let file = try imageFile(for: fixture)
 
     let first = try renderer.render(file: file, exposure: 0.5, maxPixel: 800)
     let again = try renderer.render(file: file, exposure: 0.5, maxPixel: 800)
@@ -80,8 +80,8 @@ private func tempCacheDir() -> URL {
     let other = try renderer.render(file: file, exposure: 1.0, maxPixel: 800)
     #expect(first != other, "different exposure must be a different cache entry")
 
-    let stale = FileRecord(
-        path: file.path, ext: file.ext, stage: file.stage, size: file.size,
+    let stale = ImageFile(
+        path: file.path, rel: file.rel, ext: file.ext, size: file.size,
         mtime: file.mtime + 1)
     #expect(
         renderer.cachePath(for: stale, exposure: 0.5, maxPixel: 800)
@@ -108,7 +108,7 @@ private func tempCacheDir() -> URL {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
-    let file = try record(for: fixture)
+    let file = try imageFile(for: fixture)
 
     // The cold render pays for the raw decode and primes the filter LRU.
     let coldStart = Date()
@@ -171,13 +171,37 @@ private func tempCacheDir() -> URL {
         of: gray, to: jpegURL, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
 
     let renderer = Renderer(cacheDir: cacheDir)
-    let attrs = try FileManager.default.attributesOfItem(atPath: jpegURL.path)
-    let file = FileRecord(
-        path: jpegURL.path, ext: "jpg", stage: .export,
-        size: (attrs[.size] as? Int64) ?? 0,
-        mtime: ((attrs[.modificationDate] as? Date) ?? .distantPast).timeIntervalSince1970)
+    let file = try imageFile(for: jpegURL)
 
     let neutral = try renderer.render(file: file, exposure: 0, maxPixel: 64)
     let bright = try renderer.render(file: file, exposure: 1.5, maxPixel: 64)
     #expect(try meanLuminance(of: bright) > meanLuminance(of: neutral))
+}
+
+@Test func exportJPEGBakesTheExposureIn() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    let out = tempCacheDir()
+    defer {
+        try? FileManager.default.removeItem(at: cacheDir)
+        try? FileManager.default.removeItem(at: out)
+    }
+    try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    let neutral = out.appendingPathComponent("neutral.jpg")
+    let bright = out.appendingPathComponent("bright.jpg")
+    try renderer.exportJPEG(file: file, exposure: 0, quality: 0.9, to: neutral)
+    try renderer.exportJPEG(file: file, exposure: 2, quality: 0.9, to: bright)
+
+    #expect(
+        try meanLuminance(of: bright) > meanLuminance(of: neutral),
+        "the persisted exposure must be baked into the delivery")
+    // Full resolution, not the loupe size.
+    let source = try #require(CGImageSourceCreateWithURL(neutral as CFURL, nil))
+    let props = try #require(
+        CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+    let width = try #require(props[kCGImagePropertyPixelWidth] as? Int)
+    #expect(width > 2000, "export must be full resolution, got width \(width)")
 }
