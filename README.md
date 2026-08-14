@@ -32,6 +32,10 @@ Everything is signed and notarized, so it opens with a double-click. There is
 nothing else to install: the raw pipeline and the metadata writer ship inside
 the app.
 
+Photopipe updates itself. It looks for a new version on launch and offers it;
+nothing is downloaded until you say so. The running version and a manual check
+live under the ⓘ in the sidebar footer.
+
 ## How it works
 
 A project is a folder named `<date>_<name>`. Whatever image files sit inside

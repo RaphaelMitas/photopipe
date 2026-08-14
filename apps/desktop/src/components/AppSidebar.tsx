@@ -1,4 +1,10 @@
-import { ChevronLeft, Download, FolderOpen, Settings2 } from "lucide-react";
+import {
+  ChevronLeft,
+  Download,
+  FolderOpen,
+  Info,
+  Settings2,
+} from "lucide-react";
 import type { Shoot } from "@/lib/core";
 import { Photopipe } from "./Photopipe";
 import {
@@ -38,6 +44,7 @@ type Props = {
   onShowInfo: (show: boolean) => void;
   rootPath: string;
   onChangeRoot: () => void;
+  onAbout: () => void;
 };
 
 export function AppSidebar({
@@ -56,6 +63,7 @@ export function AppSidebar({
   onShowInfo,
   rootPath,
   onChangeRoot,
+  onAbout,
 }: Props) {
   return (
     <Sidebar collapsible="icon">
@@ -199,6 +207,16 @@ export function AppSidebar({
             className="size-7 text-muted-foreground"
           >
             <FolderOpen />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            data-testid="about-photopipe"
+            onClick={onAbout}
+            title="About Photopipe"
+            className="size-7 text-muted-foreground"
+          >
+            <Info />
           </Button>
         </div>
       </SidebarFooter>

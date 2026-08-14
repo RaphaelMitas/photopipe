@@ -220,12 +220,53 @@ jobs:
           ditto -c -k --keepParent "$APP" "$ZIP"
           echo "PATH=$ZIP" >> $GITHUB_OUTPUT
 
+      # The in-app updater's payload, built here rather than by
+      # `createUpdaterArtifacts`: the bundler would tar the app during
+      # `tauri build`, long before it is signed, and would demand the signing
+      # key from every CI bundle build too. `--no-mac-metadata` keeps bsdtar
+      # from writing AppleDouble `._` sidecars, which would land inside the
+      # extracted bundle and break its seal; the stapled ticket and
+      # `_CodeSignature` are ordinary files and survive.
+      - name: Build and sign the updater archive
+        id: updater
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          VERSION: ${{ needs.check.outputs.version }}
+          TAG: ${{ needs.check.outputs.tag }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is not set. Without it this release ships no update feed and installed apps never see it."
+            exit 1
+          fi
+          BUNDLE="apps/desktop/src-tauri/target/release/bundle/macos"
+          TARBALL="$RUNNER_TEMP/Photopipe-$VERSION.app.tar.gz"
+          tar --no-mac-metadata -C "$BUNDLE" -czf "$TARBALL" Photopipe.app
+          pnpm --filter desktop tauri signer sign "$TARBALL"
+
+          MANIFEST="$RUNNER_TEMP/latest.json"
+          REPO="https://github.com/${{ github.repository }}"
+          jq -n \
+            --arg version "$VERSION" \
+            --arg notes "$REPO/releases/tag/$TAG" \
+            --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg signature "$(cat "$TARBALL.sig")" \
+            --arg url "$REPO/releases/download/$TAG/$(basename "$TARBALL")" \
+            '{$version, $notes, $pub_date,
+              platforms: {"darwin-aarch64": {$signature, $url}}}' \
+            > "$MANIFEST"
+
+          echo "TARBALL=$TARBALL" >> $GITHUB_OUTPUT
+          echo "MANIFEST=$MANIFEST" >> $GITHUB_OUTPUT
+
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: photopipe-release
           path: |
             ${{ steps.dmg.outputs.PATH }}
             ${{ steps.zip.outputs.PATH }}
+            ${{ steps.updater.outputs.TARBALL }}
+            ${{ steps.updater.outputs.MANIFEST }}
 
       - name: Publish the release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
@@ -234,6 +275,8 @@ jobs:
           files: |
             ${{ steps.dmg.outputs.PATH }}
             ${{ steps.zip.outputs.PATH }}
+            ${{ steps.updater.outputs.TARBALL }}
+            ${{ steps.updater.outputs.MANIFEST }}
           generate_release_notes: true
           body: |
             Requires macOS 15 (Sequoia) or later on Apple Silicon.

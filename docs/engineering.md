@@ -107,11 +107,14 @@ notices the version has no tag and:
    Mach-O, and the app's seal covers it.
 4. notarizes, staples, and builds the DMG *from the stapled app*
 5. signs and notarizes the DMG in its own right
-6. publishes the DMG and `photopipe-<version>.zip`
-7. dispatches to `RaphaelMitas/homebrew-tap` to bump the cask
+6. tars the stapled app, signs it with the minisign key and writes
+   `latest.json` — the feed the in-app updater reads
+7. publishes the DMG, `photopipe-<version>.zip`, the tarball and `latest.json`
+8. dispatches to `RaphaelMitas/homebrew-tap` to bump the cask
 
 Secrets: `APPLE_CERTIFICATE` (base64 .p12), `APPLE_CERTIFICATE_PASSWORD`,
-`APPLE_ID`, `APPLE_PASSWORD` (app-specific), `APPLE_TEAM_ID`, and
+`APPLE_ID`, `APPLE_PASSWORD` (app-specific), `APPLE_TEAM_ID`,
+`TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` and
 `TAP_DISPATCH_TOKEN`. The tap step is guarded, so a release succeeds without
 the last one.
 
@@ -120,6 +123,27 @@ already created, the retry checks out **that tag** and rebuilds it, rather
 than whatever main has become: shipping different code under a version
 someone may already have installed would be worse than the original failure.
 Tags are never forced, so a released version always means one commit.
+
+### Updates
+
+The app checks
+`https://github.com/RaphaelMitas/photopipe/releases/latest/download/latest.json`
+on launch and offers what it finds; `tauri-plugin-updater` verifies the
+minisign signature before it replaces the bundle, so the endpoint is not
+trusted with code. The public half lives in `tauri.conf.json`; the private
+half exists only as a repo secret and a backup. **Lose it and installed apps
+can never be updated again** — a new key means everyone reinstalls by hand.
+
+`bundle.createUpdaterArtifacts` is deliberately off. It would tar the app
+during `tauri build`, which here happens before the signing and notarization,
+and would demand the signing key from every local and CI bundle build. The
+release workflow tars the *stapled* app instead, with `--no-mac-metadata`:
+AppleDouble `._` sidecars would end up inside the extracted bundle and break
+its seal, while the ticket and `_CodeSignature` are ordinary files that
+survive a plain tar.
+
+The cask in `RaphaelMitas/homebrew-tap` needs `auto_updates true`, or
+`brew upgrade` will reinstall over an app that has already updated itself.
 
 ### Screenshots
 

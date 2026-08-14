@@ -1,6 +1,8 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { AlertCircle, Check, Download, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import { AboutDialog } from "@/components/AboutDialog";
 import { AppSidebar } from "@/components/AppSidebar";
 import { BrowserToolbar, type ViewMode } from "@/components/BrowserToolbar";
 import { Dashboard } from "@/components/Dashboard";
@@ -40,6 +42,7 @@ import {
 } from "@/lib/queries";
 import { useSelection } from "@/lib/selection";
 import { useDebouncedExposure } from "@/lib/useDebouncedExposure";
+import { useUpdater } from "@/lib/useUpdater";
 
 const ROOT_KEY = "photopipe.root";
 const VIEW_KEY = "photopipe.view";
@@ -59,6 +62,25 @@ export default function App() {
   const [openShoot, setOpenShoot] = useState<string | null>(null);
   const [newProject, setNewProject] = useState(false);
   const [shootSettings, setShootSettings] = useState<string | null>(null);
+  const [about, setAbout] = useState(false);
+  const updater = useUpdater();
+  const offered = useRef(false);
+  useEffect(() => {
+    if (updater.state.kind !== "available" || offered.current) return;
+    offered.current = true;
+    toast(`Photopipe ${updater.state.version} is available`, {
+      duration: Number.POSITIVE_INFINITY,
+      action: {
+        // Opening the dialog too, so the progress and the restart land
+        // somewhere visible once the toast is gone.
+        label: "Install",
+        onClick: () => {
+          setAbout(true);
+          void updater.install();
+        },
+      },
+    });
+  }, [updater]);
   const [view, setView] = useState<ViewMode>(() =>
     localStorage.getItem(VIEW_KEY) === "list" ? "list" : "grid",
   );
@@ -330,6 +352,7 @@ export default function App() {
         onOpenChange={setNewProject}
         onCreated={enterShoot}
       />
+      <AboutDialog open={about} onOpenChange={setAbout} updater={updater} />
       <SidebarProvider>
         {inLoupe && loupeImage ? (
           <LoupeSidebar
@@ -367,6 +390,7 @@ export default function App() {
             onChangeRoot={() =>
               setRootState({ kind: "picking", error: null, busy: false })
             }
+            onAbout={() => setAbout(true)}
           />
         )}
         <SidebarInset className="flex h-screen min-w-0 flex-col bg-background text-foreground">
