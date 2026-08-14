@@ -15,37 +15,24 @@
   },
   "packageRules": [
     {
-      "groupName": "Tauri",
-      "matchPackageNames": ["/tauri/"],
-      "description": "tauri, @tauri-apps/*, tauri-build, tauri-plugin-* move in lockstep across npm and cargo"
+      "groupName": "non-major dependencies",
+      "groupSlug": "non-major",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "matchPackageNames": ["*"],
+      "description": "Everything non-breaking lands in a single weekly PR"
     },
     {
-      "groupName": "React",
-      "matchPackageNames": [
-        "react",
-        "react-dom",
-        "@types/react",
-        "@types/react-dom"
-      ]
-    },
-    {
-      "groupName": "linters & formatters",
-      "matchPackageNames": ["/biome/", "/swift-format/"],
-      "automerge": true
-    },
-    {
-      "matchDepTypes": ["devDependencies"],
-      "matchUpdateTypes": ["minor", "patch"],
-      "automerge": true
-    },
-    {
-      "matchManagers": ["github-actions"],
-      "automerge": true
-    },
-    {
+      "groupName": null,
       "matchUpdateTypes": ["major"],
       "dependencyDashboardApproval": true,
-      "description": "Majors wait for manual approval from the dashboard — no surprise breaking PRs"
+      "description": "One PR per major, each waiting for manual approval from the dashboard"
+    },
+    {
+      "groupName": "Tauri major",
+      "matchUpdateTypes": ["major"],
+      "matchPackageNames": ["/tauri/"],
+      "dependencyDashboardApproval": true,
+      "description": "tauri, @tauri-apps/*, tauri-build, tauri-plugin-* move in lockstep across npm and cargo, so their majors stay together"
     }
   ]
 }
