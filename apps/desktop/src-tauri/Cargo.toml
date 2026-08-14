@@ -1,6 +1,6 @@
 [package]
 name = "desktop"
-version = "0.2.0"
+version = "0.2.1"
 description = "Photopipe desktop app — photoshoot pipeline organizer"
 authors = ["Raphael Mitas"]
 edition = "2021"
