@@ -61,7 +61,16 @@ public enum XMP {
             curveRGB: parseCurve("ToneCurvePV2012", in: text),
             curveRed: parseCurve("ToneCurvePV2012Red", in: text),
             curveGreen: parseCurve("ToneCurvePV2012Green", in: text),
-            curveBlue: parseCurve("ToneCurvePV2012Blue", in: text))
+            curveBlue: parseCurve("ToneCurvePV2012Blue", in: text),
+            crop: cropRect { parseDouble("Crop\($0)", in: text) },
+            cropAngle: parseDouble("CropAngle", in: text) ?? 0)
+    }
+
+    private static func cropRect(_ value: (String) -> Double?) -> CropRect? {
+        guard let left = value("Left"), let top = value("Top"),
+            let right = value("Right"), let bottom = value("Bottom")
+        else { return nil }
+        return CropRect(left: left, top: top, right: right, bottom: bottom)
     }
 
     private static let crsNamespace = "http://ns.adobe.com/camera-raw-settings/1.0/"
@@ -102,7 +111,9 @@ public enum XMP {
             curveRGB: curves["ToneCurvePV2012"] ?? [],
             curveRed: curves["ToneCurvePV2012Red"] ?? [],
             curveGreen: curves["ToneCurvePV2012Green"] ?? [],
-            curveBlue: curves["ToneCurvePV2012Blue"] ?? [])
+            curveBlue: curves["ToneCurvePV2012Blue"] ?? [],
+            crop: cropRect { scalars["Crop\($0)"] },
+            cropAngle: scalars["CropAngle"] ?? 0)
         return (rating, edit)
     }
 
@@ -208,6 +219,14 @@ public enum XMP {
         }
         integerScalar("Vibrance", edit.vibrance)
         integerScalar("Saturation", edit.saturation)
+        for (tag, value) in [
+            ("Left", edit.crop?.left), ("Top", edit.crop?.top),
+            ("Right", edit.crop?.right), ("Bottom", edit.crop?.bottom),
+        ] {
+            args.append(value.map { "-XMP-crs:Crop\(tag)=\($0)" } ?? "-XMP-crs:Crop\(tag)=")
+        }
+        args.append(edit.cropAngle == 0 ? "-XMP-crs:CropAngle=" : "-XMP-crs:CropAngle=\(edit.cropAngle)")
+        args.append(edit.hasCropComponent ? "-XMP-crs:HasCrop=True" : "-XMP-crs:HasCrop=")
         curve("ToneCurvePV2012", edit.curveRGB)
         curve("ToneCurvePV2012Red", edit.curveRed)
         curve("ToneCurvePV2012Green", edit.curveGreen)

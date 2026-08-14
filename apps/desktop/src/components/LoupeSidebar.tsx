@@ -147,8 +147,8 @@ export function LoupeSidebar({
       </SidebarContent>
       <SidebarFooter className="group-data-[collapsible=icon]:hidden">
         <p className="px-2 py-1 text-[10px] text-muted-foreground">
-          ←→ navigate · 1–5 rate · 0 clear · ↑↓ exposure · r reset · e edit ·
-          esc
+          ←→ navigate · 1–5 rate · 0 clear · ↑↓ exposure · pinch or double-click
+          zoom · r reset · e edit · esc
         </p>
       </SidebarFooter>
     </Sidebar>

@@ -178,7 +178,33 @@ public final class Renderer {
             image = image.applyingFilter(
                 "CIColorControls", parameters: ["inputSaturation": 1 + edit.saturation / 100])
         }
+        if edit.hasCropComponent {
+            image = Self.applyCrop(edit, to: image)
+        }
         return image
+    }
+
+    static func applyCrop(_ edit: Edit, to image: CIImage) -> CIImage {
+        let extent = image.extent
+        let crop = edit.crop ?? CropRect(left: 0, top: 0, right: 1, bottom: 1)
+        // Normalized coordinates are top-left-origin; CI's are bottom-left.
+        let rect = CGRect(
+            x: extent.minX + crop.left * extent.width,
+            y: extent.minY + (1 - crop.bottom) * extent.height,
+            width: (crop.right - crop.left) * extent.width,
+            height: (crop.bottom - crop.top) * extent.height
+        ).integral
+        var result = image
+        if edit.cropAngle != 0 {
+            let center = CGPoint(x: rect.midX, y: rect.midY)
+            let angle = edit.cropAngle * .pi / 180
+            result = result.transformed(
+                by: CGAffineTransform(translationX: center.x, y: center.y)
+                    .rotated(by: angle)
+                    .translatedBy(x: -center.x, y: -center.y))
+        }
+        return result.cropped(to: rect)
+            .transformed(by: .init(translationX: -rect.minX, y: -rect.minY))
     }
 
     private func rawFilter(for file: ImageFile) throws -> CachedFilter {

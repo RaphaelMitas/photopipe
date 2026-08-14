@@ -190,6 +190,46 @@ private func tempCacheDir() -> URL {
     #expect(try meanLuminance(of: bright) > meanLuminance(of: neutral))
 }
 
+@Test func renderAppliesCropAndStraighten() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+
+    // Left half red, right half blue.
+    let red = CIImage(color: CIColor(red: 1, green: 0, blue: 0))
+        .cropped(to: CGRect(x: 0, y: 0, width: 64, height: 64))
+    let blue = CIImage(color: CIColor(red: 0, green: 0, blue: 1))
+        .cropped(to: CGRect(x: 32, y: 0, width: 32, height: 64))
+    let jpegURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("photopipe-crop-\(UUID().uuidString).jpg")
+    defer { try? FileManager.default.removeItem(at: jpegURL) }
+    try CIContext().writeJPEGRepresentation(
+        of: blue.composited(over: red), to: jpegURL,
+        colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: jpegURL)
+
+    let cropped = try renderer.render(
+        file: file,
+        edit: Edit(crop: CropRect(left: 0.5, top: 0, right: 1, bottom: 1)), maxPixel: 64)
+    guard let output = CIImage(contentsOf: cropped) else {
+        throw Renderer.RenderError.unreadable(cropped.path)
+    }
+    #expect(output.extent.width == 32)
+    #expect(output.extent.height == 64)
+    let channels = try meanChannels(of: cropped)
+    #expect(channels.blue > 180, "the right half is blue")
+    #expect(channels.red < 60, "the red half is cropped away")
+
+    // Angle-only straighten rotates behind the full-frame rect: same size.
+    let straightened = try renderer.render(file: file, edit: Edit(cropAngle: 3), maxPixel: 64)
+    guard let rotated = CIImage(contentsOf: straightened) else {
+        throw Renderer.RenderError.unreadable(straightened.path)
+    }
+    #expect(rotated.extent.width == 64)
+    #expect(rotated.extent.height == 64)
+}
+
 private func writeSyntheticJPEG(color: CIColor) throws -> URL {
     let image = CIImage(color: color).cropped(to: CGRect(x: 0, y: 0, width: 64, height: 64))
     let url = FileManager.default.temporaryDirectory

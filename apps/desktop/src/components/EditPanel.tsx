@@ -1,4 +1,4 @@
-import { RotateCcw, X } from "lucide-react";
+import { Crop, RotateCcw, X } from "lucide-react";
 import { useDeferredValue } from "react";
 import {
   type Edit,
@@ -12,12 +12,14 @@ import { cn } from "@/lib/utils";
 import { CurveEditor } from "./CurveEditor";
 import { EXPOSURE_RANGE } from "./Loupe";
 import { Button } from "./ui/button";
+import { Separator } from "./ui/separator";
 import { Slider } from "./ui/slider";
 
 type Props = {
   image: ImageFile;
   edit: Edit;
   onChange: (edit: Edit) => void;
+  onEnterCrop: () => void;
 };
 
 function Row({
@@ -79,7 +81,15 @@ function Row({
 const signed = (value: number, digits = 0) =>
   `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
 
-export function EditPanel({ image, edit, onChange }: Props) {
+const cropSummary = (edit: Edit): string | null => {
+  if (!edit.crop && !edit.cropAngle) return null;
+  const parts: string[] = [];
+  if (edit.crop) parts.push("cropped");
+  if (edit.cropAngle) parts.push(`${edit.cropAngle.toFixed(1)}°`);
+  return parts.join(" · ");
+};
+
+export function EditPanel({ image, edit, onChange, onEnterCrop }: Props) {
   const raw = isRawFile(image);
   const whiteBalance = useWhiteBalance(raw ? image : undefined);
   // Deferred like the Loupe's own render request, so both resolve to the same
@@ -95,6 +105,22 @@ export function EditPanel({ image, edit, onChange }: Props) {
 
   return (
     <div className="flex flex-col gap-3">
+      <Button
+        variant="outline"
+        size="sm"
+        data-testid="enter-crop"
+        onClick={onEnterCrop}
+        className="justify-start text-xs"
+      >
+        <Crop />
+        Crop & straighten
+        {cropSummary(edit) && (
+          <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+            {cropSummary(edit)}
+          </span>
+        )}
+      </Button>
+      <Separator />
       <CurveEditor edit={edit} imageSrc={render.data} onChange={set} />
       <Row
         label="Exposure"
@@ -208,6 +234,7 @@ export function EditSidebar({
   image,
   edit,
   onChange,
+  onEnterCrop,
   onClose,
 }: Props & { onClose: () => void }) {
   return (
@@ -241,7 +268,12 @@ export function EditSidebar({
         </Button>
       </div>
       <div className="p-3">
-        <EditPanel image={image} edit={edit} onChange={onChange} />
+        <EditPanel
+          image={image}
+          edit={edit}
+          onChange={onChange}
+          onEnterCrop={onEnterCrop}
+        />
       </div>
     </div>
   );

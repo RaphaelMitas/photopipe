@@ -119,6 +119,34 @@ private func image(_ url: URL) throws -> ImageFile {
     #expect(XMP.readRating(file: try image(arw)) == 3, "clearing the edit keeps the rating")
 }
 
+@Test func sidecarCropRoundTrip() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let arw = dir.appendingPathComponent("DSC00008.ARW")
+    try Data("fake".utf8).write(to: arw)
+
+    let edit = Edit(
+        crop: CropRect(left: 0.125, top: 0.05, right: 0.875, bottom: 0.95), cropAngle: -1.5)
+    try XMP.writeEdit(edit, file: try image(arw), tool: .shared)
+
+    let read = XMP.readEdit(file: try image(arw))
+    #expect(read.crop == edit.crop)
+    #expect(read.cropAngle == -1.5)
+
+    let sidecar = XMP.sidecarURL(forImagePath: arw.path)
+    #expect(try exiftoolTag("-XMP-crs:CropLeft", of: sidecar) == "0.125")
+    #expect(try exiftoolTag("-XMP-crs:CropAngle", of: sidecar) == "-1.5")
+    #expect(try exiftoolTag("-XMP-crs:HasCrop", of: sidecar) == "True")
+
+    // Clearing the crop removes every crop tag again.
+    try XMP.writeEdit(.identity, file: try image(arw), tool: .shared)
+    #expect(XMP.readEdit(file: try image(arw)) == .identity)
+    #expect(try exiftoolTag("-XMP-crs:HasCrop", of: sidecar).isEmpty)
+    #expect(try exiftoolTag("-XMP-crs:CropLeft", of: sidecar).isEmpty)
+}
+
 /// Regression: `-TAG= -TAG+=…` appends to the existing list in exiftool, so
 /// every scrub grew the tone curve until a sidecar held thousands of points
 /// and writes took seconds. Rewrites must replace the list wholesale.

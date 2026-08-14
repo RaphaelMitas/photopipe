@@ -117,6 +117,7 @@ export default function App() {
       return !open;
     });
   }, []);
+  const [cropping, setCropping] = useState(false);
   const [jobs, setJobs] = useState<ExportJob[]>([]);
   const nextJobId = useRef(1);
 
@@ -297,6 +298,9 @@ export default function App() {
     if (loupePath && loupeIndex === -1) setLoupePath(null);
   }, [loupePath, loupeIndex]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: leave crop mode when the loupe photo changes
+  useEffect(() => setCropping(false), [loupePath]);
+
   const openExport = useCallback(() => {
     const loupeImage = loupeIndex >= 0 ? loupeImages[loupeIndex] : null;
     if (loupeImage) {
@@ -328,13 +332,13 @@ export default function App() {
       if (event.key === "Escape" && loupeIndex === -1 && !selection.isEmpty) {
         selection.clear();
       }
-      if (event.key === "e" && !event.altKey && loupeIndex >= 0) {
+      if (event.key === "e" && !event.altKey && loupeIndex >= 0 && !cropping) {
         toggleEditPanel();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [selection, loupeIndex, openShoot, openExport, toggleEditPanel]);
+  }, [selection, loupeIndex, openShoot, cropping, openExport, toggleEditPanel]);
 
   const changeRatingStars = (stars: number) => {
     setRatingStars(stars);
@@ -531,6 +535,8 @@ export default function App() {
                 loupeImages={loupeImages}
                 loupeIndex={loupeIndex}
                 loupeEdit={loupeEdit}
+                cropping={cropping}
+                onCroppingChange={setCropping}
                 filmstrip={filmstrip}
                 showInfo={showInfo}
                 selection={selection}
@@ -545,11 +551,12 @@ export default function App() {
                 }
               />
             </div>
-            {inLoupe && loupeImage && editOpen && (
+            {inLoupe && loupeImage && editOpen && !cropping && (
               <EditSidebar
                 image={loupeImage}
                 edit={loupeEdit}
                 onChange={(edit) => changeEdit(loupeImage, edit)}
+                onEnterCrop={() => setCropping(true)}
                 onClose={toggleEditPanel}
               />
             )}
@@ -598,6 +605,8 @@ type ContentProps = {
   loupeImages: ImageFile[];
   loupeIndex: number;
   loupeEdit: Edit;
+  cropping: boolean;
+  onCroppingChange: (cropping: boolean) => void;
   filmstrip: FilmstripMode;
   showInfo: boolean;
   selection: ReturnType<typeof useSelection>;
@@ -624,6 +633,8 @@ function Content({
   loupeImages,
   loupeIndex,
   loupeEdit,
+  cropping,
+  onCroppingChange,
   filmstrip,
   showInfo,
   selection,
@@ -660,6 +671,8 @@ function Content({
         index={loupeIndex}
         edit={loupeEdit}
         filmstrip={filmstrip}
+        cropping={cropping}
+        onCroppingChange={onCroppingChange}
         onEditChange={(edit) => onEditChange(image, edit)}
         onNavigate={onNavigate}
         onClose={onCloseLoupe}
