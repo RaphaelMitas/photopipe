@@ -1,0 +1,97 @@
+import { expect, test } from "@playwright/test";
+
+async function openZell(page: import("@playwright/test").Page) {
+  await page.goto("/");
+  await page.getByTestId("root-input").fill("/fake");
+  await page.getByTestId("root-submit").click();
+  await page.getByTestId("shoot-2026-07-12_zell").click();
+  await expect(page.getByTestId("grid")).toBeVisible();
+}
+
+test("the export drawer acts on the selection, with quick actions", async ({
+  page,
+}) => {
+  await openZell(page);
+
+  // The top-bar button opens the drawer; nothing selected yet.
+  await page.getByTestId("open-export").click();
+  await expect(page.getByTestId("export-drawer")).toBeVisible();
+  await expect(page.getByTestId("drawer-count")).toHaveText("0");
+  await expect(page.getByTestId("run-export")).toBeDisabled();
+
+  // "All" performs a real selection — the grid lights up.
+  await page.getByTestId("select-all").click();
+  await expect(page.getByTestId("drawer-count")).toHaveText("4");
+  await expect(page.getByTestId("selection-count")).toHaveText("4 selected");
+  await expect(page.getByTestId("run-export")).toBeEnabled();
+
+  // ⌘-click in the grid fine-tunes it and the drawer follows.
+  await page
+    .getByTestId("thumb")
+    .first()
+    .click({ modifiers: ["ControlOrMeta"] });
+  await expect(page.getByTestId("drawer-count")).toHaveText("3");
+
+  await page.getByTestId("drawer-clear").click();
+  await expect(page.getByTestId("drawer-count")).toHaveText("0");
+  await page.getByTestId("drawer-close").click();
+  await expect(page.getByTestId("export-drawer")).toHaveCount(0);
+});
+
+test("select-filtered follows the histogram filter", async ({ page }) => {
+  await openZell(page);
+
+  // ≥2 leaves one photo; the drawer offers exactly that.
+  await page.getByTestId("hist-2").click();
+  await page.getByTestId("open-export").click();
+  await expect(page.getByTestId("select-filtered")).toContainText("1");
+  await page.getByTestId("select-filtered").click();
+  await expect(page.getByTestId("drawer-count")).toHaveText("1");
+
+  // Select-all must never leave part of the selection invisible: it drops
+  // the filter along the way.
+  await page.getByTestId("select-all").click();
+  await expect(page.getByTestId("drawer-count")).toHaveText("4");
+  await expect(page.getByTestId("thumb")).toHaveCount(4);
+});
+
+test("export from the loupe returns to the grid with that photo selected", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("thumb").first().click();
+  await expect(page.getByTestId("loupe")).toBeVisible();
+
+  await page.getByTestId("open-export").click();
+  await expect(page.getByTestId("loupe")).toHaveCount(0);
+  await expect(page.getByTestId("grid")).toBeVisible();
+  await expect(page.getByTestId("export-drawer")).toBeVisible();
+  await expect(page.getByTestId("drawer-count")).toHaveText("1");
+  await expect(page.locator("[data-path='DSC00832.ARW']")).toHaveAttribute(
+    "data-selected",
+    "true",
+  );
+});
+
+test("format choice shows JPEG quality and names the button", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("open-export").click();
+  await page.getByTestId("select-all").click();
+
+  // JPEG (the default) offers the quality toggle and says what it does.
+  await expect(page.getByTestId("quality-90")).toBeVisible();
+  await expect(page.getByTestId("run-export")).toContainText(
+    "Export 4 as JPEG",
+  );
+  // One selected photo carries an edit in the dataset.
+  await expect(page.getByTestId("export-drawer")).toContainText("1 edited");
+
+  // Original copies bytes: no quality, edits ignored.
+  await page.getByTestId("format-original").click();
+  await expect(page.getByTestId("quality-90")).toHaveCount(0);
+  await expect(page.getByTestId("run-export")).toContainText(
+    "Export 4 originals",
+  );
+});

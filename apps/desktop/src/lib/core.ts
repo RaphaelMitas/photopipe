@@ -1,28 +1,24 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 
-export type Stage = "raw" | "denoised" | "export";
-
-export type FileRecord = {
+export type ImageFile = {
   path: string;
+  rel: string;
   ext: string;
-  stage: Stage;
   size: number;
   mtime: number;
-};
-
-export type ImageGroup = {
-  stem: string;
-  stage: Stage;
-  /** XMP star rating, 0 = unrated. */
   rating: number;
-  /** Upright pixel dimensions of the display file; 3:2 fallback core-side. */
+  exposure: number;
   width: number;
   height: number;
-  files: FileRecord[];
 };
 
 export type SetRatingResult = {
   rating: number;
+  generation: number;
+};
+
+export type SetExposureResult = {
+  exposure: number;
   generation: number;
 };
 
@@ -31,15 +27,13 @@ export type Shoot = {
   path: string;
   day: string | null;
   project: string | null;
-  counts: Record<Stage, number>;
   imageCount: number;
-  /** From photopipe.json; empty when the project has none. */
   notes: string;
-  /** Stem of the chosen cover, if the project names one. */
   cover: string | null;
-  /** File to thumbnail for the card: chosen cover, else the first image. */
   coverPath: string | null;
 };
+
+export type ExportFormat = "original" | "jpeg";
 
 export type CreateProjectResult = {
   shoot: string;
@@ -65,10 +59,6 @@ export function coreRequest<T>(
   return invoke<T>("core_request", { method, params });
 }
 
-/// Stand-in artwork for the browser, where there is no asset protocol and no
-/// real photos: a gradient derived from the path, so every image looks
-/// different and the same image looks the same each run. Used by e2e and by
-/// the README screenshots; in the app this branch never runs.
 function placeholderFor(path: string): string {
   let hash = 0;
   for (let i = 0; i < path.length; i += 1) {
@@ -89,7 +79,6 @@ function placeholderFor(path: string): string {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
-/// Asset-protocol URL for a local file; stand-in artwork outside Tauri.
 export function fileSrc(path: string): string {
   try {
     return convertFileSrc(path);

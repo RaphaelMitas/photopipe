@@ -16,7 +16,7 @@ private func tempIndexPath() -> String {
 
 @Test func setRootScansAndServesShootsAndImages() throws {
     let root = try makeTree([
-        "2026-07-12_zell": ["DSC001.ARW", "DSC001.jpg", "DSC002.ARW"],
+        "2026-07-12_zell": ["DSC001.ARW", "DSC001.jpg", "selects/DSC002.ARW"],
         "2026-08-01_beach": ["IMG_1.ARW"],
     ])
     defer { try? FileManager.default.removeItem(at: root) }
@@ -29,8 +29,7 @@ private func tempIndexPath() -> String {
     let shoots = service.listShoots()
     #expect(shoots.map(\.name) == ["2026-08-01_beach", "2026-07-12_zell"])
     let images = try service.listImages(shoot: "2026-07-12_zell")
-    #expect(images.count == 2)
-    #expect(images[0].stage == .export)
+    #expect(images.map(\.rel) == ["DSC001.ARW", "DSC001.jpg", "selects/DSC002.ARW"])
 }
 
 @Test func externalMutationBumpsGenerationOnRescan() throws {
@@ -55,7 +54,7 @@ private func tempIndexPath() -> String {
     try FileManager.default.removeItem(
         at: root.appendingPathComponent("2026-07-12_zell/DSC001.ARW"))
     service.rescanNow()
-    #expect(try service.listImages(shoot: "2026-07-12_zell").map(\.stem) == ["DSC003"])
+    #expect(try service.listImages(shoot: "2026-07-12_zell").map(\.rel) == ["DSC003.ARW"])
 }
 
 @Test func watcherPicksUpExternalChangesWithoutManualRescan() throws {
@@ -88,7 +87,7 @@ private func tempIndexPath() -> String {
     let fresh = makeService()
     _ = try fresh.setRoot(path: root.path, indexPath: indexPath)
     #expect(fresh.listShoots().map(\.name) == ["2026-07-12_zell"])
-    #expect(try fresh.listImages(shoot: "2026-07-12_zell").count == 1)
+    #expect(try fresh.listImages(shoot: "2026-07-12_zell").count == 2)
     #expect(FileManager.default.fileExists(atPath: indexPath))
 }
 
@@ -150,7 +149,7 @@ private func tempIndexPath() -> String {
     }
     #expect(shootList.count == 1)
     #expect(shootList[0]["name"] == .string("2026-07-12_zell"))
-    #expect(shootList[0]["counts"]?["export"] == .number(1))
+    #expect(shootList[0]["imageCount"] == .number(2))
 
     let images = dispatcher.dispatch(
         line: "{\"v\":1,\"id\":\"3\",\"method\":\"listImages\",\"params\":{\"shoot\":\"2026-07-12_zell\"}}"
@@ -160,8 +159,9 @@ private func tempIndexPath() -> String {
         Issue.record("images missing")
         return
     }
-    #expect(imageList.count == 1)
-    #expect(imageList[0]["stage"] == .string("export"))
+    #expect(imageList.count == 2)
+    #expect(imageList[0]["rel"] == .string("DSC001.ARW"))
+    #expect(imageList[1]["rel"] == .string("DSC001.jpg"))
 
     let unknown = dispatcher.dispatch(
         line: "{\"v\":1,\"id\":\"4\",\"method\":\"listImages\",\"params\":{\"shoot\":\"nope\"}}"

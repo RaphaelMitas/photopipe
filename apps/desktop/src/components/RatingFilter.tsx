@@ -1,4 +1,3 @@
-import { Star } from "lucide-react";
 import { Button } from "./ui/button";
 import { ButtonGroup } from "./ui/button-group";
 
@@ -18,8 +17,6 @@ const OP_TITLE: Record<RatingOp, string> = {
   unrated: "Unrated only",
 };
 
-/// Stars = 0 means the filter is off — except for "unrated", which needs
-/// no star threshold and matches exactly the rating-0 images.
 export function matchesRatingFilter(
   rating: number,
   op: RatingOp,
@@ -37,7 +34,14 @@ export function matchesRatingFilter(
   }
 }
 
-/// Tiny comparator chips — sized to sit inline with the group heading.
+export function ratingCounts(images: { rating: number }[]): number[] {
+  const counts = [0, 0, 0, 0, 0, 0];
+  for (const image of images) {
+    counts[Math.min(Math.max(image.rating, 0), 5)] += 1;
+  }
+  return counts;
+}
+
 export function RatingFilterOps({
   op,
   disabled,
@@ -68,40 +72,72 @@ export function RatingFilterOps({
   );
 }
 
-/// Star threshold; clicking the active count clears the filter. The fill
-/// always runs up to the count — the comparator chip carries the mode.
-export function RatingFilterStars({
+const BAR_AREA = 40;
+
+export function RatingHistogram({
+  counts,
+  op,
   stars,
   disabled,
-  muted,
+  onOp,
   onStars,
 }: {
+  counts: number[];
+  op: RatingOp;
   stars: number;
   disabled?: boolean;
-  /// Stars don't apply (unrated mode) but stay clickable to switch back.
-  muted?: boolean;
+  onOp: (op: RatingOp) => void;
   onStars: (stars: number) => void;
 }) {
+  const max = Math.max(...counts, 1);
   return (
-    <div className="flex items-center gap-0.5">
-      {[1, 2, 3, 4, 5].map((star) => (
-        <button
-          key={star}
-          type="button"
-          data-testid={`filter-${star}`}
-          disabled={disabled}
-          onClick={() => onStars(stars === star ? 0 : star)}
-          className="rounded p-0.5 transition-colors hover:text-amber-300 disabled:opacity-30"
-        >
-          <Star
-            className={`size-4 ${
-              !disabled && !muted && stars > 0 && star <= stars
-                ? "fill-amber-400 text-amber-400"
-                : "text-muted-foreground/50"
-            }`}
-          />
-        </button>
-      ))}
+    <div className="flex items-end gap-1">
+      {counts.map((count, rating) => {
+        const active =
+          !disabled &&
+          (op === "unrated" || stars > 0) &&
+          matchesRatingFilter(rating, op, stars);
+        return (
+          <button
+            // biome-ignore lint/suspicious/noArrayIndexKey: the index IS the rating — a stable identity, not a list position
+            key={rating}
+            type="button"
+            data-testid={`hist-${rating}`}
+            disabled={disabled}
+            aria-pressed={active}
+            title={
+              rating === 0
+                ? `${count} unrated`
+                : `${count} rated ${rating} star${rating === 1 ? "" : "s"}`
+            }
+            onClick={() =>
+              rating === 0
+                ? onOp(op === "unrated" ? "gte" : "unrated")
+                : onStars(stars === rating && op !== "unrated" ? 0 : rating)
+            }
+            className="group flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded p-0.5 font-mono text-[9px] transition-colors hover:bg-accent disabled:opacity-30"
+          >
+            <span
+              className={active ? "text-amber-400" : "text-muted-foreground"}
+            >
+              {count}
+            </span>
+            <span
+              className={`w-full rounded-t-[2px] ${
+                active
+                  ? "bg-amber-400"
+                  : "bg-border group-hover:bg-muted-foreground/40"
+              }`}
+              style={{ height: Math.max(2, (count / max) * BAR_AREA) }}
+            />
+            <span
+              className={active ? "text-amber-400" : "text-muted-foreground"}
+            >
+              {rating === 0 ? "∅" : rating}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }

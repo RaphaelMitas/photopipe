@@ -6,24 +6,19 @@ afterEach(cleanup);
 
 function renderBar() {
   const handlers = {
-    onOpenIn: vi.fn(),
     onExport: vi.fn(),
     onReveal: vi.fn(),
     onDelete: vi.fn(),
     onClear: vi.fn(),
   };
-  render(<SelectionBar count={2} appLabel="PureRAW" {...handlers} />);
+  render(<SelectionBar count={2} {...handlers} />);
   return handlers;
 }
 
 describe("SelectionBar", () => {
   it("calls handlers with no arguments", () => {
-    // Regression: wiring these straight to onClick passes the DOM event as
-    // the first argument. Callers take optional params (handoff's `paths`),
-    // so the event became data and died in JSON.stringify as a cyclic value.
     const handlers = renderBar();
     for (const [id, handler] of [
-      ["action-open-in", handlers.onOpenIn],
       ["action-export", handlers.onExport],
       ["action-reveal", handlers.onReveal],
       ["action-delete", handlers.onDelete],
@@ -38,7 +33,6 @@ describe("SelectionBar", () => {
     render(
       <SelectionBar
         count={0}
-        onOpenIn={vi.fn()}
         onExport={vi.fn()}
         onReveal={vi.fn()}
         onDelete={vi.fn()}
@@ -46,12 +40,5 @@ describe("SelectionBar", () => {
       />,
     );
     expect(screen.queryByTestId("selection-bar")).toBeNull();
-  });
-
-  it("names the remembered app so the button says where files go", () => {
-    renderBar();
-    expect(screen.getByTestId("action-open-in").textContent).toContain(
-      "Open in PureRAW",
-    );
   });
 });

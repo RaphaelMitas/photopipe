@@ -53,13 +53,15 @@ import Testing
 @Test func unreadableFilesFallBackToThreeTwo() throws {
     let dir = FileManager.default.temporaryDirectory
         .appendingPathComponent("photopipe-dims-fake-\(UUID().uuidString)")
-    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
-    let fake = dir.appendingPathComponent("DSC.ARW")
+    let fake = dir.appendingPathComponent("2026-01-01_dims/DSC.ARW")
+    try FileManager.default.createDirectory(
+        at: fake.deletingLastPathComponent(), withIntermediateDirectories: true)
     try Data("fake".utf8).write(to: fake)
 
     #expect(Dimensions.read(at: fake) == nil)
-    let record = FileRecord(path: fake.path, ext: "arw", stage: .raw, size: 4, mtime: 1)
-    let dims = Dimensions.forGroup(files: [record])
-    #expect(dims.width == 3000 && dims.height == 2000)
+    // The scanner substitutes 3:2 so the grid can lay out anyway.
+    let images = try scanLibrary(root: dir.path).imagesByShoot["2026-01-01_dims"] ?? []
+    #expect(images.first?.width == 3000)
+    #expect(images.first?.height == 2000)
 }

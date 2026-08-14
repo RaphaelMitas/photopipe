@@ -3,8 +3,6 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-/// Extracts embedded previews (instant for ARW; decode for DNG/JPG) into a
-/// content-keyed disk cache the webview can load via the asset protocol.
 public struct Thumbnailer: Sendable {
     public enum ThumbnailError: Error {
         case unreadable(String)
@@ -22,17 +20,14 @@ public struct Thumbnailer: Sendable {
             .appendingPathComponent("Photopipe/thumbs")
     }
 
-    /// Cache key covers identity + freshness: same path re-thumbnails when the
-    /// file changes (mtime/size), and per requested size.
-    public func cachePath(for file: FileRecord, maxPixel: Int) -> URL {
+    public func cachePath(for file: ImageFile, maxPixel: Int) -> URL {
         let key = "\(file.path)|\(file.mtime)|\(file.size)|\(maxPixel)"
         let digest = SHA256.hash(data: Data(key.utf8))
             .map { String(format: "%02x", $0) }.joined().prefix(32)
         return cacheDir.appendingPathComponent("\(digest).jpg")
     }
 
-    /// Returns the cached JPEG path, generating it on miss.
-    public func thumbnail(for file: FileRecord, maxPixel: Int) throws -> URL {
+    public func thumbnail(for file: ImageFile, maxPixel: Int) throws -> URL {
         let dest = cachePath(for: file, maxPixel: maxPixel)
         if FileManager.default.fileExists(atPath: dest.path) {
             return dest
@@ -53,7 +48,6 @@ public struct Thumbnailer: Sendable {
             throw ThumbnailError.unreadable(file.path)
         }
 
-        // Atomic publish: encode to a temp file, then rename into place.
         let temp = cacheDir.appendingPathComponent("tmp-\(UUID().uuidString).jpg")
         guard
             let destination = CGImageDestinationCreateWithURL(

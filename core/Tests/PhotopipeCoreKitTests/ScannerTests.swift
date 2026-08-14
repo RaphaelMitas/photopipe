@@ -5,10 +5,18 @@ import Testing
 
 // MARK: - Fixtures
 
-/// Builds a temp photo tree: [shootName: [relative file paths]] → root URL.
+/// Symlink-free scratch space for library fixtures. NSTemporaryDirectory sits
+/// behind the /var → /private/var symlink, and the service's path-identity
+/// lookups compare canonical strings — a symlinked root would test the
+/// symlink, not the code.
+func scratchDir(_ prefix: String) -> URL {
+    FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("photopipe-tests/\(prefix)-\(UUID().uuidString)")
+}
+
+/// Builds a scratch photo tree: [shootName: [relative file paths]] → root URL.
 func makeTree(_ layout: [String: [String]]) throws -> URL {
-    let root = URL(fileURLWithPath: NSTemporaryDirectory())
-        .appendingPathComponent("photopipe-test-\(UUID().uuidString)")
+    let root = scratchDir("tree")
     for (shoot, paths) in layout {
         for relative in paths {
             let file = root.appendingPathComponent(shoot).appendingPathComponent(relative)
@@ -20,16 +28,17 @@ func makeTree(_ layout: [String: [String]]) throws -> URL {
     return root
 }
 
-// MARK: - Stage
+// MARK: - Image files
 
-@Test func stageDerivesFromExtensionCaseInsensitively() {
-    #expect(Stage(fileExtension: "ARW") == .raw)
-    #expect(Stage(fileExtension: "dng") == .denoised)
-    #expect(Stage(fileExtension: "JPG") == .export)
-    #expect(Stage(fileExtension: "jpeg") == .export)
-    #expect(Stage(fileExtension: "png") == .export)
-    #expect(Stage(fileExtension: "xmp") == nil)
-    #expect(Stage(fileExtension: "mov") == nil)
+@Test func imagePathsAreRecognizedCaseInsensitively() {
+    #expect(isImagePath("/s/DSC001.ARW"))
+    #expect(isImagePath("/s/DSC001.dng"))
+    #expect(isImagePath("/s/deep/nested/DSC001.JPG"))
+    #expect(isImagePath("/s/x.jpeg"))
+    #expect(isImagePath("/s/x.png"))
+    #expect(!isImagePath("/s/DSC001.xmp"))
+    #expect(!isImagePath("/s/clip.mov"))
+    #expect(!isImagePath("/s/notes.txt"))
 }
 
 // MARK: - Shoot name parsing
@@ -51,58 +60,14 @@ func makeTree(_ layout: [String: [String]]) throws -> URL {
     #expect(parseShootName("2026-07-12") == nil)
 }
 
-// MARK: - Lineage
-
-@Test func lineageGroupsByStemAcrossStagesAndFolders() {
-    let files = [
-        FileRecord(path: "/s/DSC001.ARW", ext: "ARW", stage: .raw, size: 1, mtime: 1),
-        FileRecord(path: "/s/denoised/DSC001.dng", ext: "dng", stage: .denoised, size: 1, mtime: 2),
-        FileRecord(path: "/s/exports/DSC001.jpg", ext: "jpg", stage: .export, size: 1, mtime: 3),
-        FileRecord(path: "/s/DSC002.ARW", ext: "ARW", stage: .raw, size: 1, mtime: 1),
-    ]
-    let groups = buildImageGroups(files: files)
-    #expect(groups.count == 2)
-    let first = groups[0]
-    #expect(first.stem == "DSC001")
-    #expect(first.stage == .export)
-    #expect(first.files.map(\.stage) == [.raw, .denoised, .export])
-    #expect(groups[1].stage == .raw)
-}
-
-@Test func lineageStemMatchingIsCaseInsensitive() {
-    let files = [
-        FileRecord(path: "/s/dsc001.arw", ext: "arw", stage: .raw, size: 1, mtime: 1),
-        FileRecord(path: "/s/DSC001.JPG", ext: "JPG", stage: .export, size: 1, mtime: 2),
-    ]
-    #expect(buildImageGroups(files: files).count == 1)
-}
-
-@Test func displayFilePrefersFurthestStage() {
-    let files = [
-        FileRecord(path: "/s/DSC001.ARW", ext: "ARW", stage: .raw, size: 1, mtime: 1),
-        FileRecord(path: "/s/DSC001.dng", ext: "dng", stage: .denoised, size: 1, mtime: 2),
-    ]
-    let group = buildImageGroups(files: files)[0]
-    #expect(group.displayFile?.ext == "dng")
-}
-
-@Test func stageCountsCountLogicalImagesNotFiles() {
-    let files = [
-        FileRecord(path: "/s/DSC001.ARW", ext: "ARW", stage: .raw, size: 1, mtime: 1),
-        FileRecord(path: "/s/DSC001.jpg", ext: "jpg", stage: .export, size: 1, mtime: 2),
-        FileRecord(path: "/s/DSC002.ARW", ext: "ARW", stage: .raw, size: 1, mtime: 1),
-    ]
-    let counts = stageCounts(images: buildImageGroups(files: files))
-    #expect(counts == ["raw": 1, "denoised": 0, "export": 1])
-}
-
 // MARK: - Scanning real directories
 
-@Test func scanFindsShootsGroupsLineagesAndSkipsJunk() throws {
+@Test func scanFindsEveryImageRecursivelyWithRelPaths() throws {
     let root = try makeTree([
         "2026-07-12_zell": [
-            "DSC001.ARW", "DSC001.dng", "exports/DSC001.jpg",
-            "DSC002.ARW",
+            "DSC001.ARW", "DSC001.jpg",
+            "selects/DSC002.ARW",
+            "selects/deep/DSC003.dng",
             "notes.txt", "meta.xmp",
         ],
         "2026-08-01_beach": ["IMG_1.ARW"],
@@ -111,14 +76,20 @@ func makeTree(_ layout: [String: [String]]) throws -> URL {
     defer { try? FileManager.default.removeItem(at: root) }
 
     let snapshot = try scanLibrary(root: root.path)
-    // not-a-shoot has no pipeline files → dropped entirely
+    // not-a-shoot has no images and no photopipe.json → dropped entirely
     #expect(snapshot.shoots.map(\.name) == ["2026-08-01_beach", "2026-07-12_zell"])
     #expect(snapshot.fileCount == 5)
 
     let zell = try #require(snapshot.imagesByShoot["2026-07-12_zell"])
-    #expect(zell.count == 2)
-    #expect(zell[0].files.count == 3)
-    #expect(snapshot.shoots[1].counts == ["raw": 1, "denoised": 0, "export": 1])
+    // One file = one image, wherever it sits; sorted by rel.
+    #expect(
+        zell.map(\.rel) == [
+            "DSC001.ARW", "DSC001.jpg", "selects/deep/DSC003.dng", "selects/DSC002.ARW",
+        ])
+    let nested = try #require(zell.first { $0.rel == "selects/DSC002.ARW" })
+    #expect(nested.path == root.appendingPathComponent("2026-07-12_zell/selects/DSC002.ARW").path)
+    #expect(nested.ext == "ARW")
+    #expect(snapshot.shoots[1].imageCount == 4)
 }
 
 @Test func scanSortsNewestDayFirstUndatedLast() throws {

@@ -1,21 +1,17 @@
 import Foundation
 import ImageIO
 
-/// XMP rating conventions, Lightroom-compatible:
-/// - proprietary raw (ARW): rating lives in a `<stem>.xmp` sidecar next to it
-/// - DNG/JPG: rating embedded in the file's XMP packet
-/// Writes go through exiftool; reads are native (sidecars are small XML,
-/// embedded packets come out of ImageIO without decoding pixels).
 public enum XMP {
-    /// `DSC00832.ARW` → `DSC00832.xmp` (Lightroom's default sidecar naming).
     public static func sidecarURL(forImagePath path: String) -> URL {
         URL(fileURLWithPath: path).deletingPathExtension().appendingPathExtension("xmp")
     }
 
-    /// Parse `xmp:Rating` out of a sidecar. Handles both serializations
-    /// (attribute and element form).
     public static func readSidecarRating(at url: URL) -> Int? {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        return parseRating(text)
+    }
+
+    static func parseRating(_ text: String) -> Int? {
         if let match = text.firstMatch(of: /xmp:Rating\s*=\s*"(-?\d+)"/) {
             return Int(match.1)
         }
@@ -25,78 +21,105 @@ public enum XMP {
         return nil
     }
 
-    /// Read the embedded `xmp:Rating` from a JPG/DNG without decoding pixels.
-    public static func readEmbeddedRating(at url: URL) -> Int? {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-            let metadata = CGImageSourceCopyMetadataAtIndex(source, 0, nil),
-            let tag = CGImageMetadataCopyTagWithPath(metadata, nil, "xmp:Rating" as CFString)
-        else { return nil }
-        if let value = CGImageMetadataTagCopyValue(tag) as? String {
-            return Int(value)
+    static func parseExposure(_ text: String) -> Double? {
+        if let match = text.firstMatch(of: /crs:Exposure2012\s*=\s*"([-+]?[\d.]+)"/) {
+            return Double(match.1)
         }
-        if let value = CGImageMetadataTagCopyValue(tag) as? Int {
-            return value
+        if let match = text.firstMatch(of: /<crs:Exposure2012>\s*([-+]?[\d.]+)\s*<\/crs:Exposure2012>/) {
+            return Double(match.1)
         }
         return nil
     }
 
-    /// Rating for a logical image: sidecar wins (it's the raw's authority),
-    /// else the furthest-stage embedded rating.
-    public static func readRating(files: [FileRecord]) -> Int {
-        for file in files where file.stage == .raw {
-            if let rating = readSidecarRating(at: sidecarURL(forImagePath: file.path)) {
-                return rating
+    static func readEmbedded(at url: URL) -> (rating: Int?, exposure: Double?) {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+            let metadata = CGImageSourceCopyMetadataAtIndex(source, 0, nil)
+        else { return (nil, nil) }
+        var rating: Int?
+        var exposure: Double?
+        CGImageMetadataEnumerateTagsUsingBlock(metadata, nil, nil) { _, tag in
+            guard let name = CGImageMetadataTagCopyName(tag) as String? else { return true }
+            let namespace = CGImageMetadataTagCopyNamespace(tag) as String?
+            let value = CGImageMetadataTagCopyValue(tag)
+            if name == "Rating" && namespace == "http://ns.adobe.com/xap/1.0/" {
+                if let text = value as? String { rating = Int(text) }
+                if let number = value as? Int { rating = number }
             }
-        }
-        for file in files.sorted(by: { $0.stage.rank > $1.stage.rank }) where file.stage != .raw {
-            if let rating = embeddedRatingCached(for: file) {
-                return rating
+            if name == "Exposure2012" && namespace == "http://ns.adobe.com/camera-raw-settings/1.0/" {
+                if let text = value as? String { exposure = Double(text) }
+                if let number = value as? Double { exposure = number }
             }
+            return true
         }
-        return 0
+        return (rating, exposure)
     }
 
-    // MARK: - Embedded-read cache
+    public static func readRating(file: ImageFile) -> Int {
+        if file.usesSidecar {
+            return readSidecarRating(at: sidecarURL(forImagePath: file.path)) ?? 0
+        }
+        return embeddedCached(for: file).rating ?? 0
+    }
 
-    /// Embedded reads cost ~1-2ms each; rescans hit this (path, mtime)-keyed
-    /// cache instead so watching a big library stays cheap.
+    public static func readExposure(file: ImageFile) -> Double {
+        if file.usesSidecar {
+            guard
+                let text = try? String(
+                    contentsOf: sidecarURL(forImagePath: file.path), encoding: .utf8)
+            else { return 0 }
+            return parseExposure(text) ?? 0
+        }
+        return embeddedCached(for: file).exposure ?? 0
+    }
+
     private static let cacheLock = NSLock()
-    nonisolated(unsafe) private static var embeddedCache: [String: (mtime: Double, rating: Int?)] =
-        [:]
+    nonisolated(unsafe) private static var embeddedCache:
+        [String: (mtime: Double, rating: Int?, exposure: Double?)] = [:]
 
-    private static func embeddedRatingCached(for file: FileRecord) -> Int? {
+    private static func embeddedCached(for file: ImageFile) -> (rating: Int?, exposure: Double?) {
         cacheLock.lock()
         if let cached = embeddedCache[file.path], cached.mtime == file.mtime {
             cacheLock.unlock()
-            return cached.rating
+            return (cached.rating, cached.exposure)
         }
         cacheLock.unlock()
 
-        let rating = readEmbeddedRating(at: URL(fileURLWithPath: file.path))
+        let read = readEmbedded(at: URL(fileURLWithPath: file.path))
         cacheLock.lock()
-        embeddedCache[file.path] = (file.mtime, rating)
+        embeddedCache[file.path] = (file.mtime, read.rating, read.exposure)
         cacheLock.unlock()
-        return rating
+        return read
     }
 
-    // MARK: - Writes
-
-    /// Write a rating across a lineage group: sidecar for raws, embedded for
-    /// the rest. Rating 0 clears the tag (Lightroom's "unrated").
-    public static func writeRating(_ rating: Int, files: [FileRecord], tool: ExifTool) throws {
+    public static func writeRating(_ rating: Int, file: ImageFile, tool: ExifTool) throws {
         let tagArg = rating == 0 ? "-XMP:Rating=" : "-XMP:Rating=\(rating)"
-        for file in files {
-            if file.stage == .raw {
-                let sidecar = sidecarURL(forImagePath: file.path)
-                if FileManager.default.fileExists(atPath: sidecar.path) {
-                    try tool.write(["-overwrite_original", tagArg, sidecar.path])
-                } else if rating != 0 {
-                    // Create the sidecar from scratch — never touches the raw.
+        try write(tagArg, clearing: rating == 0, file: file, tool: tool)
+    }
+
+    public static func writeExposure(_ exposure: Double, file: ImageFile, tool: ExifTool) throws {
+        let tagArg =
+            exposure == 0
+            ? "-XMP-crs:Exposure2012=" : "-XMP-crs:Exposure2012=\(exposure)"
+        try write(tagArg, clearing: exposure == 0, file: file, tool: tool)
+    }
+
+    private static func write(
+        _ tagArg: String, clearing: Bool, file: ImageFile, tool: ExifTool
+    ) throws {
+        if file.usesSidecar {
+            let sidecar = sidecarURL(forImagePath: file.path)
+            if FileManager.default.fileExists(atPath: sidecar.path) {
+                try tool.write(["-overwrite_original", tagArg, sidecar.path])
+            } else if !clearing {
+                do {
                     try tool.write([tagArg, "-o", sidecar.path])
+                } catch {
+                    guard FileManager.default.fileExists(atPath: sidecar.path) else { throw error }
+                    try tool.write(["-overwrite_original", tagArg, sidecar.path])
                 }
-            } else {
-                try tool.write(["-overwrite_original", tagArg, file.path])
             }
+        } else {
+            try tool.write(["-overwrite_original", tagArg, file.path])
         }
     }
 }

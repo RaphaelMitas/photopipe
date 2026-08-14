@@ -25,8 +25,10 @@ const SHOOT = {
   path: "/r/2026-07-12_zell",
   day: "2026-07-12",
   project: "zell",
-  counts: { raw: 2, denoised: 1, export: 1 },
   imageCount: 4,
+  notes: "",
+  cover: null,
+  coverPath: null,
 };
 
 beforeEach(() => {
@@ -52,12 +54,8 @@ describe("App", () => {
     });
 
     renderWithQueries(<App />);
-    // Counts render in the sidebar entry (and again in the overview cards) —
-    // scope to the canonical testid owner.
     const entry = await screen.findByTestId("shoot-2026-07-12_zell");
-    expect(within(entry).getByText("2 raw")).toBeInTheDocument();
-    expect(within(entry).getByText("1 denoised")).toBeInTheDocument();
-    expect(within(entry).getByText("1 exported")).toBeInTheDocument();
+    expect(within(entry).getByText("4 photos")).toBeInTheDocument();
   });
 
   it("drops back to the picker with the error when setRoot fails", async () => {
@@ -68,7 +66,6 @@ describe("App", () => {
     expect(await screen.findByTestId("root-error")).toHaveTextContent(
       "root_not_found",
     );
-    // A vanished root must not stick for the next launch.
     expect(localStorage.getItem("photopipe.root")).toBeNull();
   });
 });

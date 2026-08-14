@@ -2,7 +2,6 @@ import Foundation
 
 public enum DispatchOutcome: Equatable, Sendable {
     case respond(Response)
-    /// Respond, then the caller should exit the read loop.
     case shutdown(Response)
 
     public var response: Response {
@@ -12,8 +11,6 @@ public enum DispatchOutcome: Equatable, Sendable {
     }
 }
 
-/// Routes protocol requests. Envelope handling is pure; library methods hit
-/// the stateful service.
 public final class Dispatcher {
     private let library: LibraryService
 
@@ -53,9 +50,9 @@ public final class Dispatcher {
                     ])))
         case "shutdown":
             return .shutdown(.success(id: request.id, result: .object(["bye": .bool(true)])))
-        case "setRoot", "listShoots", "listImages", "thumbnail", "render", "setRating", "status",
-            "openIn", "reveal", "trash", "exportFiles", "createProject", "importFiles",
-            "updateProject", "renameProject":
+        case "setRoot", "listShoots", "listImages", "thumbnail", "render", "setRating",
+            "setExposure", "status", "reveal", "trash", "exportFiles", "createProject",
+            "importFiles", "updateProject", "renameProject":
             return .respond(libraryResponse(request))
         default:
             return .respond(
@@ -110,30 +107,36 @@ public final class Dispatcher {
                 return .success(id: request.id, result: .object(["cachePath": .string(cachePath)]))
             case "setRating":
                 guard let shoot = request.params?["shoot"]?.stringValue,
-                    let stem = request.params?["stem"]?.stringValue,
+                    let path = request.params?["path"]?.stringValue,
                     let rating = request.params?["rating"]?.intValue
                 else {
                     return .failure(
                         id: request.id, code: "invalid_params",
-                        message: "shoot, stem and rating required")
+                        message: "shoot, path and rating required")
                 }
-                let result = try library.setRating(shoot: shoot, stem: stem, rating: rating)
+                let result = try library.setRating(shoot: shoot, path: path, rating: rating)
                 return .success(
                     id: request.id,
                     result: .object([
                         "rating": .number(Double(result.rating)),
                         "generation": .number(Double(result.generation)),
                     ]))
-            case "openIn":
-                guard let paths = request.params?["paths"]?.stringArrayValue,
-                    let app = request.params?["app"]?.stringValue
+            case "setExposure":
+                guard let shoot = request.params?["shoot"]?.stringValue,
+                    let path = request.params?["path"]?.stringValue,
+                    let exposure = request.params?["exposure"]?.doubleValue
                 else {
                     return .failure(
-                        id: request.id, code: "invalid_params", message: "paths and app required")
+                        id: request.id, code: "invalid_params",
+                        message: "shoot, path and exposure required")
                 }
-                try library.openIn(paths: paths, app: app)
+                let result = try library.setExposure(shoot: shoot, path: path, exposure: exposure)
                 return .success(
-                    id: request.id, result: .object(["opened": .number(Double(paths.count))]))
+                    id: request.id,
+                    result: .object([
+                        "exposure": .number(result.exposure),
+                        "generation": .number(Double(result.generation)),
+                    ]))
             case "reveal":
                 guard let paths = request.params?["paths"]?.stringArrayValue else {
                     return .failure(
@@ -143,12 +146,12 @@ public final class Dispatcher {
                 return .success(id: request.id, result: .object(["revealed": .bool(true)]))
             case "trash":
                 guard let shoot = request.params?["shoot"]?.stringValue,
-                    let stems = request.params?["stems"]?.stringArrayValue
+                    let paths = request.params?["paths"]?.stringArrayValue
                 else {
                     return .failure(
-                        id: request.id, code: "invalid_params", message: "shoot and stems required")
+                        id: request.id, code: "invalid_params", message: "shoot and paths required")
                 }
-                let result = try library.trashImages(shoot: shoot, stems: stems)
+                let result = try library.trashImages(shoot: shoot, paths: paths)
                 return .success(
                     id: request.id,
                     result: .object([
@@ -156,16 +159,24 @@ public final class Dispatcher {
                         "generation": .number(Double(result.generation)),
                     ]))
             case "exportFiles":
-                guard let paths = request.params?["paths"]?.stringArrayValue,
+                guard let shoot = request.params?["shoot"]?.stringValue,
+                    let paths = request.params?["paths"]?.stringArrayValue,
                     let destination = request.params?["destination"]?.stringValue
                 else {
                     return .failure(
                         id: request.id, code: "invalid_params",
-                        message: "paths and destination required")
+                        message: "shoot, paths and destination required")
                 }
-                let zip = request.params?["zip"]?.boolValue ?? false
+                let format =
+                    LibraryService.ExportFormat(
+                        rawValue: request.params?["format"]?.stringValue ?? "original")
+                    ?? .original
                 let count = try library.exportFiles(
-                    paths: paths, destination: destination, zip: zip)
+                    shoot: shoot, paths: paths, destination: destination,
+                    zip: request.params?["zip"]?.boolValue ?? false,
+                    flatten: request.params?["flatten"]?.boolValue ?? true,
+                    format: format,
+                    quality: request.params?["quality"]?.intValue ?? 90)
                 return .success(
                     id: request.id, result: .object(["files": .number(Double(count))]))
             case "createProject":
@@ -187,15 +198,13 @@ public final class Dispatcher {
                     ]))
             case "importFiles":
                 guard let shoot = request.params?["shoot"]?.stringValue,
-                    let stageName = request.params?["stage"]?.stringValue,
-                    let stage = Stage(rawValue: stageName),
                     let paths = request.params?["paths"]?.stringArrayValue
                 else {
                     return .failure(
                         id: request.id, code: "invalid_params",
-                        message: "shoot, stage and paths required")
+                        message: "shoot and paths required")
                 }
-                let result = try library.importFiles(shoot: shoot, stage: stage, paths: paths)
+                let result = try library.importFiles(shoot: shoot, paths: paths)
                 return .success(
                     id: request.id,
                     result: .object([
@@ -208,8 +217,6 @@ public final class Dispatcher {
                     return .failure(
                         id: request.id, code: "invalid_params", message: "shoot required")
                 }
-                // An absent key leaves the field alone; an explicit null
-                // clears the cover back to "first image".
                 let coverParam = request.params?["cover"]
                 let generation = try library.updateProject(
                     shoot: shoot,
@@ -270,8 +277,6 @@ public final class Dispatcher {
                 id: request.id, code: "project_exists", message: "\(folder) already exists")
         } catch FileActions.ActionError.noFiles {
             return .failure(id: request.id, code: "no_files", message: "nothing selected")
-        } catch FileActions.ActionError.noApp {
-            return .failure(id: request.id, code: "no_app", message: "no application chosen")
         } catch FileActions.ActionError.openFailed(let output) {
             return .failure(id: request.id, code: "open_failed", message: output)
         } catch FileActions.ActionError.zipFailed(let output) {

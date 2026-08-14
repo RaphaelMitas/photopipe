@@ -7,8 +7,7 @@ import Foundation
 public struct ProjectFile: Codable, Equatable, Sendable {
     public var notes: String
     public var created: String?
-    /// Stem of the image to show as the project's cover. Nil means "use the
-    /// first one", so a project always has a face without needing a choice.
+    /// Rel path of the cover image; nil means "use the first one".
     public var cover: String?
 
     public init(notes: String = "", created: String? = nil, cover: String? = nil) {

@@ -1,35 +1,22 @@
 import { useDeferredValue, useEffect } from "react";
-import { fileSrc, type ImageGroup } from "@/lib/core";
+import { fileSrc, type ImageFile } from "@/lib/core";
 import { usePrefetchRender, useRender, useThumbnail } from "@/lib/queries";
 import { Filmstrip, type FilmstripMode } from "./Filmstrip";
 
 export const EXPOSURE_STEP = 0.25;
 export const EXPOSURE_RANGE = 3;
 
-/// The file worth rendering: raw for real exposure scrubbing, else the
-/// furthest-stage file.
-function renderFileOf(image: ImageGroup | undefined) {
-  return (
-    image?.files.find((f) => f.stage === "raw") ??
-    image?.files[image.files.length - 1]
-  );
-}
-
 type Props = {
-  images: ImageGroup[];
+  images: ImageFile[];
   index: number;
   exposure: number;
   filmstrip: FilmstripMode;
   onExposureChange: (ev: number) => void;
   onNavigate: (index: number) => void;
   onClose: () => void;
-  onRate: (stem: string, rating: number) => void;
+  onRate: (path: string, rating: number) => void;
 };
 
-/// Full-height culling canvas. Exposure scrubs re-render through the raw
-/// pipeline core-side (the whole reason this app is native); ratings are one
-/// keystroke. Preview adjustments are never written to any file. Controls
-/// live in the LoupeSidebar; this component owns the pixels and the keyboard.
 export function Loupe({
   images,
   index,
@@ -43,22 +30,15 @@ export function Loupe({
   const image = images[index];
   const deferredExposure = useDeferredValue(exposure);
 
-  const renderFile = renderFileOf(image);
-  const render = useRender(renderFile, deferredExposure);
-  // While a cold render cooks, show this image's (grid-cached) thumbnail —
-  // never the previous photo — so ratings are always judged on the right
-  // pixels.
-  const thumb = useThumbnail(image?.files[image.files.length - 1]);
-  // Neighbors render ahead of the arrival of ← or →.
-  usePrefetchRender(renderFileOf(images[index + 1]), deferredExposure);
-  usePrefetchRender(renderFileOf(images[index - 1]), deferredExposure);
+  const render = useRender(image, deferredExposure);
+  const thumb = useThumbnail(image);
+  usePrefetchRender(images[index + 1], images[index + 1]?.exposure ?? 0);
+  usePrefetchRender(images[index - 1], images[index - 1]?.exposure ?? 0);
 
   useEffect(() => {
     if (!image) return;
     const handler = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
-      // A focused slider owns its own arrow keys (Radix adjusts the value
-      // internally); double-handling would step exposure twice per press.
       const target = event.target as HTMLElement | null;
       if (
         event.key.startsWith("Arrow") &&
@@ -84,7 +64,7 @@ export function Loupe({
         case "3":
         case "4":
         case "5":
-          onRate(image.stem, Number(event.key));
+          onRate(image.path, Number(event.key));
           break;
         case "ArrowUp":
           event.preventDefault();
@@ -121,14 +101,14 @@ export function Loupe({
           <img
             data-testid="loupe-image"
             src={fileSrc(render.data)}
-            alt={image.stem}
+            alt={image.rel}
             className="h-full w-full object-contain"
           />
         ) : thumb.data ? (
           <img
             data-testid="loupe-placeholder"
             src={fileSrc(thumb.data)}
-            alt={image.stem}
+            alt={image.rel}
             className="h-full w-full object-contain"
           />
         ) : (

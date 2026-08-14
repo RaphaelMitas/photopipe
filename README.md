@@ -4,21 +4,20 @@
 
 # Photopipe
 
-Culling and pipeline manager for photo shoots, on macOS.
+Culling and export for photo shoots, on macOS.
 
 </div>
 
 Photopipe is for the part of photography that happens between the shoot and
 the delivery: looking at a few hundred raws, deciding which ones are worth
-keeping, and moving those through denoising, editing and export without
-losing track of where anything is.
+keeping, and getting the keepers out the door.
 
 It is built around one rule: **your folders are the truth.** Photopipe reads
 what is on disk and shows it to you. It never maintains a catalogue that can
 disagree with reality, and the only files it changes are the ones you ask it
 to.
 
-![The media page: a justified grid of originals with a selection](docs/screenshots/media.png)
+![The browser: a justified grid with a selection](docs/screenshots/browse.png)
 
 ## Install
 
@@ -35,51 +34,62 @@ the app.
 
 ## How it works
 
-A project is a folder named `<date>_<name>` with three stage folders inside:
+A project is a folder named `<date>_<name>`. Whatever image files sit inside
+it — in subfolders or not — are its photos, shown as one flat set:
 
 ```
 2026-07-12_zell/
-├── original/     ARW straight off the card
-├── processed/    DNG back from your denoiser
-└── export/       finished JPEG
+├── DSC00832.ARW
+├── kirche/DSC00938.ARW
+└── party/DSC01204.jpg
 ```
 
-The app is three workspaces across the top, and you move between them freely.
-Nothing is ever "complete", nothing is gated, and no status is stored
-anywhere: a photo's stage is simply which folder its files are in.
+Subfolders are yours: sort however you like, the app just walks them and
+shows the relative path as part of the name. Every file is its own photo —
+an ARW and a JPEG of the same shot are two entries, exactly like on disk.
 
-| Page | What it holds | What it does |
-|---|---|---|
-| **Media** | your originals | rate, cull, and send keepers to your denoiser |
-| **Edit** | the DNGs that came back | open them in your editor |
-| **Export** | the finished files | zip them for hand-over |
+The app is one surface: browse and rate in the grid, edit in the loupe,
+leave through the **Export** button. The sidebar's rating histogram doubles
+as the filter — a count per rating, click a bar to narrow.
 
-Processing and editing happen in whatever tools you already use. Photopipe
-hands files over and notices what comes back, linking a renamed
-`DSC00001-DxO.dng` to the `DSC00001.ARW` it came from.
+![The export drawer: selection, format, destination, activity](docs/screenshots/export.png)
+
+Export always acts on the selection (quick actions select the filtered set
+or everything for you) and offers two formats: **Original** copies the bytes
+untouched, **JPEG** renders each photo full-resolution with its edits baked
+in, at quality 90 or 100, to a folder or a zip — flat or mirroring your
+subfolders, never silently overwriting on a name collision. Jobs run in the
+drawer's activity section, where errors stay visible instead of vanishing
+with a toast.
 
 ### Culling
 
 ![The loupe: full-bleed photo, exposure slider, filmstrip](docs/screenshots/loupe.png)
 
 Click a photo to open it full-bleed. Rate with `1`–`5`, clear with `0`,
-navigate with `←`/`→`, adjust exposure with `↑`/`↓` to judge a dark frame
-fairly. Exposure is preview-only and never touches the file.
+navigate with `←`/`→`, adjust exposure with `↑`/`↓`. The exposure is saved
+with the photo and baked into JPEG exports.
 
-Ratings are written as XMP: a sidecar next to a raw, embedded in a DNG or
-JPEG. Lightroom, Capture One and Photo Mechanic read the same stars, so
-nothing you decide here is locked inside this app.
+Ratings and edits are written as XMP: a sidecar next to a raw, embedded in a
+DNG or JPEG, the exposure as Lightroom's own `crs:Exposure2012`. Lightroom,
+Capture One and Photo Mechanic read the same stars, so nothing you decide
+here is locked inside this app.
 
-Hold, or ⌘-click, to start selecting. Then **Open in…**, **Export…**,
-**Reveal in Finder**, or **Delete** — which means the Trash, with the whole
-lineage group and its sidecars, never an unlink.
+Hold, or ⌘-click, to start selecting. Then **Export…**, **Reveal in
+Finder**, or **Delete** — which means the Trash, sidecar included, never an
+unlink.
 
 ## Development
 
 ```bash
 pnpm install
-pnpm --filter desktop tauri dev
+pnpm dev
 ```
+
+`pnpm dev` builds the Swift core, stages it as the Tauri sidecar
+(`apps/desktop/src-tauri/binaries/`), and starts `tauri dev`. Running
+`tauri dev` directly fails until the sidecar is staged once:
+`./scripts/build-core.sh`.
 
 You need Rust, Swift (Xcode command line tools) and Node 24. `exiftool` comes
 from Homebrew in development and is bundled for releases.

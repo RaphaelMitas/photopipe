@@ -10,9 +10,7 @@ test("first launch asks for a root, then shows the dashboard", async ({
   const zell = page.getByTestId("shoot-2026-07-12_zell");
   await expect(zell).toBeVisible();
   await expect(zell).toContainText("zell");
-  await expect(zell).toContainText("2 raw");
-  await expect(zell).toContainText("1 denoised");
-  await expect(zell).toContainText("1 exported");
+  await expect(zell).toContainText("4 photos");
   await expect(page.getByTestId("shoot-misc")).toContainText("1 photos");
 });
 
@@ -26,7 +24,6 @@ test("opening a shoot shows its grid; back returns to the library", async ({
   await page.getByTestId("shoot-2026-07-12_zell").click();
   await expect(page.getByTestId("grid")).toBeVisible();
   await expect(page.getByTestId("thumb")).toHaveCount(4);
-  await expect(page.getByText("DSC00832")).toBeVisible();
 
   // The sidebar shows only the current shoot; the library page is where
   // shoots are browsed, and "All shoots" is the way back.

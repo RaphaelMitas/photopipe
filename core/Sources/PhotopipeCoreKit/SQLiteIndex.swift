@@ -3,8 +3,6 @@ import SQLite3
 
 private let transientDestructor = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-/// Rebuildable index of the last scan. Never a source of truth: corrupt or
-/// missing files are recreated from disk without data loss.
 public final class SQLiteIndex {
     public enum IndexError: Error {
         case open(String)
@@ -14,7 +12,7 @@ public final class SQLiteIndex {
     private var db: OpaquePointer?
     private let path: String
 
-    private static let schemaVersion = 1
+    private static let schemaVersion = 2
 
     public init(path: String) throws {
         self.path = path
@@ -24,7 +22,6 @@ public final class SQLiteIndex {
         do {
             try open()
         } catch {
-            // Corrupt index → delete and rebuild. The scan repopulates it.
             sqlite3_close(db)
             db = nil
             try? FileManager.default.removeItem(atPath: path)
@@ -47,14 +44,13 @@ public final class SQLiteIndex {
             CREATE TABLE IF NOT EXISTS files (
                 path TEXT PRIMARY KEY,
                 shoot TEXT NOT NULL,
+                rel TEXT NOT NULL,
                 ext TEXT NOT NULL,
-                stage TEXT NOT NULL,
                 size INTEGER NOT NULL,
                 mtime REAL NOT NULL
             );
             CREATE INDEX IF NOT EXISTS files_shoot ON files(shoot);
             """)
-        // A future schema bump deletes and rebuilds — the index holds no truth.
         let stored = try scalarInt("SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schema'")
         if let stored, stored != Self.schemaVersion {
             sqlite3_close(db)
@@ -64,7 +60,6 @@ public final class SQLiteIndex {
             return
         }
         try exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema', '\(Self.schemaVersion)')")
-        // Integrity probe so a corrupt file fails init (and triggers rebuild).
         try exec("SELECT count(*) FROM files")
     }
 
@@ -87,8 +82,7 @@ public final class SQLiteIndex {
         return Int(sqlite3_column_int64(statement, 0))
     }
 
-    /// Full snapshot replace in one transaction — trivially delete-safe.
-    public func save(root: String, filesByShoot: [String: [FileRecord]]) throws {
+    public func save(root: String, filesByShoot: [String: [ImageFile]]) throws {
         try exec("BEGIN")
         do {
             try exec("DELETE FROM files")
@@ -96,7 +90,7 @@ public final class SQLiteIndex {
                 "INSERT OR REPLACE INTO meta (key, value) VALUES ('root', '\(root.replacingOccurrences(of: "'", with: "''"))')"
             )
             var statement: OpaquePointer?
-            let sql = "INSERT INTO files (path, shoot, ext, stage, size, mtime) VALUES (?,?,?,?,?,?)"
+            let sql = "INSERT INTO files (path, shoot, rel, ext, size, mtime) VALUES (?,?,?,?,?,?)"
             guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
                 throw IndexError.exec(String(cString: sqlite3_errmsg(db)))
             }
@@ -106,8 +100,8 @@ public final class SQLiteIndex {
                     sqlite3_reset(statement)
                     sqlite3_bind_text(statement, 1, file.path, -1, transientDestructor)
                     sqlite3_bind_text(statement, 2, shoot, -1, transientDestructor)
-                    sqlite3_bind_text(statement, 3, file.ext, -1, transientDestructor)
-                    sqlite3_bind_text(statement, 4, file.stage.rawValue, -1, transientDestructor)
+                    sqlite3_bind_text(statement, 3, file.rel, -1, transientDestructor)
+                    sqlite3_bind_text(statement, 4, file.ext, -1, transientDestructor)
                     sqlite3_bind_int64(statement, 5, file.size)
                     sqlite3_bind_double(statement, 6, file.mtime)
                     guard sqlite3_step(statement) == SQLITE_DONE else {
@@ -122,7 +116,7 @@ public final class SQLiteIndex {
         }
     }
 
-    public func load() throws -> (root: String, filesByShoot: [String: [FileRecord]])? {
+    public func load() throws -> (root: String, filesByShoot: [String: [ImageFile]])? {
         var rootStatement: OpaquePointer?
         guard
             sqlite3_prepare_v2(
@@ -137,24 +131,23 @@ public final class SQLiteIndex {
         let root = String(cString: rootText)
 
         var statement: OpaquePointer?
-        let sql = "SELECT path, shoot, ext, stage, size, mtime FROM files"
+        let sql = "SELECT path, shoot, rel, ext, size, mtime FROM files"
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
             throw IndexError.exec(String(cString: sqlite3_errmsg(db)))
         }
         defer { sqlite3_finalize(statement) }
 
-        var filesByShoot: [String: [FileRecord]] = [:]
+        var filesByShoot: [String: [ImageFile]] = [:]
         while sqlite3_step(statement) == SQLITE_ROW {
             guard let pathText = sqlite3_column_text(statement, 0),
                 let shootText = sqlite3_column_text(statement, 1),
-                let extText = sqlite3_column_text(statement, 2),
-                let stageText = sqlite3_column_text(statement, 3),
-                let stage = Stage(rawValue: String(cString: stageText))
+                let relText = sqlite3_column_text(statement, 2),
+                let extText = sqlite3_column_text(statement, 3)
             else { continue }
-            let record = FileRecord(
+            let record = ImageFile(
                 path: String(cString: pathText),
+                rel: String(cString: relText),
                 ext: String(cString: extText),
-                stage: stage,
                 size: sqlite3_column_int64(statement, 4),
                 mtime: sqlite3_column_double(statement, 5))
             filesByShoot[String(cString: shootText), default: []].append(record)

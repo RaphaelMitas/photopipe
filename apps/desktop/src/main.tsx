@@ -5,7 +5,6 @@ import App from "./App";
 import { Toaster } from "./components/ui/sonner";
 import "./index.css";
 
-// Playwright runs the UI in a plain browser: swap the Tauri IPC layer for mocks.
 async function prepare() {
   if (import.meta.env.VITE_E2E === "1") {
     const { mockIPC } = await import("@tauri-apps/api/mocks");

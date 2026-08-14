@@ -1,41 +1,10 @@
 import { Images, Plus, Settings2 } from "lucide-react";
-import { fileSrc, type Shoot, type Stage } from "@/lib/core";
+import { fileSrc, type Shoot } from "@/lib/core";
 import { useThumbnail } from "@/lib/queries";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { Skeleton } from "./ui/skeleton";
 
-const STAGE_STYLE: Record<Stage, string> = {
-  raw: "text-muted-foreground",
-  denoised: "text-sky-400",
-  export: "text-emerald-400",
-};
-
-const STAGE_LABEL: Record<Stage, string> = {
-  raw: "raw",
-  denoised: "denoised",
-  export: "exported",
-};
-
-export function StageCounts({ counts }: { counts: Record<Stage, number> }) {
-  return (
-    <span className="flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-xs">
-      {(Object.keys(STAGE_LABEL) as Stage[]).map((stage) => (
-        <span
-          key={stage}
-          className={`whitespace-nowrap ${
-            counts[stage] > 0 ? STAGE_STYLE[stage] : "text-muted-foreground/40"
-          }`}
-        >
-          {counts[stage] ?? 0} {STAGE_LABEL[stage]}
-        </span>
-      ))}
-    </span>
-  );
-}
-
-/// The project's face: its chosen cover, else its first photo. Reuses the
-/// thumbnail cache, so a card costs nothing the grid hasn't already paid.
 function Cover({ path }: { path: string | null }) {
   const thumb = useThumbnail(path ? { path, mtime: 0 } : undefined);
   if (!path) {
@@ -71,8 +40,6 @@ type Props = {
 export function Dashboard({ shoots, onOpen, onNewProject, onSettings }: Props) {
   return (
     <div className="grid grid-cols-1 gap-3 p-6 sm:grid-cols-2 lg:grid-cols-3">
-      {/* Starting a shoot is the first thing this page offers, not a
-          hidden menu item — the project structure comes ready to go. */}
       <button
         type="button"
         data-testid="new-project"
@@ -87,8 +54,6 @@ export function Dashboard({ shoots, onOpen, onNewProject, onSettings }: Props) {
           key={shoot.name}
           className="group relative gap-0 overflow-hidden py-0 transition-shadow hover:ring-ring"
         >
-          {/* Settings sits outside the open button: nesting buttons is
-              invalid HTML and would swallow the click. */}
           <Button
             variant="ghost"
             size="icon"
@@ -128,9 +93,6 @@ export function Dashboard({ shoots, onOpen, onNewProject, onSettings }: Props) {
                   {shoot.notes}
                 </p>
               )}
-              <div className="mt-3">
-                <StageCounts counts={shoot.counts} />
-              </div>
             </CardContent>
           </button>
         </Card>

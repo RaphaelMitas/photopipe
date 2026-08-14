@@ -1,16 +1,16 @@
 import { ChevronLeft, RotateCcw } from "lucide-react";
-import type { ImageGroup } from "@/lib/core";
+import type { ImageFile } from "@/lib/core";
 import type { FilmstripMode } from "./Filmstrip";
 import { EXPOSURE_RANGE } from "./Loupe";
 import { Photopipe } from "./Photopipe";
 import {
   RatingFilterOps,
-  RatingFilterStars,
+  RatingHistogram,
   type RatingOp,
 } from "./RatingFilter";
 import { Stars } from "./Stars";
 import { Button } from "./ui/button";
-import { ButtonGroup } from "./ui/button-group";
+import { Segmented } from "./ui/segmented";
 import {
   Sidebar,
   SidebarContent,
@@ -28,25 +28,22 @@ import {
 import { Slider } from "./ui/slider";
 
 type Props = {
-  image: ImageGroup;
-  /// 1-based position within the (filtered) shoot.
+  image: ImageFile;
   position: number;
   count: number;
   exposure: number;
   filmstrip: FilmstripMode;
   onFilmstrip: (mode: FilmstripMode) => void;
+  ratingCounts: number[];
   ratingOp: RatingOp;
   onRatingOp: (op: RatingOp) => void;
   ratingStars: number;
   onRatingStars: (stars: number) => void;
   onExposureChange: (ev: number) => void;
-  onRate: (stem: string, rating: number) => void;
+  onRate: (path: string, rating: number) => void;
   onBackToGrid: () => void;
 };
 
-/// Detail-view sidebar: while the loupe is open, navigation gives way to the
-/// options for the photo under the cursor. Sparse for now — Phase 3's
-/// remaining controls (WB, zoom, compare) and later features land here.
 export function LoupeSidebar({
   image,
   position,
@@ -54,6 +51,7 @@ export function LoupeSidebar({
   exposure,
   filmstrip,
   onFilmstrip,
+  ratingCounts,
   ratingOp,
   onRatingOp,
   ratingStars,
@@ -70,8 +68,6 @@ export function LoupeSidebar({
           <span className="font-heading font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
             Photopipe
           </span>
-          {/* Same place as the library sidebar's: the top bar is navigation
-              only, so collapsing lives in the sidebar on every page. */}
           <SidebarTrigger className="ml-auto text-muted-foreground" />
         </div>
       </SidebarHeader>
@@ -95,14 +91,17 @@ export function LoupeSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* List-level controls: the filter acts on the whole shoot. */}
         <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-          <SidebarGroupLabel>Rating filter</SidebarGroupLabel>
-          <SidebarGroupContent className="flex items-center gap-2 px-2 py-1">
+          <SidebarGroupLabel className="justify-between">
+            Rating
             <RatingFilterOps op={ratingOp} onOp={onRatingOp} />
-            <RatingFilterStars
+          </SidebarGroupLabel>
+          <SidebarGroupContent className="px-2 py-1">
+            <RatingHistogram
+              counts={ratingCounts}
+              op={ratingOp}
               stars={ratingStars}
-              muted={ratingOp === "unrated"}
+              onOp={onRatingOp}
               onStars={onRatingStars}
             />
           </SidebarGroupContent>
@@ -110,15 +109,15 @@ export function LoupeSidebar({
 
         <SidebarSeparator className="group-data-[collapsible=icon]:hidden" />
 
-        {/* Photo-level: everything below concerns the current image. */}
         <SidebarGroup className="group-data-[collapsible=icon]:hidden">
           <SidebarGroupLabel>Photo</SidebarGroupLabel>
           <SidebarGroupContent className="flex flex-col gap-1 px-2 py-1">
             <span
-              data-testid="loupe-stem"
+              data-testid="loupe-name"
               className="truncate font-mono text-sm"
+              title={image.rel}
             >
-              {image.stem}
+              {image.rel}
             </span>
             <span
               data-testid="loupe-position"
@@ -128,14 +127,14 @@ export function LoupeSidebar({
             </span>
             <Stars
               value={image.rating}
-              onRate={(rating) => onRate(image.stem, rating)}
+              onRate={(rating) => onRate(image.path, rating)}
               className="mt-1 text-base"
             />
           </SidebarGroupContent>
         </SidebarGroup>
 
         <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-          <SidebarGroupLabel>Adjustments</SidebarGroupLabel>
+          <SidebarGroupLabel>Edit</SidebarGroupLabel>
           <SidebarGroupContent className="flex flex-col gap-2 px-2 py-1">
             <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
               <span>Exposure</span>
@@ -162,7 +161,7 @@ export function LoupeSidebar({
               onValueChange={([value]) => onExposureChange(value)}
             />
             <p className="text-[10px] text-muted-foreground">
-              Preview only. Never written to the file.
+              Saved with the photo. JPEG exports apply it.
             </p>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -172,27 +171,16 @@ export function LoupeSidebar({
           <SidebarGroupContent className="px-2 py-1">
             <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
               <span>Filmstrip</span>
-              <ButtonGroup className="w-full">
-                {(
-                  [
-                    ["off", "Off"],
-                    ["thumbs", "Thumbs"],
-                    ["ratings", "Ratings"],
-                  ] as const
-                ).map(([mode, label]) => (
-                  <Button
-                    key={mode}
-                    size="sm"
-                    variant={filmstrip === mode ? "secondary" : "outline"}
-                    aria-pressed={filmstrip === mode}
-                    data-testid={`filmstrip-${mode}`}
-                    onClick={() => onFilmstrip(mode)}
-                    className="flex-1 text-xs"
-                  >
-                    {label}
-                  </Button>
-                ))}
-              </ButtonGroup>
+              <Segmented
+                value={filmstrip}
+                options={[
+                  ["off", "Off"],
+                  ["thumbs", "Thumbs"],
+                  ["ratings", "Ratings"],
+                ]}
+                testid="filmstrip"
+                onChange={onFilmstrip}
+              />
             </div>
           </SidebarGroupContent>
         </SidebarGroup>

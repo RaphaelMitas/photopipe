@@ -1,10 +1,9 @@
 import { ChevronLeft, Download, FolderOpen, Settings2 } from "lucide-react";
 import type { Shoot } from "@/lib/core";
-import { StageCounts } from "./Dashboard";
 import { Photopipe } from "./Photopipe";
 import {
   RatingFilterOps,
-  RatingFilterStars,
+  RatingHistogram,
   type RatingOp,
 } from "./RatingFilter";
 import { Button } from "./ui/button";
@@ -24,38 +23,30 @@ import {
 import { Switch } from "./ui/switch";
 
 type Props = {
-  /// The open shoot, or null at the library. The sidebar shows only the
-  /// current shoot — the library page is where shoots are browsed.
   currentShoot: Shoot | undefined;
   onBack: () => void;
-  /// Imports into the current page's stage folder.
   onImport: () => void;
   onRevealShoot: (path: string) => void;
   onShootSettings: () => void;
-  onAppSettings: () => void;
+  ratingCounts: number[];
   ratingOp: RatingOp;
   onRatingOp: (op: RatingOp) => void;
   ratingStars: number;
   onRatingStars: (rating: number) => void;
-  /// Filter only applies inside a shoot.
   filterEnabled: boolean;
-  /// Grid overlay (stem, stage, rating): always visible vs hover-only.
   showInfo: boolean;
   onShowInfo: (show: boolean) => void;
   rootPath: string;
   onChangeRoot: () => void;
 };
 
-/// Context for the open shoot: what you're in, the way back, the filters.
-/// The shoot *list* deliberately lives on the library page, not here — one
-/// place to browse, one place to work. Collapses to an icon rail (⌘B).
 export function AppSidebar({
   currentShoot,
   onBack,
   onImport,
   onRevealShoot,
   onShootSettings,
-  onAppSettings,
+  ratingCounts,
   ratingOp,
   onRatingOp,
   ratingStars,
@@ -74,8 +65,6 @@ export function AppSidebar({
           <span className="font-heading font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
             Photopipe
           </span>
-          {/* The trigger lives here, not in the top bar: that strip is
-              navigation only. The icon rail keeps it reachable when collapsed. */}
           <SidebarTrigger className="ml-auto text-muted-foreground" />
         </div>
       </SidebarHeader>
@@ -116,14 +105,11 @@ export function AppSidebar({
               <span className="text-[10px] text-muted-foreground">
                 {currentShoot.imageCount} photos
               </span>
-              <StageCounts counts={currentShoot.counts} />
               {currentShoot.notes && (
                 <p className="mt-1 text-muted-foreground/70 text-xs">
                   {currentShoot.notes}
                 </p>
               )}
-              {/* Three buttons do not fit a sidebar's width. Import leads on
-                  its own row; the two occasional actions share the next. */}
               <div className="mt-2 flex flex-col gap-1.5">
                 <Button
                   size="sm"
@@ -164,17 +150,21 @@ export function AppSidebar({
           </SidebarGroup>
         )}
         <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-          <SidebarGroupLabel>Rating filter</SidebarGroupLabel>
-          <SidebarGroupContent className="flex items-center gap-2 px-2 py-1">
+          <SidebarGroupLabel className="justify-between">
+            Rating
             <RatingFilterOps
               op={ratingOp}
               disabled={!filterEnabled}
               onOp={onRatingOp}
             />
-            <RatingFilterStars
+          </SidebarGroupLabel>
+          <SidebarGroupContent className="px-2 py-1">
+            <RatingHistogram
+              counts={ratingCounts}
+              op={ratingOp}
               stars={ratingStars}
               disabled={!filterEnabled}
-              muted={ratingOp === "unrated"}
+              onOp={onRatingOp}
               onStars={onRatingStars}
             />
           </SidebarGroupContent>
@@ -200,16 +190,6 @@ export function AppSidebar({
           <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">
             {rootPath}
           </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            data-testid="app-settings"
-            onClick={onAppSettings}
-            title="Settings"
-            className="size-7 text-muted-foreground"
-          >
-            <Settings2 />
-          </Button>
           <Button
             variant="ghost"
             size="icon"

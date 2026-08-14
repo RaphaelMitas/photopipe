@@ -1,10 +1,6 @@
 import Foundation
 import ImageIO
 
-/// Pixel dimensions read from image headers — no pixel decode, so it's cheap
-/// enough for scan time. Orientation-corrected (EXIF 5–8 are 90° rotations)
-/// so layout sees upright dimensions, and cached by (path, mtime) like the
-/// embedded-rating cache.
 public enum Dimensions {
     public static let fallback = (width: 3000, height: 2000)
 
@@ -19,22 +15,11 @@ public enum Dimensions {
         return orientation >= 5 ? (height, width) : (width, height)
     }
 
-    /// Dimensions for a logical image: the display file (furthest stage)
-    /// decides how the cell lays out. Unreadable files report 3:2.
-    public static func forGroup(files: [FileRecord]) -> (width: Int, height: Int) {
-        guard let display = files.max(by: { $0.stage.rank < $1.stage.rank }) else {
-            return fallback
-        }
-        return cached(for: display) ?? fallback
-    }
-
-    // MARK: - (path, mtime) cache
-
     private static let cacheLock = NSLock()
     nonisolated(unsafe) private static var cache:
         [String: (mtime: Double, dims: (width: Int, height: Int)?)] = [:]
 
-    static func cached(for file: FileRecord) -> (width: Int, height: Int)? {
+    public static func cached(for file: ImageFile) -> (width: Int, height: Int)? {
         cacheLock.lock()
         if let entry = cache[file.path], entry.mtime == file.mtime {
             cacheLock.unlock()

@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ImageGroup } from "./core";
+import type { ImageFile } from "./core";
 import { useSetRating } from "./queries";
 
 afterEach(cleanup);
@@ -12,14 +12,17 @@ vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => path,
 }));
 
-function image(stem: string): ImageGroup {
+function image(name: string): ImageFile {
   return {
-    stem,
-    stage: "raw",
+    path: `/r/shoot1/${name}.ARW`,
+    rel: `${name}.ARW`,
+    ext: "ARW",
+    size: 1,
+    mtime: 1,
     rating: 0,
+    exposure: 0,
     width: 3000,
     height: 2000,
-    files: [],
   };
 }
 
@@ -56,24 +59,21 @@ describe("useSetRating burst behavior", () => {
       </QueryClientProvider>,
     );
 
-    // Rapid burst: two ratings before anything settles.
-    mutation.mutate({ stem: "A", rating: 3 });
-    mutation.mutate({ stem: "B", rating: 4 });
+    mutation.mutate({ path: "/r/shoot1/A.ARW", rating: 3 });
+    mutation.mutate({ path: "/r/shoot1/B.ARW", rating: 4 });
     await waitFor(() => expect(pending.length).toBe(2));
 
-    const optimistic = client.getQueryData<ImageGroup[]>(["images", "shoot1"]);
+    const optimistic = client.getQueryData<ImageFile[]>(["images", "shoot1"]);
     expect(optimistic?.[0].rating).toBe(3);
     expect(optimistic?.[1].rating).toBe(4);
 
-    // First settle mid-burst: no reconciliation yet, optimistic state intact.
     pending[0]({ rating: 3, generation: 10 });
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(invalidateSpy).not.toHaveBeenCalled();
     expect(
-      client.getQueryData<ImageGroup[]>(["images", "shoot1"])?.[1].rating,
+      client.getQueryData<ImageFile[]>(["images", "shoot1"])?.[1].rating,
     ).toBe(4);
 
-    // Burst ends: exactly one reconciling invalidation.
     pending[1]({ rating: 4, generation: 11 });
     await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(1));
     expect(invalidateSpy).toHaveBeenCalledWith({
