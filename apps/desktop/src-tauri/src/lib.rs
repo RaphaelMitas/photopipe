@@ -22,6 +22,8 @@ async fn core_request(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Arc::new(Sidecar::new(Sidecar::default_bin())))
         .invoke_handler(tauri::generate_handler![core_request])
         .build(tauri::generate_context!())

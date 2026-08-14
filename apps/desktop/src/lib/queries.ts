@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { getVersion } from "@tauri-apps/api/app";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import {
@@ -11,6 +12,15 @@ import {
   type Shoot,
   type StatusResult,
 } from "./core";
+
+export function useAppVersion(enabled: boolean) {
+  return useQuery({
+    queryKey: ["appVersion"],
+    queryFn: getVersion,
+    enabled,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
 
 export function useShoots(enabled: boolean) {
   return useQuery({

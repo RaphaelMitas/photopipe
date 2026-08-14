@@ -72,6 +72,7 @@ jobs:
       # Job-level so the tap step can guard on it: neither `secrets` nor a
       # step's own `env` are readable from a step-level `if`.
       TAP_TOKEN: ${{ secrets.TAP_DISPATCH_TOKEN }}
+      APP: apps/desktop/src-tauri/target/release/bundle/macos/Photopipe.app
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -118,10 +119,11 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: |
-          for required in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+          for required in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID TAURI_SIGNING_PRIVATE_KEY; do
             if [ -z "${!required}" ]; then
-              echo "::error::$required is not set. See docs/engineering.md for the six release secrets."
+              echo "::error::$required is not set. See docs/engineering.md for the eight release secrets."
               exit 1
             fi
           done
@@ -154,7 +156,6 @@ jobs:
       # Mach-O, and the app's seal covers it as a resource.
       - name: Sign
         run: |
-          APP="apps/desktop/src-tauri/target/release/bundle/macos/Photopipe.app"
           codesign --force --options runtime --timestamp \
             --sign "$SIGNING_IDENTITY" "$APP/Contents/MacOS/photopipe-core"
           codesign --force --options runtime --timestamp \
@@ -171,7 +172,6 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          APP="apps/desktop/src-tauri/target/release/bundle/macos/Photopipe.app"
           ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/Photopipe.zip"
           xcrun notarytool submit "$RUNNER_TEMP/Photopipe.zip" \
             --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" \
@@ -181,9 +181,10 @@ jobs:
       # Built from the stapled app, so the DMG carries a ticket even offline.
       - name: Build the DMG
         id: dmg
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
         run: |
-          APP="apps/desktop/src-tauri/target/release/bundle/macos/Photopipe.app"
-          DMG="$RUNNER_TEMP/Photopipe-${{ needs.check.outputs.version }}.dmg"
+          DMG="$RUNNER_TEMP/Photopipe-$VERSION.dmg"
           STAGE="$RUNNER_TEMP/dmg-root"
           mkdir -p "$STAGE"
           cp -R "$APP" "$STAGE/"
@@ -214,11 +215,57 @@ jobs:
       # name. It wraps the stapled app, so it is notarized by construction.
       - name: Zip the app for the cask
         id: zip
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
         run: |
-          APP="apps/desktop/src-tauri/target/release/bundle/macos/Photopipe.app"
-          ZIP="$RUNNER_TEMP/photopipe-${{ needs.check.outputs.version }}.zip"
+          ZIP="$RUNNER_TEMP/photopipe-$VERSION.zip"
           ditto -c -k --keepParent "$APP" "$ZIP"
           echo "PATH=$ZIP" >> $GITHUB_OUTPUT
+
+      - name: Build and sign the updater archive
+        id: updater
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          VERSION: ${{ needs.check.outputs.version }}
+          TAG: ${{ needs.check.outputs.tag }}
+        run: |
+          TARBALL="$RUNNER_TEMP/Photopipe-$VERSION.app.tar.gz"
+          tar --no-mac-metadata -C "$(dirname "$APP")" -czf "$TARBALL" \
+            "$(basename "$APP")"
+          pnpm --filter desktop tauri signer sign "$TARBALL"
+
+          SIG=$(cat "$TARBALL.sig") python3 <<'PY'
+          import base64, json, os, sys
+
+          def key_id(box):
+              line = base64.b64decode(box).decode().splitlines()[1]
+              return base64.b64decode(line)[2:10]
+
+          conf = json.load(open("apps/desktop/src-tauri/tauri.conf.json"))
+          shipped = key_id(conf["plugins"]["updater"]["pubkey"])
+          signed = key_id(os.environ["SIG"])
+          if shipped != signed:
+              sys.exit(
+                  f"::error::Signed with key {signed.hex()}, but the app trusts "
+                  f"{shipped.hex()}. Every installed app would reject this update."
+              )
+          PY
+
+          MANIFEST="$RUNNER_TEMP/latest.json"
+          REPO="https://github.com/${{ github.repository }}"
+          jq -n \
+            --arg version "$VERSION" \
+            --arg notes "$REPO/releases/tag/$TAG" \
+            --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg signature "$(cat "$TARBALL.sig")" \
+            --arg url "$REPO/releases/download/$TAG/$(basename "$TARBALL")" \
+            '{$version, $notes, $pub_date,
+              platforms: {"darwin-aarch64": {$signature, $url}}}' \
+            > "$MANIFEST"
+
+          echo "TARBALL=$TARBALL" >> $GITHUB_OUTPUT
+          echo "MANIFEST=$MANIFEST" >> $GITHUB_OUTPUT
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -226,6 +273,8 @@ jobs:
           path: |
             ${{ steps.dmg.outputs.PATH }}
             ${{ steps.zip.outputs.PATH }}
+            ${{ steps.updater.outputs.TARBALL }}
+            ${{ steps.updater.outputs.MANIFEST }}
 
       - name: Publish the release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
@@ -234,6 +283,8 @@ jobs:
           files: |
             ${{ steps.dmg.outputs.PATH }}
             ${{ steps.zip.outputs.PATH }}
+            ${{ steps.updater.outputs.TARBALL }}
+            ${{ steps.updater.outputs.MANIFEST }}
           generate_release_notes: true
           body: |
             Requires macOS 15 (Sequoia) or later on Apple Silicon.
