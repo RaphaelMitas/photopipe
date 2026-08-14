@@ -195,7 +195,8 @@ private func tempCacheDir() -> URL {
     try renderer.exportJPEG(file: file, exposure: 0, quality: 0.9, to: neutral)
     try renderer.exportJPEG(file: file, exposure: 2, quality: 0.9, to: bright)
 
-    #expect(try meanLuminance(of: bright) > meanLuminance(of: neutral),
+    #expect(
+        try meanLuminance(of: bright) > meanLuminance(of: neutral),
         "the persisted exposure must be baked into the delivery")
     // Full resolution, not the loupe size.
     let source = try #require(CGImageSourceCreateWithURL(neutral as CFURL, nil))

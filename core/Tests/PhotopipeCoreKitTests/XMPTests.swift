@@ -111,7 +111,8 @@ private func image(_ url: URL) throws -> ImageFile {
     try XMP.writeRating(5, file: try image(arw), tool: .shared)
 
     #expect(XMP.readSidecarRating(at: sidecar) == 5)
-    #expect(try exiftoolTag("-XMP:Label", of: sidecar) == "Blue",
+    #expect(
+        try exiftoolTag("-XMP:Label", of: sidecar) == "Blue",
         "existing Lightroom tags must survive our writes")
     #expect(try exiftoolTag("-XMP:Title", of: sidecar) == "Keeper")
 }

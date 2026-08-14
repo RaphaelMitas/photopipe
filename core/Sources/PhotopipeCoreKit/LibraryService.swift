@@ -332,7 +332,8 @@ public final class LibraryService {
                 .appendingPathComponent("photopipe-export-\(UUID().uuidString)")
             defer { try? fm.removeItem(at: staging) }
             for (image, rel) in items {
-                try write(image, format: format, quality: quality,
+                try write(
+                    image, format: format, quality: quality,
                     to: staging.appendingPathComponent(rel), staging: true)
             }
             try FileActions.zipDirectory(at: staging, to: destination)

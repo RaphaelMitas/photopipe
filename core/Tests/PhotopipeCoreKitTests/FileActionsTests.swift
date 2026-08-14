@@ -201,7 +201,8 @@ private func makeShoot(in root: URL, named name: String = "2026-06-06_actions") 
     // A hardlink would share the inode, so the source's link count would be
     // 2 and an edit to the delivered file would corrupt the library original.
     let delivered = out.appendingPathComponent("DSC00002.jpg")
-    let links = try FileManager.default.attributesOfItem(atPath: source.path)[.referenceCount]
+    let links =
+        try FileManager.default.attributesOfItem(atPath: source.path)[.referenceCount]
         as? Int
     #expect(links == 1, "the library original must not share an inode with the delivery")
     try Data("edited by the client".utf8).write(to: delivered)
