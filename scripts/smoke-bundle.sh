@@ -70,7 +70,8 @@ try:
     print("  scan:     %s shoot, %s file" % (scanned["shoots"], scanned["files"]))
 
     # The real proof: writing a rating means the bundled exiftool ran.
-    require(call("setRating", {"shoot": shoot, "stem": "SMOKE1", "rating": 4}, "3"), "setRating")
+    photo = os.path.join(root, shoot, "original", "SMOKE1.ARW")
+    require(call("setRating", {"shoot": shoot, "path": photo, "rating": 4}, "3"), "setRating")
     sidecar = os.path.join(root, shoot, "original", "SMOKE1.xmp")
     if not os.path.exists(sidecar):
         sys.exit("::error::no XMP sidecar written; bundled exiftool did not run")
