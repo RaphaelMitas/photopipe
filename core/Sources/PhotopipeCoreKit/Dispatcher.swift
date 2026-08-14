@@ -51,8 +51,8 @@ public final class Dispatcher {
         case "shutdown":
             return .shutdown(.success(id: request.id, result: .object(["bye": .bool(true)])))
         case "setRoot", "listShoots", "listImages", "thumbnail", "render", "setRating",
-            "setExposure", "status", "reveal", "trash", "exportFiles", "createProject",
-            "importFiles", "updateProject", "renameProject":
+            "setEdit", "whiteBalance", "status", "reveal", "trash", "exportFiles",
+            "createProject", "importFiles", "updateProject", "renameProject":
             return .respond(libraryResponse(request))
         default:
             return .respond(
@@ -60,6 +60,11 @@ public final class Dispatcher {
                     id: request.id, code: "unknown_method",
                     message: "unknown method: \(request.method)"))
         }
+    }
+
+    private static func edit(from value: JSONValue?) throws -> Edit? {
+        guard let value else { return nil }
+        return try JSONDecoder().decode(Edit.self, from: JSONEncoder().encode(value))
     }
 
     private func libraryResponse(_ request: Request) -> Response {
@@ -100,10 +105,9 @@ public final class Dispatcher {
                 guard let path = request.params?["path"]?.stringValue else {
                     return .failure(id: request.id, code: "invalid_params", message: "path required")
                 }
-                let exposure = request.params?["exposure"]?.doubleValue ?? 0
+                let edit = try Self.edit(from: request.params?["edit"]) ?? .identity
                 let maxPixel = request.params?["maxPixel"]?.intValue ?? 2000
-                let cachePath = try library.render(
-                    path: path, exposure: exposure, maxPixel: maxPixel)
+                let cachePath = try library.render(path: path, edit: edit, maxPixel: maxPixel)
                 return .success(id: request.id, result: .object(["cachePath": .string(cachePath)]))
             case "setRating":
                 guard let shoot = request.params?["shoot"]?.stringValue,
@@ -121,21 +125,32 @@ public final class Dispatcher {
                         "rating": .number(Double(result.rating)),
                         "generation": .number(Double(result.generation)),
                     ]))
-            case "setExposure":
+            case "setEdit":
                 guard let shoot = request.params?["shoot"]?.stringValue,
                     let path = request.params?["path"]?.stringValue,
-                    let exposure = request.params?["exposure"]?.doubleValue
+                    let edit = try Self.edit(from: request.params?["edit"])
                 else {
                     return .failure(
                         id: request.id, code: "invalid_params",
-                        message: "shoot, path and exposure required")
+                        message: "shoot, path and edit required")
                 }
-                let result = try library.setExposure(shoot: shoot, path: path, exposure: exposure)
+                let result = try library.setEdit(shoot: shoot, path: path, edit: edit)
                 return .success(
                     id: request.id,
                     result: .object([
-                        "exposure": .number(result.exposure),
+                        "edit": try JSONValue(encoding: result.edit),
                         "generation": .number(Double(result.generation)),
+                    ]))
+            case "whiteBalance":
+                guard let path = request.params?["path"]?.stringValue else {
+                    return .failure(id: request.id, code: "invalid_params", message: "path required")
+                }
+                let asShot = try library.whiteBalance(path: path)
+                return .success(
+                    id: request.id,
+                    result: .object([
+                        "temperature": asShot.map { .number($0.temperature) } ?? .null,
+                        "tint": asShot.map { .number($0.tint) } ?? .null,
                     ]))
             case "reveal":
                 guard let paths = request.params?["paths"]?.stringArrayValue else {

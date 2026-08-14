@@ -91,10 +91,14 @@ public final class LibraryService {
         try thumbnailer.thumbnail(for: recordUnderRoot(path: path), maxPixel: maxPixel).path
     }
 
-    public func render(path: String, exposure: Double, maxPixel: Int) throws -> String {
+    public func render(path: String, edit: Edit, maxPixel: Int) throws -> String {
         try renderer.render(
-            file: recordUnderRoot(path: path), exposure: exposure, maxPixel: maxPixel
+            file: recordUnderRoot(path: path), edit: edit, maxPixel: maxPixel
         ).path
+    }
+
+    public func whiteBalance(path: String) throws -> (temperature: Double, tint: Double)? {
+        try renderer.whiteBalance(for: recordUnderRoot(path: path))
     }
 
     private func recordUnderRoot(path: String) throws -> ImageFile {
@@ -164,15 +168,15 @@ public final class LibraryService {
         return (rating, status().generation)
     }
 
-    public func setExposure(shoot shootName: String, path: String, exposure: Double) throws -> (
-        exposure: Double, generation: Int
+    public func setEdit(shoot shootName: String, path: String, edit: Edit) throws -> (
+        edit: Edit, generation: Int
     ) {
         let image = try image(shoot: shootName, path: path)
 
-        try XMP.writeExposure(exposure, file: image, tool: .shared)
+        try XMP.writeEdit(edit, file: image, tool: .shared)
 
-        updateSnapshot(shoot: shootName, path: image.path) { $0.with(exposure: exposure) }
-        return (exposure, status().generation)
+        updateSnapshot(shoot: shootName, path: image.path) { $0.with(edit: edit) }
+        return (edit, status().generation)
     }
 
     static func projectFolder(day: String, name: String) throws -> String {
@@ -365,7 +369,7 @@ public final class LibraryService {
             }
         case .jpeg:
             try renderer.exportJPEG(
-                file: image, exposure: image.exposure,
+                file: image, edit: image.edit,
                 quality: Double(quality) / 100, to: target)
             if image.rating > 0 {
                 try? ExifTool.shared.write(

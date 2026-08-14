@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ImageFile } from "@/lib/core";
+import { type Edit, type ImageFile, identityEdit } from "@/lib/core";
 import { makeImage } from "@/lib/test-image";
+import { EditSidebar } from "./EditPanel";
 import { Loupe } from "./Loupe";
 import { LoupeSidebar } from "./LoupeSidebar";
 import { SidebarProvider } from "./ui/sidebar";
@@ -15,6 +16,8 @@ vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => `asset://${path}`,
 }));
 
+const editWith = (exposure: number): Edit => ({ ...identityEdit, exposure });
+
 function makeImages(): ImageFile[] {
   return ["DSC00001", "DSC00002", "DSC00003"].map((stem) =>
     makeImage(`${stem}.ARW`),
@@ -25,7 +28,7 @@ function renderLoupe(index = 0, exposure = 0) {
   const onNavigate = vi.fn();
   const onClose = vi.fn();
   const onRate = vi.fn();
-  const onExposureChange = vi.fn();
+  const onEditChange = vi.fn();
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -34,16 +37,16 @@ function renderLoupe(index = 0, exposure = 0) {
       <Loupe
         images={makeImages()}
         index={index}
-        exposure={exposure}
+        edit={editWith(exposure)}
         filmstrip="off"
-        onExposureChange={onExposureChange}
+        onEditChange={onEditChange}
         onNavigate={onNavigate}
         onClose={onClose}
         onRate={onRate}
       />
     </QueryClientProvider>,
   );
-  return { onNavigate, onClose, onRate, onExposureChange };
+  return { onNavigate, onClose, onRate, onEditChange };
 }
 
 describe("Loupe keyboard culling", () => {
@@ -70,19 +73,19 @@ describe("Loupe keyboard culling", () => {
   });
 
   it("scrubs exposure with up/down arrows, clamped, and resets with r", () => {
-    const { onExposureChange } = renderLoupe(0, 0.25);
+    const { onEditChange } = renderLoupe(0, 0.25);
     fireEvent.keyDown(window, { key: "ArrowUp" });
-    expect(onExposureChange).toHaveBeenCalledWith(0.5);
+    expect(onEditChange).toHaveBeenCalledWith(editWith(0.5));
     fireEvent.keyDown(window, { key: "ArrowDown" });
-    expect(onExposureChange).toHaveBeenCalledWith(0);
+    expect(onEditChange).toHaveBeenCalledWith(editWith(0));
     fireEvent.keyDown(window, { key: "r" });
-    expect(onExposureChange).toHaveBeenCalledWith(0);
+    expect(onEditChange).toHaveBeenCalledWith(editWith(0));
   });
 
   it("clamps exposure at the range ceiling", () => {
-    const { onExposureChange } = renderLoupe(0, 3);
+    const { onEditChange } = renderLoupe(0, 3);
     fireEvent.keyDown(window, { key: "ArrowUp" });
-    expect(onExposureChange).toHaveBeenCalledWith(3);
+    expect(onEditChange).toHaveBeenCalledWith(editWith(3));
   });
 
   it("closes on escape", () => {
@@ -101,9 +104,8 @@ describe("Loupe keyboard culling", () => {
 });
 
 describe("LoupeSidebar", () => {
-  it("shows name, position and exposure; rates and resets", () => {
+  it("shows name, position and stars; rates", () => {
     const onRate = vi.fn();
-    const onExposureChange = vi.fn();
     render(
       <TooltipProvider>
         <SidebarProvider>
@@ -111,7 +113,6 @@ describe("LoupeSidebar", () => {
             image={makeImages()[1]}
             position={2}
             count={3}
-            exposure={0.25}
             filmstrip="thumbs"
             onFilmstrip={vi.fn()}
             ratingCounts={[3, 0, 0, 0, 0, 0]}
@@ -119,7 +120,6 @@ describe("LoupeSidebar", () => {
             onRatingOp={vi.fn()}
             ratingStars={0}
             onRatingStars={vi.fn()}
-            onExposureChange={onExposureChange}
             onRate={onRate}
             onBackToGrid={vi.fn()}
           />
@@ -128,11 +128,73 @@ describe("LoupeSidebar", () => {
     );
     expect(screen.getByTestId("loupe-name").textContent).toBe("DSC00002.ARW");
     expect(screen.getByTestId("loupe-position").textContent).toBe("2/3");
-    expect(screen.getByText("+0.25")).toBeVisible();
 
     fireEvent.click(screen.getByTestId("star-4"));
     expect(onRate).toHaveBeenCalledWith("/r/s/DSC00002.ARW", 4);
-    fireEvent.click(screen.getByTitle("Reset exposure (r)"));
-    expect(onExposureChange).toHaveBeenCalledWith(0);
+  });
+});
+
+describe("EditSidebar", () => {
+  function renderEditSidebar(edit: Edit) {
+    const onChange = vi.fn();
+    const onClose = vi.fn();
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <EditSidebar
+          image={makeImages()[1]}
+          edit={edit}
+          onChange={onChange}
+          onClose={onClose}
+        />
+      </QueryClientProvider>,
+    );
+    return { onChange, onClose };
+  }
+
+  it("shows the exposure value, resets it, and closes", () => {
+    const { onChange, onClose } = renderEditSidebar(editWith(0.25));
+    expect(screen.getByText("+0.25")).toBeVisible();
+    fireEvent.click(screen.getByTestId("exposure-reset"));
+    expect(onChange).toHaveBeenCalledWith(editWith(0));
+    fireEvent.click(screen.getByTestId("edit-close"));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("resets everything at once and keeps identity disabled", () => {
+    const { onChange } = renderEditSidebar({
+      ...identityEdit,
+      exposure: 1,
+      shadows: 30,
+      curveRGB: [
+        { x: 0, y: 0 },
+        { x: 0.5, y: 0.6 },
+        { x: 1, y: 1 },
+      ],
+    });
+    fireEvent.click(screen.getByTestId("edit-reset-all"));
+    expect(onChange).toHaveBeenCalledWith(identityEdit);
+
+    cleanup();
+    renderEditSidebar(identityEdit);
+    expect(screen.getByTestId("edit-reset-all")).toBeDisabled();
+  });
+
+  it("shows every slider and the curve editor", () => {
+    renderEditSidebar(identityEdit);
+    for (const testid of [
+      "exposure",
+      "highlights",
+      "shadows",
+      "temperature",
+      "tint",
+      "vibrance",
+      "saturation",
+      "curve-editor",
+    ]) {
+      expect(screen.getByTestId(testid)).toBeInTheDocument();
+    }
   });
 });

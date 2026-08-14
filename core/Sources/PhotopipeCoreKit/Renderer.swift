@@ -15,9 +15,18 @@ public final class Renderer {
     public let cacheDir: URL
     private let context = CIContext(options: [.cacheIntermediates: true])
     private let jpegColorSpace = CGColorSpace(name: CGColorSpace.displayP3)!
+    private let curveColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+
+    private struct CachedFilter {
+        let filter: CIRAWFilter
+        let mtime: Double
+        let asShotTemperature: Double
+        let asShotTint: Double
+        var lastUsed: Date
+    }
 
     private let lock = NSLock()
-    private var filters: [String: (filter: CIRAWFilter, mtime: Double, lastUsed: Date)] = [:]
+    private var filters: [String: CachedFilter] = [:]
     private let filterCapacity = 4
 
     public init(cacheDir: URL) {
@@ -49,21 +58,21 @@ public final class Renderer {
             .appendingPathComponent("Photopipe/renders")
     }
 
-    public func cachePath(for file: ImageFile, exposure: Double, maxPixel: Int) -> URL {
-        let key = "\(file.path)|\(file.mtime)|\(file.size)|\(exposure)|\(maxPixel)"
+    public func cachePath(for file: ImageFile, edit: Edit, maxPixel: Int) -> URL {
+        let key = "\(file.path)|\(file.mtime)|\(file.size)|\(edit.cacheKey)|\(maxPixel)"
         let digest = SHA256.hash(data: Data(key.utf8))
             .map { String(format: "%02x", $0) }.joined().prefix(32)
         return cacheDir.appendingPathComponent("\(digest).jpg")
     }
 
-    public func render(file: ImageFile, exposure: Double, maxPixel: Int) throws -> URL {
-        let dest = cachePath(for: file, exposure: exposure, maxPixel: maxPixel)
+    public func render(file: ImageFile, edit: Edit, maxPixel: Int) throws -> URL {
+        let dest = cachePath(for: file, edit: edit, maxPixel: maxPixel)
         if FileManager.default.fileExists(atPath: dest.path) {
             return dest
         }
         try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
 
-        var image = try sourceImage(for: file, exposure: exposure)
+        var image = try sourceImage(for: file, edit: edit)
         let longEdge = max(image.extent.width, image.extent.height)
         let scale = CGFloat(maxPixel) / longEdge
         if scale < 1 {
@@ -85,9 +94,9 @@ public final class Renderer {
     }
 
     public func exportJPEG(
-        file: ImageFile, exposure: Double, quality: Double, to destination: URL
+        file: ImageFile, edit: Edit, quality: Double, to destination: URL
     ) throws {
-        let image = try sourceImage(for: file, exposure: exposure)
+        let image = try sourceImage(for: file, edit: edit)
         guard
             let jpeg = context.jpegRepresentation(
                 of: image, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
@@ -107,40 +116,91 @@ public final class Renderer {
         }
     }
 
-    private func sourceImage(for file: ImageFile, exposure: Double) throws -> CIImage {
-        if Self.rawExtensions.contains(file.ext.lowercased()) {
-            let filter = try rawFilter(for: file)
-            lock.lock()
-            defer { lock.unlock() }
-            filter.exposure = Float(exposure)
-            guard let image = filter.outputImage else {
-                throw RenderError.unreadable(file.path)
-            }
-            return image
-        }
-
-        guard let base = CIImage(contentsOf: URL(fileURLWithPath: file.path)) else {
-            throw RenderError.unreadable(file.path)
-        }
-        guard exposure != 0 else { return base }
-        return base.applyingFilter("CIExposureAdjust", parameters: ["inputEV": exposure])
+    /// The as-shot white balance a raw decode starts from; nil for embedded
+    /// formats, where there is no known neutral to offset against.
+    public func whiteBalance(for file: ImageFile) throws -> (temperature: Double, tint: Double)? {
+        guard Self.rawExtensions.contains(file.ext.lowercased()) else { return nil }
+        let cached = try rawFilter(for: file)
+        return (cached.asShotTemperature, cached.asShotTint)
     }
 
-    private func rawFilter(for file: ImageFile) throws -> CIRAWFilter {
+    private func sourceImage(for file: ImageFile, edit: Edit) throws -> CIImage {
+        var image: CIImage
+        if Self.rawExtensions.contains(file.ext.lowercased()) {
+            let cached = try rawFilter(for: file)
+            lock.lock()
+            cached.filter.exposure = Float(edit.exposure)
+            cached.filter.neutralTemperature = Float(
+                edit.temperature ?? cached.asShotTemperature)
+            cached.filter.neutralTint = Float(edit.tint ?? cached.asShotTint)
+            let output = cached.filter.outputImage
+            lock.unlock()
+            guard let output else { throw RenderError.unreadable(file.path) }
+            image = output
+        } else {
+            guard let base = CIImage(contentsOf: URL(fileURLWithPath: file.path)) else {
+                throw RenderError.unreadable(file.path)
+            }
+            image = base
+            if edit.exposure != 0 {
+                image = image.applyingFilter(
+                    "CIExposureAdjust", parameters: ["inputEV": edit.exposure])
+            }
+            let temperature = edit.temperature ?? 0
+            let tint = edit.tint ?? 0
+            if temperature != 0 || tint != 0 {
+                // Moving the target neutral down in Kelvin renders warmer, so
+                // the slider sign flips here to match the raw pipeline's
+                // "higher temperature = warmer".
+                image = image.applyingFilter(
+                    "CITemperatureAndTint",
+                    parameters: [
+                        "inputNeutral": CIVector(x: 6500, y: 0),
+                        "inputTargetNeutral": CIVector(x: 6500 - temperature * 20, y: -tint),
+                    ])
+            }
+        }
+
+        if let lut = ToneLUT.samples(for: edit) {
+            image = image.applyingFilter(
+                "CIColorCurves",
+                parameters: [
+                    "inputCurvesData": lut.withUnsafeBufferPointer { Data(buffer: $0) },
+                    "inputCurvesDomain": CIVector(x: 0, y: 1),
+                    "inputColorSpace": curveColorSpace,
+                ])
+        }
+        if edit.vibrance != 0 {
+            image = image.applyingFilter(
+                "CIVibrance", parameters: ["inputAmount": edit.vibrance / 100])
+        }
+        if edit.saturation != 0 {
+            image = image.applyingFilter(
+                "CIColorControls", parameters: ["inputSaturation": 1 + edit.saturation / 100])
+        }
+        return image
+    }
+
+    private func rawFilter(for file: ImageFile) throws -> CachedFilter {
         lock.lock()
         defer { lock.unlock() }
         if let cached = filters[file.path], cached.mtime == file.mtime {
             filters[file.path]?.lastUsed = Date()
-            return cached.filter
+            return cached
         }
         guard let filter = CIRAWFilter(imageURL: URL(fileURLWithPath: file.path)) else {
             throw RenderError.unreadable(file.path)
         }
-        filters[file.path] = (filter, file.mtime, Date())
+        let entry = CachedFilter(
+            filter: filter, mtime: file.mtime,
+            asShotTemperature: Double(filter.neutralTemperature),
+            asShotTint: Double(filter.neutralTint),
+            lastUsed: Date())
+        filters[file.path] = entry
         if filters.count > filterCapacity {
             let oldest = filters.min { $0.value.lastUsed < $1.value.lastUsed }
             if let oldest { filters.removeValue(forKey: oldest.key) }
         }
-        return filter
+        return entry
     }
 }

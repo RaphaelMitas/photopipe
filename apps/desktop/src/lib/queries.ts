@@ -5,12 +5,16 @@ import { toast } from "sonner";
 import {
   type CreateProjectResult,
   coreRequest,
+  type Edit,
   type ExportFormat,
+  editKey,
   type ImageFile,
-  type SetExposureResult,
+  isRawFile,
+  type SetEditResult,
   type SetRatingResult,
   type Shoot,
   type StatusResult,
+  type WhiteBalanceResult,
 } from "./core";
 
 export function useAppVersion(enabled: boolean) {
@@ -60,14 +64,14 @@ export function useThumbnail(
 
 type RenderFile = { path: string; mtime: number } | undefined;
 
-function renderQueryOptions(file: RenderFile, exposure: number) {
+function renderQueryOptions(file: RenderFile, edit: Edit) {
   return {
-    queryKey: ["render", file?.path, file?.mtime, exposure] as const,
+    queryKey: ["render", file?.path, file?.mtime, editKey(edit)] as const,
     queryFn: async () =>
       (
         await coreRequest<{ cachePath: string }>("render", {
           path: file?.path,
-          exposure,
+          edit,
           maxPixel: 2560,
         })
       ).cachePath,
@@ -75,32 +79,44 @@ function renderQueryOptions(file: RenderFile, exposure: number) {
   };
 }
 
-export function useRender(file: RenderFile, exposure: number) {
+export function useRender(file: RenderFile, edit: Edit) {
   return useQuery({
-    ...renderQueryOptions(file, exposure),
+    ...renderQueryOptions(file, edit),
     enabled: file !== undefined,
     placeholderData: (previous: string | undefined, previousQuery) =>
       previousQuery?.queryKey[1] === file?.path ? previous : undefined,
   });
 }
 
-export function usePrefetchRender(file: RenderFile, exposure: number) {
+export function usePrefetchRender(file: RenderFile, edit: Edit | undefined) {
   const queryClient = useQueryClient();
   useEffect(() => {
-    if (!file) return;
-    queryClient.prefetchQuery(renderQueryOptions(file, exposure));
-  }, [queryClient, file, exposure]);
+    if (!file || !edit) return;
+    queryClient.prefetchQuery(renderQueryOptions(file, edit));
+  }, [queryClient, file, edit]);
+}
+
+export function useWhiteBalance(
+  file: { path: string; mtime: number; ext: string } | undefined,
+) {
+  return useQuery({
+    queryKey: ["whiteBalance", file?.path, file?.mtime],
+    queryFn: async () =>
+      coreRequest<WhiteBalanceResult>("whiteBalance", { path: file?.path }),
+    enabled: file !== undefined && isRawFile(file),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
 }
 
 export const SET_RATING_KEY = ["setRating"];
-export const SET_EXPOSURE_KEY = ["setExposure"];
+export const SET_EDIT_KEY = ["setEdit"];
 
 export function xmpWritesInFlight(
   queryClient: ReturnType<typeof useQueryClient>,
 ): number {
   return (
     queryClient.isMutating({ mutationKey: SET_RATING_KEY }) +
-    queryClient.isMutating({ mutationKey: SET_EXPOSURE_KEY })
+    queryClient.isMutating({ mutationKey: SET_EDIT_KEY })
   );
 }
 
@@ -136,19 +152,17 @@ export function useSetRating(shoot: string | null) {
   });
 }
 
-export function useSetExposure(shoot: string | null) {
+export function useSetEdit(shoot: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationKey: SET_EXPOSURE_KEY,
-    mutationFn: ({ path, exposure }: { path: string; exposure: number }) =>
-      coreRequest<SetExposureResult>("setExposure", { shoot, path, exposure }),
-    onMutate: async ({ path, exposure }) => {
+    mutationKey: SET_EDIT_KEY,
+    mutationFn: ({ path, edit }: { path: string; edit: Edit }) =>
+      coreRequest<SetEditResult>("setEdit", { shoot, path, edit }),
+    onMutate: async ({ path, edit }) => {
       await queryClient.cancelQueries({ queryKey: ["images", shoot] });
       const previous = queryClient.getQueryData<ImageFile[]>(["images", shoot]);
       queryClient.setQueryData<ImageFile[]>(["images", shoot], (old) =>
-        old?.map((image) =>
-          image.path === path ? { ...image, exposure } : image,
-        ),
+        old?.map((image) => (image.path === path ? { ...image, edit } : image)),
       );
       return { previous };
     },
@@ -156,12 +170,12 @@ export function useSetExposure(shoot: string | null) {
       if (context?.previous) {
         queryClient.setQueryData(["images", shoot], context.previous);
       }
-      toast.error(`Saving exposure for ${vars.path.split("/").pop()} failed`, {
+      toast.error(`Saving edits for ${vars.path.split("/").pop()} failed`, {
         description: String(error),
       });
     },
     onSettled: () => {
-      if (queryClient.isMutating({ mutationKey: SET_EXPOSURE_KEY }) === 1) {
+      if (queryClient.isMutating({ mutationKey: SET_EDIT_KEY }) === 1) {
         queryClient.invalidateQueries({ queryKey: ["images", shoot] });
       }
     },

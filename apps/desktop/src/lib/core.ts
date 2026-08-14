@@ -1,4 +1,71 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { type CurvePoint, isIdentityCurve } from "./curve";
+
+// temperature/tint: Kelvin and green–magenta offset for raw files where
+// null means "as shot"; incremental -100..100 for embedded formats. The core
+// omits null fields when encoding, so read them with `?? null`.
+export type Edit = {
+  exposure: number;
+  highlights: number;
+  shadows: number;
+  temperature?: number | null;
+  tint?: number | null;
+  vibrance: number;
+  saturation: number;
+  curveRGB: CurvePoint[];
+  curveRed: CurvePoint[];
+  curveGreen: CurvePoint[];
+  curveBlue: CurvePoint[];
+};
+
+export const identityEdit: Edit = Object.freeze({
+  exposure: 0,
+  highlights: 0,
+  shadows: 0,
+  temperature: null,
+  tint: null,
+  vibrance: 0,
+  saturation: 0,
+  curveRGB: [],
+  curveRed: [],
+  curveGreen: [],
+  curveBlue: [],
+});
+
+export function isIdentityEdit(edit: Edit): boolean {
+  return (
+    edit.exposure === 0 &&
+    edit.highlights === 0 &&
+    edit.shadows === 0 &&
+    (edit.temperature ?? null) === null &&
+    (edit.tint ?? null) === null &&
+    edit.vibrance === 0 &&
+    edit.saturation === 0 &&
+    isIdentityCurve(edit.curveRGB) &&
+    isIdentityCurve(edit.curveRed) &&
+    isIdentityCurve(edit.curveGreen) &&
+    isIdentityCurve(edit.curveBlue)
+  );
+}
+
+// Stable string for react-query keys and mock cache paths.
+export function editKey(edit: Edit): string {
+  const curve = (points: CurvePoint[]) =>
+    points.map((point) => `${point.x},${point.y}`).join(";");
+  return [
+    edit.exposure,
+    edit.highlights,
+    edit.shadows,
+    edit.temperature ?? "",
+    edit.tint ?? "",
+    edit.vibrance,
+    edit.saturation,
+    curve(edit.curveRGB),
+    curve(edit.curveRed),
+    curve(edit.curveGreen),
+    curve(edit.curveBlue),
+  ].join("|");
+}
 
 export type ImageFile = {
   path: string;
@@ -7,19 +74,30 @@ export type ImageFile = {
   size: number;
   mtime: number;
   rating: number;
-  exposure: number;
+  edit: Edit;
   width: number;
   height: number;
 };
+
+export function isRawFile(file: { ext: string }): boolean {
+  return ["arw", "dng", "cr2", "cr3", "nef", "raf", "orf", "rw2"].includes(
+    file.ext.toLowerCase(),
+  );
+}
 
 export type SetRatingResult = {
   rating: number;
   generation: number;
 };
 
-export type SetExposureResult = {
-  exposure: number;
+export type SetEditResult = {
+  edit: Edit;
   generation: number;
+};
+
+export type WhiteBalanceResult = {
+  temperature: number | null;
+  tint: number | null;
 };
 
 export type Shoot = {

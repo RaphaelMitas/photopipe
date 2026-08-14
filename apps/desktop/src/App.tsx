@@ -1,11 +1,18 @@
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { AlertCircle, Check, Download, Upload } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  Download,
+  SlidersHorizontal,
+  Upload,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AboutDialog } from "@/components/AboutDialog";
 import { AppSidebar } from "@/components/AppSidebar";
 import { BrowserToolbar, type ViewMode } from "@/components/BrowserToolbar";
 import { Dashboard } from "@/components/Dashboard";
+import { EditSidebar } from "@/components/EditPanel";
 import {
   ExportDrawer,
   type ExportJob,
@@ -28,30 +35,38 @@ import { ShootSettingsDialog } from "@/components/ShootSettingsDialog";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { coreRequest, type ImageFile, type SetRootResult } from "@/lib/core";
+import {
+  coreRequest,
+  type Edit,
+  type ImageFile,
+  identityEdit,
+  isIdentityEdit,
+  type SetRootResult,
+} from "@/lib/core";
 import {
   useExportFiles,
   useGenerationPoll,
   useImages,
   useImportFiles,
   useReveal,
-  useSetExposure,
+  useSetEdit,
   useSetRating,
   useShoots,
   useTrash,
 } from "@/lib/queries";
 import { useSelection } from "@/lib/selection";
-import { useDebouncedExposure } from "@/lib/useDebouncedExposure";
+import { useDebouncedEdit } from "@/lib/useDebouncedEdit";
 import { useUpdater } from "@/lib/useUpdater";
 
 const ROOT_KEY = "photopipe.root";
 const VIEW_KEY = "photopipe.view";
+const EDIT_PANEL_KEY = "photopipe.editPanel";
 
 type RootState =
   | { kind: "picking"; error: string | null; busy: boolean }
   | { kind: "ready"; path: string; generation: number };
 
-const EXPOSURE_COMMIT_MS = 400;
+const EDIT_COMMIT_MS = 400;
 
 export default function App() {
   const [rootState, setRootState] = useState<RootState>({
@@ -93,6 +108,15 @@ export default function App() {
     localStorage.setItem("photopipe.filmstrip", mode);
   };
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(
+    () => localStorage.getItem(EDIT_PANEL_KEY) !== "hidden",
+  );
+  const toggleEditPanel = useCallback(() => {
+    setEditOpen((open) => {
+      localStorage.setItem(EDIT_PANEL_KEY, open ? "hidden" : "shown");
+      return !open;
+    });
+  }, []);
   const [jobs, setJobs] = useState<ExportJob[]>([]);
   const nextJobId = useRef(1);
 
@@ -118,7 +142,7 @@ export default function App() {
   const shoots = useShoots(ready);
   const images = useImages(openShoot);
   const setRating = useSetRating(openShoot);
-  const setExposure = useSetExposure(openShoot);
+  const setEdit = useSetEdit(openShoot);
   const reveal = useReveal();
   const trash = useTrash(openShoot);
   const exportFiles = useExportFiles();
@@ -147,29 +171,29 @@ export default function App() {
     [filteredImages, selection.selected],
   );
   const editedCount = useMemo(
-    () => selectedImages.filter((image) => image.exposure !== 0).length,
+    () => selectedImages.filter((image) => !isIdentityEdit(image.edit)).length,
     [selectedImages],
   );
 
   const {
-    draft: exposureDraft,
-    scrub: scrubExposure,
-    flush: flushExposure,
-  } = useDebouncedExposure(
-    (path, value) => setExposure.mutate({ path, exposure: value }),
-    EXPOSURE_COMMIT_MS,
+    draft: editDraft,
+    scrub: scrubEdit,
+    flush: flushEdit,
+  } = useDebouncedEdit(
+    (path, edit) => setEdit.mutate({ path, edit }),
+    EDIT_COMMIT_MS,
   );
-  const changeExposure = (image: ImageFile, value: number) =>
-    scrubExposure(image.path, value);
+  const changeEdit = (image: ImageFile, edit: Edit) =>
+    scrubEdit(image.path, edit);
 
   const installBlocked = jobs.some((job) => job.status === "running")
     ? "Finish the running export first; installing restarts Photopipe."
     : null;
   const startInstall = useCallback(() => {
     if (installBlocked) return;
-    flushExposure();
+    flushEdit();
     void updater.install();
-  }, [installBlocked, flushExposure, updater]);
+  }, [installBlocked, flushEdit, updater]);
 
   const { state: updateState } = updater;
   const offered = useRef(false);
@@ -304,10 +328,13 @@ export default function App() {
       if (event.key === "Escape" && loupeIndex === -1 && !selection.isEmpty) {
         selection.clear();
       }
+      if (event.key === "e" && !event.altKey && loupeIndex >= 0) {
+        toggleEditPanel();
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [selection, loupeIndex, openShoot, openExport]);
+  }, [selection, loupeIndex, openShoot, openExport, toggleEditPanel]);
 
   const changeRatingStars = (stars: number) => {
     setRatingStars(stars);
@@ -315,7 +342,7 @@ export default function App() {
   };
 
   const enterShoot = (shoot: string | null) => {
-    flushExposure();
+    flushEdit();
     setOpenShoot(shoot);
     setLoupePath(null);
     setRatingStars(0);
@@ -334,12 +361,12 @@ export default function App() {
 
   const loupeImage = loupeIndex >= 0 ? loupeImages[loupeIndex] : null;
   const inLoupe = openShoot !== null && loupeImage !== null;
-  const loupeExposure =
+  const loupeEdit =
     loupeImage === null
-      ? 0
-      : exposureDraft?.path === loupeImage.path
-        ? exposureDraft.value
-        : loupeImage.exposure;
+      ? identityEdit
+      : editDraft?.path === loupeImage.path
+        ? editDraft.edit
+        : loupeImage.edit;
 
   const currentShoot = shoots.data?.find((s) => s.name === openShoot);
   const runningJobs = jobs.filter((job) => job.status === "running").length;
@@ -374,7 +401,6 @@ export default function App() {
             image={loupeImage}
             position={loupeIndex + 1}
             count={loupeImages.length}
-            exposure={loupeExposure}
             filmstrip={filmstrip}
             onFilmstrip={changeFilmstrip}
             ratingCounts={counts}
@@ -382,7 +408,6 @@ export default function App() {
             onRatingOp={setRatingOp}
             ratingStars={ratingStars}
             onRatingStars={changeRatingStars}
-            onExposureChange={(value) => changeExposure(loupeImage, value)}
             onRate={(path, rating) => setRating.mutate({ path, rating })}
             onBackToGrid={() => setLoupePath(null)}
           />
@@ -449,11 +474,25 @@ export default function App() {
                 )}
               </Button>
             )}
+            {inLoupe && (
+              <Button
+                size="sm"
+                variant={editOpen ? "secondary" : "ghost"}
+                data-testid="toggle-edit"
+                onClick={toggleEditPanel}
+                title="Toggle edit panel (e)"
+                className="h-7 text-xs"
+              >
+                <SlidersHorizontal />
+                Edit
+              </Button>
+            )}
             {openShoot && (
               <Button
                 size="sm"
                 data-testid="open-export"
                 onClick={() => openExport()}
+                title="Export (⌘E)"
                 className="h-7 text-xs"
               >
                 <Upload />
@@ -491,11 +530,11 @@ export default function App() {
                 inLoupe={inLoupe}
                 loupeImages={loupeImages}
                 loupeIndex={loupeIndex}
-                loupeExposure={loupeExposure}
+                loupeEdit={loupeEdit}
                 filmstrip={filmstrip}
                 showInfo={showInfo}
                 selection={selection}
-                onExposureChange={changeExposure}
+                onEditChange={changeEdit}
                 onNavigate={(next) =>
                   setLoupePath(loupeImages[next]?.path ?? null)
                 }
@@ -506,6 +545,14 @@ export default function App() {
                 }
               />
             </div>
+            {inLoupe && loupeImage && editOpen && (
+              <EditSidebar
+                image={loupeImage}
+                edit={loupeEdit}
+                onChange={(edit) => changeEdit(loupeImage, edit)}
+                onClose={toggleEditPanel}
+              />
+            )}
             {drawerOpen && openShoot && !inLoupe && (
               <ExportDrawer
                 shoot={openShoot}
@@ -550,11 +597,11 @@ type ContentProps = {
   inLoupe: boolean;
   loupeImages: ImageFile[];
   loupeIndex: number;
-  loupeExposure: number;
+  loupeEdit: Edit;
   filmstrip: FilmstripMode;
   showInfo: boolean;
   selection: ReturnType<typeof useSelection>;
-  onExposureChange: (image: ImageFile, ev: number) => void;
+  onEditChange: (image: ImageFile, edit: Edit) => void;
   onNavigate: (index: number) => void;
   onCloseLoupe: () => void;
   onRate: (path: string, rating: number) => void;
@@ -576,11 +623,11 @@ function Content({
   inLoupe,
   loupeImages,
   loupeIndex,
-  loupeExposure,
+  loupeEdit,
   filmstrip,
   showInfo,
   selection,
-  onExposureChange,
+  onEditChange,
   onNavigate,
   onCloseLoupe,
   onRate,
@@ -611,9 +658,9 @@ function Content({
       <Loupe
         images={loupeImages}
         index={loupeIndex}
-        exposure={loupeExposure}
+        edit={loupeEdit}
         filmstrip={filmstrip}
-        onExposureChange={(value) => onExposureChange(image, value)}
+        onEditChange={(edit) => onEditChange(image, edit)}
         onNavigate={onNavigate}
         onClose={onCloseLoupe}
         onRate={onRate}

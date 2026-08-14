@@ -1,4 +1,10 @@
-import type { ImageFile, Shoot } from "./lib/core";
+import {
+  type Edit,
+  editKey,
+  type ImageFile,
+  identityEdit,
+  type Shoot,
+} from "./lib/core";
 import { makeImage } from "./lib/test-image";
 
 function image(
@@ -19,7 +25,9 @@ const zellImages: ImageFile[] = [
     width: 4672,
     height: 7008,
   }),
-  image("/fake/2026-07-12_zell", "DSC00832.jpg", { exposure: 0.5 }),
+  image("/fake/2026-07-12_zell", "DSC00832.jpg", {
+    edit: { ...identityEdit, exposure: 0.5 },
+  }),
   image("/fake/2026-07-12_zell", "abends/DSC00938.ARW", { rating: 2 }),
   image("/fake/2026-07-12_zell", "abends/DSC00943.ARW", {
     width: 4672,
@@ -98,7 +106,9 @@ export const E2E_HANDLERS: Record<
     cachePath: `/fake/thumbs/${String(params.path)}.jpg`,
   }),
   render: (params) => ({
-    cachePath: `/fake/renders/${String(params.path)}@${String(params.exposure)}.jpg`,
+    cachePath: `/fake/renders/${String(params.path)}@${editKey(
+      (params.edit as Edit | undefined) ?? identityEdit,
+    )}.jpg`,
   }),
   setRating: (params) => {
     const all = [...zellImages, ...miscImages, ...bigImages];
@@ -107,13 +117,17 @@ export const E2E_HANDLERS: Record<
     target.rating = Number(params.rating);
     return { rating: target.rating, generation: 1 };
   },
-  setExposure: (params) => {
+  setEdit: (params) => {
     const all = [...zellImages, ...miscImages, ...bigImages];
     const target = all.find((entry) => entry.path === params.path);
     if (!target) throw `unknown_image: ${String(params.path)}`;
-    target.exposure = Number(params.exposure);
-    return { exposure: target.exposure, generation: 1 };
+    target.edit = params.edit as Edit;
+    return { edit: target.edit, generation: 1 };
   },
+  whiteBalance: (params) =>
+    String(params.path).toLowerCase().endsWith(".arw")
+      ? { temperature: 5250, tint: 8 }
+      : { temperature: null, tint: null },
   reveal: () => ({ revealed: true }),
   trash: (params) => {
     const paths = new Set(params.paths as string[]);

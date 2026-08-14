@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ImageFile } from "./core";
+import { type ImageFile, identityEdit } from "./core";
 import { useSetRating } from "./queries";
 
 afterEach(cleanup);
@@ -20,7 +20,7 @@ function image(name: string): ImageFile {
     size: 1,
     mtime: 1,
     rating: 0,
-    exposure: 0,
+    edit: identityEdit,
     width: 3000,
     height: 2000,
   };

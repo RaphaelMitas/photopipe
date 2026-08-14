@@ -30,7 +30,7 @@ private func imageFile(for url: URL) throws -> ImageFile {
         mtime: ((attrs[.modificationDate] as? Date) ?? .distantPast).timeIntervalSince1970)
 }
 
-private func meanLuminance(of url: URL) throws -> Double {
+private func meanChannels(of url: URL) throws -> (red: Double, green: Double, blue: Double) {
     guard let image = CIImage(contentsOf: url) else {
         throw Renderer.RenderError.unreadable(url.path)
     }
@@ -40,7 +40,12 @@ private func meanLuminance(of url: URL) throws -> Double {
     CIContext().render(
         average, toBitmap: &pixel, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
         format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
-    return (Double(pixel[0]) + Double(pixel[1]) + Double(pixel[2])) / 3
+    return (Double(pixel[0]), Double(pixel[1]), Double(pixel[2]))
+}
+
+private func meanLuminance(of url: URL) throws -> Double {
+    let channels = try meanChannels(of: url)
+    return (channels.red + channels.green + channels.blue) / 3
 }
 
 private func tempCacheDir() -> URL {
@@ -55,9 +60,9 @@ private func tempCacheDir() -> URL {
     let renderer = Renderer(cacheDir: cacheDir)
     let file = try imageFile(for: fixture)
 
-    let dark = try renderer.render(file: file, exposure: -2, maxPixel: 800)
-    let neutral = try renderer.render(file: file, exposure: 0, maxPixel: 800)
-    let bright = try renderer.render(file: file, exposure: 2, maxPixel: 800)
+    let dark = try renderer.render(file: file, edit: Edit(exposure: -2), maxPixel: 800)
+    let neutral = try renderer.render(file: file, edit: .identity, maxPixel: 800)
+    let bright = try renderer.render(file: file, edit: Edit(exposure: 2), maxPixel: 800)
 
     let lumDark = try meanLuminance(of: dark)
     let lumNeutral = try meanLuminance(of: neutral)
@@ -73,19 +78,26 @@ private func tempCacheDir() -> URL {
     let renderer = Renderer(cacheDir: cacheDir)
     let file = try imageFile(for: fixture)
 
-    let first = try renderer.render(file: file, exposure: 0.5, maxPixel: 800)
-    let again = try renderer.render(file: file, exposure: 0.5, maxPixel: 800)
+    let first = try renderer.render(file: file, edit: Edit(exposure: 0.5), maxPixel: 800)
+    let again = try renderer.render(file: file, edit: Edit(exposure: 0.5), maxPixel: 800)
     #expect(first == again, "same request must hit the cache")
 
-    let other = try renderer.render(file: file, exposure: 1.0, maxPixel: 800)
+    let other = try renderer.render(file: file, edit: Edit(exposure: 1.0), maxPixel: 800)
     #expect(first != other, "different exposure must be a different cache entry")
+
+    let curved = try renderer.render(
+        file: file,
+        edit: Edit(curveRGB: [
+            CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.6), CurvePoint(x: 1, y: 1),
+        ]), maxPixel: 800)
+    #expect(curved != first, "a curve must be a different cache entry")
 
     let stale = ImageFile(
         path: file.path, rel: file.rel, ext: file.ext, size: file.size,
         mtime: file.mtime + 1)
     #expect(
-        renderer.cachePath(for: stale, exposure: 0.5, maxPixel: 800)
-            != renderer.cachePath(for: file, exposure: 0.5, maxPixel: 800),
+        renderer.cachePath(for: stale, edit: Edit(exposure: 0.5), maxPixel: 800)
+            != renderer.cachePath(for: file, edit: Edit(exposure: 0.5), maxPixel: 800),
         "mtime change must invalidate")
 }
 
@@ -112,14 +124,14 @@ private func tempCacheDir() -> URL {
 
     // The cold render pays for the raw decode and primes the filter LRU.
     let coldStart = Date()
-    _ = try renderer.render(file: file, exposure: 0, maxPixel: 2000)
+    _ = try renderer.render(file: file, edit: .identity, maxPixel: 2000)
     let cold = Date().timeIntervalSince(coldStart) * 1000
 
     var times: [Double] = []
     for step in 1...8 {
         let exposure = Double(step) * 0.25 - 1
         let start = Date()
-        _ = try renderer.render(file: file, exposure: exposure, maxPixel: 2000)
+        _ = try renderer.render(file: file, edit: Edit(exposure: exposure), maxPixel: 2000)
         times.append(Date().timeIntervalSince(start) * 1000)
     }
     let median = times.sorted()[times.count / 2]
@@ -173,9 +185,144 @@ private func tempCacheDir() -> URL {
     let renderer = Renderer(cacheDir: cacheDir)
     let file = try imageFile(for: jpegURL)
 
-    let neutral = try renderer.render(file: file, exposure: 0, maxPixel: 64)
-    let bright = try renderer.render(file: file, exposure: 1.5, maxPixel: 64)
+    let neutral = try renderer.render(file: file, edit: .identity, maxPixel: 64)
+    let bright = try renderer.render(file: file, edit: Edit(exposure: 1.5), maxPixel: 64)
     #expect(try meanLuminance(of: bright) > meanLuminance(of: neutral))
+}
+
+private func writeSyntheticJPEG(color: CIColor) throws -> URL {
+    let image = CIImage(color: color).cropped(to: CGRect(x: 0, y: 0, width: 64, height: 64))
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("photopipe-synth-\(UUID().uuidString).jpg")
+    try CIContext().writeJPEGRepresentation(
+        of: image, to: url, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+    return url
+}
+
+@Test func temperatureWarmsAndTintShiftsMagenta() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let jpegURL = try writeSyntheticJPEG(color: CIColor(red: 0.5, green: 0.5, blue: 0.5))
+    defer { try? FileManager.default.removeItem(at: jpegURL) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: jpegURL)
+
+    let neutral = try meanChannels(of: renderer.render(file: file, edit: .identity, maxPixel: 64))
+    let warm = try meanChannels(
+        of: renderer.render(file: file, edit: Edit(temperature: 80), maxPixel: 64))
+    let magenta = try meanChannels(
+        of: renderer.render(file: file, edit: Edit(tint: 80), maxPixel: 64))
+
+    #expect(
+        warm.red - warm.blue > neutral.red - neutral.blue + 5,
+        "positive temperature must warm the image, got neutral \(neutral) warm \(warm)")
+    #expect(
+        (magenta.red + magenta.blue) / 2 - magenta.green
+            > (neutral.red + neutral.blue) / 2 - neutral.green + 5,
+        "positive tint must shift green toward magenta, got neutral \(neutral) tinted \(magenta)")
+}
+
+@Test func shadowsAndHighlightsBendTheToneScale() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let darkURL = try writeSyntheticJPEG(color: CIColor(red: 0.2, green: 0.2, blue: 0.2))
+    let brightURL = try writeSyntheticJPEG(color: CIColor(red: 0.8, green: 0.8, blue: 0.8))
+    defer {
+        try? FileManager.default.removeItem(at: darkURL)
+        try? FileManager.default.removeItem(at: brightURL)
+    }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let dark = try imageFile(for: darkURL)
+    let bright = try imageFile(for: brightURL)
+
+    let darkNeutral = try meanLuminance(of: renderer.render(file: dark, edit: .identity, maxPixel: 64))
+    let darkLifted = try meanLuminance(
+        of: renderer.render(file: dark, edit: Edit(shadows: 80), maxPixel: 64))
+    #expect(darkLifted > darkNeutral + 5, "shadows +80 must lift dark tones")
+
+    let brightNeutral = try meanLuminance(
+        of: renderer.render(file: bright, edit: .identity, maxPixel: 64))
+    let brightRecovered = try meanLuminance(
+        of: renderer.render(file: bright, edit: Edit(highlights: -80), maxPixel: 64))
+    #expect(brightRecovered < brightNeutral - 5, "highlights -80 must pull bright tones down")
+}
+
+@Test func saturationAndVibranceMoveColorfulness() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let jpegURL = try writeSyntheticJPEG(color: CIColor(red: 0.6, green: 0.4, blue: 0.4))
+    defer { try? FileManager.default.removeItem(at: jpegURL) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: jpegURL)
+
+    func spread(_ channels: (red: Double, green: Double, blue: Double)) -> Double {
+        max(channels.red, channels.green, channels.blue)
+            - min(channels.red, channels.green, channels.blue)
+    }
+    let neutral = try meanChannels(of: renderer.render(file: file, edit: .identity, maxPixel: 64))
+    let muted = try meanChannels(
+        of: renderer.render(file: file, edit: Edit(saturation: -100), maxPixel: 64))
+    let vivid = try meanChannels(
+        of: renderer.render(file: file, edit: Edit(vibrance: 100), maxPixel: 64))
+    #expect(spread(muted) < 3, "saturation -100 must be effectively grayscale, got \(muted)")
+    #expect(spread(vivid) > spread(neutral) + 3, "vibrance +100 must add colorfulness")
+}
+
+@Test func rgbCurveBrightensMidtones() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let jpegURL = try writeSyntheticJPEG(color: CIColor(red: 0.5, green: 0.5, blue: 0.5))
+    defer { try? FileManager.default.removeItem(at: jpegURL) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: jpegURL)
+
+    let neutral = try meanLuminance(of: renderer.render(file: file, edit: .identity, maxPixel: 64))
+    let lifted = try meanLuminance(
+        of: renderer.render(
+            file: file,
+            edit: Edit(curveRGB: [
+                CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.7), CurvePoint(x: 1, y: 1),
+            ]), maxPixel: 64))
+    let redOnly = try meanChannels(
+        of: renderer.render(
+            file: file,
+            edit: Edit(curveRed: [
+                CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.7), CurvePoint(x: 1, y: 1),
+            ]), maxPixel: 64))
+    #expect(lifted > neutral + 10, "midtone lift in the RGB curve must brighten")
+    #expect(
+        redOnly.red > redOnly.green + 10,
+        "a red-channel curve must only move red, got \(redOnly)")
+}
+
+@Test func rawWhiteBalanceIsAsShotAndAdjustable() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    let asShot = try #require(try renderer.whiteBalance(for: file))
+    #expect(asShot.temperature > 1500 && asShot.temperature < 20000, "plausible Kelvin")
+
+    let neutral = try meanChannels(of: renderer.render(file: file, edit: .identity, maxPixel: 400))
+    let warm = try meanChannels(
+        of: renderer.render(
+            file: file, edit: Edit(temperature: asShot.temperature + 4000), maxPixel: 400))
+    #expect(
+        warm.red - warm.blue > neutral.red - neutral.blue + 5,
+        "raising the neutral temperature must warm the raw render")
+
+    // A later as-shot render must not inherit the mutated filter state.
+    let backToNeutral = try meanChannels(
+        of: renderer.render(file: file, edit: Edit(exposure: 0.001), maxPixel: 400))
+    #expect(
+        abs((backToNeutral.red - backToNeutral.blue) - (neutral.red - neutral.blue)) < 3,
+        "nil temperature must reset the cached filter to as-shot white balance")
+
+    let jpegURL = try writeSyntheticJPEG(color: CIColor(red: 0.5, green: 0.5, blue: 0.5))
+    defer { try? FileManager.default.removeItem(at: jpegURL) }
+    #expect(try renderer.whiteBalance(for: imageFile(for: jpegURL)) == nil)
 }
 
 @Test func exportJPEGBakesTheExposureIn() throws {
@@ -192,8 +339,8 @@ private func tempCacheDir() -> URL {
 
     let neutral = out.appendingPathComponent("neutral.jpg")
     let bright = out.appendingPathComponent("bright.jpg")
-    try renderer.exportJPEG(file: file, exposure: 0, quality: 0.9, to: neutral)
-    try renderer.exportJPEG(file: file, exposure: 2, quality: 0.9, to: bright)
+    try renderer.exportJPEG(file: file, edit: .identity, quality: 0.9, to: neutral)
+    try renderer.exportJPEG(file: file, edit: Edit(exposure: 2), quality: 0.9, to: bright)
 
     #expect(
         try meanLuminance(of: bright) > meanLuminance(of: neutral),

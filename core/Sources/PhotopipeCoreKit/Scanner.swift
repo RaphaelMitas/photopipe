@@ -94,7 +94,7 @@ private func scanShootDirectory(_ dir: URL) -> [ImageFile] {
                 path: stub.path, rel: stub.rel, ext: stub.ext,
                 size: stub.size, mtime: stub.mtime,
                 rating: XMP.readRating(file: stub),
-                exposure: XMP.readExposure(file: stub),
+                edit: XMP.readEdit(file: stub),
                 width: dims.width, height: dims.height))
     }
     return images.sorted { $0.rel.localizedStandardCompare($1.rel) == .orderedAscending }
