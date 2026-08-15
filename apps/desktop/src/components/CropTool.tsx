@@ -4,11 +4,13 @@ import type { CropRect, ImageFile } from "@/lib/core";
 import {
   aspectRatioFor,
   type Box,
+  type CropHandle,
   centeredAspectCrop,
   constrainCrop,
-  cropInsideImage,
   fullCrop,
   isFullCrop,
+  moveCrop,
+  resizeCrop,
   rotatedSize,
   transposeCrop,
   turnCrop,
@@ -258,9 +260,7 @@ export function CropPanel({
   );
 }
 
-const MIN_SIZE = 0.05;
-
-type Handle = "tl" | "tr" | "bl" | "br" | "t" | "b" | "l" | "r" | "move";
+type Handle = CropHandle | "move";
 
 // Synthetic and already-released pointers make setPointerCapture throw.
 export const capturePointer = (event: React.PointerEvent) => {
@@ -316,48 +316,6 @@ export function CropOverlay({
     x2: number;
     y2: number;
   } | null>(null);
-
-  const valid = (crop: CropRect) =>
-    crop.left >= 0 &&
-    crop.top >= 0 &&
-    crop.right <= 1 &&
-    crop.bottom <= 1 &&
-    crop.right - crop.left >= MIN_SIZE &&
-    crop.bottom - crop.top >= MIN_SIZE &&
-    cropInsideImage(crop, draft.angle, imageWidth, imageHeight);
-
-  const resize = (start: CropRect, handle: Handle, dx: number, dy: number) => {
-    let { left, top, right, bottom } = start;
-    if (handle.includes("l")) left += dx;
-    if (handle.includes("r")) right += dx;
-    if (handle.includes("t")) top += dy;
-    if (handle.includes("b")) bottom += dy;
-    if (ratio !== null) {
-      // Width leads; the height follows from the pixel aspect. Anchor the
-      // edge opposite the dragged corner.
-      const height = ((right - left) * imageWidth) / ratio / imageHeight;
-      if (handle.includes("t")) top = bottom - height;
-      else bottom = top + height;
-    }
-    return { left, top, right, bottom };
-  };
-
-  const move = (start: CropRect, dx: number, dy: number): CropRect | null => {
-    for (const [stepX, stepY] of [
-      [dx, dy],
-      [dx, 0],
-      [0, dy],
-    ]) {
-      const crop = {
-        left: start.left + stepX,
-        top: start.top + stepY,
-        right: start.right + stepX,
-        bottom: start.bottom + stepY,
-      };
-      if (valid(crop)) return crop;
-    }
-    return null;
-  };
 
   const pointInRoot = (event: React.PointerEvent) => {
     const bounds = rootRef.current?.getBoundingClientRect();
@@ -460,12 +418,30 @@ export function CropOverlay({
     const dx = (event.clientX - active.pointerX) / photoBox.width;
     const dy = (event.clientY - active.pointerY) / photoBox.height;
     if (active.handle === "move") {
-      const crop = move(active.start, dx, dy);
-      if (crop) onChange({ ...draft, crop });
+      onChange({
+        ...draft,
+        crop: moveCrop(
+          active.start,
+          dx,
+          dy,
+          draft.angle,
+          imageWidth,
+          imageHeight,
+        ),
+      });
       return;
     }
-    const crop = resize(active.start, active.handle, dx, dy);
-    if (valid(crop)) onChange({ ...draft, crop });
+    const crop = resizeCrop(
+      active.start,
+      active.handle,
+      dx,
+      dy,
+      ratio,
+      draft.angle,
+      imageWidth,
+      imageHeight,
+    );
+    if (crop) onChange({ ...draft, crop });
   };
 
   const onPointerUp = () => {

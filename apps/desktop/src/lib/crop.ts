@@ -171,6 +171,113 @@ export function transposeCrop(
   );
 }
 
+export const MIN_CROP_SIZE = 0.05;
+
+const clamp = (value: number, lo: number, hi: number) =>
+  Math.min(Math.max(value, lo), hi);
+
+const shift = (crop: CropRect, dx: number, dy: number): CropRect => ({
+  left: crop.left + dx,
+  top: crop.top + dy,
+  right: crop.right + dx,
+  bottom: crop.bottom + dy,
+});
+
+/// The largest feasible fraction of (dx, dy), so a drag lands flush against
+/// the rotated photo's bounds instead of stopping short.
+function furthestShift(
+  crop: CropRect,
+  dx: number,
+  dy: number,
+  angleDeg: number,
+  imageWidth: number,
+  imageHeight: number,
+): CropRect {
+  if (dx === 0 && dy === 0) return crop;
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 20; i += 1) {
+    const mid = (lo + hi) / 2;
+    if (
+      cropInsideImage(
+        shift(crop, dx * mid, dy * mid),
+        angleDeg,
+        imageWidth,
+        imageHeight,
+      )
+    ) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  return shift(crop, dx * lo, dy * lo);
+}
+
+/// Translate the crop by up to (dx, dy), clamped so it stops flush at the
+/// frame — and, when the photo is angled, slides along the rotated bounds.
+export function moveCrop(
+  crop: CropRect,
+  dx: number,
+  dy: number,
+  angleDeg: number,
+  imageWidth: number,
+  imageHeight: number,
+): CropRect {
+  const stepX = clamp(dx, -crop.left, 1 - crop.right);
+  const stepY = clamp(dy, -crop.top, 1 - crop.bottom);
+  const shifted = shift(crop, stepX, stepY);
+  if (cropInsideImage(shifted, angleDeg, imageWidth, imageHeight)) {
+    return shifted;
+  }
+  const alongX = furthestShift(
+    crop,
+    stepX,
+    0,
+    angleDeg,
+    imageWidth,
+    imageHeight,
+  );
+  return furthestShift(alongX, 0, stepY, angleDeg, imageWidth, imageHeight);
+}
+
+export type CropHandle = "tl" | "tr" | "bl" | "br" | "t" | "b" | "l" | "r";
+
+/// Drag a handle by (dx, dy), clamped to the frame and the minimum size.
+/// `ratio` locks the pixel aspect (width leads, the edge opposite the dragged
+/// corner anchors). Returns null when the angled photo cannot contain the
+/// result, so the caller keeps the previous rect.
+export function resizeCrop(
+  start: CropRect,
+  handle: CropHandle,
+  dx: number,
+  dy: number,
+  ratio: number | null,
+  angleDeg: number,
+  imageWidth: number,
+  imageHeight: number,
+): CropRect | null {
+  let { left, top, right, bottom } = start;
+  if (handle.includes("l")) left = clamp(left + dx, 0, right - MIN_CROP_SIZE);
+  if (handle.includes("r")) right = clamp(right + dx, left + MIN_CROP_SIZE, 1);
+  if (handle.includes("t")) top = clamp(top + dy, 0, bottom - MIN_CROP_SIZE);
+  if (handle.includes("b")) bottom = clamp(bottom + dy, top + MIN_CROP_SIZE, 1);
+  if (ratio !== null) {
+    let height = ((right - left) * imageWidth) / ratio / imageHeight;
+    const maxHeight = handle.includes("t") ? bottom : 1 - top;
+    if (height > maxHeight) {
+      height = maxHeight;
+      const width = (height * imageHeight * ratio) / imageWidth;
+      if (handle.includes("l")) left = right - width;
+      else right = left + width;
+    }
+    if (handle.includes("t")) top = bottom - height;
+    else bottom = top + height;
+  }
+  const crop = { left, top, right, bottom };
+  return cropInsideImage(crop, angleDeg, imageWidth, imageHeight) ? crop : null;
+}
+
 /// The pixel width/height ratio a dropdown selection locks the crop to, in
 /// display space; null means unconstrained.
 export function aspectRatioFor(

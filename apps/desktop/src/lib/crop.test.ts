@@ -9,6 +9,8 @@ import {
   fitRect,
   fullCrop,
   isFullCrop,
+  moveCrop,
+  resizeCrop,
   rotatedSize,
   transposeCrop,
   turnCrop,
@@ -71,6 +73,41 @@ describe("centeredAspectCrop", () => {
     expect(wide.right).toBe(1);
     const height = (wide.bottom - wide.top) * 2000;
     expect(3000 / height).toBeCloseTo(16 / 9);
+  });
+});
+
+describe("moveCrop and resizeCrop", () => {
+  const centered = { left: 0.3, top: 0.3, right: 0.7, bottom: 0.7 };
+
+  it("an overshooting drag lands flush on the edge, not back at the start", () => {
+    const moved = moveCrop(centered, -5, 0, 0, 3000, 2000);
+    expect(moved.left).toBe(0);
+    expect(moved.right).toBeCloseTo(0.4);
+    expect(moved.top).toBe(0.3);
+    const corner = moveCrop(centered, 5, 5, 0, 3000, 2000);
+    expect(corner.right).toBe(1);
+    expect(corner.bottom).toBe(1);
+  });
+
+  it("slides along the rotated bounds instead of sticking", () => {
+    const small = { left: 0.45, top: 0.45, right: 0.55, bottom: 0.55 };
+    const moved = moveCrop(small, -5, 0, 10, 3000, 2000);
+    expect(moved.left).toBeLessThan(0.4);
+    expect(cropInsideImage(moved, 10, 3000, 2000)).toBe(true);
+  });
+
+  it("resize clamps at the frame and keeps a locked ratio", () => {
+    const wide = resizeCrop(centered, "r", 5, 0, null, 0, 3000, 2000);
+    expect(wide?.right).toBe(1);
+    // 1:1 in pixels on a 3000x2000 image, dragging the bottom-right corner
+    // far: height maxes at the frame and width follows the ratio.
+    const locked = resizeCrop(centered, "br", 5, 5, 1, 0, 3000, 2000);
+    expect(locked).not.toBeNull();
+    if (!locked) return;
+    expect(locked.bottom).toBe(1);
+    const widthPx = (locked.right - locked.left) * 3000;
+    const heightPx = (locked.bottom - locked.top) * 2000;
+    expect(widthPx / heightPx).toBeCloseTo(1);
   });
 });
 
