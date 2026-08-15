@@ -12,13 +12,37 @@ public struct LibrarySnapshot: Equatable, Sendable {
         self.imagesByShoot = imagesByShoot
         self.fileCount = fileCount
     }
+
+    public var unenriched: [String: [ImageFile]] {
+        imagesByShoot.compactMapValues { images in
+            let pending = images.filter { !$0.enriched }
+            return pending.isEmpty ? nil : pending
+        }
+    }
+
+    /// Swaps one shoot's images, rebuilding the shoot record derived from them
+    /// so its cover and `indexed` flag never drift from the photos underneath.
+    public func replacingImages(inShoot name: String, with images: [ImageFile]) -> LibrarySnapshot {
+        guard let position = shoots.firstIndex(where: { $0.name == name }) else { return self }
+        var imagesByShoot = self.imagesByShoot
+        imagesByShoot[name] = images
+        var shoots = self.shoots
+        let existing = shoots[position]
+        shoots[position] = makeShoot(
+            name: existing.name, path: existing.path, images: images,
+            notes: existing.notes, cover: existing.cover)
+        return LibrarySnapshot(shoots: shoots, imagesByShoot: imagesByShoot, fileCount: fileCount)
+    }
 }
 
 public enum ScanError: Error {
     case rootNotFound(String)
 }
 
-public func scanLibrary(root: String) throws -> LibrarySnapshot {
+/// Finds every shoot and file by stat alone. Nothing here opens an image, so
+/// the cost is one directory enumeration — this is what the library can be
+/// drawn from while `enrich` catches up in the background.
+public func walkLibrary(root: String) throws -> LibrarySnapshot {
     let fm = FileManager.default
     var isDirectory: ObjCBool = false
     guard fm.fileExists(atPath: root, isDirectory: &isDirectory), isDirectory.boolValue else {
@@ -38,7 +62,7 @@ public func scanLibrary(root: String) throws -> LibrarySnapshot {
     var fileCount = 0
 
     for dir in shootDirs {
-        let images = scanShootDirectory(dir)
+        let images = walkShootDirectory(dir)
         let isProject = fm.fileExists(atPath: ProjectFile.url(inShoot: dir.path).path)
         guard !images.isEmpty || isProject else { continue }
         fileCount += images.count
@@ -62,7 +86,45 @@ public func scanLibrary(root: String) throws -> LibrarySnapshot {
     return LibrarySnapshot(shoots: shoots, imagesByShoot: imagesByShoot, fileCount: fileCount)
 }
 
-private func scanShootDirectory(_ dir: URL) -> [ImageFile] {
+/// Each call opens the file, twice for a raw with a sidecar, which is why this
+/// runs off the request path. Already-settled files are returned untouched.
+public func enrich(_ file: ImageFile) -> ImageFile {
+    guard !file.enriched else { return file }
+    return file.with(
+        rating: XMP.readRating(file: file),
+        edit: XMP.readEdit(file: file),
+        dimensions: Dimensions.cached(for: file) ?? Dimensions.fallback,
+        enriched: true)
+}
+
+/// A cached record only counts while both the file and the sidecar it was read
+/// from are the ones still on disk — otherwise a rating written since, by us or
+/// by Lightroom, would stay invisible behind the cache.
+public func carryEnrichment(
+    into walked: LibrarySnapshot, from cache: [String: ImageFile]
+) -> LibrarySnapshot {
+    var imagesByShoot: [String: [ImageFile]] = [:]
+    for (shoot, images) in walked.imagesByShoot {
+        imagesByShoot[shoot] = images.map { image in
+            guard let known = cache[image.path], known.enriched,
+                known.mtime == image.mtime, known.size == image.size,
+                known.sidecarMtime == image.sidecarMtime
+            else { return image }
+            return image.with(
+                rating: known.rating, edit: known.edit,
+                dimensions: (known.width, known.height), enriched: true)
+        }
+    }
+    let shoots = walked.shoots.map { shoot in
+        makeShoot(
+            name: shoot.name, path: shoot.path, images: imagesByShoot[shoot.name] ?? [],
+            notes: shoot.notes, cover: shoot.cover)
+    }
+    return LibrarySnapshot(
+        shoots: shoots, imagesByShoot: imagesByShoot, fileCount: walked.fileCount)
+}
+
+private func walkShootDirectory(_ dir: URL) -> [ImageFile] {
     let fm = FileManager.default
     guard
         let enumerator = fm.enumerator(
@@ -73,29 +135,35 @@ private func scanShootDirectory(_ dir: URL) -> [ImageFile] {
 
     let prefix = dir.path + "/"
     var images: [ImageFile] = []
+    var sidecarMtimes: [String: Double] = [:]
     for case let url as URL in enumerator {
         guard
             let values = try? url.resourceValues(forKeys: [
                 .isRegularFileKey, .fileSizeKey, .contentModificationDateKey,
             ]),
-            values.isRegularFile == true,
-            isImagePath(url.path)
+            values.isRegularFile == true
         else { continue }
+        let mtime = values.contentModificationDate?.timeIntervalSince1970 ?? 0
+        guard isImagePath(url.path) else {
+            if url.pathExtension.lowercased() == "xmp" { sidecarMtimes[url.path] = mtime }
+            continue
+        }
         let path = url.path
-        let stub = ImageFile(
-            path: path,
-            rel: String(path.dropFirst(prefix.count)),
-            ext: url.pathExtension,
-            size: Int64(values.fileSize ?? 0),
-            mtime: values.contentModificationDate?.timeIntervalSince1970 ?? 0)
-        let dims = Dimensions.cached(for: stub) ?? Dimensions.fallback
         images.append(
             ImageFile(
-                path: stub.path, rel: stub.rel, ext: stub.ext,
-                size: stub.size, mtime: stub.mtime,
-                rating: XMP.readRating(file: stub),
-                edit: XMP.readEdit(file: stub),
-                width: dims.width, height: dims.height))
+                path: path,
+                rel: String(path.dropFirst(prefix.count)),
+                ext: url.pathExtension,
+                size: Int64(values.fileSize ?? 0),
+                mtime: mtime))
     }
-    return images.sorted { $0.rel.localizedStandardCompare($1.rel) == .orderedAscending }
+    return
+        images
+        .map { image in
+            guard image.usesSidecar,
+                let stamp = sidecarMtimes[XMP.sidecarURL(forImagePath: image.path).path]
+            else { return image }
+            return image.with(sidecarMtime: stamp)
+        }
+        .sorted { $0.rel.localizedStandardCompare($1.rel) == .orderedAscending }
 }

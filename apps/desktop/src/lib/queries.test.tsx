@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type ImageFile, identityEdit } from "./core";
-import { useSetRating } from "./queries";
+import type { ImageFile } from "./core";
+import { useLibrarySync, useSetRating } from "./queries";
+import { makeImage } from "./test-image";
 
 afterEach(cleanup);
 
@@ -13,17 +14,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 function image(name: string): ImageFile {
-  return {
-    path: `/r/shoot1/${name}.ARW`,
-    rel: `${name}.ARW`,
-    ext: "ARW",
-    size: 1,
-    mtime: 1,
-    rating: 0,
-    edit: identityEdit,
-    width: 3000,
-    height: 2000,
-  };
+  return makeImage(`${name}.ARW`, { path: `/r/shoot1/${name}.ARW` });
 }
 
 function Harness({
@@ -34,6 +25,50 @@ function Harness({
   capture(useSetRating("shoot1"));
   return null;
 }
+
+describe("useLibrarySync", () => {
+  it("refetches only the shoots the core says moved, not every open shoot", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+    invoke.mockResolvedValue({
+      generation: 7,
+      root: "/r",
+      shoots: 2,
+      scanning: true,
+      filesFound: 100,
+      filesEnriched: 40,
+      changedShoots: ["shoot1"],
+    });
+
+    let progress: ReturnType<typeof useLibrarySync> | undefined;
+    function Harness() {
+      progress = useLibrarySync(true, 1);
+      return null;
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() =>
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["images", "shoot1"],
+      }),
+    );
+    // A blanket ["images"] key would refetch every shoot the app has cached —
+    // megabytes per tick on a big library that is still indexing.
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ["images"] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["shoots"] });
+    expect(progress).toMatchObject({
+      scanning: true,
+      filesFound: 100,
+      filesEnriched: 40,
+    });
+  });
+});
 
 describe("useSetRating burst behavior", () => {
   it("keeps optimistic state through a burst and reconciles exactly once", async () => {

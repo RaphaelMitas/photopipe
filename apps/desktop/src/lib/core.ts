@@ -94,6 +94,8 @@ export function editKey(edit: Edit): string {
   ].join("|");
 }
 
+// `enriched` is false while rating, edit and dimensions are still the
+// placeholders the core's directory walk left behind.
 export type ImageFile = {
   path: string;
   rel: string;
@@ -104,6 +106,7 @@ export type ImageFile = {
   edit: Edit;
   width: number;
   height: number;
+  enriched: boolean;
 };
 
 export function isRawFile(file: { ext: string }): boolean {
@@ -136,6 +139,7 @@ export type Shoot = {
   notes: string;
   cover: string | null;
   coverPath: string | null;
+  indexed: boolean;
 };
 
 export type ExportFormat = "original" | "jpeg";
@@ -155,6 +159,12 @@ export type StatusResult = {
   generation: number;
   root: string | null;
   shoots: number;
+  scanning: boolean;
+  filesFound: number;
+  filesEnriched: number;
+  // Only the shoots that changed since the `since` the caller passed, so a
+  // library that is still indexing doesn't refetch every open shoot.
+  changedShoots?: string[];
 };
 
 export function coreRequest<T>(

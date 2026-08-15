@@ -61,7 +61,8 @@ import Testing
 
     #expect(Dimensions.read(at: fake) == nil)
     // The scanner substitutes 3:2 so the grid can lay out anyway.
-    let images = try scanLibrary(root: dir.path).imagesByShoot["2026-01-01_dims"] ?? []
-    #expect(images.first?.width == 3000)
-    #expect(images.first?.height == 2000)
+    let images = try walkLibrary(root: dir.path).imagesByShoot["2026-01-01_dims"] ?? []
+    let enriched = try #require(images.first.map(enrich))
+    #expect(enriched.width == 3000)
+    #expect(enriched.height == 2000)
 }

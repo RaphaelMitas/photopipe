@@ -20,12 +20,17 @@ use std::time::{Duration, Instant};
 pub const PROTOCOL_VERSION: u64 = 1;
 
 /// Generous: v1 methods answer instantly, warm renders in ~35ms; the ceiling
-/// exists for cold full-res renders and giant library scans.
+/// exists for cold full-res renders.
 const READ_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// `setRoot` is the one method whose cost scales with the library: it walks
+/// the whole tree before answering. Reading metadata happens afterwards, but a
+/// deep tree on a slow external disk can still take a while to enumerate.
+const SET_ROOT_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Requests that mutate state must never be silently re-sent after a respawn:
 /// the first send may have taken effect before the connection died.
-const MUTATING_METHODS: &[&str] = &["setRating"];
+const MUTATING_METHODS: &[&str] = &["setRating", "setEdit"];
 
 #[derive(Debug, Deserialize)]
 struct WireError {
@@ -80,6 +85,7 @@ enum RoundTripError {
 pub struct Sidecar {
     bin: PathBuf,
     read_timeout: Duration,
+    set_root_timeout: Duration,
     next_id: AtomicU64,
     running: Mutex<Option<Arc<Running>>>,
     /// Params of the last successful `setRoot`, replayed after a respawn so
@@ -92,6 +98,7 @@ impl Sidecar {
         Self {
             bin,
             read_timeout: READ_TIMEOUT,
+            set_root_timeout: SET_ROOT_TIMEOUT,
             next_id: AtomicU64::new(1),
             running: Mutex::new(None),
             last_root: Mutex::new(None),
@@ -256,7 +263,12 @@ impl Sidecar {
             }
         }
 
-        let response = match rx.recv_timeout(self.read_timeout) {
+        let timeout = if method == "setRoot" {
+            self.set_root_timeout
+        } else {
+            self.read_timeout
+        };
+        let response = match rx.recv_timeout(timeout) {
             Ok(Ok(response)) => response,
             Ok(Err(reason)) => return Err(RoundTripError::Io(reason)),
             Err(RecvTimeoutError::Timeout) => {
@@ -264,8 +276,7 @@ impl Sidecar {
                     map.remove(&id);
                 }
                 return Err(RoundTripError::Io(format!(
-                    "sidecar did not answer within {:?}",
-                    self.read_timeout
+                    "sidecar did not answer within {timeout:?}"
                 )));
             }
             Err(RecvTimeoutError::Disconnected) => {

@@ -175,6 +175,14 @@ export function AppSidebar({
               onOp={onRatingOp}
               onStars={onRatingStars}
             />
+            {currentShoot && !currentShoot.indexed && (
+              <p
+                data-testid="ratings-indexing"
+                className="mt-1 text-[10px] text-muted-foreground/70"
+              >
+                Still reading ratings — counts will move.
+              </p>
+            )}
           </SidebarGroupContent>
         </SidebarGroup>
 

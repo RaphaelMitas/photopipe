@@ -56,6 +56,7 @@ const shoots: Shoot[] = [
     notes: "Golden hour at the river",
     cover: null,
     coverPath: "/fake/2026-07-12_zell/DSC00832.jpg",
+    indexed: true,
   },
   {
     name: "misc",
@@ -66,6 +67,7 @@ const shoots: Shoot[] = [
     notes: "",
     cover: null,
     coverPath: "/fake/misc/IMG_0001.ARW",
+    indexed: true,
   },
   {
     name: "2026-08-01_dolomites",
@@ -76,10 +78,15 @@ const shoots: Shoot[] = [
     notes: "Two days above Cortina",
     cover: null,
     coverPath: "/fake/2026-08-01_dolomites/DSC01200.ARW",
+    indexed: true,
   },
 ];
 
 const emptyShoots = new Set<string>();
+
+/// `?indexing=1` holds the library in the state it has right after a cold
+/// start: every file listed, none of its metadata read yet.
+const indexing = new URLSearchParams(location.search).get("indexing") === "1";
 
 function imagesFor(shoot: string): ImageFile[] {
   if (emptyShoots.has(shoot)) return [];
@@ -98,9 +105,14 @@ export const E2E_HANDLERS: Record<
     if (params.path === "/nonexistent") throw "root_not_found: /nonexistent";
     return { shoots: shoots.length, files: 6, generation: 1 };
   },
-  listShoots: () => ({ shoots }),
+  listShoots: () => ({
+    shoots: shoots.map((shoot) => ({ ...shoot, indexed: !indexing })),
+  }),
   listImages: (params) => ({
-    images: [...imagesFor(String(params.shoot))],
+    images: imagesFor(String(params.shoot)).map((image) => ({
+      ...image,
+      enriched: !indexing,
+    })),
   }),
   thumbnail: (params) => ({
     cachePath: `/fake/thumbs/${String(params.path)}.jpg`,
@@ -162,6 +174,7 @@ export const E2E_HANDLERS: Record<
       notes: String(params.notes ?? ""),
       cover: null,
       coverPath: null,
+      indexed: true,
     });
     emptyShoots.add(shoot);
     return { shoot, path: `/fake/${shoot}`, generation: 1 };
@@ -190,5 +203,13 @@ export const E2E_HANDLERS: Record<
     }
     return { shoot: renamed, generation: 1 };
   },
-  status: () => ({ generation: 1, root: "/fake", shoots: shoots.length }),
+  status: () => ({
+    generation: 1,
+    root: "/fake",
+    shoots: shoots.length,
+    scanning: indexing,
+    filesFound: 41203,
+    filesEnriched: indexing ? 12800 : 41203,
+    changedShoots: [],
+  }),
 };

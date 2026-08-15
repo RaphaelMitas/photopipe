@@ -1,6 +1,8 @@
 import Foundation
 
-public final class LibraryService {
+/// Reached from the dispatcher's worker pool, the watcher's queue and the
+/// enricher's; every field below is guarded by `lock`.
+public final class LibraryService: @unchecked Sendable {
     public enum ServiceError: Error {
         case noRoot
         case unknownShoot(String)
@@ -16,12 +18,22 @@ public final class LibraryService {
     private var snapshot = LibrarySnapshot.empty
     private var root: String?
     private var generation = 0
+    /// Bumped whenever the file list itself is replaced. Enrichment batches
+    /// carry the epoch they were queued under and are dropped if it moved on.
+    private var epoch = 0
+    private var shootGenerations: [String: Int] = [:]
+    private var shootPublished: [String: Date] = [:]
+    private var pendingByShoot: [String: Int] = [:]
     private var watcher: Watcher?
     private var index: SQLiteIndex?
     private let thumbnailer: Thumbnailer
     private let renderer: Renderer
     private let rescanQueue = DispatchQueue(label: "photopipe.rescan")
+    /// One connection, one writer: enrichment batches and full saves both land
+    /// here so they never interleave on the same sqlite handle.
+    private let indexQueue = DispatchQueue(label: "photopipe.index", qos: .utility)
     private var pendingRescan: DispatchWorkItem?
+    private let enricher = Enricher()
 
     public init(
         thumbnailer: Thumbnailer = Thumbnailer(cacheDir: Thumbnailer.defaultCacheDir()),
@@ -36,24 +48,32 @@ public final class LibraryService {
             .appendingPathComponent("Photopipe/index.sqlite").path
     }
 
+    /// Returns as soon as the tree has been walked. Ratings, edits and
+    /// dimensions arrive afterwards, either straight from the index or from
+    /// background enrichment, and are visible through `status`.
     public func setRoot(path: String, indexPath: String?) throws -> (
         shoots: Int, files: Int, generation: Int
     ) {
         let path = URL(fileURLWithPath: path).standardizedFileURL.path
-        let scanned = try scanLibrary(root: path)
+        // Opening the database is itself a write (pragmas, schema, and a delete
+        // if it turns out corrupt), so it has to queue behind whatever the
+        // previous root left in flight rather than race it on a second handle.
+        let (index, warm) = indexQueue.sync { () -> (SQLiteIndex?, [String: ImageFile]) in
+            let index = try? SQLiteIndex(path: indexPath ?? Self.defaultIndexPath())
+            guard let stored = (try? index?.load()) ?? nil, stored.root == path else {
+                return (index, [:])
+            }
+            return (index, Self.byPath(stored.filesByShoot.values.joined()))
+        }
+        let scanned = carryEnrichment(into: try walkLibrary(root: path), from: warm)
 
         lock.lock()
         root = path
-        snapshot = scanned
-        generation += 1
-        let currentGeneration = generation
+        self.index = index
+        let currentGeneration = publish(scanned)
         lock.unlock()
 
-        let index = try? SQLiteIndex(path: indexPath ?? Self.defaultIndexPath())
-        try? index?.save(root: path, filesByShoot: Self.filesByShoot(scanned))
-        lock.lock()
-        self.index = index
-        lock.unlock()
+        store(scanned, root: path, in: index)
 
         let newWatcher = Watcher(path: path, queue: rescanQueue) { [weak self] in
             self?.scheduleRescan()
@@ -73,18 +93,125 @@ public final class LibraryService {
 
     public func listImages(shoot: String) throws -> [ImageFile] {
         lock.lock()
-        defer { lock.unlock() }
-        guard root != nil else { throw ServiceError.noRoot }
+        guard root != nil else {
+            lock.unlock()
+            throw ServiceError.noRoot
+        }
         guard let images = snapshot.imagesByShoot[shoot] else {
+            lock.unlock()
             throw ServiceError.unknownShoot(shoot)
         }
+        lock.unlock()
+
+        // A read with a side effect: what you are looking at gets indexed first.
+        enricher.prioritize(shoot: shoot)
         return images
     }
 
-    public func status() -> (generation: Int, root: String?, shoots: Int) {
+    public struct Status: Sendable {
+        public let generation: Int
+        public let root: String?
+        public let shoots: Int
+        public let filesFound: Int
+        public let filesEnriched: Int
+        /// Shoots whose images changed after the caller's generation, so the
+        /// client can refetch just those instead of the whole library. Nil
+        /// when the caller did not say where it left off.
+        public let changedShoots: [String]?
+
+        public var scanning: Bool { filesEnriched < filesFound }
+    }
+
+    public func status(since: Int? = nil) -> Status {
         lock.lock()
         defer { lock.unlock() }
-        return (generation, root, snapshot.shoots.count)
+        return Status(
+            generation: generation,
+            root: root,
+            shoots: snapshot.shoots.count,
+            filesFound: snapshot.fileCount,
+            filesEnriched: snapshot.fileCount - pendingByShoot.values.reduce(0, +),
+            changedShoots: since.map { seen in
+                shootGenerations.filter { $0.value > seen }.keys.sorted()
+            })
+    }
+
+    /// Callers must hold the lock.
+    private func publish(_ next: LibrarySnapshot) -> Int {
+        // Disappearing is a change too, and it has to be announced under the
+        // shoot's own name: a client still holding its photos hears about it
+        // only if the name it knows comes back as changed.
+        let departed = Set(snapshot.shoots.map(\.name)).subtracting(next.shoots.map(\.name))
+        snapshot = next
+        epoch += 1
+        generation += 1
+        pendingByShoot = next.unenriched.mapValues(\.count)
+        shootPublished = [:]
+        for name in next.shoots.map(\.name) + departed {
+            shootGenerations[name] = generation
+        }
+        return generation
+    }
+
+    private func startEnrichment() {
+        lock.lock()
+        let currentEpoch = epoch
+        let pending = snapshot.unenriched
+        let order = snapshot.shoots.map(\.name).compactMap { name in
+            pending[name].map { (shoot: name, files: $0) }
+        }
+        // The counter has to come from the same read as the work list. Taking
+        // it from the earlier publish would leave anything settled in between
+        // counted but never queued, and indexing would never read as finished.
+        pendingByShoot = pending.mapValues(\.count)
+        lock.unlock()
+        enricher.start(epoch: currentEpoch, work: order) { [weak self] epoch, shoot, files, done in
+            self?.applyEnrichment(epoch: epoch, shoot: shoot, files: files, shootDone: done)
+        }
+    }
+
+    private func applyEnrichment(
+        epoch: Int, shoot: String, files: [ImageFile], shootDone: Bool
+    ) {
+        lock.lock()
+        guard epoch == self.epoch, let images = snapshot.imagesByShoot[shoot] else {
+            lock.unlock()
+            return
+        }
+        let updates = Self.byPath(files)
+        // A batch is a snapshot of what the files held when it was queued. If
+        // an entry has been settled since — a rating written, say — it is the
+        // newer truth and the batch must not walk over it.
+        let accepted = images.map { current in
+            current.enriched ? current : updates[current.path] ?? current
+        }
+        let merged = accepted.filter { updates[$0.path] == $0 }
+        snapshot = snapshot.replacingImages(inShoot: shoot, with: accepted)
+
+        let left = max(0, (pendingByShoot[shoot] ?? 0) - files.count)
+        pendingByShoot[shoot] = left == 0 ? nil : left
+        generation += 1
+
+        // Refetching a shoot means re-encoding every image in it, so say a
+        // shoot changed at most once a second. The dashboard's counters ride
+        // the global generation, which is free to move every batch.
+        let now = Date()
+        if shootDone || now.timeIntervalSince(shootPublished[shoot] ?? .distantPast) >= 1 {
+            shootGenerations[shoot] = generation
+            shootPublished[shoot] = now
+        }
+        let index = self.index
+        lock.unlock()
+
+        // Only what the merge accepted: persisting an entry the merge rejected
+        // would put the pre-write value back on the next launch.
+        indexQueue.async { try? index?.upsert(shoot: shoot, files: merged) }
+    }
+
+    private static func byPath(_ files: some Sequence<ImageFile>) -> [String: ImageFile] {
+        var byPath: [String: ImageFile] = [:]
+        for file in files { byPath[file.path] = file }
+        return byPath
     }
 
     public func thumbnail(path: String, maxPixel: Int) throws -> String {
@@ -138,6 +265,41 @@ public final class LibraryService {
         return image
     }
 
+    /// The image with its real metadata, reading it now if enrichment has not
+    /// reached it. A write against a placeholder would both lose what the file
+    /// already carries and be overwritten by the batch still in the queue.
+    private func settledImage(shoot: String, path: String) throws -> ImageFile {
+        let image = try image(shoot: shoot, path: path)
+        guard !image.enriched else { return image }
+        let settled = enrich(image)
+        updateSnapshot(shoot: shoot, path: image.path) { _ in settled }
+        return settled
+    }
+
+    /// Re-reads a file we just wrote and records it everywhere the old value
+    /// lived. Restatting matters as much as re-reading: the walk compares those
+    /// stamps, so an entry left holding the pre-write ones is dropped back to a
+    /// placeholder by the very next rescan.
+    private func settleAfterWrite(shoot: String, image: ImageFile) -> ImageFile {
+        let settled = enrich(Self.restat(image))
+        updateSnapshot(shoot: shoot, path: image.path) { _ in settled }
+        lock.lock()
+        let index = self.index
+        lock.unlock()
+        indexQueue.async { try? index?.upsert(shoot: shoot, files: [settled]) }
+        return settled
+    }
+
+    private static func restat(_ file: ImageFile) -> ImageFile {
+        let values = try? URL(fileURLWithPath: file.path).resourceValues(
+            forKeys: [.fileSizeKey, .contentModificationDateKey])
+        return ImageFile(
+            path: file.path, rel: file.rel, ext: file.ext,
+            size: (values?.fileSize).map(Int64.init) ?? file.size,
+            mtime: values?.contentModificationDate?.timeIntervalSince1970 ?? file.mtime,
+            sidecarMtime: file.usesSidecar ? XMP.sidecarMtime(forImagePath: file.path) : 0)
+    }
+
     private func updateSnapshot(
         shoot shootName: String, path: String, _ transform: (ImageFile) -> ImageFile
     ) {
@@ -147,12 +309,9 @@ public final class LibraryService {
             let index = updated.firstIndex(where: { $0.path == path })
         {
             updated[index] = transform(updated[index])
-            var imagesByShoot = snapshot.imagesByShoot
-            imagesByShoot[shootName] = updated
-            snapshot = LibrarySnapshot(
-                shoots: snapshot.shoots, imagesByShoot: imagesByShoot,
-                fileCount: snapshot.fileCount)
+            snapshot = snapshot.replacingImages(inShoot: shootName, with: updated)
             generation += 1
+            shootGenerations[shootName] = generation
         }
     }
 
@@ -160,23 +319,23 @@ public final class LibraryService {
         rating: Int, generation: Int
     ) {
         guard (0...5).contains(rating) else { throw ServiceError.invalidRating(rating) }
-        let image = try image(shoot: shootName, path: path)
+        let image = try settledImage(shoot: shootName, path: path)
 
         try XMP.writeRating(rating, file: image, tool: .shared)
 
-        updateSnapshot(shoot: shootName, path: image.path) { $0.with(rating: rating) }
-        return (rating, status().generation)
+        let settled = settleAfterWrite(shoot: shootName, image: image)
+        return (settled.rating, status().generation)
     }
 
     public func setEdit(shoot shootName: String, path: String, edit: Edit) throws -> (
         edit: Edit, generation: Int
     ) {
-        let image = try image(shoot: shootName, path: path)
+        let image = try settledImage(shoot: shootName, path: path)
 
         try XMP.writeEdit(edit, file: image, tool: .shared)
 
-        updateSnapshot(shoot: shootName, path: image.path) { $0.with(edit: edit) }
-        return (edit, status().generation)
+        let settled = settleAfterWrite(shoot: shootName, image: image)
+        return (settled.edit, status().generation)
     }
 
     static func projectFolder(day: String, name: String) throws -> String {
@@ -313,7 +472,11 @@ public final class LibraryService {
         shoot shootName: String, paths: [String], destination: String,
         zip: Bool, flatten: Bool, format: ExportFormat, quality: Int
     ) throws -> Int {
-        let images = try pathsUnderRoot(paths).map { try image(shoot: shootName, path: $0) }
+        // An export must carry the real edit and rating even if enrichment has
+        // not reached these files yet.
+        let images = try pathsUnderRoot(paths)
+            .map { try image(shoot: shootName, path: $0) }
+            .map(enrich)
         guard !images.isEmpty else { throw FileActions.ActionError.noFiles }
 
         var used: Set<String> = []
@@ -403,23 +566,35 @@ public final class LibraryService {
         lock.lock()
         let currentRoot = root
         lock.unlock()
-        guard let currentRoot, let scanned = try? scanLibrary(root: currentRoot) else { return }
+        guard let currentRoot, let walked = try? walkLibrary(root: currentRoot) else { return }
+
+        // Read what is known only after the walk: on a big tree the walk takes
+        // seconds, and anything enriched during it would otherwise be thrown
+        // back to a placeholder.
+        lock.lock()
+        let known = Self.byPath(snapshot.imagesByShoot.values.joined())
+        lock.unlock()
+        let scanned = carryEnrichment(into: walked, from: known)
 
         lock.lock()
-        let changed = scanned != snapshot
-        if changed {
-            snapshot = scanned
-            generation += 1
+        guard scanned != snapshot else {
+            lock.unlock()
+            return
         }
+        _ = publish(scanned)
         let index = self.index
         lock.unlock()
 
-        if changed {
-            try? index?.save(root: currentRoot, filesByShoot: Self.filesByShoot(scanned))
-        }
+        store(scanned, root: currentRoot, in: index)
     }
 
-    static func filesByShoot(_ snapshot: LibrarySnapshot) -> [String: [ImageFile]] {
-        snapshot.imagesByShoot
+    /// Writes the file list out and hands whatever is still a placeholder to
+    /// the enricher. Both happen on the index queue, in that order, so an
+    /// interrupted session still starts warm next time.
+    private func store(_ scanned: LibrarySnapshot, root: String, in index: SQLiteIndex?) {
+        indexQueue.async { [weak self] in
+            try? index?.save(root: root, filesByShoot: scanned.imagesByShoot)
+            self?.startEnrichment()
+        }
     }
 }
