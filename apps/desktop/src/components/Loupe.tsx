@@ -8,6 +8,7 @@ import {
 } from "react";
 import { type Edit, fileSrc, type ImageFile } from "@/lib/core";
 import { aspectRatioFor, type Box, fitRect, rotatedSize } from "@/lib/crop";
+import { capturePointer, cursorIn } from "@/lib/pointer";
 import {
   useFullRender,
   usePrefetchRender,
@@ -21,12 +22,7 @@ import {
   type ZoomState,
   zoomAt,
 } from "@/lib/zoom";
-import {
-  type CropDraft,
-  CropOverlay,
-  capturePointer,
-  draftWithAngle,
-} from "./CropTool";
+import { type CropDraft, CropOverlay, draftWithAngle } from "./CropTool";
 import { Filmstrip, type FilmstripMode } from "./Filmstrip";
 
 export const EXPOSURE_STEP = 0.25;
@@ -336,14 +332,6 @@ export function Loupe({
     </div>
   );
 }
-
-const cursorIn = (
-  node: HTMLElement,
-  event: { clientX: number; clientY: number },
-) => {
-  const bounds = node.getBoundingClientRect();
-  return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
-};
 
 /// Pinch (trackpad gesture or ctrl+wheel), two-finger pan, drag pan, and
 /// double-click to toggle fit ↔ 100% (min 2× for photos that barely

@@ -31,12 +31,15 @@ private func imageFile(for url: URL) throws -> ImageFile {
         mtime: ((attrs[.modificationDate] as? Date) ?? .distantPast).timeIntervalSince1970)
 }
 
-private func meanChannels(of url: URL) throws -> (red: Double, green: Double, blue: Double) {
+private func meanChannels(
+    of url: URL, region: CGRect? = nil
+) throws -> (red: Double, green: Double, blue: Double) {
     guard let image = CIImage(contentsOf: url) else {
         throw Renderer.RenderError.unreadable(url.path)
     }
     let average = image.applyingFilter(
-        "CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: image.extent)])
+        "CIAreaAverage",
+        parameters: [kCIInputExtentKey: CIVector(cgRect: region ?? image.extent)])
     var pixel = [UInt8](repeating: 0, count: 4)
     CIContext().render(
         average, toBitmap: &pixel, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
@@ -195,17 +198,8 @@ private func tempCacheDir() -> URL {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
 
-    // Left half red, right half blue.
-    let red = CIImage(color: CIColor(red: 1, green: 0, blue: 0))
-        .cropped(to: CGRect(x: 0, y: 0, width: 64, height: 64))
-    let blue = CIImage(color: CIColor(red: 0, green: 0, blue: 1))
-        .cropped(to: CGRect(x: 32, y: 0, width: 32, height: 64))
-    let jpegURL = FileManager.default.temporaryDirectory
-        .appendingPathComponent("photopipe-crop-\(UUID().uuidString).jpg")
+    let jpegURL = try writeHalvesJPEG()
     defer { try? FileManager.default.removeItem(at: jpegURL) }
-    try CIContext().writeJPEGRepresentation(
-        of: blue.composited(over: red), to: jpegURL,
-        colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
 
     let renderer = Renderer(cacheDir: cacheDir)
     let file = try imageFile(for: jpegURL)
@@ -233,36 +227,18 @@ private func tempCacheDir() -> URL {
     // Sign convention: +90° turns the photo clockwise on screen, so the red
     // left half must end up as the top half (the high-y rows in CI space).
     let quarter = try renderer.render(file: file, edit: Edit(cropAngle: 90), maxPixel: 64)
-    guard let turned = CIImage(contentsOf: quarter) else {
-        throw Renderer.RenderError.unreadable(quarter.path)
-    }
-    let topAverage = turned.applyingFilter(
-        "CIAreaAverage",
-        parameters: [kCIInputExtentKey: CIVector(x: 0, y: 40, z: 64, w: 24)])
-    var pixel = [UInt8](repeating: 0, count: 4)
-    CIContext().render(
-        topAverage, toBitmap: &pixel, rowBytes: 4,
-        bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
-        format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
-    #expect(pixel[0] > 180, "clockwise 90° puts the red left half on top, got red \(pixel[0])")
-    #expect(pixel[2] < 60, "blue must have rotated to the bottom, got blue \(pixel[2])")
+    let top = try meanChannels(
+        of: quarter, region: CGRect(x: 0, y: 40, width: 64, height: 24))
+    #expect(top.red > 180, "clockwise 90° puts the red left half on top, got \(top)")
+    #expect(top.blue < 60, "blue must have rotated to the bottom, got \(top)")
 }
 
 @Test func rotationTurnsClockwiseAndCropFollowsTheTurnedFrame() throws {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
 
-    // 64x64, left half red, right half blue.
-    let red = CIImage(color: CIColor(red: 1, green: 0, blue: 0))
-        .cropped(to: CGRect(x: 0, y: 0, width: 64, height: 64))
-    let blue = CIImage(color: CIColor(red: 0, green: 0, blue: 1))
-        .cropped(to: CGRect(x: 32, y: 0, width: 32, height: 64))
-    let jpegURL = FileManager.default.temporaryDirectory
-        .appendingPathComponent("photopipe-turn-\(UUID().uuidString).jpg")
+    let jpegURL = try writeHalvesJPEG()
     defer { try? FileManager.default.removeItem(at: jpegURL) }
-    try CIContext().writeJPEGRepresentation(
-        of: blue.composited(over: red), to: jpegURL,
-        colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
 
     let renderer = Renderer(cacheDir: cacheDir)
     let file = try imageFile(for: jpegURL)
@@ -290,21 +266,13 @@ private func tempCacheDir() -> URL {
     // Stored 64x32 (left red, right blue), tagged Orientation=6: displays as
     // 32x64 tall with red on top. Cropping the display's top half must keep
     // the red — not a side band of the sensor layout.
-    let red = CIImage(color: CIColor(red: 1, green: 0, blue: 0))
-        .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 32))
-    let blue = CIImage(color: CIColor(red: 0, green: 0, blue: 1))
-        .cropped(to: CGRect(x: 32, y: 0, width: 32, height: 32))
-    let flat = FileManager.default.temporaryDirectory
-        .appendingPathComponent("photopipe-orient-\(UUID().uuidString).jpg")
+    let flat = try writeHalvesJPEG(width: 64, height: 32)
     let jpegURL = FileManager.default.temporaryDirectory
         .appendingPathComponent("photopipe-orient6-\(UUID().uuidString).jpg")
     defer {
         try? FileManager.default.removeItem(at: flat)
         try? FileManager.default.removeItem(at: jpegURL)
     }
-    try CIContext().writeJPEGRepresentation(
-        of: blue.composited(over: red), to: flat,
-        colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
     guard let source = CGImageSourceCreateWithURL(flat as CFURL, nil),
         let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil),
         let destination = CGImageDestinationCreateWithURL(
@@ -335,6 +303,21 @@ private func writeSyntheticJPEG(color: CIColor) throws -> URL {
         .appendingPathComponent("photopipe-synth-\(UUID().uuidString).jpg")
     try CIContext().writeJPEGRepresentation(
         of: image, to: url, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+    return url
+}
+
+/// Left half red, right half blue; the geometry tests read where the halves
+/// end up after crops, turns, and orientation.
+private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
+    let red = CIImage(color: CIColor(red: 1, green: 0, blue: 0))
+        .cropped(to: CGRect(x: 0, y: 0, width: width, height: height))
+    let blue = CIImage(color: CIColor(red: 0, green: 0, blue: 1))
+        .cropped(to: CGRect(x: width / 2, y: 0, width: width / 2, height: height))
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("photopipe-halves-\(UUID().uuidString).jpg")
+    try CIContext().writeJPEGRepresentation(
+        of: blue.composited(over: red), to: url,
+        colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
     return url
 }
 

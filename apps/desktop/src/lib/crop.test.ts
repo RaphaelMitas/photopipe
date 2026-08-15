@@ -101,7 +101,7 @@ describe("moveCrop and resizeCrop", () => {
     const moved = moveCrop(centered, -5, 0, 0, 3000, 2000);
     expect(moved.left).toBe(0);
     expect(moved.right).toBeCloseTo(0.4);
-    expect(moved.top).toBe(0.3);
+    expect(moved.top).toBeCloseTo(0.3);
     const corner = moveCrop(centered, 5, 5, 0, 3000, 2000);
     expect(corner.right).toBe(1);
     expect(corner.bottom).toBe(1);

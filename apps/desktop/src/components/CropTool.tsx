@@ -12,9 +12,11 @@ import {
   moveCrop,
   resizeCrop,
   rotatedSize,
+  snapCropEdges,
   transposeCrop,
   turnCrop,
 } from "@/lib/crop";
+import { capturePointer, cursorIn } from "@/lib/pointer";
 import { Button } from "./ui/button";
 
 export type CropDraft = {
@@ -26,8 +28,7 @@ export type CropDraft = {
 };
 
 // Freehand corner rotation runs the full circle; ±180 covers it after the
-// wrap-safe accumulation. Quarter turns are better done with the (lossless)
-// Turn button, but nothing stops a freehand 90.
+// wrap-safe accumulation.
 const STRAIGHTEN_RANGE = 180;
 
 export function draftFromEdit(edit: {
@@ -53,18 +54,9 @@ export function commitDraft(draft: CropDraft): {
   cropAngle: number;
   rotation: number;
 } {
-  // Snap near-flush edges: a sliver like left=3e-05 would survive isFullCrop
-  // yet round-trip badly through the sidecar's decimal formatting. Proximity
-  // only — an overhang coordinate past the frame is a real crop, not a
-  // sliver.
-  const snap = (value: number) =>
-    Math.abs(value) < 0.001 ? 0 : Math.abs(value - 1) < 0.001 ? 1 : value;
-  const crop = {
-    left: snap(draft.crop.left),
-    top: snap(draft.crop.top),
-    right: snap(draft.crop.right),
-    bottom: snap(draft.crop.bottom),
-  };
+  // A near-flush sliver like left=3e-05 would survive isFullCrop yet
+  // round-trip badly through the sidecar's decimal formatting.
+  const crop = snapCropEdges(draft.crop, 0.001);
   const identity = isFullCrop(crop) && draft.angle === 0;
   return {
     crop: identity ? null : crop,
@@ -113,8 +105,7 @@ type PanelProps = {
 };
 
 /// The crop section that replaces the "Crop & straighten" button in the edit
-/// panel while cropping. Straightening happens on the photo itself: corner
-/// drag, ⌥-drag along a line, double-click resets.
+/// panel while cropping; straightening happens on the photo itself.
 export function CropPanel({
   image,
   draft,
@@ -271,13 +262,6 @@ export function CropPanel({
 
 type Handle = CropHandle | "move";
 
-// Synthetic and already-released pointers make setPointerCapture throw.
-export const capturePointer = (event: React.PointerEvent) => {
-  try {
-    event.currentTarget.setPointerCapture(event.pointerId);
-  } catch {}
-};
-
 const rotateCursor = `url("data:image/svg+xml,${encodeURIComponent(
   `<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'><path d='M4 10a6 6 0 1 1 2 4.5' fill='none' stroke='white' stroke-width='2'/><path d='M3 11l3 4 2-4z' fill='white'/></svg>`,
 )}") 10 10, grabbing`;
@@ -326,11 +310,8 @@ export function CropOverlay({
     y2: number;
   } | null>(null);
 
-  const pointInRoot = (event: React.PointerEvent) => {
-    const bounds = rootRef.current?.getBoundingClientRect();
-    if (!bounds) return { x: 0, y: 0 };
-    return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
-  };
+  const pointInRoot = (event: React.PointerEvent) =>
+    rootRef.current ? cursorIn(rootRef.current, event) : { x: 0, y: 0 };
 
   const pointerAngle = (event: React.PointerEvent) => {
     const point = pointInRoot(event);
