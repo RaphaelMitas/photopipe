@@ -17,11 +17,21 @@ func scratchDir(_ prefix: String) -> URL {
 /// `setRoot` returns as soon as the tree is walked, so anything that asserts on
 /// ratings, edits, dimensions or a settled generation has to wait for the
 /// background enrichment to land first.
-func waitUntilIndexed(_ service: LibraryService, timeout: TimeInterval = 10) {
+func waitUntilIndexed(
+    _ service: LibraryService, timeout: TimeInterval = 10,
+    sourceLocation: SourceLocation = #_sourceLocation
+) {
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline, service.status().scanning {
         Thread.sleep(forTimeInterval: 0.02)
     }
+    // Loudly: a counter that never reaches its total is a bug in its own right,
+    // and swallowing it here would let every assertion below pass on stale data.
+    let status = service.status()
+    #expect(
+        !status.scanning,
+        "indexing never finished: \(status.filesEnriched)/\(status.filesFound)",
+        sourceLocation: sourceLocation)
 }
 
 /// Builds a scratch photo tree: [shootName: [relative file paths]] → root URL.

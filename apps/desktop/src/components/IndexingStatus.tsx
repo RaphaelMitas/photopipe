@@ -3,10 +3,13 @@ import type { ScanProgress } from "@/lib/queries";
 const format = new Intl.NumberFormat();
 
 /// Sits in the header while the core fills in ratings and dimensions behind
-/// the already-usable library, and disappears the moment it is done.
+/// the already-usable library.
 export function IndexingStatus({ progress }: { progress: ScanProgress }) {
   if (!progress.scanning) return null;
-  const share = progress.found === 0 ? 0 : progress.enriched / progress.found;
+  const share =
+    progress.filesFound === 0
+      ? 0
+      : progress.filesEnriched / progress.filesFound;
   return (
     <div
       data-testid="indexing-status"
@@ -14,8 +17,8 @@ export function IndexingStatus({ progress }: { progress: ScanProgress }) {
       title="Reading ratings, edits and dimensions"
     >
       <span className="font-mono">
-        Indexing {format.format(progress.enriched)} of{" "}
-        {format.format(progress.found)}
+        Indexing {format.format(progress.filesEnriched)} of{" "}
+        {format.format(progress.filesFound)}
       </span>
       <span className="h-0.5 w-16 overflow-hidden rounded-full bg-border">
         <span

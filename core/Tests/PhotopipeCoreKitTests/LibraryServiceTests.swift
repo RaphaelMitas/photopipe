@@ -106,15 +106,19 @@ private func tempIndexPath() -> String {
     ])
     defer { try? FileManager.default.removeItem(at: root) }
 
+    // The walk alone accounts for every file, and hands them over as
+    // placeholders — no image is opened to get this far.
+    let walked = try walkLibrary(root: root.path)
+    #expect(walked.fileCount == 41)
+    #expect(walked.shoots.allSatisfy { !$0.indexed })
+    let placeholder = try #require(walked.imagesByShoot["2026-07-12_zell"]?.first)
+    #expect(!placeholder.enriched)
+    #expect(placeholder.width == Dimensions.fallback.width)
+
     let service = makeService()
     let summary = try service.setRoot(path: root.path, indexPath: tempIndexPath())
-    // Every file is already there to browse, with placeholder metadata.
     #expect(summary.files == 41)
-    let opening = service.status()
-    #expect(opening.scanning)
-    #expect(opening.filesFound == 41)
-    #expect(opening.filesEnriched < 41)
-    #expect(service.listShoots().allSatisfy { !$0.indexed })
+    #expect(service.status().filesFound == 41)
 
     waitUntilIndexed(service)
     let settled = service.status()
@@ -158,6 +162,65 @@ private func tempIndexPath() -> String {
     #expect(images.first { $0.rel == "DSC003.ARW" }?.enriched == false)
 }
 
+@Test func aRatingOnARawSurvivesARelaunchOffTheIndex() throws {
+    let root = try makeTree(["2026-07-12_zell": ["DSC001.ARW"]])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let indexPath = tempIndexPath()
+    let target = root.appendingPathComponent("2026-07-12_zell/DSC001.ARW")
+
+    let first = makeService()
+    _ = try first.setRoot(path: root.path, indexPath: indexPath)
+    waitUntilIndexed(first)
+    _ = try first.setRating(shoot: "2026-07-12_zell", path: target.path, rating: 4)
+
+    // A raw's own bytes never change when its rating does, so a cached record
+    // keyed on the file alone would shadow the sidecar for good.
+    let second = makeService()
+    _ = try second.setRoot(path: root.path, indexPath: indexPath)
+    waitUntilIndexed(second)
+    #expect(try second.listImages(shoot: "2026-07-12_zell").first?.rating == 4)
+}
+
+@Test func aSidecarWrittenByAnotherToolIsPickedUpNextLaunch() throws {
+    let root = try makeTree(["2026-07-12_zell": ["DSC001.ARW"]])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let indexPath = tempIndexPath()
+    let target = root.appendingPathComponent("2026-07-12_zell/DSC001.ARW")
+
+    let first = makeService()
+    _ = try first.setRoot(path: root.path, indexPath: indexPath)
+    waitUntilIndexed(first)
+
+    // Lightroom, exiftool, a synced folder: something else rates the photo
+    // while Photopipe is not running.
+    try XMP.writeRating(
+        5,
+        file: ImageFile(path: target.path, rel: "DSC001.ARW", ext: "ARW", size: 1, mtime: 1),
+        tool: .shared)
+
+    let second = makeService()
+    _ = try second.setRoot(path: root.path, indexPath: indexPath)
+    waitUntilIndexed(second)
+    #expect(try second.listImages(shoot: "2026-07-12_zell").first?.rating == 5)
+}
+
+@Test func indexingFinishesEvenIfAPhotoIsRatedDuringTheFirstSave() throws {
+    let root = try makeTree(["2026-07-12_zell": (0..<300).map { "DSC\($0).ARW" }])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let target = root.appendingPathComponent("2026-07-12_zell/DSC0.ARW")
+
+    let service = makeService()
+    _ = try service.setRoot(path: root.path, indexPath: tempIndexPath())
+    // Settling a file before the enricher was handed its queue used to leave
+    // the counter one short of the total, so indexing never read as done.
+    _ = try service.setRating(shoot: "2026-07-12_zell", path: target.path, rating: 3)
+
+    waitUntilIndexed(service)
+    let status = service.status()
+    #expect(!status.scanning)
+    #expect(status.filesEnriched == status.filesFound)
+}
+
 @Test func statusNamesOnlyTheShootsThatMovedOn() throws {
     let root = try makeTree([
         "2026-07-12_zell": ["DSC001.ARW"],
@@ -177,6 +240,13 @@ private func tempIndexPath() -> String {
             root
             .appendingPathComponent("2026-07-12_zell/DSC001.ARW").path, rating: 2)
     #expect(service.status(since: settled).changedShoots == ["2026-07-12_zell"])
+
+    // Disappearing is a change too: a client that never hears about it keeps
+    // serving photos from a folder that is gone.
+    let rated = service.status().generation
+    try FileManager.default.removeItem(at: root.appendingPathComponent("2026-08-01_beach"))
+    service.rescanNow()
+    #expect(service.status(since: rated).changedShoots?.contains("2026-08-01_beach") == true)
 }
 
 @Test func aRatingWrittenDuringIndexingIsNotOverwrittenByIt() throws {

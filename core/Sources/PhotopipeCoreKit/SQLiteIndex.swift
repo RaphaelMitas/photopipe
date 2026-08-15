@@ -53,7 +53,8 @@ public final class SQLiteIndex: @unchecked Sendable {
                 edit TEXT,
                 width INTEGER NOT NULL DEFAULT 0,
                 height INTEGER NOT NULL DEFAULT 0,
-                enriched INTEGER NOT NULL DEFAULT 0
+                enriched INTEGER NOT NULL DEFAULT 0,
+                sidecar_mtime REAL NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS files_shoot ON files(shoot);
             """)
@@ -120,8 +121,9 @@ public final class SQLiteIndex: @unchecked Sendable {
         var statement: OpaquePointer?
         let sql = """
             INSERT OR REPLACE INTO files
-            (path, shoot, rel, ext, size, mtime, rating, edit, width, height, enriched)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            (path, shoot, rel, ext, size, mtime, rating, edit, width, height, enriched,
+             sidecar_mtime)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
             """
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
             throw IndexError.exec(String(cString: sqlite3_errmsg(db)))
@@ -149,6 +151,7 @@ public final class SQLiteIndex: @unchecked Sendable {
                 sqlite3_bind_int64(statement, 9, Int64(file.width))
                 sqlite3_bind_int64(statement, 10, Int64(file.height))
                 sqlite3_bind_int64(statement, 11, file.enriched ? 1 : 0)
+                sqlite3_bind_double(statement, 12, file.sidecarMtime)
                 guard sqlite3_step(statement) == SQLITE_DONE else {
                     throw IndexError.exec(String(cString: sqlite3_errmsg(db)))
                 }
@@ -172,7 +175,8 @@ public final class SQLiteIndex: @unchecked Sendable {
 
         var statement: OpaquePointer?
         let sql = """
-            SELECT path, shoot, rel, ext, size, mtime, rating, edit, width, height, enriched
+            SELECT path, shoot, rel, ext, size, mtime, rating, edit, width, height, enriched,
+                   sidecar_mtime
             FROM files
             """
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
@@ -201,7 +205,8 @@ public final class SQLiteIndex: @unchecked Sendable {
                 edit: edit ?? .identity,
                 width: Int(sqlite3_column_int64(statement, 8)),
                 height: Int(sqlite3_column_int64(statement, 9)),
-                enriched: sqlite3_column_int64(statement, 10) == 1)
+                enriched: sqlite3_column_int64(statement, 10) == 1,
+                sidecarMtime: sqlite3_column_double(statement, 11))
             filesByShoot[String(cString: shootText), default: []].append(record)
         }
         return (root, filesByShoot)

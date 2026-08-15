@@ -341,11 +341,10 @@ export function useCreateProject() {
   });
 }
 
-export type ScanProgress = {
-  scanning: boolean;
-  found: number;
-  enriched: number;
-};
+export type ScanProgress = Pick<
+  StatusResult,
+  "scanning" | "filesFound" | "filesEnriched"
+>;
 
 const IDLE_POLL_MS = 2000;
 /// While the core is still indexing there is a live counter to drive, and the
@@ -355,12 +354,12 @@ const INDEXING_POLL_MS = 250;
 
 const NOT_SCANNING: ScanProgress = {
   scanning: false,
-  found: 0,
-  enriched: 0,
+  filesFound: 0,
+  filesEnriched: 0,
 };
 
-/// Watches the core's generation and pulls in whatever changed: the shoot list
-/// on every bump, and images only for the shoots the core names.
+/// Polls faster while the core is still indexing, and refetches a shoot's
+/// photos only when the core names that shoot as changed.
 export function useLibrarySync(
   enabled: boolean,
   initialGeneration: number | null,
@@ -385,11 +384,7 @@ export function useLibrarySync(
           since: seen.current,
         });
         if (stopped) return;
-        setProgress({
-          scanning: status.scanning,
-          found: status.filesFound,
-          enriched: status.filesEnriched,
-        });
+        setProgress(status);
         next = status.scanning ? INDEXING_POLL_MS : IDLE_POLL_MS;
         // A rating write in flight owns the images cache until it settles.
         if (

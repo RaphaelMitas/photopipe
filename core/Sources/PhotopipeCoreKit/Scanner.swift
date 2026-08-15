@@ -19,6 +19,20 @@ public struct LibrarySnapshot: Equatable, Sendable {
             return pending.isEmpty ? nil : pending
         }
     }
+
+    /// Swaps one shoot's images, rebuilding the shoot record derived from them
+    /// so its cover and `indexed` flag never drift from the photos underneath.
+    public func replacingImages(inShoot name: String, with images: [ImageFile]) -> LibrarySnapshot {
+        guard let position = shoots.firstIndex(where: { $0.name == name }) else { return self }
+        var imagesByShoot = self.imagesByShoot
+        imagesByShoot[name] = images
+        var shoots = self.shoots
+        let existing = shoots[position]
+        shoots[position] = makeShoot(
+            name: existing.name, path: existing.path, images: images,
+            notes: existing.notes, cover: existing.cover)
+        return LibrarySnapshot(shoots: shoots, imagesByShoot: imagesByShoot, fileCount: fileCount)
+    }
 }
 
 public enum ScanError: Error {
@@ -72,20 +86,20 @@ public func walkLibrary(root: String) throws -> LibrarySnapshot {
     return LibrarySnapshot(shoots: shoots, imagesByShoot: imagesByShoot, fileCount: fileCount)
 }
 
-/// Reads the metadata the walk skipped: dimensions, rating and edit. Each call
-/// opens the file, twice for a raw with a sidecar, which is why this runs off
-/// the request path.
+/// Each call opens the file, twice for a raw with a sidecar, which is why this
+/// runs off the request path. Already-settled files are returned untouched.
 public func enrich(_ file: ImageFile) -> ImageFile {
-    file.with(
+    guard !file.enriched else { return file }
+    return file.with(
         rating: XMP.readRating(file: file),
         edit: XMP.readEdit(file: file),
         dimensions: Dimensions.cached(for: file) ?? Dimensions.fallback,
         enriched: true)
 }
 
-/// Rebuilds a walked snapshot on top of metadata that was already paid for,
-/// keyed by path. A cached record only counts while the file it describes is
-/// byte-for-byte the one on disk.
+/// A cached record only counts while both the file and the sidecar it was read
+/// from are the ones still on disk — otherwise a rating written since, by us or
+/// by Lightroom, would stay invisible behind the cache.
 public func carryEnrichment(
     into walked: LibrarySnapshot, from cache: [String: ImageFile]
 ) -> LibrarySnapshot {
@@ -93,7 +107,8 @@ public func carryEnrichment(
     for (shoot, images) in walked.imagesByShoot {
         imagesByShoot[shoot] = images.map { image in
             guard let known = cache[image.path], known.enriched,
-                known.mtime == image.mtime, known.size == image.size
+                known.mtime == image.mtime, known.size == image.size,
+                known.sidecarMtime == image.sidecarMtime
             else { return image }
             return image.with(
                 rating: known.rating, edit: known.edit,
@@ -120,14 +135,19 @@ private func walkShootDirectory(_ dir: URL) -> [ImageFile] {
 
     let prefix = dir.path + "/"
     var images: [ImageFile] = []
+    var sidecarMtimes: [String: Double] = [:]
     for case let url as URL in enumerator {
         guard
             let values = try? url.resourceValues(forKeys: [
                 .isRegularFileKey, .fileSizeKey, .contentModificationDateKey,
             ]),
-            values.isRegularFile == true,
-            isImagePath(url.path)
+            values.isRegularFile == true
         else { continue }
+        let mtime = values.contentModificationDate?.timeIntervalSince1970 ?? 0
+        guard isImagePath(url.path) else {
+            if url.pathExtension.lowercased() == "xmp" { sidecarMtimes[url.path] = mtime }
+            continue
+        }
         let path = url.path
         images.append(
             ImageFile(
@@ -135,7 +155,15 @@ private func walkShootDirectory(_ dir: URL) -> [ImageFile] {
                 rel: String(path.dropFirst(prefix.count)),
                 ext: url.pathExtension,
                 size: Int64(values.fileSize ?? 0),
-                mtime: values.contentModificationDate?.timeIntervalSince1970 ?? 0))
+                mtime: mtime))
     }
-    return images.sorted { $0.rel.localizedStandardCompare($1.rel) == .orderedAscending }
+    return
+        images
+        .map { image in
+            guard image.usesSidecar,
+                let stamp = sidecarMtimes[XMP.sidecarURL(forImagePath: image.path).path]
+            else { return image }
+            return image.with(sidecarMtime: stamp)
+        }
+        .sorted { $0.rel.localizedStandardCompare($1.rel) == .orderedAscending }
 }

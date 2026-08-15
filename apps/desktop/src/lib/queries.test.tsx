@@ -62,7 +62,11 @@ describe("useLibrarySync", () => {
     // megabytes per tick on a big library that is still indexing.
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ["images"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["shoots"] });
-    expect(progress).toEqual({ scanning: true, found: 100, enriched: 40 });
+    expect(progress).toMatchObject({
+      scanning: true,
+      filesFound: 100,
+      filesEnriched: 40,
+    });
   });
 });
 

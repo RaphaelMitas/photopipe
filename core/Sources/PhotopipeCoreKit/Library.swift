@@ -24,12 +24,17 @@ public struct ImageFile: Codable, Equatable, Sendable {
     /// standing in for the real ones. Writing an edit against a placeholder
     /// would erase whatever the file actually carries, so the UI must wait.
     public let enriched: Bool
+    /// Modification time of the `.xmp` beside a raw, or 0 when there is none.
+    /// A raw's own bytes never change when its rating does, so this is the only
+    /// thing that tells a cached record it has gone stale — including when
+    /// Lightroom is what wrote the sidecar.
+    public let sidecarMtime: Double
 
     public init(
         path: String, rel: String, ext: String, size: Int64, mtime: Double,
         rating: Int = 0, edit: Edit = .identity,
         width: Int = Dimensions.fallback.width, height: Int = Dimensions.fallback.height,
-        enriched: Bool = false
+        enriched: Bool = false, sidecarMtime: Double = 0
     ) {
         self.path = path
         self.rel = rel
@@ -41,6 +46,7 @@ public struct ImageFile: Codable, Equatable, Sendable {
         self.width = width
         self.height = height
         self.enriched = enriched
+        self.sidecarMtime = sidecarMtime
     }
 
     public var usesSidecar: Bool {
@@ -53,13 +59,15 @@ public struct ImageFile: Codable, Equatable, Sendable {
 
     public func with(
         rating: Int? = nil, edit: Edit? = nil,
-        dimensions: (width: Int, height: Int)? = nil, enriched: Bool? = nil
+        dimensions: (width: Int, height: Int)? = nil, enriched: Bool? = nil,
+        sidecarMtime: Double? = nil
     ) -> ImageFile {
         ImageFile(
             path: path, rel: rel, ext: ext, size: size, mtime: mtime,
             rating: rating ?? self.rating, edit: edit ?? self.edit,
             width: dimensions?.width ?? self.width, height: dimensions?.height ?? self.height,
-            enriched: enriched ?? self.enriched)
+            enriched: enriched ?? self.enriched,
+            sidecarMtime: sidecarMtime ?? self.sidecarMtime)
     }
 }
 

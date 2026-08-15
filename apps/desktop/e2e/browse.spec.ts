@@ -212,7 +212,6 @@ test("a library that is still indexing says so and holds edits back", async ({
   await page.getByTestId("root-input").fill("/fake");
   await page.getByTestId("root-submit").click();
 
-  // The library is browsable immediately; the header owns up to the rest.
   await expect(page.getByTestId("shoot-2026-07-12_zell")).toBeVisible();
   await expect(page.getByTestId("indexing-status")).toContainText(
     "Indexing 12,800 of 41,203",

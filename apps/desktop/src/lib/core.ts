@@ -95,8 +95,7 @@ export function editKey(edit: Edit): string {
 }
 
 // `enriched` is false while rating, edit and dimensions are still the
-// placeholders the core's directory walk left behind. Committing an edit
-// against a placeholder would wipe whatever the file actually carries.
+// placeholders the core's directory walk left behind.
 export type ImageFile = {
   path: string;
   rel: string;

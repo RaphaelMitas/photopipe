@@ -192,9 +192,13 @@ export default function App() {
     EDIT_COMMIT_MS,
   );
   // Until the core has read what the file already carries, every edit here is
-  // relative to a blank placeholder and would erase the real one.
+  // relative to a blank placeholder and would erase the real one. The keyboard
+  // reaches this with the edit panel closed, so say why nothing happened.
   const changeEdit = (image: ImageFile, edit: Edit) => {
-    if (!image.enriched) return;
+    if (!image.enriched) {
+      toast("Still reading this photo's existing edits", { id: "not-indexed" });
+      return;
+    }
     scrubEdit(image.path, edit);
   };
 

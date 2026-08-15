@@ -19,24 +19,26 @@ final class Enricher: @unchecked Sendable {
     private var order: [String] = []
     private var epoch = 0
     private var draining = false
+    private var publish: Publish?
+    /// A shoot opened before there was a queue to reorder. Remembered so the
+    /// next `start` still honours it — on a cold library that request lands in
+    /// the window before the first walk has been handed over.
+    private var wanted: String?
     private let queue = DispatchQueue(label: "photopipe.enrich", qos: .utility)
-    private let publish: Publish
-
-    init(publish: @escaping Publish) {
-        self.publish = publish
-    }
 
     /// Replaces the queue wholesale. Batches from an older epoch may still be
     /// in flight; they carry their epoch so the receiver can drop them.
-    func start(epoch: Int, work: [(shoot: String, files: [ImageFile])]) {
+    func start(epoch: Int, work: [(shoot: String, files: [ImageFile])], publish: @escaping Publish) {
         lock.lock()
         self.epoch = epoch
+        self.publish = publish
         pending = [:]
         order = []
         for (shoot, files) in work where !files.isEmpty {
             pending[shoot] = files
             order.append(shoot)
         }
+        moveWantedToFront()
         let wake = !draining && !order.isEmpty
         if wake { draining = true }
         lock.unlock()
@@ -45,11 +47,16 @@ final class Enricher: @unchecked Sendable {
 
     func prioritize(shoot: String) {
         lock.lock()
-        if let index = order.firstIndex(of: shoot), index != 0 {
-            order.remove(at: index)
-            order.insert(shoot, at: 0)
-        }
+        wanted = shoot
+        moveWantedToFront()
         lock.unlock()
+    }
+
+    /// Callers must hold the lock.
+    private func moveWantedToFront() {
+        guard let wanted, let index = order.firstIndex(of: wanted), index != 0 else { return }
+        order.remove(at: index)
+        order.insert(wanted, at: 0)
     }
 
     private func drain() {
@@ -69,9 +76,10 @@ final class Enricher: @unchecked Sendable {
                 pending[shoot] = rest
             }
             let currentEpoch = epoch
+            let publish = self.publish
             lock.unlock()
 
-            publish(currentEpoch, shoot, Self.enrichConcurrently(batch), rest.isEmpty)
+            publish?(currentEpoch, shoot, Self.enrichConcurrently(batch), rest.isEmpty)
         }
     }
 
