@@ -222,14 +222,12 @@ export function Loupe({
       )
     : null;
 
-  const cropCenter = cropDraft
+  // The straighten pivot is the photo's center: the photo stays put while
+  // the crop rect moves over it, so dragging pans in view axes.
+  const photoCenter = cropDraft
     ? {
-        x:
-          photoBox.x +
-          ((cropDraft.crop.left + cropDraft.crop.right) / 2) * photoBox.width,
-        y:
-          photoBox.y +
-          ((cropDraft.crop.top + cropDraft.crop.bottom) / 2) * photoBox.height,
+        x: photoBox.x + photoBox.width / 2,
+        y: photoBox.y + photoBox.height / 2,
       }
     : null;
 
@@ -247,8 +245,8 @@ export function Loupe({
         <div
           className="absolute inset-0"
           style={{
-            transformOrigin: cropCenter
-              ? `${cropCenter.x}px ${cropCenter.y}px`
+            transformOrigin: photoCenter
+              ? `${photoCenter.x}px ${photoCenter.y}px`
               : "0 0",
             transform: cropDraft
               ? `rotate(${cropDraft.angle}deg)`

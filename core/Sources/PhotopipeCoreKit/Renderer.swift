@@ -222,7 +222,9 @@ public final class Renderer {
             height: max(raw.maxY.rounded(.down) - raw.minY.rounded(.up), 1))
         var result = image
         if edit.cropAngle != 0 {
-            let center = CGPoint(x: rect.midX, y: rect.midY)
+            // The straighten pivot is the photo's center (matching the UI:
+            // the photo stays put while the crop rect moves over it).
+            let center = CGPoint(x: extent.midX, y: extent.midY)
             // CI coordinates are y-up, so the on-screen-clockwise convention
             // needs the negated angle here (CSS rotate() gets the raw value).
             let angle = -edit.cropAngle * .pi / 180

@@ -31,7 +31,7 @@ public struct CropRect: Codable, Equatable, Sendable {
 /// green–magenta offset for raw files (nil = as shot), incremental -100..100
 /// for embedded formats where the as-shot neutral is unknowable.
 /// `cropAngle` is degrees, positive rotating the photo clockwise on screen
-/// about the crop rect's center while the rect stays axis-aligned.
+/// about the photo's center while the crop rect stays axis-aligned.
 /// `rotation` is a whole-photo turn in clockwise degrees (0/90/180/270) on
 /// top of the file's own orientation; the crop rect is defined against the
 /// turned frame.

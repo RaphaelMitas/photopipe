@@ -62,8 +62,10 @@ function corners(crop: CropRect, imageWidth: number, imageHeight: number) {
   };
 }
 
-/// The largest about-center scale (capped at 1) at which the crop's corners,
-/// rotated back into photo space, stay inside the photo.
+/// The largest about-its-center scale (capped at 1) at which the crop's
+/// corners, rotated back into photo space about the PHOTO center (the
+/// straighten pivot), stay inside the photo. 0 when no scale can fit —
+/// the rotated rect center itself lies outside the frame.
 function fitScale(
   crop: CropRect,
   angleDeg: number,
@@ -74,16 +76,23 @@ function fitScale(
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
   const { centerX, centerY, points } = corners(crop, imageWidth, imageHeight);
+  const pivotX = imageWidth / 2;
+  const pivotY = imageHeight / 2;
+  const baseX = pivotX + (centerX - pivotX) * cos - (centerY - pivotY) * sin;
+  const baseY = pivotY + (centerX - pivotX) * sin + (centerY - pivotY) * cos;
+  if (baseX < 0 || baseX > imageWidth || baseY < 0 || baseY > imageHeight) {
+    return 0;
+  }
   let scale = 1;
   for (const point of points) {
     const dx = (point.x - centerX) * cos - (point.y - centerY) * sin;
     const dy = (point.x - centerX) * sin + (point.y - centerY) * cos;
-    if (dx > 0) scale = Math.min(scale, (imageWidth - centerX) / dx);
-    if (dx < 0) scale = Math.min(scale, centerX / -dx);
-    if (dy > 0) scale = Math.min(scale, (imageHeight - centerY) / dy);
-    if (dy < 0) scale = Math.min(scale, centerY / -dy);
+    if (dx > 0) scale = Math.min(scale, (imageWidth - baseX) / dx);
+    if (dx < 0) scale = Math.min(scale, baseX / -dx);
+    if (dy > 0) scale = Math.min(scale, (imageHeight - baseY) / dy);
+    if (dy < 0) scale = Math.min(scale, baseY / -dy);
   }
-  return scale;
+  return Math.max(scale, 0);
 }
 
 /// Whether the crop rect, with the photo rotated by `angleDeg` behind it,
@@ -97,16 +106,7 @@ export function cropInsideImage(
   return fitScale(crop, angleDeg, imageWidth, imageHeight) >= 1 - 1e-6;
 }
 
-/// Shrink the crop about its center just enough that it stays inside the
-/// photo rotated by `angleDeg`. Never grows the rect.
-export function constrainCrop(
-  crop: CropRect,
-  angleDeg: number,
-  imageWidth: number,
-  imageHeight: number,
-): CropRect {
-  const scale = fitScale(crop, angleDeg, imageWidth, imageHeight);
-  if (scale >= 1) return crop;
+function scaleAbout(crop: CropRect, scale: number): CropRect {
   const halfWidth = ((crop.right - crop.left) / 2) * scale;
   const halfHeight = ((crop.bottom - crop.top) / 2) * scale;
   const cx = (crop.left + crop.right) / 2;
@@ -117,6 +117,47 @@ export function constrainCrop(
     right: cx + halfWidth,
     bottom: cy + halfHeight,
   };
+}
+
+/// Shrink the crop about its center just enough that it stays inside the
+/// photo rotated by `angleDeg` about the photo center. Never grows the rect.
+/// When shrinking alone cannot help (the rect's rotated position left the
+/// frame entirely), slide it toward the photo center first.
+export function constrainCrop(
+  crop: CropRect,
+  angleDeg: number,
+  imageWidth: number,
+  imageHeight: number,
+): CropRect {
+  const scale = fitScale(crop, angleDeg, imageWidth, imageHeight);
+  if (scale >= 1) return crop;
+  if (scale > 0) return scaleAbout(crop, scale);
+
+  const dx = 0.5 - (crop.left + crop.right) / 2;
+  const dy = 0.5 - (crop.top + crop.bottom) / 2;
+  const centered = shift(crop, dx, dy);
+  const centeredScale = fitScale(centered, angleDeg, imageWidth, imageHeight);
+  if (centeredScale < 1) {
+    return scaleAbout(centered, centeredScale);
+  }
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 20; i += 1) {
+    const mid = (lo + hi) / 2;
+    if (
+      fitScale(
+        shift(crop, dx * mid, dy * mid),
+        angleDeg,
+        imageWidth,
+        imageHeight,
+      ) >= 1
+    ) {
+      hi = mid;
+    } else {
+      lo = mid;
+    }
+  }
+  return shift(crop, dx * hi, dy * hi);
 }
 
 /// Display-space pixel size after a whole-photo turn.

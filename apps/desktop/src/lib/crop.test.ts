@@ -59,6 +59,24 @@ describe("cropInsideImage / constrainCrop", () => {
     const small = { left: 0.4, top: 0.4, right: 0.6, bottom: 0.6 };
     expect(constrainCrop(small, 10, 3000, 2000)).toEqual(small);
   });
+
+  it("pivots about the photo center, not the rect", () => {
+    // At 90° the rotated 3:2 photo covers a portrait band around the center:
+    // a small centered rect still fits, one at the left edge samples outside.
+    const centered = { left: 0.45, top: 0.45, right: 0.55, bottom: 0.55 };
+    expect(cropInsideImage(centered, 90, 3000, 2000)).toBe(true);
+    const edgy = { left: 0, top: 0.45, right: 0.1, bottom: 0.55 };
+    expect(cropInsideImage(edgy, 90, 3000, 2000)).toBe(false);
+  });
+
+  it("recovers a crop whose rotated position left the frame entirely", () => {
+    const edgy = { left: 0, top: 0.4, right: 0.2, bottom: 0.6 };
+    for (const angle of [45, 90]) {
+      const constrained = constrainCrop(edgy, angle, 3000, 2000);
+      expect(cropInsideImage(constrained, angle, 3000, 2000)).toBe(true);
+      expect(constrained.right - constrained.left).toBeGreaterThan(0.01);
+    }
+  });
 });
 
 describe("centeredAspectCrop", () => {

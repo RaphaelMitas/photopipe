@@ -26,7 +26,10 @@ export type CropDraft = {
   flipped: boolean;
 };
 
-const STRAIGHTEN_RANGE = 45;
+// Freehand corner rotation runs the full circle; ±180 covers it after the
+// wrap-safe accumulation. Quarter turns are better done with the (lossless)
+// Turn button, but nothing stops a freehand 90.
+const STRAIGHTEN_RANGE = 180;
 
 export function draftFromEdit(edit: {
   crop?: CropRect | null;
@@ -281,7 +284,7 @@ type Drag =
       pointerY: number;
       start: CropRect;
     }
-  | { kind: "rotate"; startPointerAngle: number; startDraft: CropDraft }
+  | { kind: "rotate"; lastPointerAngle: number; angle: number }
   | {
       kind: "align";
       x1: number;
@@ -367,8 +370,8 @@ export function CropOverlay({
     capturePointer(event);
     drag.current = {
       kind: "rotate",
-      startPointerAngle: pointerAngle(event),
-      startDraft: draft,
+      lastPointerAngle: pointerAngle(event),
+      angle: draft.angle,
     };
   };
 
@@ -404,15 +407,15 @@ export function CropOverlay({
       return;
     }
     if (active.kind === "rotate") {
-      const delta = pointerAngle(event) - active.startPointerAngle;
-      onChange(
-        draftWithAngle(
-          active.startDraft,
-          active.startDraft.angle + delta,
-          imageWidth,
-          imageHeight,
-        ),
-      );
+      // Accumulate wrap-safe deltas so freehand rotation runs past ±90°
+      // without jumping at the atan2 seam.
+      const pointer = pointerAngle(event);
+      let delta = pointer - active.lastPointerAngle;
+      if (delta > 180) delta -= 360;
+      if (delta <= -180) delta += 360;
+      active.lastPointerAngle = pointer;
+      active.angle += delta;
+      onChange(draftWithAngle(draft, active.angle, imageWidth, imageHeight));
       return;
     }
     const dx = (event.clientX - active.pointerX) / photoBox.width;

@@ -13,7 +13,7 @@ export type CropRect = {
 // null means "as shot"; incremental -100..100 for embedded formats. The core
 // omits null fields when encoding, so read them with `?? null`.
 // cropAngle: degrees, positive rotates the photo clockwise on screen about
-// the crop rect's center while the rect stays axis-aligned.
+// the photo's center while the crop rect stays axis-aligned.
 // rotation: whole-photo turn in clockwise degrees (0/90/180/270); the crop
 // rect is defined against the turned frame.
 export type Edit = {
