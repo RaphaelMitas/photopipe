@@ -134,17 +134,10 @@ export function Loupe({
         return;
       }
       if (cropping) {
-        // The aspect dropdown owns its own Enter/Escape while focused.
-        if (
-          target?.closest?.(
-            "[data-slot='select-trigger'], [data-slot='select-content']",
-          )
-        ) {
-          return;
-        }
         if (event.key === "Escape") onCancelCrop();
-        // A focused button (Cancel, Reset) acts on Enter itself.
-        if (event.key === "Enter" && !target?.closest?.("button")) {
+        // A focused button (Cancel, Reset) or the aspect select acts on
+        // Enter itself.
+        if (event.key === "Enter" && !target?.closest?.("button, select")) {
           onApplyCrop();
         }
         return;

@@ -278,6 +278,21 @@ describe("EditSidebar", () => {
     expect(onCancelCrop).toHaveBeenCalled();
   });
 
+  it("picking a ratio applies a centered aspect crop", () => {
+    const draft = draftFromEdit(identityEdit);
+    const { onCropDraft } = renderEditSidebar(identityEdit, draft);
+    fireEvent.change(screen.getByTestId("crop-aspect"), {
+      target: { value: "1:1" },
+    });
+    const next = onCropDraft.mock.calls[0][0];
+    expect(next.aspect).toBe("1:1");
+    // 3000x2000 test image: a centered square crop is 2000x2000.
+    expect(next.crop.left).toBeCloseTo(1 / 6);
+    expect(next.crop.right).toBeCloseTo(5 / 6);
+    expect(next.crop.top).toBeCloseTo(0);
+    expect(next.crop.bottom).toBeCloseTo(1);
+  });
+
   it("turn 90° rotates the draft and carries the crop along", () => {
     const draft = {
       ...draftFromEdit(identityEdit),

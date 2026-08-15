@@ -1,4 +1,4 @@
-import { Check, RotateCw, X } from "lucide-react";
+import { Check, ChevronDown, RotateCw, X } from "lucide-react";
 import { useRef, useState } from "react";
 import type { CropRect, ImageFile } from "@/lib/core";
 import {
@@ -16,7 +16,6 @@ import {
   turnCrop,
 } from "@/lib/crop";
 import { Button } from "./ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger } from "./ui/select";
 
 export type CropDraft = {
   crop: CropRect;
@@ -167,31 +166,25 @@ export function CropPanel({
       <div className="flex flex-col gap-1.5 text-muted-foreground text-xs">
         <span>Ratio</span>
         <div className="flex items-center gap-1.5">
-          <Select
-            value={draft.aspect}
-            onValueChange={(aspect) =>
-              onDraft(applyAspect({ ...draft, aspect }))
-            }
-          >
-            <SelectTrigger
-              size="sm"
+          {/* A native select: WKWebView shows the macOS popup menu, and the
+              Radix portal version never opened there. */}
+          <div className="relative flex-1">
+            <select
               data-testid="crop-aspect"
-              className="flex-1 text-xs"
+              value={draft.aspect}
+              onChange={(event) =>
+                onDraft(applyAspect({ ...draft, aspect: event.target.value }))
+              }
+              className="h-8 w-full appearance-none rounded-3xl border border-transparent bg-input/50 px-3 pr-8 text-foreground text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
             >
-              {ASPECTS.find(([value]) => value === draft.aspect)?.[1]}
-            </SelectTrigger>
-            <SelectContent>
               {ASPECTS.map(([value, label]) => (
-                <SelectItem
-                  key={value}
-                  value={value}
-                  data-testid={`crop-aspect-${value}`}
-                >
+                <option key={value} value={value}>
                   {label}
-                </SelectItem>
+                </option>
               ))}
-            </SelectContent>
-          </Select>
+            </select>
+            <ChevronDown className="pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          </div>
           <Button
             variant={draft.flipped ? "secondary" : "outline"}
             size="icon"
