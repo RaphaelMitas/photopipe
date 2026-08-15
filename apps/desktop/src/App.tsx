@@ -11,6 +11,11 @@ import { toast } from "sonner";
 import { AboutDialog } from "@/components/AboutDialog";
 import { AppSidebar } from "@/components/AppSidebar";
 import { BrowserToolbar, type ViewMode } from "@/components/BrowserToolbar";
+import {
+  type CropDraft,
+  commitDraft,
+  draftFromEdit,
+} from "@/components/CropTool";
 import { Dashboard } from "@/components/Dashboard";
 import { EditSidebar } from "@/components/EditPanel";
 import {
@@ -117,7 +122,8 @@ export default function App() {
       return !open;
     });
   }, []);
-  const [cropping, setCropping] = useState(false);
+  const [cropDraft, setCropDraft] = useState<CropDraft | null>(null);
+  const cropping = cropDraft !== null;
   const [jobs, setJobs] = useState<ExportJob[]>([]);
   const nextJobId = useRef(1);
 
@@ -299,7 +305,7 @@ export default function App() {
   }, [loupePath, loupeIndex]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: leave crop mode when the loupe photo changes
-  useEffect(() => setCropping(false), [loupePath]);
+  useEffect(() => setCropDraft(null), [loupePath]);
 
   const openExport = useCallback(() => {
     const loupeImage = loupeIndex >= 0 ? loupeImages[loupeIndex] : null;
@@ -376,6 +382,13 @@ export default function App() {
   const runningJobs = jobs.filter((job) => job.status === "running").length;
   const latestJob = jobs[0];
 
+  const applyCrop = () => {
+    if (!cropDraft || !loupeImage) return;
+    changeEdit(loupeImage, { ...loupeEdit, ...commitDraft(cropDraft) });
+    setCropDraft(null);
+  };
+  const cancelCrop = () => setCropDraft(null);
+
   return (
     <TooltipProvider>
       <ShootSettingsDialog
@@ -413,9 +426,7 @@ export default function App() {
             ratingStars={ratingStars}
             onRatingStars={changeRatingStars}
             onRate={(path, rating) => setRating.mutate({ path, rating })}
-            onBackToGrid={() =>
-              cropping ? setCropping(false) : setLoupePath(null)
-            }
+            onBackToGrid={() => (cropping ? cancelCrop() : setLoupePath(null))}
           />
         ) : (
           <AppSidebar
@@ -537,8 +548,10 @@ export default function App() {
                 loupeImages={loupeImages}
                 loupeIndex={loupeIndex}
                 loupeEdit={loupeEdit}
-                cropping={cropping}
-                onCroppingChange={setCropping}
+                cropDraft={cropDraft}
+                onCropDraft={setCropDraft}
+                onApplyCrop={applyCrop}
+                onCancelCrop={cancelCrop}
                 filmstrip={filmstrip}
                 showInfo={showInfo}
                 selection={selection}
@@ -553,12 +566,16 @@ export default function App() {
                 }
               />
             </div>
-            {inLoupe && loupeImage && editOpen && !cropping && (
+            {inLoupe && loupeImage && editOpen && (
               <EditSidebar
                 image={loupeImage}
                 edit={loupeEdit}
                 onChange={(edit) => changeEdit(loupeImage, edit)}
-                onEnterCrop={() => setCropping(true)}
+                cropDraft={cropDraft}
+                onCropDraft={setCropDraft}
+                onEnterCrop={() => setCropDraft(draftFromEdit(loupeEdit))}
+                onApplyCrop={applyCrop}
+                onCancelCrop={cancelCrop}
                 onClose={toggleEditPanel}
               />
             )}
@@ -607,8 +624,10 @@ type ContentProps = {
   loupeImages: ImageFile[];
   loupeIndex: number;
   loupeEdit: Edit;
-  cropping: boolean;
-  onCroppingChange: (cropping: boolean) => void;
+  cropDraft: CropDraft | null;
+  onCropDraft: (draft: CropDraft | null) => void;
+  onApplyCrop: () => void;
+  onCancelCrop: () => void;
   filmstrip: FilmstripMode;
   showInfo: boolean;
   selection: ReturnType<typeof useSelection>;
@@ -635,8 +654,10 @@ function Content({
   loupeImages,
   loupeIndex,
   loupeEdit,
-  cropping,
-  onCroppingChange,
+  cropDraft,
+  onCropDraft,
+  onApplyCrop,
+  onCancelCrop,
   filmstrip,
   showInfo,
   selection,
@@ -673,8 +694,10 @@ function Content({
         index={loupeIndex}
         edit={loupeEdit}
         filmstrip={filmstrip}
-        cropping={cropping}
-        onCroppingChange={onCroppingChange}
+        cropDraft={cropDraft}
+        onCropDraft={onCropDraft}
+        onApplyCrop={onApplyCrop}
+        onCancelCrop={onCancelCrop}
         onEditChange={(edit) => onEditChange(image, edit)}
         onNavigate={onNavigate}
         onClose={onCloseLoupe}

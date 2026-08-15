@@ -119,6 +119,77 @@ export function constrainCrop(
   };
 }
 
+/// Display-space pixel size after a whole-photo turn.
+export function rotatedSize(
+  width: number,
+  height: number,
+  rotation: number,
+): [number, number] {
+  return rotation % 180 === 0 ? [width, height] : [height, width];
+}
+
+/// Where the crop rect lands after the photo turns 90° clockwise: a point
+/// (x, y) of the old frame displays at (1 - y, x) in the new one.
+export function turnCrop(crop: CropRect): CropRect {
+  return {
+    left: 1 - crop.bottom,
+    top: crop.left,
+    right: 1 - crop.top,
+    bottom: crop.right,
+  };
+}
+
+/// Swap the crop's pixel width and height about its center, nudged and
+/// shrunk as needed to stay inside the (possibly angled) photo.
+export function transposeCrop(
+  crop: CropRect,
+  angleDeg: number,
+  imageWidth: number,
+  imageHeight: number,
+): CropRect {
+  const widthPx = (crop.right - crop.left) * imageWidth;
+  const heightPx = (crop.bottom - crop.top) * imageHeight;
+  let halfWidth = heightPx / 2 / imageWidth;
+  let halfHeight = widthPx / 2 / imageHeight;
+  const shrink = Math.min(1, 0.5 / halfWidth, 0.5 / halfHeight);
+  halfWidth *= shrink;
+  halfHeight *= shrink;
+  const clamp = (value: number, half: number) =>
+    Math.min(Math.max(value, half), 1 - half);
+  const cx = clamp((crop.left + crop.right) / 2, halfWidth);
+  const cy = clamp((crop.top + crop.bottom) / 2, halfHeight);
+  return constrainCrop(
+    {
+      left: cx - halfWidth,
+      top: cy - halfHeight,
+      right: cx + halfWidth,
+      bottom: cy + halfHeight,
+    },
+    angleDeg,
+    imageWidth,
+    imageHeight,
+  );
+}
+
+/// The pixel width/height ratio a dropdown selection locks the crop to, in
+/// display space; null means unconstrained.
+export function aspectRatioFor(
+  aspect: string,
+  flipped: boolean,
+  imageWidth: number,
+  imageHeight: number,
+): number | null {
+  if (aspect === "free") return null;
+  let ratio: number;
+  if (aspect === "original") ratio = imageWidth / imageHeight;
+  else if (aspect === "transposed") ratio = imageHeight / imageWidth;
+  else {
+    const [a, b] = aspect.split(":").map(Number);
+    ratio = a / b;
+  }
+  return flipped ? 1 / ratio : ratio;
+}
+
 /// The largest centered crop with the given pixel aspect (width/height),
 /// shrunk further if the current angle requires it.
 export function centeredAspectCrop(

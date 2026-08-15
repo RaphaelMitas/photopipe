@@ -14,6 +14,8 @@ export type CropRect = {
 // omits null fields when encoding, so read them with `?? null`.
 // cropAngle: degrees, positive rotates the photo clockwise on screen about
 // the crop rect's center while the rect stays axis-aligned.
+// rotation: whole-photo turn in clockwise degrees (0/90/180/270); the crop
+// rect is defined against the turned frame.
 export type Edit = {
   exposure: number;
   highlights: number;
@@ -28,6 +30,7 @@ export type Edit = {
   curveBlue: CurvePoint[];
   crop?: CropRect | null;
   cropAngle?: number;
+  rotation?: number;
 };
 
 export const identityEdit: Edit = Object.freeze({
@@ -44,6 +47,7 @@ export const identityEdit: Edit = Object.freeze({
   curveBlue: [],
   crop: null,
   cropAngle: 0,
+  rotation: 0,
 });
 
 export function isIdentityEdit(edit: Edit): boolean {
@@ -60,7 +64,8 @@ export function isIdentityEdit(edit: Edit): boolean {
     isIdentityCurve(edit.curveGreen) &&
     isIdentityCurve(edit.curveBlue) &&
     (edit.crop ?? null) === null &&
-    (edit.cropAngle ?? 0) === 0
+    (edit.cropAngle ?? 0) === 0 &&
+    (edit.rotation ?? 0) === 0
   );
 }
 
@@ -85,6 +90,7 @@ export function editKey(edit: Edit): string {
     curve(edit.curveBlue),
     crop,
     edit.cropAngle ?? 0,
+    edit.rotation ?? 0,
   ].join("|");
 }
 

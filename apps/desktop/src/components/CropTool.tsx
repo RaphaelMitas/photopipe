@@ -1,39 +1,295 @@
-import { useRef } from "react";
-import type { CropRect } from "@/lib/core";
+import { Check, RotateCw, X } from "lucide-react";
+import { useRef, useState } from "react";
+import type { CropRect, ImageFile } from "@/lib/core";
 import {
+  aspectRatioFor,
   type Box,
+  centeredAspectCrop,
   constrainCrop,
   cropInsideImage,
   fullCrop,
   isFullCrop,
+  rotatedSize,
+  transposeCrop,
+  turnCrop,
 } from "@/lib/crop";
 import { Button } from "./ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "./ui/select";
-import { Slider } from "./ui/slider";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "./ui/select";
 
-export type CropDraft = { crop: CropRect; angle: number };
+export type CropDraft = {
+  crop: CropRect;
+  angle: number;
+  rotation: number;
+  aspect: string;
+  flipped: boolean;
+};
 
-const LANDSCAPE_ASPECTS = ["3:2", "4:3", "5:4", "16:9", "16:10", "2:1"];
-const PORTRAIT_ASPECTS = ["2:3", "3:4", "4:5", "9:16", "10:16", "1:2"];
+const STRAIGHTEN_RANGE = 45;
 
-/// `aspect` is "free" or "width:height" straight from the dropdown.
-export function aspectRatio(aspect: string): number | null {
-  if (aspect === "free") return null;
-  const [width, height] = aspect.split(":").map(Number);
-  return width / height;
+export function draftFromEdit(edit: {
+  crop?: CropRect | null;
+  cropAngle?: number;
+  rotation?: number;
+}): CropDraft {
+  return {
+    crop: edit.crop ?? fullCrop,
+    angle: edit.cropAngle ?? 0,
+    rotation: edit.rotation ?? 0,
+    aspect: "free",
+    flipped: false,
+  };
+}
+
+export function isIdentityDraft(draft: CropDraft): boolean {
+  return isFullCrop(draft.crop) && draft.angle === 0 && draft.rotation === 0;
+}
+
+export function commitDraft(draft: CropDraft): {
+  crop: CropRect | null;
+  cropAngle: number;
+  rotation: number;
+} {
+  // Snap near-flush edges: a sliver like left=3e-05 would survive isFullCrop
+  // yet round-trip badly through the sidecar's decimal formatting.
+  const snap = (value: number) =>
+    value < 0.001 ? 0 : value > 0.999 ? 1 : value;
+  const crop = {
+    left: snap(draft.crop.left),
+    top: snap(draft.crop.top),
+    right: snap(draft.crop.right),
+    bottom: snap(draft.crop.bottom),
+  };
+  const identity = isFullCrop(crop) && draft.angle === 0;
+  return {
+    crop: identity ? null : crop,
+    cropAngle: draft.angle,
+    rotation: draft.rotation,
+  };
+}
+
+export function draftWithAngle(
+  draft: CropDraft,
+  angle: number,
+  imageWidth: number,
+  imageHeight: number,
+): CropDraft {
+  const clamped = Math.min(
+    Math.max(angle, -STRAIGHTEN_RANGE),
+    STRAIGHTEN_RANGE,
+  );
+  return {
+    ...draft,
+    angle: clamped,
+    crop: constrainCrop(draft.crop, clamped, imageWidth, imageHeight),
+  };
+}
+
+const ASPECTS: [string, string][] = [
+  ["free", "Free"],
+  ["original", "Original"],
+  ["transposed", "Transposed"],
+  ["1:1", "1:1"],
+  ["4:5", "4:5"],
+  ["2:3", "2:3"],
+  ["3:4", "3:4"],
+  ["5:7", "5:7"],
+  ["16:9", "16:9"],
+  ["16:10", "16:10"],
+  ["21:9", "21:9"],
+];
+
+type PanelProps = {
+  image: ImageFile;
+  draft: CropDraft;
+  onDraft: (draft: CropDraft) => void;
+  onApply: () => void;
+  onCancel: () => void;
+};
+
+/// The crop section that replaces the "Crop & straighten" button in the edit
+/// panel while cropping. Straightening happens on the photo itself: corner
+/// drag, ⌥-drag along a line, double-click resets.
+export function CropPanel({
+  image,
+  draft,
+  onDraft,
+  onApply,
+  onCancel,
+}: PanelProps) {
+  const [displayWidth, displayHeight] = rotatedSize(
+    image.width,
+    image.height,
+    draft.rotation,
+  );
+
+  const applyAspect = (next: CropDraft) => {
+    const ratio = aspectRatioFor(
+      next.aspect,
+      next.flipped,
+      displayWidth,
+      displayHeight,
+    );
+    return ratio === null
+      ? next
+      : {
+          ...next,
+          crop: centeredAspectCrop(
+            ratio,
+            next.angle,
+            displayWidth,
+            displayHeight,
+          ),
+        };
+  };
+
+  return (
+    <div data-testid="crop-panel" className="flex flex-col gap-2.5">
+      <div className="flex items-center gap-2">
+        <span className="font-medium text-sm">Crop</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          data-testid="crop-reset"
+          disabled={isIdentityDraft(draft)}
+          onClick={() =>
+            onDraft({ ...draft, crop: fullCrop, angle: 0, rotation: 0 })
+          }
+          className="ml-auto h-6 px-1.5 text-[10px] text-muted-foreground"
+        >
+          Reset
+        </Button>
+      </div>
+      <div className="flex flex-col gap-1.5 text-muted-foreground text-xs">
+        <span>Ratio</span>
+        <div className="flex items-center gap-1.5">
+          <Select
+            value={draft.aspect}
+            onValueChange={(aspect) =>
+              onDraft(applyAspect({ ...draft, aspect }))
+            }
+          >
+            <SelectTrigger
+              size="sm"
+              data-testid="crop-aspect"
+              className="flex-1 text-xs"
+            >
+              {ASPECTS.find(([value]) => value === draft.aspect)?.[1]}
+            </SelectTrigger>
+            <SelectContent>
+              {ASPECTS.map(([value, label]) => (
+                <SelectItem
+                  key={value}
+                  value={value}
+                  data-testid={`crop-aspect-${value}`}
+                >
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            variant={draft.flipped ? "secondary" : "outline"}
+            size="icon"
+            data-testid="crop-flip"
+            title="Flip horizontal ↔ vertical"
+            onClick={() =>
+              onDraft({
+                ...draft,
+                flipped: !draft.flipped,
+                crop: transposeCrop(
+                  draft.crop,
+                  draft.angle,
+                  displayWidth,
+                  displayHeight,
+                ),
+              })
+            }
+            className="size-8"
+          >
+            ⇄
+          </Button>
+        </div>
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        data-testid="crop-turn"
+        onClick={() =>
+          onDraft({
+            ...draft,
+            rotation: (draft.rotation + 90) % 360,
+            crop: turnCrop(draft.crop),
+            flipped: !draft.flipped,
+          })
+        }
+        className="text-xs"
+      >
+        <RotateCw />
+        Turn 90°
+      </Button>
+      <div className="flex gap-1.5">
+        <Button
+          variant="outline"
+          size="sm"
+          data-testid="crop-cancel"
+          onClick={onCancel}
+          title="Cancel crop (esc)"
+          className="flex-1 text-xs"
+        >
+          <X />
+          Cancel
+        </Button>
+        <Button
+          size="sm"
+          data-testid="crop-apply"
+          onClick={onApply}
+          title="Apply crop (⏎)"
+          className="flex-1 text-xs"
+        >
+          <Check />
+          Apply
+        </Button>
+      </div>
+      <p className="text-[10px] text-muted-foreground">
+        Drag outside a corner to straighten · ⌥-drag along a line to level it ·
+        double-click resets the angle
+      </p>
+    </div>
+  );
 }
 
 const MIN_SIZE = 0.05;
 
 type Handle = "tl" | "tr" | "bl" | "br" | "t" | "b" | "l" | "r" | "move";
+
+// Synthetic and already-released pointers make setPointerCapture throw.
+export const capturePointer = (event: React.PointerEvent) => {
+  try {
+    event.currentTarget.setPointerCapture(event.pointerId);
+  } catch {}
+};
+
+const rotateCursor = `url("data:image/svg+xml,${encodeURIComponent(
+  `<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'><path d='M4 10a6 6 0 1 1 2 4.5' fill='none' stroke='white' stroke-width='2'/><path d='M3 11l3 4 2-4z' fill='white'/></svg>`,
+)}") 10 10, grabbing`;
+
+type Drag =
+  | {
+      kind: "handle";
+      handle: Handle;
+      pointerX: number;
+      pointerY: number;
+      start: CropRect;
+    }
+  | { kind: "rotate"; startPointerAngle: number; startDraft: CropDraft }
+  | {
+      kind: "align";
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+      startDraft: CropDraft;
+    };
 
 type OverlayProps = {
   photoBox: Box;
@@ -52,11 +308,13 @@ export function CropOverlay({
   ratio,
   onChange,
 }: OverlayProps) {
-  const drag = useRef<{
-    handle: Handle;
-    pointerX: number;
-    pointerY: number;
-    start: CropRect;
+  const rootRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<Drag | null>(null);
+  const [alignLine, setAlignLine] = useState<{
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
   } | null>(null);
 
   const valid = (crop: CropRect) =>
@@ -101,11 +359,42 @@ export function CropOverlay({
     return null;
   };
 
+  const pointInRoot = (event: React.PointerEvent) => {
+    const bounds = rootRef.current?.getBoundingClientRect();
+    if (!bounds) return { x: 0, y: 0 };
+    return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+  };
+
+  const pointerAngle = (event: React.PointerEvent) => {
+    const point = pointInRoot(event);
+    const centerX = ((draft.crop.left + draft.crop.right) / 2) * photoBox.width;
+    const centerY =
+      ((draft.crop.top + draft.crop.bottom) / 2) * photoBox.height;
+    return (Math.atan2(point.y - centerY, point.x - centerX) * 180) / Math.PI;
+  };
+
+  // The line's screen tilt, folded into (-90, 90] so leveling never turns
+  // the photo upside down.
+  const lineAngle = (line: {
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+  }) => {
+    let angle =
+      (Math.atan2(line.y2 - line.y1, line.x2 - line.x1) * 180) / Math.PI;
+    if (angle > 90) angle -= 180;
+    if (angle <= -90) angle += 180;
+    return angle;
+  };
+
   const onPointerDown = (event: React.PointerEvent, handle: Handle) => {
+    if (event.altKey) return;
     event.preventDefault();
     event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
+    capturePointer(event);
     drag.current = {
+      kind: "handle",
       handle,
       pointerX: event.clientX,
       pointerY: event.clientY,
@@ -113,9 +402,61 @@ export function CropOverlay({
     };
   };
 
+  const onRotateDown = (event: React.PointerEvent) => {
+    if (event.altKey) return;
+    event.preventDefault();
+    event.stopPropagation();
+    capturePointer(event);
+    drag.current = {
+      kind: "rotate",
+      startPointerAngle: pointerAngle(event),
+      startDraft: draft,
+    };
+  };
+
+  const onRootPointerDown = (event: React.PointerEvent) => {
+    if (!event.altKey) return;
+    event.preventDefault();
+    capturePointer(event);
+    const point = pointInRoot(event);
+    drag.current = {
+      kind: "align",
+      x1: point.x,
+      y1: point.y,
+      x2: point.x,
+      y2: point.y,
+      startDraft: draft,
+    };
+    setAlignLine({ x1: point.x, y1: point.y, x2: point.x, y2: point.y });
+  };
+
   const onPointerMove = (event: React.PointerEvent) => {
     const active = drag.current;
     if (!active || photoBox.width <= 0 || photoBox.height <= 0) return;
+    if (active.kind === "align") {
+      const point = pointInRoot(event);
+      active.x2 = point.x;
+      active.y2 = point.y;
+      setAlignLine({
+        x1: active.x1,
+        y1: active.y1,
+        x2: active.x2,
+        y2: active.y2,
+      });
+      return;
+    }
+    if (active.kind === "rotate") {
+      const delta = pointerAngle(event) - active.startPointerAngle;
+      onChange(
+        draftWithAngle(
+          active.startDraft,
+          active.startDraft.angle + delta,
+          imageWidth,
+          imageHeight,
+        ),
+      );
+      return;
+    }
     const dx = (event.clientX - active.pointerX) / photoBox.width;
     const dy = (event.clientY - active.pointerY) / photoBox.height;
     if (active.handle === "move") {
@@ -128,7 +469,20 @@ export function CropOverlay({
   };
 
   const onPointerUp = () => {
+    const active = drag.current;
     drag.current = null;
+    if (active?.kind !== "align") return;
+    setAlignLine(null);
+    const drawn = Math.hypot(active.x2 - active.x1, active.y2 - active.y1);
+    if (drawn < 10) return;
+    onChange(
+      draftWithAngle(
+        active.startDraft,
+        active.startDraft.angle - lineAngle(active),
+        imageWidth,
+        imageHeight,
+      ),
+    );
   };
 
   const { crop } = draft;
@@ -176,9 +530,16 @@ export function CropOverlay({
       `${edge} -right-0.5 top-1/2 h-6 w-1 -translate-y-1/2 cursor-ew-resize`,
     ],
   ];
+  const rotateZones = [
+    "-top-7 -left-7",
+    "-top-7 -right-7",
+    "-bottom-7 -left-7",
+    "-bottom-7 -right-7",
+  ];
 
   return (
     <div
+      ref={rootRef}
       data-testid="crop-overlay"
       className="absolute"
       style={{
@@ -187,6 +548,7 @@ export function CropOverlay({
         width: photoBox.width,
         height: photoBox.height,
       }}
+      onPointerDown={onRootPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
     >
@@ -201,6 +563,15 @@ export function CropOverlay({
           <div className="absolute left-1/3 h-full w-px bg-white/30" />
           <div className="absolute left-2/3 h-full w-px bg-white/30" />
         </div>
+        {rotateZones.map((position) => (
+          <div
+            key={position}
+            data-testid="crop-rotate-zone"
+            className={`absolute size-7 ${position}`}
+            style={{ cursor: rotateCursor }}
+            onPointerDown={onRotateDown}
+          />
+        ))}
         {(ratio === null ? handles : handles.slice(0, 4)).map(
           ([handle, className]) => (
             <div
@@ -212,173 +583,25 @@ export function CropOverlay({
           ),
         )}
       </div>
+      {alignLine && (
+        <svg
+          data-testid="crop-align-line"
+          className="pointer-events-none absolute inset-0 h-full w-full"
+          aria-hidden="true"
+        >
+          <line
+            x1={alignLine.x1}
+            y1={alignLine.y1}
+            x2={alignLine.x2}
+            y2={alignLine.y2}
+            stroke="white"
+            strokeWidth="2"
+            strokeDasharray="6 4"
+          />
+          <circle cx={alignLine.x1} cy={alignLine.y1} r="3.5" fill="#f97316" />
+          <circle cx={alignLine.x2} cy={alignLine.y2} r="3.5" fill="#f97316" />
+        </svg>
+      )}
     </div>
   );
-}
-
-const STRAIGHTEN_RANGE = 15;
-
-type ToolbarProps = {
-  draft: CropDraft;
-  aspect: string;
-  landscape: boolean;
-  onAspect: (aspect: string) => void;
-  onAngle: (angle: number) => void;
-  onReset: () => void;
-  onCancel: () => void;
-  onDone: () => void;
-};
-
-export function CropToolbar({
-  draft,
-  aspect,
-  landscape,
-  onAspect,
-  onAngle,
-  onReset,
-  onCancel,
-  onDone,
-}: ToolbarProps) {
-  const groups: [string, string[]][] = [
-    ["Landscape", LANDSCAPE_ASPECTS],
-    ["Portrait", PORTRAIT_ASPECTS],
-  ];
-  if (!landscape) groups.reverse();
-  const identity = isIdentityDraft(draft);
-  return (
-    <div
-      data-testid="crop-toolbar"
-      className="flex shrink-0 items-center gap-5 border-t border-border bg-background/80 px-4 py-3"
-    >
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span>Aspect</span>
-        <Select value={aspect} onValueChange={onAspect}>
-          <SelectTrigger
-            size="sm"
-            data-testid="crop-aspect"
-            className="text-xs"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="free" data-testid="crop-aspect-free">
-              Free
-            </SelectItem>
-            <SelectItem value="original" data-testid="crop-aspect-original">
-              Original
-            </SelectItem>
-            <SelectItem value="1:1" data-testid="crop-aspect-1:1">
-              1:1
-            </SelectItem>
-            {groups.map(([label, aspects]) => (
-              <SelectGroup key={label}>
-                <SelectLabel>{label}</SelectLabel>
-                {aspects.map((value) => (
-                  <SelectItem
-                    key={value}
-                    value={value}
-                    data-testid={`crop-aspect-${value}`}
-                  >
-                    {value}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <div className="flex min-w-56 flex-1 items-center gap-2 font-mono text-xs text-muted-foreground">
-        <span>Straighten</span>
-        <Slider
-          data-testid="crop-angle"
-          min={-STRAIGHTEN_RANGE}
-          max={STRAIGHTEN_RANGE}
-          step={0.1}
-          value={[draft.angle]}
-          onValueChange={([angle]) => onAngle(angle)}
-          trackClassName="data-horizontal:h-1.5"
-          rangeClassName="bg-transparent"
-          className="max-w-64 **:data-[slot=slider-thumb]:h-3 **:data-[slot=slider-thumb]:w-3"
-        />
-        <span className="w-12 text-right tabular-nums text-foreground">
-          {`${draft.angle > 0 ? "+" : ""}${draft.angle.toFixed(1)}°`}
-        </span>
-      </div>
-      <div className="flex items-center gap-2">
-        <Button
-          size="sm"
-          variant="ghost"
-          data-testid="crop-reset"
-          disabled={identity}
-          onClick={onReset}
-          className="text-xs"
-        >
-          Reset
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          data-testid="crop-cancel"
-          onClick={onCancel}
-          title="Cancel crop (esc)"
-          className="text-xs"
-        >
-          Cancel
-        </Button>
-        <Button
-          size="sm"
-          data-testid="crop-done"
-          onClick={onDone}
-          title="Apply crop (⏎)"
-          className="text-xs"
-        >
-          Done
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-export function draftFromEdit(edit: {
-  crop?: CropRect | null;
-  cropAngle?: number;
-}): CropDraft {
-  return { crop: edit.crop ?? fullCrop, angle: edit.cropAngle ?? 0 };
-}
-
-export function isIdentityDraft(draft: CropDraft): boolean {
-  return isFullCrop(draft.crop) && draft.angle === 0;
-}
-
-export function commitDraft(draft: CropDraft): {
-  crop: CropRect | null;
-  cropAngle: number;
-} {
-  // Snap near-flush edges: a sliver like left=3e-05 would survive isFullCrop
-  // yet round-trip badly through the sidecar's decimal formatting.
-  const snap = (value: number) =>
-    value < 0.001 ? 0 : value > 0.999 ? 1 : value;
-  const crop = {
-    left: snap(draft.crop.left),
-    top: snap(draft.crop.top),
-    right: snap(draft.crop.right),
-    bottom: snap(draft.crop.bottom),
-  };
-  const identity = isIdentityDraft({ crop, angle: draft.angle });
-  return {
-    crop: identity ? null : crop,
-    cropAngle: draft.angle,
-  };
-}
-
-export function draftWithAngle(
-  draft: CropDraft,
-  angle: number,
-  imageWidth: number,
-  imageHeight: number,
-): CropDraft {
-  return {
-    angle,
-    crop: constrainCrop(draft.crop, angle, imageWidth, imageHeight),
-  };
 }

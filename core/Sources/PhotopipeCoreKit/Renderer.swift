@@ -185,6 +185,14 @@ public final class Renderer {
             image = image.applyingFilter(
                 "CIColorControls", parameters: ["inputSaturation": 1 + edit.saturation / 100])
         }
+        // The turn comes before the crop: the rect is defined against the
+        // turned frame.
+        switch edit.normalizedRotation {
+        case 90: image = image.oriented(forExifOrientation: 6)
+        case 180: image = image.oriented(forExifOrientation: 3)
+        case 270: image = image.oriented(forExifOrientation: 8)
+        default: break
+        }
         if edit.hasCropComponent {
             image = Self.applyCrop(edit, to: image)
         }

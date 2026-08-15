@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type Edit, type ImageFile, identityEdit } from "@/lib/core";
 import { makeImage } from "@/lib/test-image";
+import { type CropDraft, draftFromEdit } from "./CropTool";
 import { EditSidebar } from "./EditPanel";
 import { Loupe } from "./Loupe";
 import { LoupeSidebar } from "./LoupeSidebar";
@@ -24,12 +25,18 @@ function makeImages(): ImageFile[] {
   );
 }
 
-function renderLoupe(index = 0, exposure = 0, cropping = false) {
+function renderLoupe(
+  index = 0,
+  exposure = 0,
+  cropDraft: CropDraft | null = null,
+) {
   const onNavigate = vi.fn();
   const onClose = vi.fn();
   const onRate = vi.fn();
   const onEditChange = vi.fn();
-  const onCroppingChange = vi.fn();
+  const onCropDraft = vi.fn();
+  const onApplyCrop = vi.fn();
+  const onCancelCrop = vi.fn();
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -40,8 +47,10 @@ function renderLoupe(index = 0, exposure = 0, cropping = false) {
         index={index}
         edit={editWith(exposure)}
         filmstrip="off"
-        cropping={cropping}
-        onCroppingChange={onCroppingChange}
+        cropDraft={cropDraft}
+        onCropDraft={onCropDraft}
+        onApplyCrop={onApplyCrop}
+        onCancelCrop={onCancelCrop}
         onEditChange={onEditChange}
         onNavigate={onNavigate}
         onClose={onClose}
@@ -49,7 +58,15 @@ function renderLoupe(index = 0, exposure = 0, cropping = false) {
       />
     </QueryClientProvider>,
   );
-  return { onNavigate, onClose, onRate, onEditChange, onCroppingChange };
+  return {
+    onNavigate,
+    onClose,
+    onRate,
+    onEditChange,
+    onCropDraft,
+    onApplyCrop,
+    onCancelCrop,
+  };
 }
 
 describe("Loupe keyboard culling", () => {
@@ -107,9 +124,11 @@ describe("Loupe keyboard culling", () => {
 });
 
 describe("Loupe crop mode", () => {
-  it("swaps the filmstrip for the crop toolbar and pauses culling keys", () => {
-    const { onRate, onNavigate, onClose } = renderLoupe(0, 0, true);
-    expect(screen.getByTestId("crop-toolbar")).toBeInTheDocument();
+  const draft = () => draftFromEdit(identityEdit);
+
+  it("shows the overlay and angle HUD and pauses culling keys", () => {
+    const { onRate, onNavigate, onClose } = renderLoupe(0, 0, draft());
+    expect(screen.getByTestId("crop-angle-hud")).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "3" });
     fireEvent.keyDown(window, { key: "ArrowRight" });
     expect(onRate).not.toHaveBeenCalled();
@@ -118,40 +137,27 @@ describe("Loupe crop mode", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("cancels without touching the edit", () => {
-    const { onEditChange, onCroppingChange } = renderLoupe(0, 0, true);
-    fireEvent.click(screen.getByTestId("crop-cancel"));
-    expect(onCroppingChange).toHaveBeenCalledWith(false);
+  it("escape cancels, enter applies", () => {
+    const { onApplyCrop, onCancelCrop, onEditChange } = renderLoupe(
+      0,
+      0.25,
+      draft(),
+    );
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(onCancelCrop).toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(onApplyCrop).toHaveBeenCalled();
     expect(onEditChange).not.toHaveBeenCalled();
   });
 
-  it("escape cancels, enter commits", () => {
-    const { onEditChange, onCroppingChange } = renderLoupe(0, 0.25, true);
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(onCroppingChange).toHaveBeenCalledWith(false);
-    fireEvent.keyDown(window, { key: "Enter" });
-    // An untouched full-frame draft commits as "no crop".
-    expect(onEditChange).toHaveBeenCalledWith({
-      ...editWith(0.25),
-      crop: null,
-      cropAngle: 0,
-    });
-  });
-
-  it("commits an aspect preset as a real crop", () => {
-    const { onEditChange } = renderLoupe(0, 0, true);
-    fireEvent.keyDown(screen.getByTestId("crop-aspect"), { key: "Enter" });
-    const item = screen.getByTestId("crop-aspect-1:1");
-    fireEvent.pointerUp(item);
-    fireEvent.click(item);
-    fireEvent.click(screen.getByTestId("crop-done"));
-    const edit = onEditChange.mock.calls[0][0] as Edit;
-    // 3000x2000 test image: a centered square crop is 2000x2000.
-    expect(edit.crop?.left).toBeCloseTo(1 / 6);
-    expect(edit.crop?.top).toBe(0);
-    expect(edit.crop?.right).toBeCloseTo(5 / 6);
-    expect(edit.crop?.bottom).toBe(1);
-    expect(edit.cropAngle).toBe(0);
+  it("double-clicking the stage resets the angle only", () => {
+    const angled = { ...draft(), angle: 3.5 };
+    const { onCropDraft } = renderLoupe(0, 0, angled);
+    expect(screen.getByTestId("crop-angle-hud").textContent).toContain("+3.5°");
+    const stage = screen.getByTestId("loupe").firstElementChild;
+    if (!stage) throw new Error("no stage");
+    fireEvent.doubleClick(stage);
+    expect(onCropDraft).toHaveBeenCalledWith({ ...angled, angle: 0 });
   });
 });
 
@@ -187,10 +193,13 @@ describe("LoupeSidebar", () => {
 });
 
 describe("EditSidebar", () => {
-  function renderEditSidebar(edit: Edit) {
+  function renderEditSidebar(edit: Edit, cropDraft: CropDraft | null = null) {
     const onChange = vi.fn();
     const onClose = vi.fn();
     const onEnterCrop = vi.fn();
+    const onCropDraft = vi.fn();
+    const onApplyCrop = vi.fn();
+    const onCancelCrop = vi.fn();
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -200,12 +209,23 @@ describe("EditSidebar", () => {
           image={makeImages()[1]}
           edit={edit}
           onChange={onChange}
+          cropDraft={cropDraft}
+          onCropDraft={onCropDraft}
           onEnterCrop={onEnterCrop}
+          onApplyCrop={onApplyCrop}
+          onCancelCrop={onCancelCrop}
           onClose={onClose}
         />
       </QueryClientProvider>,
     );
-    return { onChange, onClose, onEnterCrop };
+    return {
+      onChange,
+      onClose,
+      onEnterCrop,
+      onCropDraft,
+      onApplyCrop,
+      onCancelCrop,
+    };
   }
 
   it("shows the exposure value, resets it, and closes", () => {
@@ -240,6 +260,53 @@ describe("EditSidebar", () => {
     const { onEnterCrop } = renderEditSidebar(identityEdit);
     fireEvent.click(screen.getByTestId("enter-crop"));
     expect(onEnterCrop).toHaveBeenCalled();
+  });
+
+  it("shows the crop panel while cropping and wires apply and cancel", () => {
+    const draft = draftFromEdit(identityEdit);
+    const { onApplyCrop, onCancelCrop } = renderEditSidebar(
+      identityEdit,
+      draft,
+    );
+    expect(screen.getByTestId("crop-panel")).toBeInTheDocument();
+    expect(screen.queryByTestId("enter-crop")).not.toBeInTheDocument();
+    expect(screen.getByTestId("edit-reset-all")).toBeDisabled();
+    expect(screen.getByTestId("edit-close")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("crop-apply"));
+    expect(onApplyCrop).toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("crop-cancel"));
+    expect(onCancelCrop).toHaveBeenCalled();
+  });
+
+  it("turn 90° rotates the draft and carries the crop along", () => {
+    const draft = {
+      ...draftFromEdit(identityEdit),
+      crop: { left: 0, top: 0, right: 0.5, bottom: 1 },
+    };
+    const { onCropDraft } = renderEditSidebar(identityEdit, draft);
+    fireEvent.click(screen.getByTestId("crop-turn"));
+    expect(onCropDraft).toHaveBeenCalledWith({
+      ...draft,
+      rotation: 90,
+      flipped: true,
+      // The left half of the frame becomes the top half after a clockwise
+      // turn.
+      crop: { left: 0, top: 0, right: 1, bottom: 0.5 },
+    });
+  });
+
+  it("the flip button transposes the crop about its center", () => {
+    // 3000x2000 image: a centered 1500x1000px crop transposes to 1000x1500px.
+    const draft = {
+      ...draftFromEdit(identityEdit),
+      crop: { left: 0.25, top: 0.25, right: 0.75, bottom: 0.75 },
+    };
+    const { onCropDraft } = renderEditSidebar(identityEdit, draft);
+    fireEvent.click(screen.getByTestId("crop-flip"));
+    const next = onCropDraft.mock.calls[0][0];
+    expect(next.flipped).toBe(true);
+    expect((next.crop.right - next.crop.left) * 3000).toBeCloseTo(1000);
+    expect((next.crop.bottom - next.crop.top) * 2000).toBeCloseTo(1500);
   });
 
   it("shows every slider and the curve editor", () => {

@@ -203,6 +203,44 @@ private func image(_ url: URL) throws -> ImageFile {
     #expect(XMP.parseDouble("CropLeft", in: #"crs:CropLeft="3e-05""#) == 3e-05)
 }
 
+@Test func rotationIsTheDifferenceAgainstTheBaseOrientation() {
+    // A Lightroom sidecar for a portrait shot mirrors the file's own
+    // orientation without any user turn.
+    #expect(XMP.rotation(fromXMP: 6, base: 6) == 0)
+    #expect(XMP.rotation(fromXMP: 6, base: 1) == 90)
+    #expect(XMP.rotation(fromXMP: 3, base: 6) == 90)
+    #expect(XMP.rotation(fromXMP: 1, base: 6) == 270)
+    #expect(XMP.rotation(fromXMP: nil, base: 6) == 0)
+    #expect(XMP.rotation(fromXMP: 2, base: 1) == 0, "mirrored orientations pass through as no turn")
+
+    #expect(XMP.absoluteOrientation(rotation: 90, base: 1) == 6)
+    #expect(XMP.absoluteOrientation(rotation: 90, base: 6) == 3)
+    #expect(XMP.absoluteOrientation(rotation: 270, base: 6) == 1)
+
+    let sidecar = #"<rdf:Description tiff:Orientation="6" crs:Exposure2012="0.5"/>"#
+    #expect(XMP.parseEdit(sidecar, isRaw: true, baseOrientation: 1).rotation == 90)
+    #expect(XMP.parseEdit(sidecar, isRaw: true, baseOrientation: 6).rotation == 0)
+}
+
+@Test func sidecarRotationRoundTrip() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00010.ARW")
+    try Data("fake".utf8).write(to: arw)
+
+    // The fake ARW has no readable orientation, so base is 1 and the
+    // absolute tag equals the user turn.
+    try XMP.writeEdit(Edit(rotation: 90), file: try image(arw), tool: .shared)
+    let sidecar = XMP.sidecarURL(forImagePath: arw.path)
+    #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: sidecar) == "6")
+    #expect(XMP.readEdit(file: try image(arw)).rotation == 90)
+
+    try XMP.writeEdit(.identity, file: try image(arw), tool: .shared)
+    #expect(try exiftoolTag("-XMP-tiff:Orientation", of: sidecar).isEmpty)
+    #expect(XMP.readEdit(file: try image(arw)) == .identity)
+}
+
 /// Regression: `-TAG= -TAG+=…` appends to the existing list in exiftool, so
 /// every scrub grew the tone curve until a sidecar held thousands of points
 /// and writes took seconds. Rewrites must replace the list wholesale.

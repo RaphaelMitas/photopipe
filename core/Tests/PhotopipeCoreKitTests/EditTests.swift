@@ -106,6 +106,12 @@ private let fixtureCases: [(name: String, points: [CurvePoint])] = [
     // stay valid: nil crop may not appear in the encoded JSON.
     let json = String(decoding: try JSONEncoder().encode(Edit(exposure: 1)), as: UTF8.self)
     #expect(!json.contains("crop"))
+    #expect(!json.contains("rotation"))
+
+    let turned = try JSONDecoder().decode(Edit.self, from: JSONEncoder().encode(Edit(rotation: 90)))
+    #expect(turned.rotation == 90)
+    #expect(!turned.isIdentity)
+    #expect(Edit(rotation: 45).normalizedRotation == 0, "off-grid rotations are ignored")
 }
 
 @Test func cacheKeyIsDeterministic() {

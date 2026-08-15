@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
+import { commitDraft, draftFromEdit } from "@/components/CropTool";
 import { editKey, identityEdit, isIdentityEdit } from "./core";
 import {
+  aspectRatioFor,
   centeredAspectCrop,
   constrainCrop,
   cropInsideImage,
   fitRect,
   fullCrop,
   isFullCrop,
+  rotatedSize,
+  transposeCrop,
+  turnCrop,
 } from "./crop";
 
 describe("fitRect", () => {
@@ -66,6 +71,73 @@ describe("centeredAspectCrop", () => {
     expect(wide.right).toBe(1);
     const height = (wide.bottom - wide.top) * 2000;
     expect(3000 / height).toBeCloseTo(16 / 9);
+  });
+});
+
+describe("turn, transpose, and ratio helpers", () => {
+  it("rotatedSize swaps dimensions on quarter turns", () => {
+    expect(rotatedSize(3000, 2000, 0)).toEqual([3000, 2000]);
+    expect(rotatedSize(3000, 2000, 90)).toEqual([2000, 3000]);
+    expect(rotatedSize(3000, 2000, 180)).toEqual([3000, 2000]);
+    expect(rotatedSize(3000, 2000, 270)).toEqual([2000, 3000]);
+  });
+
+  it("turnCrop follows the photo through a clockwise turn", () => {
+    // The left half of the frame becomes the top half.
+    expect(turnCrop({ left: 0, top: 0, right: 0.5, bottom: 1 })).toEqual({
+      left: 0,
+      top: 0,
+      right: 1,
+      bottom: 0.5,
+    });
+    // Four turns land back where they started.
+    const rect = { left: 0.1, top: 0.2, right: 0.7, bottom: 0.9 };
+    const four = turnCrop(turnCrop(turnCrop(turnCrop(rect))));
+    expect(four.left).toBeCloseTo(rect.left);
+    expect(four.top).toBeCloseTo(rect.top);
+    expect(four.right).toBeCloseTo(rect.right);
+    expect(four.bottom).toBeCloseTo(rect.bottom);
+  });
+
+  it("transposeCrop swaps pixel dimensions about the center", () => {
+    const centered = transposeCrop(
+      { left: 0.25, top: 0.25, right: 0.75, bottom: 0.75 },
+      0,
+      3000,
+      2000,
+    );
+    expect((centered.right - centered.left) * 3000).toBeCloseTo(1000);
+    expect((centered.bottom - centered.top) * 2000).toBeCloseTo(1500);
+    expect(centered.left + centered.right).toBeCloseTo(1);
+
+    // Near an edge the transposed rect gets nudged back inside.
+    const nudged = transposeCrop(
+      { left: 0, top: 0.4, right: 0.4, bottom: 0.6 },
+      0,
+      1000,
+      1000,
+    );
+    expect(nudged.left).toBeGreaterThanOrEqual(0);
+    expect(nudged.top).toBeGreaterThanOrEqual(0);
+    expect(nudged.bottom).toBeLessThanOrEqual(1);
+    expect(cropInsideImage(nudged, 0, 1000, 1000)).toBe(true);
+  });
+
+  it("aspectRatioFor resolves original, transposed, presets, and flips", () => {
+    expect(aspectRatioFor("free", false, 3000, 2000)).toBeNull();
+    expect(aspectRatioFor("original", false, 3000, 2000)).toBeCloseTo(1.5);
+    expect(aspectRatioFor("transposed", false, 3000, 2000)).toBeCloseTo(2 / 3);
+    expect(aspectRatioFor("4:5", false, 3000, 2000)).toBeCloseTo(0.8);
+    expect(aspectRatioFor("4:5", true, 3000, 2000)).toBeCloseTo(1.25);
+  });
+
+  it("a turn-only draft commits rotation without a crop rect", () => {
+    const turned = { ...draftFromEdit(identityEdit), rotation: 90 };
+    expect(commitDraft(turned)).toEqual({
+      crop: null,
+      cropAngle: 0,
+      rotation: 90,
+    });
   });
 });
 

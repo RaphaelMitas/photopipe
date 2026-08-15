@@ -7,7 +7,13 @@ import {
   useState,
 } from "react";
 import { type Edit, fileSrc, type ImageFile } from "@/lib/core";
-import { type Box, centeredAspectCrop, fitRect, fullCrop } from "@/lib/crop";
+import {
+  aspectRatioFor,
+  type Box,
+  fitRect,
+  fullCrop,
+  rotatedSize,
+} from "@/lib/crop";
 import {
   useFullRender,
   usePrefetchRender,
@@ -21,15 +27,7 @@ import {
   type ZoomState,
   zoomAt,
 } from "@/lib/zoom";
-import {
-  aspectRatio,
-  type CropDraft,
-  CropOverlay,
-  CropToolbar,
-  commitDraft,
-  draftFromEdit,
-  draftWithAngle,
-} from "./CropTool";
+import { type CropDraft, CropOverlay, capturePointer } from "./CropTool";
 import { Filmstrip, type FilmstripMode } from "./Filmstrip";
 
 export const EXPOSURE_STEP = 0.25;
@@ -40,8 +38,10 @@ type Props = {
   index: number;
   edit: Edit;
   filmstrip: FilmstripMode;
-  cropping: boolean;
-  onCroppingChange: (cropping: boolean) => void;
+  cropDraft: CropDraft | null;
+  onCropDraft: (draft: CropDraft) => void;
+  onApplyCrop: () => void;
+  onCancelCrop: () => void;
   onEditChange: (edit: Edit) => void;
   onNavigate: (index: number) => void;
   onClose: () => void;
@@ -53,8 +53,10 @@ export function Loupe({
   index,
   edit,
   filmstrip,
-  cropping,
-  onCroppingChange,
+  cropDraft,
+  onCropDraft,
+  onApplyCrop,
+  onCancelCrop,
   onEditChange,
   onNavigate,
   onClose,
@@ -62,11 +64,17 @@ export function Loupe({
 }: Props) {
   const image = images[index];
   const deferredEdit = useDeferredValue(edit);
+  const cropping = cropDraft !== null;
 
+  // While cropping the stage shows the full turned frame, uncropped and
+  // unstraightened; the crop and the CSS angle preview sit on top.
+  const draftRotation = cropDraft?.rotation ?? 0;
   const previewEdit = useMemo(
     () =>
-      cropping ? { ...deferredEdit, crop: null, cropAngle: 0 } : deferredEdit,
-    [cropping, deferredEdit],
+      cropping
+        ? { ...deferredEdit, crop: null, cropAngle: 0, rotation: draftRotation }
+        : deferredEdit,
+    [cropping, deferredEdit, draftRotation],
   );
   const render = useRender(image, previewEdit);
   const thumb = useThumbnail(image);
@@ -89,11 +97,16 @@ export function Loupe({
   }, []);
 
   // Pixel size of what the stage currently shows: the crop while viewing,
-  // the full frame while cropping.
+  // the full turned frame while cropping.
+  const rotation = cropping ? draftRotation : (edit.rotation ?? 0);
+  const [displayWidth, displayHeight] = rotatedSize(
+    image?.width ?? 0,
+    image?.height ?? 0,
+    rotation,
+  );
   const crop = cropping ? null : (edit.crop ?? null);
-  const pixelWidth = (crop ? crop.right - crop.left : 1) * (image?.width ?? 0);
-  const pixelHeight =
-    (crop ? crop.bottom - crop.top : 1) * (image?.height ?? 0);
+  const pixelWidth = (crop ? crop.right - crop.left : 1) * displayWidth;
+  const pixelHeight = (crop ? crop.bottom - crop.top : 1) * displayHeight;
   const photoBox = useMemo(
     () => fitRect(stage.width, stage.height, pixelWidth, pixelHeight),
     [stage, pixelWidth, pixelHeight],
@@ -108,29 +121,6 @@ export function Loupe({
     resetKey: `${image?.path}|${cropping}`,
   });
   const fullRender = useFullRender(image, previewEdit, zoom.state !== null);
-
-  const [draft, setDraft] = useState<CropDraft | null>(null);
-  const [aspect, setAspect] = useState("free");
-  // biome-ignore lint/correctness/useExhaustiveDependencies: initialize the draft only on entry, not per keystroke
-  useEffect(() => {
-    if (cropping && image) {
-      setDraft(draftFromEdit(edit));
-      setAspect("free");
-    } else {
-      setDraft(null);
-    }
-  }, [cropping, image?.path]);
-
-  const commitCrop = useCallback(() => {
-    if (!draft) return;
-    onEditChange({ ...edit, ...commitDraft(draft) });
-    onCroppingChange(false);
-  }, [draft, edit, onEditChange, onCroppingChange]);
-
-  const cancelCrop = useCallback(
-    () => onCroppingChange(false),
-    [onCroppingChange],
-  );
 
   useEffect(() => {
     if (!image) return;
@@ -152,10 +142,10 @@ export function Loupe({
         ) {
           return;
         }
-        if (event.key === "Escape") cancelCrop();
+        if (event.key === "Escape") onCancelCrop();
         // A focused button (Cancel, Reset) acts on Enter itself.
         if (event.key === "Enter" && !target?.closest?.("button")) {
-          commitCrop();
+          onApplyCrop();
         }
         return;
       }
@@ -206,8 +196,8 @@ export function Loupe({
     index,
     edit,
     cropping,
-    commitCrop,
-    cancelCrop,
+    onApplyCrop,
+    onCancelCrop,
     onClose,
     onEditChange,
     onNavigate,
@@ -223,18 +213,23 @@ export function Loupe({
     cropping && render.isPlaceholderData ? undefined : render.data;
   const src =
     zoom.state !== null && fullRender.data ? fullRender.data : freshRender;
-  const ratioFor = (value: string) =>
-    value === "original" ? image.width / image.height : aspectRatio(value);
-  const ratio = ratioFor(aspect);
+  const ratio = cropDraft
+    ? aspectRatioFor(
+        cropDraft.aspect,
+        cropDraft.flipped,
+        displayWidth,
+        displayHeight,
+      )
+    : null;
 
-  const cropCenter = draft
+  const cropCenter = cropDraft
     ? {
         x:
           photoBox.x +
-          ((draft.crop.left + draft.crop.right) / 2) * photoBox.width,
+          ((cropDraft.crop.left + cropDraft.crop.right) / 2) * photoBox.width,
         y:
           photoBox.y +
-          ((draft.crop.top + draft.crop.bottom) / 2) * photoBox.height,
+          ((cropDraft.crop.top + cropDraft.crop.bottom) / 2) * photoBox.height,
       }
     : null;
 
@@ -243,21 +238,23 @@ export function Loupe({
       <div
         ref={stageRef}
         className="relative min-h-0 flex-1 touch-none overflow-hidden"
-        {...(cropping ? {} : zoom.stageProps)}
+        {...(cropDraft
+          ? {
+              onDoubleClick: () => onCropDraft({ ...cropDraft, angle: 0 }),
+            }
+          : zoom.stageProps)}
       >
         <div
           className="absolute inset-0"
           style={{
-            transformOrigin:
-              cropping && cropCenter
-                ? `${cropCenter.x}px ${cropCenter.y}px`
-                : "0 0",
-            transform:
-              cropping && draft
-                ? `rotate(${draft.angle}deg)`
-                : zoom.state
-                  ? `translate(${zoom.state.tx}px, ${zoom.state.ty}px) scale(${zoom.state.scale})`
-                  : undefined,
+            transformOrigin: cropCenter
+              ? `${cropCenter.x}px ${cropCenter.y}px`
+              : "0 0",
+            transform: cropDraft
+              ? `rotate(${cropDraft.angle}deg)`
+              : zoom.state
+                ? `translate(${zoom.state.tx}px, ${zoom.state.ty}px) scale(${zoom.state.scale})`
+                : undefined,
           }}
         >
           {src ? (
@@ -282,15 +279,23 @@ export function Loupe({
             </div>
           )}
         </div>
-        {cropping && draft && photoBox.width > 0 && (
+        {cropDraft && photoBox.width > 0 && (
           <CropOverlay
             photoBox={photoBox}
-            draft={draft}
-            imageWidth={image.width}
-            imageHeight={image.height}
+            draft={cropDraft}
+            imageWidth={displayWidth}
+            imageHeight={displayHeight}
             ratio={ratio}
-            onChange={setDraft}
+            onChange={onCropDraft}
           />
+        )}
+        {cropDraft && (
+          <div
+            data-testid="crop-angle-hud"
+            className="absolute top-3 left-1/2 -translate-x-1/2 rounded-md border border-border bg-background/85 px-2.5 py-1 font-mono text-[11px] backdrop-blur-sm"
+          >
+            {`∠ ${cropDraft.angle > 0 ? "+" : ""}${cropDraft.angle.toFixed(1)}° · double-click to reset`}
+          </div>
         )}
         {!cropping && zoom.state !== null && (
           <>
@@ -321,52 +326,13 @@ export function Loupe({
           <div className="absolute top-3 right-3 h-2 w-2 animate-pulse rounded-full bg-primary" />
         )}
       </div>
-      {cropping && draft ? (
-        <CropToolbar
-          draft={draft}
-          aspect={aspect}
-          landscape={image.width >= image.height}
-          onAspect={(next) => {
-            setAspect(next);
-            const nextRatio = ratioFor(next);
-            if (nextRatio !== null) {
-              setDraft(
-                (current) =>
-                  current && {
-                    ...current,
-                    crop: centeredAspectCrop(
-                      nextRatio,
-                      current.angle,
-                      image.width,
-                      image.height,
-                    ),
-                  },
-              );
-            }
-          }}
-          onAngle={(angle) =>
-            setDraft(
-              (current) =>
-                current &&
-                draftWithAngle(current, angle, image.width, image.height),
-            )
-          }
-          onReset={() => {
-            setAspect("free");
-            setDraft({ crop: fullCrop, angle: 0 });
-          }}
-          onCancel={cancelCrop}
-          onDone={commitCrop}
+      {filmstrip !== "off" && (
+        <Filmstrip
+          images={images}
+          index={index}
+          mode={filmstrip}
+          onNavigate={onNavigate}
         />
-      ) : (
-        filmstrip !== "off" && (
-          <Filmstrip
-            images={images}
-            index={index}
-            mode={filmstrip}
-            onNavigate={onNavigate}
-          />
-        )
       )}
     </div>
   );
@@ -518,7 +484,7 @@ function useZoom({
     onPointerDown: (event: React.PointerEvent) => {
       if (!state || event.button !== 0) return;
       drag.current = { x: event.clientX, y: event.clientY };
-      event.currentTarget.setPointerCapture(event.pointerId);
+      capturePointer(event);
     },
     onPointerMove: (event: React.PointerEvent) => {
       const last = drag.current;
@@ -582,7 +548,7 @@ function Navigator({
       style={{ width: box.width, height: box.height }}
       onPointerDown={(event) => {
         dragging.current = true;
-        event.currentTarget.setPointerCapture(event.pointerId);
+        capturePointer(event);
         centerFrom(event);
       }}
       onPointerMove={(event) => {

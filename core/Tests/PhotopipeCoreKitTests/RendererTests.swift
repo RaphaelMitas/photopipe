@@ -248,6 +248,41 @@ private func tempCacheDir() -> URL {
     #expect(pixel[2] < 60, "blue must have rotated to the bottom, got blue \(pixel[2])")
 }
 
+@Test func rotationTurnsClockwiseAndCropFollowsTheTurnedFrame() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+
+    // 64x64, left half red, right half blue.
+    let red = CIImage(color: CIColor(red: 1, green: 0, blue: 0))
+        .cropped(to: CGRect(x: 0, y: 0, width: 64, height: 64))
+    let blue = CIImage(color: CIColor(red: 0, green: 0, blue: 1))
+        .cropped(to: CGRect(x: 32, y: 0, width: 32, height: 64))
+    let jpegURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("photopipe-turn-\(UUID().uuidString).jpg")
+    defer { try? FileManager.default.removeItem(at: jpegURL) }
+    try CIContext().writeJPEGRepresentation(
+        of: blue.composited(over: red), to: jpegURL,
+        colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: jpegURL)
+
+    // 90° clockwise puts the red left half on top; cropping the top half of
+    // the TURNED frame must keep it.
+    let turned = try renderer.render(
+        file: file,
+        edit: Edit(crop: CropRect(left: 0, top: 0, right: 1, bottom: 0.5), rotation: 90),
+        maxPixel: 64)
+    guard let output = CIImage(contentsOf: turned) else {
+        throw Renderer.RenderError.unreadable(turned.path)
+    }
+    #expect(output.extent.width == 64)
+    #expect(output.extent.height == 32)
+    let channels = try meanChannels(of: turned)
+    #expect(channels.red > 180, "the turned frame's top half is red, got \(channels)")
+    #expect(channels.blue < 60)
+}
+
 @Test func cropFollowsExifOrientation() throws {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }

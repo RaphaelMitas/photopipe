@@ -32,6 +32,9 @@ public struct CropRect: Codable, Equatable, Sendable {
 /// for embedded formats where the as-shot neutral is unknowable.
 /// `cropAngle` is degrees, positive rotating the photo clockwise on screen
 /// about the crop rect's center while the rect stays axis-aligned.
+/// `rotation` is a whole-photo turn in clockwise degrees (0/90/180/270) on
+/// top of the file's own orientation; the crop rect is defined against the
+/// turned frame.
 public struct Edit: Codable, Equatable, Sendable {
     public var exposure: Double
     public var highlights: Double
@@ -46,12 +49,13 @@ public struct Edit: Codable, Equatable, Sendable {
     public var curveBlue: [CurvePoint]
     public var crop: CropRect?
     public var cropAngle: Double
+    public var rotation: Int
 
     public static let identity = Edit()
 
     enum CodingKeys: String, CodingKey {
         case exposure, highlights, shadows, temperature, tint, vibrance, saturation
-        case curveRGB, curveRed, curveGreen, curveBlue, crop, cropAngle
+        case curveRGB, curveRed, curveGreen, curveBlue, crop, cropAngle, rotation
     }
 
     public init(
@@ -60,7 +64,7 @@ public struct Edit: Codable, Equatable, Sendable {
         vibrance: Double = 0, saturation: Double = 0,
         curveRGB: [CurvePoint] = [], curveRed: [CurvePoint] = [],
         curveGreen: [CurvePoint] = [], curveBlue: [CurvePoint] = [],
-        crop: CropRect? = nil, cropAngle: Double = 0
+        crop: CropRect? = nil, cropAngle: Double = 0, rotation: Int = 0
     ) {
         self.exposure = exposure
         self.highlights = highlights
@@ -75,6 +79,7 @@ public struct Edit: Codable, Equatable, Sendable {
         self.curveBlue = curveBlue
         self.crop = crop
         self.cropAngle = cropAngle
+        self.rotation = rotation
     }
 
     public init(from decoder: Decoder) throws {
@@ -92,6 +97,7 @@ public struct Edit: Codable, Equatable, Sendable {
         curveBlue = try container.decodeIfPresent([CurvePoint].self, forKey: .curveBlue) ?? []
         crop = try container.decodeIfPresent(CropRect.self, forKey: .crop)
         cropAngle = try container.decodeIfPresent(Double.self, forKey: .cropAngle) ?? 0
+        rotation = try container.decodeIfPresent(Int.self, forKey: .rotation) ?? 0
     }
 
     /// Crop fields are omitted at their defaults so uncropped edits keep the
@@ -113,6 +119,9 @@ public struct Edit: Codable, Equatable, Sendable {
         if cropAngle != 0 {
             try container.encode(cropAngle, forKey: .cropAngle)
         }
+        if rotation != 0 {
+            try container.encode(rotation, forKey: .rotation)
+        }
     }
 
     public var isIdentity: Bool {
@@ -121,6 +130,11 @@ public struct Edit: Codable, Equatable, Sendable {
 
     public var hasCropComponent: Bool {
         crop != nil || cropAngle != 0
+    }
+
+    /// 0/90/180/270 clockwise; anything else from a hostile source becomes 0.
+    public var normalizedRotation: Int {
+        [90, 180, 270].contains(rotation) ? rotation : 0
     }
 
     public var hasToneComponent: Bool {

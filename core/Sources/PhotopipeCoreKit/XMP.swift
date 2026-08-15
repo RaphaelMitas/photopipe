@@ -69,7 +69,7 @@ public enum XMP {
             }
     }
 
-    static func parseEdit(_ text: String, isRaw: Bool) -> Edit {
+    static func parseEdit(_ text: String, isRaw: Bool, baseOrientation: Int = 1) -> Edit {
         Edit(
             exposure: parseDouble("Exposure2012", in: text) ?? 0,
             highlights: parseDouble("Highlights2012", in: text) ?? 0,
@@ -85,7 +85,37 @@ public enum XMP {
             crop: parseHasCrop(in: text) == false
                 ? nil : cropRect { parseDouble("Crop\($0)", in: text) },
             cropAngle: parseHasCrop(in: text) == false
-                ? 0 : parseDouble("CropAngle", in: text) ?? 0)
+                ? 0 : parseDouble("CropAngle", in: text) ?? 0,
+            rotation: rotation(fromXMP: parseOrientation(in: text), base: baseOrientation))
+    }
+
+    // tiff:Orientation stores the ABSOLUTE display orientation (Lightroom
+    // mirrors the file's own orientation there even without a user turn), so
+    // the model's additive rotation is the difference against the base.
+    // Only the rotation subgroup 1/6/3/8 is handled; mirrored values pass
+    // through as "no turn".
+    private static let orientationDegrees = [1: 0, 6: 90, 3: 180, 8: 270]
+
+    static func rotation(fromXMP xmp: Int?, base: Int) -> Int {
+        guard let xmp, let xmpDegrees = orientationDegrees[xmp] else { return 0 }
+        let baseDegrees = orientationDegrees[base] ?? 0
+        return (xmpDegrees - baseDegrees + 360) % 360
+    }
+
+    static func absoluteOrientation(rotation: Int, base: Int) -> Int {
+        let baseDegrees = orientationDegrees[base] ?? 0
+        let total = (baseDegrees + rotation + 360) % 360
+        return orientationDegrees.first { $0.value == total }?.key ?? 1
+    }
+
+    static func parseOrientation(in text: String) -> Int? {
+        if let match = text.firstMatch(of: /tiff:Orientation\s*=\s*"([1368])"/) {
+            return Int(match.1)
+        }
+        if let match = text.firstMatch(of: /<tiff:Orientation>\s*([1368])\s*<\/tiff:Orientation>/) {
+            return Int(match.1)
+        }
+        return nil
     }
 
     /// Lightroom's crop-reset keeps the Crop* values and flips HasCrop to
@@ -105,6 +135,18 @@ public enum XMP {
     }
 
     private static let crsNamespace = "http://ns.adobe.com/camera-raw-settings/1.0/"
+    private static let tiffNamespace = "http://ns.adobe.com/tiff/1.0/"
+
+    /// The file's own EXIF orientation (1 when unreadable), the baseline the
+    /// absolute tiff:Orientation is compared against.
+    static func baseOrientation(at url: URL) -> Int {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil)
+                as? [String: Any],
+            let value = properties[kCGImagePropertyOrientation as String] as? Int
+        else { return 1 }
+        return value
+    }
 
     static func readEmbedded(at url: URL, isRaw: Bool) -> (rating: Int?, edit: Edit) {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
@@ -114,6 +156,7 @@ public enum XMP {
         var scalars: [String: Double] = [:]
         var curves: [String: [CurvePoint]] = [:]
         var hasCrop: Bool?
+        var xmpOrientation: Int?
         CGImageMetadataEnumerateTagsUsingBlock(metadata, nil, nil) { _, tag in
             guard let name = CGImageMetadataTagCopyName(tag) as String? else { return true }
             let namespace = CGImageMetadataTagCopyNamespace(tag) as String?
@@ -121,6 +164,10 @@ public enum XMP {
             if name == "Rating" && namespace == "http://ns.adobe.com/xap/1.0/" {
                 if let text = value as? String { rating = Int(text) }
                 if let number = value as? Int { rating = number }
+            }
+            if name == "Orientation" && namespace == tiffNamespace {
+                if let text = value as? String { xmpOrientation = Int(text) }
+                if let number = value as? Int { xmpOrientation = number }
             }
             guard namespace == crsNamespace else { return true }
             if name.hasPrefix("ToneCurvePV2012") {
@@ -148,7 +195,8 @@ public enum XMP {
             curveGreen: curves["ToneCurvePV2012Green"] ?? [],
             curveBlue: curves["ToneCurvePV2012Blue"] ?? [],
             crop: hasCrop == false ? nil : cropRect { scalars["Crop\($0)"] },
-            cropAngle: hasCrop == false ? 0 : scalars["CropAngle"] ?? 0)
+            cropAngle: hasCrop == false ? 0 : scalars["CropAngle"] ?? 0,
+            rotation: rotation(fromXMP: xmpOrientation, base: baseOrientation(at: url)))
         return (rating, edit)
     }
 
@@ -182,7 +230,9 @@ public enum XMP {
                 let text = try? String(
                     contentsOf: sidecarURL(forImagePath: file.path), encoding: .utf8)
             else { return .identity }
-            return parseEdit(text, isRaw: file.isRaw)
+            return parseEdit(
+                text, isRaw: file.isRaw,
+                baseOrientation: baseOrientation(at: URL(fileURLWithPath: file.path)))
         }
         return embeddedCached(for: file).edit
     }
@@ -274,6 +324,16 @@ public enum XMP {
             edit.cropAngle == 0
                 ? "-XMP-crs:CropAngle=" : "-XMP-crs:CropAngle=\(plainDecimal(edit.cropAngle))")
         args.append(edit.hasCropComponent ? "-XMP-crs:HasCrop=True" : "-XMP-crs:HasCrop=")
+        // Absolute display orientation, like Lightroom writes it. The `#`
+        // suffix keeps exiftool in numeric mode for this tag.
+        if edit.normalizedRotation == 0 {
+            args.append("-XMP-tiff:Orientation=")
+        } else {
+            let absolute = absoluteOrientation(
+                rotation: edit.normalizedRotation,
+                base: baseOrientation(at: URL(fileURLWithPath: file.path)))
+            args.append("-XMP-tiff:Orientation#=\(absolute)")
+        }
         curve("ToneCurvePV2012", edit.curveRGB)
         curve("ToneCurvePV2012Red", edit.curveRed)
         curve("ToneCurvePV2012Green", edit.curveGreen)
