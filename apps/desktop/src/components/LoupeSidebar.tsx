@@ -1,5 +1,6 @@
 import { ChevronLeft } from "lucide-react";
 import type { ImageFile } from "@/lib/core";
+import { instinctScore } from "@/lib/instinct";
 import type { FilmstripMode } from "./Filmstrip";
 import { Photopipe } from "./Photopipe";
 import {
@@ -28,6 +29,7 @@ type Props = {
   image: ImageFile;
   position: number;
   count: number;
+  betterThan: number | null;
   filmstrip: FilmstripMode;
   onFilmstrip: (mode: FilmstripMode) => void;
   ratingCounts: number[];
@@ -43,6 +45,7 @@ export function LoupeSidebar({
   image,
   position,
   count,
+  betterThan,
   filmstrip,
   onFilmstrip,
   ratingCounts,
@@ -53,6 +56,8 @@ export function LoupeSidebar({
   onRate,
   onBackToGrid,
 }: Props) {
+  const instinct = image.score == null ? null : instinctScore(image.score);
+
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
@@ -123,6 +128,25 @@ export function LoupeSidebar({
               onRate={(rating) => onRate(image.path, rating)}
               className="mt-1 text-base"
             />
+            {instinct !== null && (
+              <div className="mt-2 flex flex-col gap-1" data-testid="instinct">
+                <div className="flex justify-between font-mono text-xs">
+                  <span className="text-muted-foreground">Instinct</span>
+                  <span>{instinct}</span>
+                </div>
+                <div className="h-1 rounded-sm bg-foreground/10">
+                  <div
+                    className="h-full rounded-sm bg-primary"
+                    style={{ width: `${instinct}%` }}
+                  />
+                </div>
+                {betterThan !== null && (
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    higher than {betterThan}% of this project
+                  </span>
+                )}
+              </div>
+            )}
           </SidebarGroupContent>
         </SidebarGroup>
 

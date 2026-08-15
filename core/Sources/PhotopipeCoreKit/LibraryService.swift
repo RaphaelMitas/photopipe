@@ -28,6 +28,7 @@ public final class LibraryService: @unchecked Sendable {
     private var index: SQLiteIndex?
     private let thumbnailer: Thumbnailer
     private let renderer: Renderer
+    private let scorer: Scorer
     private let rescanQueue = DispatchQueue(label: "photopipe.rescan")
     /// One connection, one writer: enrichment batches and full saves both land
     /// here so they never interleave on the same sqlite handle.
@@ -37,10 +38,12 @@ public final class LibraryService: @unchecked Sendable {
 
     public init(
         thumbnailer: Thumbnailer = Thumbnailer(cacheDir: Thumbnailer.defaultCacheDir()),
-        renderer: Renderer = Renderer(cacheDir: Renderer.defaultCacheDir())
+        renderer: Renderer = Renderer(cacheDir: Renderer.defaultCacheDir()),
+        scorer: Scorer = Scorer()
     ) {
         self.thumbnailer = thumbnailer
         self.renderer = renderer
+        self.scorer = scorer
     }
 
     public static func defaultIndexPath() -> String {
@@ -74,6 +77,7 @@ public final class LibraryService: @unchecked Sendable {
         lock.unlock()
 
         store(scanned, root: path, in: index)
+        useScorer(with: index)
 
         let newWatcher = Watcher(path: path, queue: rescanQueue) { [weak self] in
             self?.scheduleRescan()
@@ -92,6 +96,22 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     public func listImages(shoot: String) throws -> [ImageFile] {
+        let images = try images(inShoot: shoot)
+        let scores = scorer.scores(for: images)
+        return images.map { image in
+            scores[image.path].map { image.with(score: $0) } ?? image
+        }
+    }
+
+    public func scoreShoot(shoot: String) throws -> Scorer.Progress {
+        scorer.start(shoot: shoot, files: try images(inShoot: shoot))
+    }
+
+    public func scoreStatus(shoot: String) throws -> Scorer.Progress {
+        scorer.progress(shoot: shoot, files: try images(inShoot: shoot))
+    }
+
+    private func images(inShoot shoot: String) throws -> [ImageFile] {
         lock.lock()
         guard root != nil else {
             lock.unlock()
@@ -591,6 +611,16 @@ public final class LibraryService: @unchecked Sendable {
     /// Writes the file list out and hands whatever is still a placeholder to
     /// the enricher. Both happen on the index queue, in that order, so an
     /// interrupted session still starts warm next time.
+    /// The scorer keeps its own copy of the cache and hands results back here to
+    /// be written, so the sqlite handle stays on one queue with the enricher.
+    private func useScorer(with index: SQLiteIndex?) {
+        let cached = indexQueue.sync { (try? index?.loadScores()) ?? [:] }
+        let queue = indexQueue
+        scorer.use(cache: cached) { rows in
+            queue.async { try? index?.saveScores(rows) }
+        }
+    }
+
     private func store(_ scanned: LibrarySnapshot, root: String, in index: SQLiteIndex?) {
         indexQueue.async { [weak self] in
             try? index?.save(root: root, filesByShoot: scanned.imagesByShoot)

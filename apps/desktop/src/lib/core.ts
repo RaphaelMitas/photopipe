@@ -106,8 +106,18 @@ export type ImageFile = {
   edit: Edit;
   width: number;
   height: number;
+  // Vision's aesthetic score, -1..1. The core omits it entirely for a photo it
+  // has not rated, so read it through `normalizeImage` and never off the wire.
+  score?: number | null;
   enriched: boolean;
 };
+
+/// The core leaves nulls out when it encodes, so an unrated photo arrives with
+/// no `score` at all. Everything downstream compares against null, so the field
+/// is filled in here, once, where the images come in.
+export function normalizeImage(image: ImageFile): ImageFile {
+  return image.score === undefined ? { ...image, score: null } : image;
+}
 
 export function isRawFile(file: { ext: string }): boolean {
   return ["arw", "dng", "cr2", "cr3", "nef", "raf", "orf", "rw2"].includes(

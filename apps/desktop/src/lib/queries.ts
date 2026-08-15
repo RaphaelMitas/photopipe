@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getVersion } from "@tauri-apps/api/app";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -10,21 +9,13 @@ import {
   editKey,
   type ImageFile,
   isRawFile,
+  normalizeImage,
   type SetEditResult,
   type SetRatingResult,
   type Shoot,
   type StatusResult,
   type WhiteBalanceResult,
 } from "./core";
-
-export function useAppVersion(enabled: boolean) {
-  return useQuery({
-    queryKey: ["appVersion"],
-    queryFn: getVersion,
-    enabled,
-    staleTime: Number.POSITIVE_INFINITY,
-  });
-}
 
 export function useShoots(enabled: boolean) {
   return useQuery({
@@ -39,10 +30,60 @@ export function useImages(shoot: string | null) {
   return useQuery({
     queryKey: ["images", shoot],
     queryFn: async () =>
-      (await coreRequest<{ images: ImageFile[] }>("listImages", { shoot }))
-        .images,
+      (
+        await coreRequest<{ images: ImageFile[] }>("listImages", { shoot })
+      ).images.map(normalizeImage),
     enabled: shoot !== null,
   });
+}
+
+export type ScoreProgress = {
+  done: number;
+  total: number;
+  running: boolean;
+};
+
+const RATED_OFFER_MS = 8000;
+
+/// Scores reach the grid through `listImages`, so the images are refetched when
+/// the pass ends rather than on every tick. `justRated` is the short window
+/// afterwards where the browser can hand the sort over.
+///
+/// Every fetch asks the core to score, not just the first: starting a pass that
+/// has nothing left to do is free, and it is what picks up photos imported into
+/// a project that is already open.
+export function useScoring(shoot: string | null, enabled: boolean) {
+  const client = useQueryClient();
+  const wasRunning = useRef(false);
+  const [justRated, setJustRated] = useState(false);
+
+  const query = useQuery({
+    queryKey: ["scoring", shoot],
+    queryFn: () => coreRequest<ScoreProgress>("scoreShoot", { shoot }),
+    enabled: enabled && shoot !== null,
+    refetchInterval: (query) => (query.state.data?.running ? 1000 : false),
+  });
+
+  const running = query.data?.running ?? false;
+  const lastShoot = useRef(shoot);
+  useEffect(() => {
+    const finished = wasRunning.current && !running;
+    wasRunning.current = running;
+    if (lastShoot.current !== shoot) {
+      lastShoot.current = shoot;
+      setJustRated(false);
+      return;
+    }
+    if (!finished) return;
+    void client.invalidateQueries({ queryKey: ["images", shoot] });
+    setJustRated(true);
+    const timer = setTimeout(() => setJustRated(false), RATED_OFFER_MS);
+    return () => clearTimeout(timer);
+  }, [running, shoot, client]);
+
+  // Turning rating off mid-pass leaves a stale `running` in the cache, which
+  // would freeze the toolbar's progress line where it stopped.
+  return { progress: enabled ? (query.data ?? null) : null, justRated };
 }
 
 export function useThumbnail(
@@ -297,6 +338,7 @@ export function useImportFiles(shoot: string | null) {
         },
       );
       queryClient.invalidateQueries({ queryKey: ["images", shoot] });
+      queryClient.invalidateQueries({ queryKey: ["scoring", shoot] });
       queryClient.invalidateQueries({ queryKey: ["shoots"] });
     },
     onError: (error) => {
@@ -394,6 +436,9 @@ export function useLibrarySync(
           queryClient.invalidateQueries({ queryKey: ["shoots"] });
           for (const shoot of status.changedShoots ?? []) {
             queryClient.invalidateQueries({ queryKey: ["images", shoot] });
+            // Photos that arrived in a project you are looking at have to be
+            // rated too, and only a fresh scoreShoot picks them up.
+            queryClient.invalidateQueries({ queryKey: ["scoring", shoot] });
           }
           seen.current = status.generation;
         }

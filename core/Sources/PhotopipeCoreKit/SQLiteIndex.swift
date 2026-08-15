@@ -39,6 +39,10 @@ public final class SQLiteIndex: @unchecked Sendable {
             throw IndexError.open(String(cString: sqlite3_errmsg(db)))
         }
         try exec("PRAGMA journal_mode = WAL")
+        // A locked database is a reason to wait, not to conclude the file is
+        // corrupt: the recovery path below deletes it, and that would throw away
+        // every score ever computed.
+        sqlite3_busy_timeout(db, 3000)
         try exec(
             """
             CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -57,6 +61,13 @@ public final class SQLiteIndex: @unchecked Sendable {
                 sidecar_mtime REAL NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS files_shoot ON files(shoot);
+            CREATE TABLE IF NOT EXISTS scores (
+                path TEXT PRIMARY KEY,
+                score REAL,
+                mtime REAL NOT NULL,
+                size INTEGER NOT NULL,
+                version INTEGER NOT NULL
+            );
             """)
         let stored = try scalarInt("SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schema'")
         if let stored, stored != Self.schemaVersion {
@@ -210,5 +221,52 @@ public final class SQLiteIndex: @unchecked Sendable {
             filesByShoot[String(cString: shootText), default: []].append(record)
         }
         return (root, filesByShoot)
+    }
+
+    public func loadScores() throws -> [String: ScoreRow] {
+        var statement: OpaquePointer?
+        let sql = "SELECT path, score, mtime, size, version FROM scores"
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw IndexError.exec(String(cString: sqlite3_errmsg(db)))
+        }
+        defer { sqlite3_finalize(statement) }
+
+        var rows: [String: ScoreRow] = [:]
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let pathText = sqlite3_column_text(statement, 0) else { continue }
+            rows[String(cString: pathText)] = ScoreRow(
+                score: sqlite3_column_type(statement, 1) == SQLITE_NULL
+                    ? nil : sqlite3_column_double(statement, 1),
+                mtime: sqlite3_column_double(statement, 2),
+                size: sqlite3_column_int64(statement, 3),
+                version: Int(sqlite3_column_int64(statement, 4)))
+        }
+        return rows
+    }
+
+    public func saveScores(_ rows: [(String, ScoreRow)]) throws {
+        guard !rows.isEmpty else { return }
+        var statement: OpaquePointer?
+        let sql =
+            "INSERT OR REPLACE INTO scores (path, score, mtime, size, version) VALUES (?,?,?,?,?)"
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+            throw IndexError.exec(String(cString: sqlite3_errmsg(db)))
+        }
+        defer { sqlite3_finalize(statement) }
+        for (path, row) in rows {
+            sqlite3_reset(statement)
+            sqlite3_bind_text(statement, 1, path, -1, transientDestructor)
+            if let score = row.score {
+                sqlite3_bind_double(statement, 2, score)
+            } else {
+                sqlite3_bind_null(statement, 2)
+            }
+            sqlite3_bind_double(statement, 3, row.mtime)
+            sqlite3_bind_int64(statement, 4, row.size)
+            sqlite3_bind_int64(statement, 5, Int64(row.version))
+            guard sqlite3_step(statement) == SQLITE_DONE else {
+                throw IndexError.exec(String(cString: sqlite3_errmsg(db)))
+            }
+        }
     }
 }

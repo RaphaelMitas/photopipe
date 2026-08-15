@@ -2,7 +2,7 @@ import {
   ChevronLeft,
   Download,
   FolderOpen,
-  Info,
+  Settings,
   Settings2,
 } from "lucide-react";
 import type { Shoot } from "@/lib/core";
@@ -44,7 +44,7 @@ type Props = {
   onShowInfo: (show: boolean) => void;
   rootPath: string;
   onChangeRoot: () => void;
-  onAbout: () => void;
+  onSettings: () => void;
 };
 
 export function AppSidebar({
@@ -63,7 +63,7 @@ export function AppSidebar({
   onShowInfo,
   rootPath,
   onChangeRoot,
-  onAbout,
+  onSettings,
 }: Props) {
   return (
     <Sidebar collapsible="icon">
@@ -219,12 +219,12 @@ export function AppSidebar({
           <Button
             variant="ghost"
             size="icon"
-            data-testid="about-photopipe"
-            onClick={onAbout}
-            title="About Photopipe"
+            data-testid="open-settings"
+            onClick={onSettings}
+            title="Settings (⌘,)"
             className="size-7 text-muted-foreground"
           >
-            <Info />
+            <Settings />
           </Button>
         </div>
       </SidebarFooter>

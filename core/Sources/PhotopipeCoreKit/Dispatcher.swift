@@ -52,7 +52,8 @@ public final class Dispatcher {
             return .shutdown(.success(id: request.id, result: .object(["bye": .bool(true)])))
         case "setRoot", "listShoots", "listImages", "thumbnail", "render", "setRating",
             "setEdit", "whiteBalance", "status", "reveal", "trash", "exportFiles",
-            "createProject", "importFiles", "updateProject", "renameProject":
+            "createProject", "importFiles", "updateProject", "renameProject",
+            "scoreShoot", "scoreStatus":
             return .respond(libraryResponse(request))
         default:
             return .respond(
@@ -94,6 +95,21 @@ public final class Dispatcher {
                 let images = try library.listImages(shoot: shoot)
                 return .success(
                     id: request.id, result: .object(["images": try JSONValue(encoding: images)]))
+            case "scoreShoot", "scoreStatus":
+                guard let shoot = request.params?["shoot"]?.stringValue else {
+                    return .failure(id: request.id, code: "invalid_params", message: "shoot required")
+                }
+                let progress =
+                    request.method == "scoreShoot"
+                    ? try library.scoreShoot(shoot: shoot)
+                    : try library.scoreStatus(shoot: shoot)
+                return .success(
+                    id: request.id,
+                    result: .object([
+                        "done": .number(Double(progress.done)),
+                        "total": .number(Double(progress.total)),
+                        "running": .bool(progress.running),
+                    ]))
             case "thumbnail":
                 guard let path = request.params?["path"]?.stringValue else {
                     return .failure(id: request.id, code: "invalid_params", message: "path required")

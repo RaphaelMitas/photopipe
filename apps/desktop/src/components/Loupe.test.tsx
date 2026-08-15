@@ -171,6 +171,7 @@ describe("LoupeSidebar", () => {
             image={makeImages()[1]}
             position={2}
             count={3}
+            betterThan={null}
             filmstrip="thumbs"
             onFilmstrip={vi.fn()}
             ratingCounts={[3, 0, 0, 0, 0, 0]}
@@ -189,6 +190,43 @@ describe("LoupeSidebar", () => {
 
     fireEvent.click(screen.getByTestId("star-4"));
     expect(onRate).toHaveBeenCalledWith("/r/s/DSC00002.ARW", 4);
+  });
+
+  function renderSidebar(image: ImageFile, betterThan: number | null) {
+    render(
+      <TooltipProvider>
+        <SidebarProvider>
+          <LoupeSidebar
+            image={image}
+            position={2}
+            count={3}
+            betterThan={betterThan}
+            filmstrip="thumbs"
+            onFilmstrip={vi.fn()}
+            ratingCounts={[3, 0, 0, 0, 0, 0]}
+            ratingOp="gte"
+            onRatingOp={vi.fn()}
+            ratingStars={0}
+            onRatingStars={vi.fn()}
+            onRate={vi.fn()}
+            onBackToGrid={vi.fn()}
+          />
+        </SidebarProvider>
+      </TooltipProvider>,
+    );
+  }
+
+  it("shows the Instinct score out of 100 and where it stands", () => {
+    renderSidebar(makeImage("DSC00002.ARW", { score: 0.739 }), 95);
+    const instinct = screen.getByTestId("instinct");
+    expect(instinct).toHaveTextContent("Instinct");
+    expect(instinct).toHaveTextContent("87");
+    expect(instinct).toHaveTextContent("higher than 95% of this project");
+  });
+
+  it("says nothing about Instinct for a photo it could not rate", () => {
+    renderSidebar(makeImage("DSC00002.ARW", { score: null }), null);
+    expect(screen.queryByTestId("instinct")).not.toBeInTheDocument();
   });
 });
 

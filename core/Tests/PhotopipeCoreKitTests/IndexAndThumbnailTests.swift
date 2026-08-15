@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 
 @testable import PhotopipeCoreKit
 
-private func tempFile(_ name: String) -> String {
+func tempFile(_ name: String) -> String {
     URL(fileURLWithPath: NSTemporaryDirectory())
         .appendingPathComponent("photopipe-\(UUID().uuidString)-\(name)").path
 }
@@ -93,7 +93,7 @@ private let sampleFiles: [String: [ImageFile]] = [
 
 // MARK: - Thumbnailer
 
-private func makePNG(width: Int = 64, height: Int = 48) throws -> (ImageFile, URL) {
+func makePNG(width: Int = 64, height: Int = 48) throws -> (ImageFile, URL) {
     let path = tempFile("img.png")
     let url = URL(fileURLWithPath: path)
     let context = CGContext(
