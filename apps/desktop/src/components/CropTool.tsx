@@ -24,10 +24,8 @@ export type CropDraft = { crop: CropRect; angle: number };
 const LANDSCAPE_ASPECTS = ["3:2", "4:3", "5:4", "16:9", "16:10", "2:1"];
 const PORTRAIT_ASPECTS = ["2:3", "3:4", "4:5", "9:16", "10:16", "1:2"];
 
-/// "free", "1:1", or "width:height" straight from the dropdown.
-export type CropAspect = string;
-
-export function aspectRatio(aspect: CropAspect): number | null {
+/// `aspect` is "free" or "width:height" straight from the dropdown.
+export function aspectRatio(aspect: string): number | null {
   if (aspect === "free") return null;
   const [width, height] = aspect.split(":").map(Number);
   return width / height;
@@ -62,6 +60,10 @@ export function CropOverlay({
   } | null>(null);
 
   const valid = (crop: CropRect) =>
+    crop.left >= 0 &&
+    crop.top >= 0 &&
+    crop.right <= 1 &&
+    crop.bottom <= 1 &&
     crop.right - crop.left >= MIN_SIZE &&
     crop.bottom - crop.top >= MIN_SIZE &&
     cropInsideImage(crop, draft.angle, imageWidth, imageHeight);
@@ -94,15 +96,7 @@ export function CropOverlay({
         right: start.right + stepX,
         bottom: start.bottom + stepY,
       };
-      if (
-        crop.left >= 0 &&
-        crop.top >= 0 &&
-        crop.right <= 1 &&
-        crop.bottom <= 1 &&
-        valid(crop)
-      ) {
-        return crop;
-      }
+      if (valid(crop)) return crop;
     }
     return null;
   };
@@ -130,9 +124,7 @@ export function CropOverlay({
       return;
     }
     const crop = resize(active.start, active.handle, dx, dy);
-    const clamped =
-      crop.left >= 0 && crop.top >= 0 && crop.right <= 1 && crop.bottom <= 1;
-    if (clamped && valid(crop)) onChange({ ...draft, crop });
+    if (valid(crop)) onChange({ ...draft, crop });
   };
 
   const onPointerUp = () => {
@@ -224,13 +216,13 @@ export function CropOverlay({
   );
 }
 
-export const STRAIGHTEN_RANGE = 15;
+const STRAIGHTEN_RANGE = 15;
 
 type ToolbarProps = {
   draft: CropDraft;
-  aspect: CropAspect;
+  aspect: string;
   landscape: boolean;
-  onAspect: (aspect: CropAspect) => void;
+  onAspect: (aspect: string) => void;
   onAngle: (angle: number) => void;
   onReset: () => void;
   onCancel: () => void;
@@ -252,7 +244,7 @@ export function CropToolbar({
     ["Portrait", PORTRAIT_ASPECTS],
   ];
   if (!landscape) groups.reverse();
-  const identity = isFullCrop(draft.crop) && draft.angle === 0;
+  const identity = isIdentityDraft(draft);
   return (
     <div
       data-testid="crop-toolbar"
@@ -271,6 +263,9 @@ export function CropToolbar({
           <SelectContent>
             <SelectItem value="free" data-testid="crop-aspect-free">
               Free
+            </SelectItem>
+            <SelectItem value="original" data-testid="crop-aspect-original">
+              Original
             </SelectItem>
             <SelectItem value="1:1" data-testid="crop-aspect-1:1">
               1:1
@@ -351,13 +346,27 @@ export function draftFromEdit(edit: {
   return { crop: edit.crop ?? fullCrop, angle: edit.cropAngle ?? 0 };
 }
 
+export function isIdentityDraft(draft: CropDraft): boolean {
+  return isFullCrop(draft.crop) && draft.angle === 0;
+}
+
 export function commitDraft(draft: CropDraft): {
   crop: CropRect | null;
   cropAngle: number;
 } {
-  const identity = isFullCrop(draft.crop) && draft.angle === 0;
+  // Snap near-flush edges: a sliver like left=3e-05 would survive isFullCrop
+  // yet round-trip badly through the sidecar's decimal formatting.
+  const snap = (value: number) =>
+    value < 0.001 ? 0 : value > 0.999 ? 1 : value;
+  const crop = {
+    left: snap(draft.crop.left),
+    top: snap(draft.crop.top),
+    right: snap(draft.crop.right),
+    bottom: snap(draft.crop.bottom),
+  };
+  const identity = isIdentityDraft({ crop, angle: draft.angle });
   return {
-    crop: identity ? null : draft.crop,
+    crop: identity ? null : crop,
     cropAngle: draft.angle,
   };
 }

@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import { type Edit, fileSrc, type ImageFile } from "@/lib/core";
-import { type Box, centeredAspectCrop, fitRect } from "@/lib/crop";
+import { type Box, centeredAspectCrop, fitRect, fullCrop } from "@/lib/crop";
 import {
   useFullRender,
   usePrefetchRender,
@@ -23,7 +23,6 @@ import {
 } from "@/lib/zoom";
 import {
   aspectRatio,
-  type CropAspect,
   type CropDraft,
   CropOverlay,
   CropToolbar,
@@ -111,7 +110,7 @@ export function Loupe({
   const fullRender = useFullRender(image, previewEdit, zoom.state !== null);
 
   const [draft, setDraft] = useState<CropDraft | null>(null);
-  const [aspect, setAspect] = useState<CropAspect>("free");
+  const [aspect, setAspect] = useState("free");
   // biome-ignore lint/correctness/useExhaustiveDependencies: initialize the draft only on entry, not per keystroke
   useEffect(() => {
     if (cropping && image) {
@@ -154,7 +153,10 @@ export function Loupe({
           return;
         }
         if (event.key === "Escape") cancelCrop();
-        if (event.key === "Enter") commitCrop();
+        // A focused button (Cancel, Reset) acts on Enter itself.
+        if (event.key === "Enter" && !target?.closest?.("button")) {
+          commitCrop();
+        }
         return;
       }
       switch (event.key) {
@@ -214,9 +216,16 @@ export function Loupe({
 
   if (!image) return null;
 
+  // While cropping, a placeholder still has the old crop and rotation baked
+  // in — the overlay and CSS rotation would not line up with it. Fall back to
+  // the (uncropped) thumbnail until the full-frame render lands.
+  const freshRender =
+    cropping && render.isPlaceholderData ? undefined : render.data;
   const src =
-    zoom.state !== null && fullRender.data ? fullRender.data : render.data;
-  const ratio = aspectRatio(aspect);
+    zoom.state !== null && fullRender.data ? fullRender.data : freshRender;
+  const ratioFor = (value: string) =>
+    value === "original" ? image.width / image.height : aspectRatio(value);
+  const ratio = ratioFor(aspect);
 
   const cropCenter = draft
     ? {
@@ -319,7 +328,7 @@ export function Loupe({
           landscape={image.width >= image.height}
           onAspect={(next) => {
             setAspect(next);
-            const nextRatio = aspectRatio(next);
+            const nextRatio = ratioFor(next);
             if (nextRatio !== null) {
               setDraft(
                 (current) =>
@@ -344,10 +353,7 @@ export function Loupe({
           }
           onReset={() => {
             setAspect("free");
-            setDraft({
-              crop: { left: 0, top: 0, right: 1, bottom: 1 },
-              angle: 0,
-            });
+            setDraft({ crop: fullCrop, angle: 0 });
           }}
           onCancel={cancelCrop}
           onDone={commitCrop}
@@ -366,8 +372,17 @@ export function Loupe({
   );
 }
 
+const cursorIn = (
+  node: HTMLElement,
+  event: { clientX: number; clientY: number },
+) => {
+  const bounds = node.getBoundingClientRect();
+  return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+};
+
 /// Pinch (trackpad gesture or ctrl+wheel), two-finger pan, drag pan, and
-/// double-click to toggle fit ↔ 100%.
+/// double-click to toggle fit ↔ 100% (min 2× for photos that barely
+/// outresolve the viewport).
 function useZoom({
   stageRef,
   stage,
@@ -393,6 +408,27 @@ function useZoom({
   const geometry = useRef({ photoBox, stage, scale100, maxScale });
   geometry.current = { photoBox, stage, scale100, maxScale };
 
+  useEffect(() => {
+    setState((current) =>
+      current
+        ? clampPan(current, photoBox, stage.width, stage.height)
+        : current,
+    );
+  }, [photoBox, stage]);
+
+  const panBy = useCallback((dx: number, dy: number) => {
+    setState((current) => {
+      if (!current) return current;
+      const { photoBox, stage } = geometry.current;
+      return clampPan(
+        { ...current, tx: current.tx + dx, ty: current.ty + dy },
+        photoBox,
+        stage.width,
+        stage.height,
+      );
+    });
+  }, []);
+
   const applyZoom = useCallback(
     (cursor: { x: number; y: number }, factor: number) => {
       const { photoBox, stage, maxScale } = geometry.current;
@@ -416,34 +452,16 @@ function useZoom({
     const node = stageRef.current;
     if (!node || !enabled) return;
 
-    const cursorIn = (event: { clientX: number; clientY: number }) => {
-      const bounds = node.getBoundingClientRect();
-      return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
-    };
-
     let gestureScale = 1;
     let inGesture = false;
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       if (event.ctrlKey) {
         if (inGesture) return;
-        applyZoom(cursorIn(event), Math.exp(-event.deltaY * 0.01));
+        applyZoom(cursorIn(node, event), Math.exp(-event.deltaY * 0.01));
         return;
       }
-      setState((current) => {
-        if (!current) return current;
-        const { photoBox, stage } = geometry.current;
-        return clampPan(
-          {
-            ...current,
-            tx: current.tx - event.deltaX,
-            ty: current.ty - event.deltaY,
-          },
-          photoBox,
-          stage.width,
-          stage.height,
-        );
-      });
+      panBy(-event.deltaX, -event.deltaY);
     };
     // WebKit reports trackpad pinches as gesture events, not ctrl+wheel.
     const onGestureStart = (event: Event) => {
@@ -455,7 +473,7 @@ function useZoom({
       event.preventDefault();
       const scale = (event as unknown as { scale: number }).scale;
       const position = event as unknown as { clientX: number; clientY: number };
-      applyZoom(cursorIn(position), scale / gestureScale);
+      applyZoom(cursorIn(node, position), scale / gestureScale);
       gestureScale = scale;
     };
     const onGestureEnd = () => {
@@ -472,7 +490,7 @@ function useZoom({
       node.removeEventListener("gesturechange", onGestureChange);
       node.removeEventListener("gestureend", onGestureEnd);
     };
-  }, [stageRef, enabled, applyZoom]);
+  }, [stageRef, enabled, applyZoom, panBy]);
 
   const drag = useRef<{ x: number; y: number } | null>(null);
 
@@ -480,11 +498,7 @@ function useZoom({
     onDoubleClick: (event: React.MouseEvent) => {
       const node = stageRef.current;
       if (!node) return;
-      const bounds = node.getBoundingClientRect();
-      const cursor = {
-        x: event.clientX - bounds.left,
-        y: event.clientY - bounds.top,
-      };
+      const cursor = cursorIn(node, event);
       setState((current) => {
         if (current) return null;
         const { photoBox, stage, scale100 } = geometry.current;
@@ -512,16 +526,7 @@ function useZoom({
       const dx = event.clientX - last.x;
       const dy = event.clientY - last.y;
       drag.current = { x: event.clientX, y: event.clientY };
-      setState((current) => {
-        if (!current) return current;
-        const { photoBox, stage } = geometry.current;
-        return clampPan(
-          { ...current, tx: current.tx + dx, ty: current.ty + dy },
-          photoBox,
-          stage.width,
-          stage.height,
-        );
-      });
+      panBy(dx, dy);
     },
     onPointerUp: () => {
       drag.current = null;
@@ -557,6 +562,9 @@ function Navigator({
 }) {
   const box = fitRect(160, 120, pixelWidth, pixelHeight);
   const dragging = useRef(false);
+  const rect = cropRect ?? fullCrop;
+  const cropWidth = rect.right - rect.left;
+  const cropHeight = rect.bottom - rect.top;
 
   const centerFrom = (event: React.PointerEvent<HTMLDivElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -593,10 +601,10 @@ function Navigator({
         // fills the navigator box. The box shares the crop's aspect, so the
         // stretch keeps the image's natural proportions.
         style={{
-          width: `${100 / (cropRect ? cropRect.right - cropRect.left : 1)}%`,
-          height: `${100 / (cropRect ? cropRect.bottom - cropRect.top : 1)}%`,
-          left: `-${cropRect ? (cropRect.left / (cropRect.right - cropRect.left)) * 100 : 0}%`,
-          top: `-${cropRect ? (cropRect.top / (cropRect.bottom - cropRect.top)) * 100 : 0}%`,
+          width: `${100 / cropWidth}%`,
+          height: `${100 / cropHeight}%`,
+          left: `-${(rect.left / cropWidth) * 100}%`,
+          top: `-${(rect.top / cropHeight) * 100}%`,
         }}
       />
       <div

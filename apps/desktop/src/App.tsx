@@ -323,7 +323,7 @@ export default function App() {
           event.preventDefault();
           selection.selectAll();
         }
-        if (event.key === "e" && openShoot) {
+        if (event.key === "e" && openShoot && !cropping) {
           event.preventDefault();
           openExport();
         }
@@ -413,7 +413,9 @@ export default function App() {
             ratingStars={ratingStars}
             onRatingStars={changeRatingStars}
             onRate={(path, rating) => setRating.mutate({ path, rating })}
-            onBackToGrid={() => setLoupePath(null)}
+            onBackToGrid={() =>
+              cropping ? setCropping(false) : setLoupePath(null)
+            }
           />
         ) : (
           <AppSidebar

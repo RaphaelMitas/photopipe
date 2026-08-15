@@ -98,6 +98,7 @@ export function EditPanel({ image, edit, onChange, onEnterCrop }: Props) {
 
   const set = (partial: Partial<Edit>) => onChange({ ...edit, ...partial });
 
+  const summary = cropSummary(edit);
   const asShotTemperature = whiteBalance.data?.temperature ?? 6500;
   const asShotTint = whiteBalance.data?.tint ?? 0;
   const temperature = edit.temperature ?? (raw ? asShotTemperature : 0);
@@ -114,9 +115,9 @@ export function EditPanel({ image, edit, onChange, onEnterCrop }: Props) {
       >
         <Crop />
         Crop & straighten
-        {cropSummary(edit) && (
+        {summary && (
           <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-            {cropSummary(edit)}
+            {summary}
           </span>
         )}
       </Button>

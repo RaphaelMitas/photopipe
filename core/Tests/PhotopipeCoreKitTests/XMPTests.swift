@@ -147,6 +147,62 @@ private func image(_ url: URL) throws -> ImageFile {
     #expect(try exiftoolTag("-XMP-crs:CropLeft", of: sidecar).isEmpty)
 }
 
+@Test func hasCropFalseSuppressesStaleCropValues() {
+    // Lightroom's crop-reset keeps the Crop* tags and flips HasCrop to False.
+    let sidecar = """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF><rdf:Description
+        crs:HasCrop="False" crs:CropLeft="0.1" crs:CropTop="0.1"
+        crs:CropRight="0.9" crs:CropBottom="0.9" crs:CropAngle="2.5"/>
+        </rdf:RDF></x:xmpmeta>
+        """
+    let edit = XMP.parseEdit(sidecar, isRaw: true)
+    #expect(edit.crop == nil)
+    #expect(edit.cropAngle == 0)
+
+    let active = XMP.parseEdit(sidecar.replacingOccurrences(of: "\"False\"", with: "\"True\""), isRaw: true)
+    #expect(active.crop == CropRect(left: 0.1, top: 0.1, right: 0.9, bottom: 0.9))
+    #expect(active.cropAngle == 2.5)
+}
+
+@Test func hostileCropValuesAreRejectedOnParse() {
+    let digits = String(repeating: "9", count: 400)
+    let sidecar = """
+        <x:xmpmeta><rdf:Description crs:Exposure2012="\(digits)"
+        crs:CropLeft="\(digits)" crs:CropTop="0" crs:CropRight="1"
+        crs:CropBottom="1" crs:CropAngle="\(digits)"/></x:xmpmeta>
+        """
+    let edit = XMP.parseEdit(sidecar, isRaw: true)
+    #expect(edit.exposure == 0, "an overflowing scalar must not become infinity")
+    #expect(edit.crop == nil)
+    #expect(edit.cropAngle == 0)
+
+    // Degenerate rects (right <= left) never become a crop.
+    let inverted = XMP.parseEdit(
+        #"<x:xmpmeta><rdf:Description crs:CropLeft="0.9" crs:CropTop="0" crs:CropRight="0.1" crs:CropBottom="1"/></x:xmpmeta>"#,
+        isRaw: true)
+    #expect(inverted.crop == nil)
+}
+
+@Test func tinyCropEdgeSurvivesTheSidecarRoundTrip() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00009.ARW")
+    try Data("fake".utf8).write(to: arw)
+
+    // 3e-05 in Swift's default interpolation — must be written as a plain
+    // decimal or the whole crop is lost on the next read.
+    let edit = Edit(crop: CropRect(left: 0.00003, top: 0, right: 0.9, bottom: 1))
+    try XMP.writeEdit(edit, file: try image(arw), tool: .shared)
+
+    let sidecar = XMP.sidecarURL(forImagePath: arw.path)
+    #expect(try exiftoolTag("-XMP-crs:CropLeft", of: sidecar) == "0.00003")
+    #expect(XMP.readEdit(file: try image(arw)).crop == edit.crop)
+
+    // Exponent forms in foreign sidecars parse anyway.
+    #expect(XMP.parseDouble("CropLeft", in: #"crs:CropLeft="3e-05""#) == 3e-05)
+}
+
 /// Regression: `-TAG= -TAG+=…` appends to the existing list in exiftool, so
 /// every scrub grew the tone curve until a sidecar held thousands of points
 /// and writes took seconds. Rewrites must replace the list wholesale.

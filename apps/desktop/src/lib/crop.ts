@@ -62,41 +62,14 @@ function corners(crop: CropRect, imageWidth: number, imageHeight: number) {
   };
 }
 
-/// Whether the crop rect, with the photo rotated by `angleDeg` behind it,
-/// stays inside the photo (no blank corners).
-export function cropInsideImage(
+/// The largest about-center scale (capped at 1) at which the crop's corners,
+/// rotated back into photo space, stay inside the photo.
+function fitScale(
   crop: CropRect,
   angleDeg: number,
   imageWidth: number,
   imageHeight: number,
-): boolean {
-  const radians = (-angleDeg * Math.PI) / 180;
-  const cos = Math.cos(radians);
-  const sin = Math.sin(radians);
-  const { centerX, centerY, points } = corners(crop, imageWidth, imageHeight);
-  const epsilon = 1e-6;
-  return points.every((point) => {
-    const dx = point.x - centerX;
-    const dy = point.y - centerY;
-    const x = centerX + dx * cos - dy * sin;
-    const y = centerY + dx * sin + dy * cos;
-    return (
-      x >= -epsilon &&
-      x <= imageWidth + epsilon &&
-      y >= -epsilon &&
-      y <= imageHeight + epsilon
-    );
-  });
-}
-
-/// Shrink the crop about its center just enough that it stays inside the
-/// photo rotated by `angleDeg`. Never grows the rect.
-export function constrainCrop(
-  crop: CropRect,
-  angleDeg: number,
-  imageWidth: number,
-  imageHeight: number,
-): CropRect {
+): number {
   const radians = (-angleDeg * Math.PI) / 180;
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
@@ -110,6 +83,29 @@ export function constrainCrop(
     if (dy > 0) scale = Math.min(scale, (imageHeight - centerY) / dy);
     if (dy < 0) scale = Math.min(scale, centerY / -dy);
   }
+  return scale;
+}
+
+/// Whether the crop rect, with the photo rotated by `angleDeg` behind it,
+/// stays inside the photo (no blank corners).
+export function cropInsideImage(
+  crop: CropRect,
+  angleDeg: number,
+  imageWidth: number,
+  imageHeight: number,
+): boolean {
+  return fitScale(crop, angleDeg, imageWidth, imageHeight) >= 1 - 1e-6;
+}
+
+/// Shrink the crop about its center just enough that it stays inside the
+/// photo rotated by `angleDeg`. Never grows the rect.
+export function constrainCrop(
+  crop: CropRect,
+  angleDeg: number,
+  imageWidth: number,
+  imageHeight: number,
+): CropRect {
+  const scale = fitScale(crop, angleDeg, imageWidth, imageHeight);
   if (scale >= 1) return crop;
   const halfWidth = ((crop.right - crop.left) / 2) * scale;
   const halfHeight = ((crop.bottom - crop.top) / 2) * scale;

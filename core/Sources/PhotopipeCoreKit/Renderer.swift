@@ -138,7 +138,14 @@ public final class Renderer {
             guard let output else { throw RenderError.unreadable(file.path) }
             image = output
         } else {
-            guard let base = CIImage(contentsOf: URL(fileURLWithPath: file.path)) else {
+            // Bake EXIF orientation into the pixels (the option also drops the
+            // tag, so the encoded JPEG is not rotated twice): the crop rect is
+            // defined against the displayed frame, not the sensor layout.
+            guard
+                let base = CIImage(
+                    contentsOf: URL(fileURLWithPath: file.path),
+                    options: [.applyOrientationProperty: true])
+            else {
                 throw RenderError.unreadable(file.path)
             }
             image = base
@@ -187,17 +194,30 @@ public final class Renderer {
     static func applyCrop(_ edit: Edit, to image: CIImage) -> CIImage {
         let extent = image.extent
         let crop = edit.crop ?? CropRect(left: 0, top: 0, right: 1, bottom: 1)
+        // Values reach here from sidecars and IPC; refuse geometry that would
+        // put NaN or a negative size into Core Image.
+        guard crop.left.isFinite, crop.top.isFinite, crop.right.isFinite,
+            crop.bottom.isFinite, crop.right > crop.left, crop.bottom > crop.top,
+            edit.cropAngle.isFinite
+        else { return image }
         // Normalized coordinates are top-left-origin; CI's are bottom-left.
+        let raw = CGRect(
+            x: extent.minX + max(crop.left, 0) * extent.width,
+            y: extent.minY + (1 - min(crop.bottom, 1)) * extent.height,
+            width: (min(crop.right, 1) - max(crop.left, 0)) * extent.width,
+            height: (min(crop.bottom, 1) - max(crop.top, 0)) * extent.height)
+        // Round inward: expanding past the rotated photo's coverage would
+        // leave a thin blank edge on straightened crops.
         let rect = CGRect(
-            x: extent.minX + crop.left * extent.width,
-            y: extent.minY + (1 - crop.bottom) * extent.height,
-            width: (crop.right - crop.left) * extent.width,
-            height: (crop.bottom - crop.top) * extent.height
-        ).integral
+            x: raw.minX.rounded(.up), y: raw.minY.rounded(.up),
+            width: max(raw.maxX.rounded(.down) - raw.minX.rounded(.up), 1),
+            height: max(raw.maxY.rounded(.down) - raw.minY.rounded(.up), 1))
         var result = image
         if edit.cropAngle != 0 {
             let center = CGPoint(x: rect.midX, y: rect.midY)
-            let angle = edit.cropAngle * .pi / 180
+            // CI coordinates are y-up, so the on-screen-clockwise convention
+            // needs the negated angle here (CSS rotate() gets the raw value).
+            let angle = -edit.cropAngle * .pi / 180
             result = result.transformed(
                 by: CGAffineTransform(translationX: center.x, y: center.y)
                     .rotated(by: angle)

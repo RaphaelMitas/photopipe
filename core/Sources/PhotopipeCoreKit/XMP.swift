@@ -21,18 +21,38 @@ public enum XMP {
         return nil
     }
 
+    // Exponents appear in foreign sidecars; non-finite values must never
+    // reach the edit model (they poison JSON encoding and CI geometry).
+    private static let number = "([-+]?[\\d.]+(?:[eE][-+]?\\d+)?)"
+
     static func parseDouble(_ tag: String, in text: String) -> Double? {
-        let attribute = try? Regex("crs:\(tag)\\s*=\\s*\"([-+]?[\\d.]+)\"")
+        let attribute = try? Regex("crs:\(tag)\\s*=\\s*\"\(number)\"")
+        if let attribute, let match = text.firstMatch(of: attribute),
+            let value = match[1].substring, let parsed = Double(value), parsed.isFinite
+        {
+            return parsed
+        }
+        let element = try? Regex("<crs:\(tag)>\\s*\(number)\\s*</crs:\(tag)>")
+        if let element, let match = text.firstMatch(of: element),
+            let value = match[1].substring, let parsed = Double(value), parsed.isFinite
+        {
+            return parsed
+        }
+        return nil
+    }
+
+    static func parseHasCrop(in text: String) -> Bool? {
+        let attribute = try? Regex("crs:HasCrop\\s*=\\s*\"(\\w+)\"")
         if let attribute, let match = text.firstMatch(of: attribute),
             let value = match[1].substring
         {
-            return Double(value)
+            return value.lowercased() == "true"
         }
-        let element = try? Regex("<crs:\(tag)>\\s*([-+]?[\\d.]+)\\s*</crs:\(tag)>")
+        let element = try? Regex("<crs:HasCrop>\\s*(\\w+)\\s*</crs:HasCrop>")
         if let element, let match = text.firstMatch(of: element),
             let value = match[1].substring
         {
-            return Double(value)
+            return value.lowercased() == "true"
         }
         return nil
     }
@@ -62,15 +82,26 @@ public enum XMP {
             curveRed: parseCurve("ToneCurvePV2012Red", in: text),
             curveGreen: parseCurve("ToneCurvePV2012Green", in: text),
             curveBlue: parseCurve("ToneCurvePV2012Blue", in: text),
-            crop: cropRect { parseDouble("Crop\($0)", in: text) },
-            cropAngle: parseDouble("CropAngle", in: text) ?? 0)
+            crop: parseHasCrop(in: text) == false
+                ? nil : cropRect { parseDouble("Crop\($0)", in: text) },
+            cropAngle: parseHasCrop(in: text) == false
+                ? 0 : parseDouble("CropAngle", in: text) ?? 0)
     }
 
+    /// Lightroom's crop-reset keeps the Crop* values and flips HasCrop to
+    /// False, so HasCrop is authoritative when present. The values themselves
+    /// are clamped and rejected when degenerate — they come from foreign
+    /// files.
     private static func cropRect(_ value: (String) -> Double?) -> CropRect? {
         guard let left = value("Left"), let top = value("Top"),
-            let right = value("Right"), let bottom = value("Bottom")
+            let right = value("Right"), let bottom = value("Bottom"),
+            left.isFinite, top.isFinite, right.isFinite, bottom.isFinite
         else { return nil }
-        return CropRect(left: left, top: top, right: right, bottom: bottom)
+        let clamp = { (value: Double) in min(max(value, 0), 1) }
+        let rect = CropRect(
+            left: clamp(left), top: clamp(top), right: clamp(right), bottom: clamp(bottom))
+        guard rect.right - rect.left > 0.001, rect.bottom - rect.top > 0.001 else { return nil }
+        return rect
     }
 
     private static let crsNamespace = "http://ns.adobe.com/camera-raw-settings/1.0/"
@@ -82,6 +113,7 @@ public enum XMP {
         var rating: Int?
         var scalars: [String: Double] = [:]
         var curves: [String: [CurvePoint]] = [:]
+        var hasCrop: Bool?
         CGImageMetadataEnumerateTagsUsingBlock(metadata, nil, nil) { _, tag in
             guard let name = CGImageMetadataTagCopyName(tag) as String? else { return true }
             let namespace = CGImageMetadataTagCopyNamespace(tag) as String?
@@ -93,9 +125,12 @@ public enum XMP {
             guard namespace == crsNamespace else { return true }
             if name.hasPrefix("ToneCurvePV2012") {
                 curves[name] = curvePoints(fromMetadataValue: value)
-            } else if let text = value as? String, let number = Double(text) {
+            } else if name == "HasCrop" {
+                if let text = value as? String { hasCrop = text.lowercased() == "true" }
+                if let flag = value as? Bool { hasCrop = flag }
+            } else if let text = value as? String, let number = Double(text), number.isFinite {
                 scalars[name] = number
-            } else if let number = value as? Double {
+            } else if let number = value as? Double, number.isFinite {
                 scalars[name] = number
             }
             return true
@@ -112,8 +147,8 @@ public enum XMP {
             curveRed: curves["ToneCurvePV2012Red"] ?? [],
             curveGreen: curves["ToneCurvePV2012Green"] ?? [],
             curveBlue: curves["ToneCurvePV2012Blue"] ?? [],
-            crop: cropRect { scalars["Crop\($0)"] },
-            cropAngle: scalars["CropAngle"] ?? 0)
+            crop: hasCrop == false ? nil : cropRect { scalars["Crop\($0)"] },
+            cropAngle: hasCrop == false ? 0 : scalars["CropAngle"] ?? 0)
         return (rating, edit)
     }
 
@@ -219,13 +254,25 @@ public enum XMP {
         }
         integerScalar("Vibrance", edit.vibrance)
         integerScalar("Saturation", edit.saturation)
+        // Swift's Double interpolation switches to exponent form below 1e-4,
+        // which neither our sidecar parser nor Lightroom reads back.
+        func plainDecimal(_ value: Double) -> String {
+            var text = String(format: "%.6f", value)
+            while text.hasSuffix("0") { text.removeLast() }
+            if text.hasSuffix(".") { text.removeLast() }
+            return text
+        }
         for (tag, value) in [
             ("Left", edit.crop?.left), ("Top", edit.crop?.top),
             ("Right", edit.crop?.right), ("Bottom", edit.crop?.bottom),
         ] {
-            args.append(value.map { "-XMP-crs:Crop\(tag)=\($0)" } ?? "-XMP-crs:Crop\(tag)=")
+            args.append(
+                value.map { "-XMP-crs:Crop\(tag)=\(plainDecimal($0))" }
+                    ?? "-XMP-crs:Crop\(tag)=")
         }
-        args.append(edit.cropAngle == 0 ? "-XMP-crs:CropAngle=" : "-XMP-crs:CropAngle=\(edit.cropAngle)")
+        args.append(
+            edit.cropAngle == 0
+                ? "-XMP-crs:CropAngle=" : "-XMP-crs:CropAngle=\(plainDecimal(edit.cropAngle))")
         args.append(edit.hasCropComponent ? "-XMP-crs:HasCrop=True" : "-XMP-crs:HasCrop=")
         curve("ToneCurvePV2012", edit.curveRGB)
         curve("ToneCurvePV2012Red", edit.curveRed)
