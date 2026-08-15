@@ -2,7 +2,10 @@ mod sidecar;
 
 use sidecar::Sidecar;
 use std::sync::Arc;
-use tauri::menu::{AboutMetadataBuilder, MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+use tauri::menu::{
+    AboutMetadataBuilder, MenuBuilder, MenuItemBuilder, SubmenuBuilder, HELP_SUBMENU_ID,
+    WINDOW_SUBMENU_ID,
+};
 use tauri::{Emitter, Manager};
 
 // Blocking sidecar I/O runs on the dedicated blocking pool, never on the main
@@ -34,9 +37,16 @@ pub fn run() {
             let updates = MenuItemBuilder::new("Check for Updates…")
                 .id("check-updates")
                 .build(app)?;
+            // Same sources the default menu reads, so the panel stays right
+            // when the version moves and picks up copyright and publisher if
+            // they are ever set in tauri.conf.json.
+            let package = app.package_info();
+            let bundle = &app.config().bundle;
             let about = AboutMetadataBuilder::new()
-                .name(Some("Photopipe"))
-                .version(Some(app.package_info().version.to_string()))
+                .name(Some(package.name.clone()))
+                .version(Some(package.version.to_string()))
+                .copyright(bundle.copyright.clone())
+                .authors(bundle.publisher.clone().map(|p| vec![p]))
                 .build();
             let app_menu = SubmenuBuilder::new(app, "Photopipe")
                 .about(Some(about))
@@ -64,14 +74,19 @@ pub fn run() {
             // Full screen lives here in every Mac app, and replacing the default
             // menu is what took it away.
             let view_menu = SubmenuBuilder::new(app, "View").fullscreen().build()?;
-            let window_menu = SubmenuBuilder::new(app, "Window")
+            // These two are handed to AppKit, which finds them by id and adds
+            // the window list to one and the search field to the other. Build
+            // them with `new` and the id is random, the lookup misses, and you
+            // get inert menus that only look standard.
+            let window_menu = SubmenuBuilder::with_id(app, WINDOW_SUBMENU_ID, "Window")
                 .minimize()
                 .maximize()
                 .separator()
                 .close_window()
                 .build()?;
+            let help_menu = SubmenuBuilder::with_id(app, HELP_SUBMENU_ID, "Help").build()?;
             let menu = MenuBuilder::new(app)
-                .items(&[&app_menu, &edit_menu, &view_menu, &window_menu])
+                .items(&[&app_menu, &edit_menu, &view_menu, &window_menu, &help_menu])
                 .build()?;
             app.set_menu(menu)?;
             Ok(())
