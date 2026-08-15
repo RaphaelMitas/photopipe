@@ -7,13 +7,7 @@ import {
   useState,
 } from "react";
 import { type Edit, fileSrc, type ImageFile } from "@/lib/core";
-import {
-  aspectRatioFor,
-  type Box,
-  fitRect,
-  fullCrop,
-  rotatedSize,
-} from "@/lib/crop";
+import { aspectRatioFor, type Box, fitRect, rotatedSize } from "@/lib/crop";
 import {
   useFullRender,
   usePrefetchRender,
@@ -296,12 +290,13 @@ export function Loupe({
             >
               {`${Math.round((zoom.state.scale / (zoom.scale100 || 1)) * 100)}% · double-click to fit`}
             </div>
-            {thumb.data && (
+            {render.data && (
+              // The preview render has the crop and turn baked in, so it maps
+              // onto the navigator box without any stretch arithmetic.
               <Navigator
-                thumbSrc={fileSrc(thumb.data)}
+                src={fileSrc(render.data)}
                 pixelWidth={pixelWidth}
                 pixelHeight={pixelHeight}
-                cropRect={crop}
                 visible={visibleRect(
                   zoom.state,
                   photoBox,
@@ -503,25 +498,20 @@ function useZoom({
 }
 
 function Navigator({
-  thumbSrc,
+  src,
   pixelWidth,
   pixelHeight,
-  cropRect,
   visible,
   onCenter,
 }: {
-  thumbSrc: string;
+  src: string;
   pixelWidth: number;
   pixelHeight: number;
-  cropRect: { left: number; top: number; right: number; bottom: number } | null;
   visible: Box;
   onCenter: (point: { x: number; y: number }) => void;
 }) {
   const box = fitRect(160, 120, pixelWidth, pixelHeight);
   const dragging = useRef(false);
-  const rect = cropRect ?? fullCrop;
-  const cropWidth = rect.right - rect.left;
-  const cropHeight = rect.bottom - rect.top;
 
   const centerFrom = (event: React.PointerEvent<HTMLDivElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -550,19 +540,10 @@ function Navigator({
       }}
     >
       <img
-        src={thumbSrc}
+        src={src}
         alt=""
         draggable={false}
-        className="absolute max-w-none select-none"
-        // The thumbnail is uncropped: blow it up so the crop region exactly
-        // fills the navigator box. The box shares the crop's aspect, so the
-        // stretch keeps the image's natural proportions.
-        style={{
-          width: `${100 / cropWidth}%`,
-          height: `${100 / cropHeight}%`,
-          left: `-${(rect.left / cropWidth) * 100}%`,
-          top: `-${(rect.top / cropHeight) * 100}%`,
-        }}
+        className="h-full w-full select-none object-cover"
       />
       <div
         className="pointer-events-none absolute border-[1.5px] border-white shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]"
