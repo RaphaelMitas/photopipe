@@ -135,7 +135,6 @@ public enum XMP {
     }
 
     private static let crsNamespace = "http://ns.adobe.com/camera-raw-settings/1.0/"
-    private static let tiffNamespace = "http://ns.adobe.com/tiff/1.0/"
 
     /// The file's own EXIF orientation (1 when unreadable), the baseline the
     /// absolute tiff:Orientation is compared against.
@@ -148,6 +147,19 @@ public enum XMP {
         return value
     }
 
+    /// The XMP packet's own tiff:Orientation, read from the raw bytes.
+    /// ImageIO's metadata API reconciles EXIF and XMP into one value, which
+    /// hides exactly the difference the additive-rotation model needs.
+    static func embeddedXMPOrientation(at url: URL) -> Int? {
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+            let start = data.range(of: Data("<x:xmpmeta".utf8)),
+            let end = data.range(
+                of: Data("</x:xmpmeta>".utf8), in: start.upperBound..<data.endIndex)
+        else { return nil }
+        let text = String(decoding: data[start.lowerBound..<end.upperBound], as: UTF8.self)
+        return parseOrientation(in: text)
+    }
+
     static func readEmbedded(at url: URL, isRaw: Bool) -> (rating: Int?, edit: Edit) {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
             let metadata = CGImageSourceCopyMetadataAtIndex(source, 0, nil)
@@ -156,7 +168,6 @@ public enum XMP {
         var scalars: [String: Double] = [:]
         var curves: [String: [CurvePoint]] = [:]
         var hasCrop: Bool?
-        var xmpOrientation: Int?
         CGImageMetadataEnumerateTagsUsingBlock(metadata, nil, nil) { _, tag in
             guard let name = CGImageMetadataTagCopyName(tag) as String? else { return true }
             let namespace = CGImageMetadataTagCopyNamespace(tag) as String?
@@ -164,10 +175,6 @@ public enum XMP {
             if name == "Rating" && namespace == "http://ns.adobe.com/xap/1.0/" {
                 if let text = value as? String { rating = Int(text) }
                 if let number = value as? Int { rating = number }
-            }
-            if name == "Orientation" && namespace == tiffNamespace {
-                if let text = value as? String { xmpOrientation = Int(text) }
-                if let number = value as? Int { xmpOrientation = number }
             }
             guard namespace == crsNamespace else { return true }
             if name.hasPrefix("ToneCurvePV2012") {
@@ -196,7 +203,9 @@ public enum XMP {
             curveBlue: curves["ToneCurvePV2012Blue"] ?? [],
             crop: hasCrop == false ? nil : cropRect { scalars["Crop\($0)"] },
             cropAngle: hasCrop == false ? 0 : scalars["CropAngle"] ?? 0,
-            rotation: rotation(fromXMP: xmpOrientation, base: baseOrientation(at: url)))
+            rotation: rotation(
+                fromXMP: embeddedXMPOrientation(at: url),
+                base: baseOrientation(at: url)))
         return (rating, edit)
     }
 
@@ -329,10 +338,17 @@ public enum XMP {
         if edit.normalizedRotation == 0 {
             args.append("-XMP-tiff:Orientation=")
         } else {
+            let base = baseOrientation(at: URL(fileURLWithPath: file.path))
             let absolute = absoluteOrientation(
-                rotation: edit.normalizedRotation,
-                base: baseOrientation(at: URL(fileURLWithPath: file.path)))
+                rotation: edit.normalizedRotation, base: base)
             args.append("-XMP-tiff:Orientation#=\(absolute)")
+            if !file.usesSidecar {
+                // Embedded formats: ImageIO folds the XMP value we just wrote
+                // into the merged orientation of the NEXT read, which would
+                // make base == absolute and the rotation read back as zero.
+                // Real EXIF wins that merge, so pin the base there.
+                args.append("-IFD0:Orientation#=\(base)")
+            }
         }
         curve("ToneCurvePV2012", edit.curveRGB)
         curve("ToneCurvePV2012Red", edit.curveRed)

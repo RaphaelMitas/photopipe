@@ -203,6 +203,30 @@ private func image(_ url: URL) throws -> ImageFile {
     #expect(XMP.parseDouble("CropLeft", in: #"crs:CropLeft="3e-05""#) == 3e-05)
 }
 
+/// Regression: for embedded formats ImageIO reports our own freshly written
+/// XMP orientation back as the file's orientation, so without a pinned EXIF
+/// base the turn cancelled itself on the next read ("applies briefly, then
+/// resets").
+@Test func embeddedRotationSurvivesWithoutExifOrientation() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let jpg = dir.appendingPathComponent("DSC00009.JPG")
+    try writeGrayJPEG(to: jpg)
+
+    try XMP.writeEdit(Edit(rotation: 90), file: try image(jpg), tool: .shared)
+    #expect(XMP.readEdit(file: try image(jpg)).rotation == 90)
+    #expect(
+        try exiftoolTag("-IFD0:Orientation#", of: jpg) == "1",
+        "the pre-edit base gets pinned as real EXIF")
+
+    // A second write reads the pinned base, not our own XMP echo.
+    try XMP.writeEdit(Edit(rotation: 180), file: try image(jpg), tool: .shared)
+    #expect(XMP.readEdit(file: try image(jpg)).rotation == 180)
+    #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: jpg) == "3")
+}
+
 @Test func rotationIsTheDifferenceAgainstTheBaseOrientation() {
     // A Lightroom sidecar for a portrait shot mirrors the file's own
     // orientation without any user turn.

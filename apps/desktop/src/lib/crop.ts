@@ -214,9 +214,6 @@ export function transposeCrop(
 
 export const MIN_CROP_SIZE = 0.05;
 
-const clamp = (value: number, lo: number, hi: number) =>
-  Math.min(Math.max(value, lo), hi);
-
 const shift = (crop: CropRect, dx: number, dy: number): CropRect => ({
   left: crop.left + dx,
   top: crop.top + dy,
@@ -224,39 +221,41 @@ const shift = (crop: CropRect, dx: number, dy: number): CropRect => ({
   bottom: crop.bottom + dy,
 });
 
-/// The largest feasible fraction of (dx, dy), so a drag lands flush against
-/// the rotated photo's bounds instead of stopping short.
-function furthestShift(
+/// After a boundary search, land exactly on a frame edge when the result is
+/// within search precision of it (and the rotated photo still covers it).
+function snapToBox(
   crop: CropRect,
-  dx: number,
-  dy: number,
   angleDeg: number,
   imageWidth: number,
   imageHeight: number,
 ): CropRect {
-  if (dx === 0 && dy === 0) return crop;
-  let lo = 0;
-  let hi = 1;
-  for (let i = 0; i < 20; i += 1) {
-    const mid = (lo + hi) / 2;
-    if (
-      cropInsideImage(
-        shift(crop, dx * mid, dy * mid),
-        angleDeg,
-        imageWidth,
-        imageHeight,
-      )
-    ) {
-      lo = mid;
-    } else {
-      hi = mid;
-    }
-  }
-  return shift(crop, dx * lo, dy * lo);
+  const epsilon = 1e-4;
+  const snap = (value: number) => {
+    if (Math.abs(value) < epsilon) return 0;
+    if (Math.abs(value - 1) < epsilon) return 1;
+    return value;
+  };
+  const snapped = {
+    left: snap(crop.left),
+    top: snap(crop.top),
+    right: snap(crop.right),
+    bottom: snap(crop.bottom),
+  };
+  return cropInsideImage(snapped, angleDeg, imageWidth, imageHeight)
+    ? snapped
+    : crop;
 }
 
-/// Translate the crop by up to (dx, dy), clamped so it stops flush at the
-/// frame — and, when the photo is angled, slides along the rotated bounds.
+/// Translate the crop toward target = crop + (dx, dy). The only boundary is
+/// the rotated photo itself — a straightened photo's corners overhang the
+/// frame box, and the crop may follow them.
+///
+/// For a fixed rect size and angle, the feasible region of the rect center
+/// is an axis-aligned box in the photo's rotated (base) space: each corner
+/// constraint "base(center) + offset inside the frame" is a per-axis bound
+/// there, and rotation is an isometry. So the exact answer is a clamp of
+/// the target in base space — the rect glides along diagonal edges and gives
+/// ground back on one axis when the pointer trades it for the other.
 export function moveCrop(
   crop: CropRect,
   dx: number,
@@ -265,29 +264,67 @@ export function moveCrop(
   imageWidth: number,
   imageHeight: number,
 ): CropRect {
-  const stepX = clamp(dx, -crop.left, 1 - crop.right);
-  const stepY = clamp(dy, -crop.top, 1 - crop.bottom);
-  const shifted = shift(crop, stepX, stepY);
-  if (cropInsideImage(shifted, angleDeg, imageWidth, imageHeight)) {
-    return shifted;
+  const radians = (-angleDeg * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const halfWidth = ((crop.right - crop.left) / 2) * imageWidth;
+  const halfHeight = ((crop.bottom - crop.top) / 2) * imageHeight;
+
+  let minOffsetX = Number.POSITIVE_INFINITY;
+  let maxOffsetX = Number.NEGATIVE_INFINITY;
+  let minOffsetY = Number.POSITIVE_INFINITY;
+  let maxOffsetY = Number.NEGATIVE_INFINITY;
+  for (const signX of [-1, 1]) {
+    for (const signY of [-1, 1]) {
+      const offsetX = signX * halfWidth * cos - signY * halfHeight * sin;
+      const offsetY = signX * halfWidth * sin + signY * halfHeight * cos;
+      minOffsetX = Math.min(minOffsetX, offsetX);
+      maxOffsetX = Math.max(maxOffsetX, offsetX);
+      minOffsetY = Math.min(minOffsetY, offsetY);
+      maxOffsetY = Math.max(maxOffsetY, offsetY);
+    }
   }
-  const alongX = furthestShift(
-    crop,
-    stepX,
-    0,
+  const loX = -minOffsetX;
+  const hiX = imageWidth - maxOffsetX;
+  const loY = -minOffsetY;
+  const hiY = imageHeight - maxOffsetY;
+  if (loX > hiX || loY > hiY) {
+    return constrainCrop(crop, angleDeg, imageWidth, imageHeight);
+  }
+
+  const pivotX = imageWidth / 2;
+  const pivotY = imageHeight / 2;
+  const targetX = ((crop.left + crop.right) / 2 + dx) * imageWidth;
+  const targetY = ((crop.top + crop.bottom) / 2 + dy) * imageHeight;
+  const relX = targetX - pivotX;
+  const relY = targetY - pivotY;
+  const baseX = Math.min(Math.max(pivotX + relX * cos - relY * sin, loX), hiX);
+  const baseY = Math.min(Math.max(pivotY + relX * sin + relY * cos, loY), hiY);
+  // Inverse rotation (transpose) back into frame space.
+  const backX = baseX - pivotX;
+  const backY = baseY - pivotY;
+  const centerX = pivotX + backX * cos + backY * sin;
+  const centerY = pivotY - backX * sin + backY * cos;
+  return snapToBox(
+    {
+      left: (centerX - halfWidth) / imageWidth,
+      top: (centerY - halfHeight) / imageHeight,
+      right: (centerX + halfWidth) / imageWidth,
+      bottom: (centerY + halfHeight) / imageHeight,
+    },
     angleDeg,
     imageWidth,
     imageHeight,
   );
-  return furthestShift(alongX, 0, stepY, angleDeg, imageWidth, imageHeight);
 }
 
 export type CropHandle = "tl" | "tr" | "bl" | "br" | "t" | "b" | "l" | "r";
 
 /// Drag a handle by (dx, dy), clamped to the frame and the minimum size.
 /// `ratio` locks the pixel aspect (width leads, the edge opposite the dragged
-/// corner anchors). Returns null when the angled photo cannot contain the
-/// result, so the caller keeps the previous rect.
+/// corner anchors). When the full delta would leave the rotated photo, the
+/// largest feasible fraction applies, so a fast drag still lands flush on
+/// the border instead of freezing.
 export function resizeCrop(
   start: CropRect,
   handle: CropHandle,
@@ -297,26 +334,43 @@ export function resizeCrop(
   angleDeg: number,
   imageWidth: number,
   imageHeight: number,
-): CropRect | null {
-  let { left, top, right, bottom } = start;
-  if (handle.includes("l")) left = clamp(left + dx, 0, right - MIN_CROP_SIZE);
-  if (handle.includes("r")) right = clamp(right + dx, left + MIN_CROP_SIZE, 1);
-  if (handle.includes("t")) top = clamp(top + dy, 0, bottom - MIN_CROP_SIZE);
-  if (handle.includes("b")) bottom = clamp(bottom + dy, top + MIN_CROP_SIZE, 1);
-  if (ratio !== null) {
-    let height = ((right - left) * imageWidth) / ratio / imageHeight;
-    const maxHeight = handle.includes("t") ? bottom : 1 - top;
-    if (height > maxHeight) {
-      height = maxHeight;
-      const width = (height * imageHeight * ratio) / imageWidth;
-      if (handle.includes("l")) left = right - width;
-      else right = left + width;
+): CropRect {
+  const apply = (fraction: number): CropRect => {
+    let { left, top, right, bottom } = start;
+    const stepX = dx * fraction;
+    const stepY = dy * fraction;
+    // No frame-box clamp: a rotated photo's overhang past the frame is fair
+    // game; the coverage search below is the only boundary.
+    if (handle.includes("l"))
+      left = Math.min(left + stepX, right - MIN_CROP_SIZE);
+    if (handle.includes("r"))
+      right = Math.max(right + stepX, left + MIN_CROP_SIZE);
+    if (handle.includes("t"))
+      top = Math.min(top + stepY, bottom - MIN_CROP_SIZE);
+    if (handle.includes("b"))
+      bottom = Math.max(bottom + stepY, top + MIN_CROP_SIZE);
+    if (ratio !== null) {
+      const height = ((right - left) * imageWidth) / ratio / imageHeight;
+      if (handle.includes("t")) top = bottom - height;
+      else bottom = top + height;
     }
-    if (handle.includes("t")) top = bottom - height;
-    else bottom = top + height;
+    return { left, top, right, bottom };
+  };
+  const full = apply(1);
+  if (cropInsideImage(full, angleDeg, imageWidth, imageHeight)) {
+    return snapToBox(full, angleDeg, imageWidth, imageHeight);
   }
-  const crop = { left, top, right, bottom };
-  return cropInsideImage(crop, angleDeg, imageWidth, imageHeight) ? crop : null;
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 20; i += 1) {
+    const mid = (lo + hi) / 2;
+    if (cropInsideImage(apply(mid), angleDeg, imageWidth, imageHeight)) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  return snapToBox(apply(lo), angleDeg, imageWidth, imageHeight);
 }
 
 /// The pixel width/height ratio a dropdown selection locks the crop to, in

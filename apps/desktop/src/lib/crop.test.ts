@@ -114,6 +114,36 @@ describe("moveCrop and resizeCrop", () => {
     expect(cropInsideImage(moved, 10, 3000, 2000)).toBe(true);
   });
 
+  it("follows the rotated photo's overhang past the frame box", () => {
+    // At +12° the photo's top-right corner sticks out right of the frame,
+    // so a crop in that band may cross right past 1.
+    const start = { left: 0.85, top: 0.16, right: 0.93, bottom: 0.2 };
+    expect(cropInsideImage(start, 12, 3000, 2000)).toBe(true);
+    const moved = moveCrop(start, 1, 0, 12, 3000, 2000);
+    expect(moved.right).toBeGreaterThan(1);
+    expect(cropInsideImage(moved, 12, 3000, 2000)).toBe(true);
+  });
+
+  it("slides along a diagonal edge as the drag continues", () => {
+    // Deltas are cumulative within a drag: blocked at the tilted right edge,
+    // continuing the same drag downward must gain ground on y (trading back
+    // x where the boundary demands it), not stay locked.
+    const start = { left: 0.4, top: 0.4, right: 0.6, bottom: 0.6 };
+    const blockedRight = moveCrop(start, 5, 0, 12, 3000, 2000);
+    const thenDown = moveCrop(start, 5, 5, 12, 3000, 2000);
+    expect(cropInsideImage(thenDown, 12, 3000, 2000)).toBe(true);
+    expect(blockedRight.left).toBeGreaterThan(0.6);
+    expect(thenDown.top).toBeGreaterThan(blockedRight.top + 0.1);
+    expect(thenDown.left).toBeGreaterThan(0.6);
+  });
+
+  it("a fast outward resize lands on the rotated border instead of freezing", () => {
+    const small = { left: 0.45, top: 0.45, right: 0.55, bottom: 0.55 };
+    const grown = resizeCrop(small, "tl", -2, -2, null, 12, 3000, 2000);
+    expect(grown.right - grown.left).toBeGreaterThan(0.15);
+    expect(cropInsideImage(grown, 12, 3000, 2000)).toBe(true);
+  });
+
   it("resize clamps at the frame and keeps a locked ratio", () => {
     const wide = resizeCrop(centered, "r", 5, 0, null, 0, 3000, 2000);
     expect(wide?.right).toBe(1);

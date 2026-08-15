@@ -434,17 +434,19 @@ export function CropOverlay({
       });
       return;
     }
-    const crop = resizeCrop(
-      active.start,
-      active.handle,
-      dx,
-      dy,
-      ratio,
-      draft.angle,
-      imageWidth,
-      imageHeight,
-    );
-    if (crop) onChange({ ...draft, crop });
+    onChange({
+      ...draft,
+      crop: resizeCrop(
+        active.start,
+        active.handle,
+        dx,
+        dy,
+        ratio,
+        draft.angle,
+        imageWidth,
+        imageHeight,
+      ),
+    });
   };
 
   const onPointerUp = () => {

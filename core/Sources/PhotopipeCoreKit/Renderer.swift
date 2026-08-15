@@ -208,12 +208,20 @@ public final class Renderer {
             crop.bottom.isFinite, crop.right > crop.left, crop.bottom > crop.top,
             edit.cropAngle.isFinite
         else { return image }
+        // A straightened photo's corners overhang the frame box, so crop
+        // values may run past [0, 1]; one frame beyond is plenty for any
+        // rotation, and clamping there keeps hostile values bounded.
+        let sane: (Double) -> Double = { min(max($0, -1), 2) }
+        let left = sane(crop.left)
+        let top = sane(crop.top)
+        let right = sane(crop.right)
+        let bottom = sane(crop.bottom)
         // Normalized coordinates are top-left-origin; CI's are bottom-left.
         let raw = CGRect(
-            x: extent.minX + max(crop.left, 0) * extent.width,
-            y: extent.minY + (1 - min(crop.bottom, 1)) * extent.height,
-            width: (min(crop.right, 1) - max(crop.left, 0)) * extent.width,
-            height: (min(crop.bottom, 1) - max(crop.top, 0)) * extent.height)
+            x: extent.minX + left * extent.width,
+            y: extent.minY + (1 - bottom) * extent.height,
+            width: (right - left) * extent.width,
+            height: (bottom - top) * extent.height)
         // Round inward: expanding past the rotated photo's coverage would
         // leave a thin blank edge on straightened crops.
         let rect = CGRect(
