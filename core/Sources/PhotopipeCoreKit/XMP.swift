@@ -199,7 +199,7 @@ public enum XMP {
         return parseOrientation(in: text)
     }
 
-    private static let jpegXMPHeader = Data("http://ns.adobe.com/xap/1.0/\0".utf8)
+    private static let jpegPacketHeader = Data("http://ns.adobe.com/xap/1.0/\0".utf8)
 
     private static func jpegXMPPacket(in data: Data) -> String? {
         var index = data.startIndex + 2
@@ -220,9 +220,9 @@ public enum XMP {
             guard length >= 2, index + 2 + length <= data.endIndex else { return nil }
             if marker == 0xE1 {
                 let payload = data[(index + 4)..<(index + 2 + length)]
-                if payload.starts(with: jpegXMPHeader) {
+                if payload.starts(with: jpegPacketHeader) {
                     return String(
-                        decoding: payload.dropFirst(jpegXMPHeader.count), as: UTF8.self)
+                        decoding: payload.dropFirst(jpegPacketHeader.count), as: UTF8.self)
                 }
             }
             index += 2 + length
