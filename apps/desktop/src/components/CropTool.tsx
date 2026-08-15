@@ -54,9 +54,11 @@ export function commitDraft(draft: CropDraft): {
   rotation: number;
 } {
   // Snap near-flush edges: a sliver like left=3e-05 would survive isFullCrop
-  // yet round-trip badly through the sidecar's decimal formatting.
+  // yet round-trip badly through the sidecar's decimal formatting. Proximity
+  // only — an overhang coordinate past the frame is a real crop, not a
+  // sliver.
   const snap = (value: number) =>
-    value < 0.001 ? 0 : value > 0.999 ? 1 : value;
+    Math.abs(value) < 0.001 ? 0 : Math.abs(value - 1) < 0.001 ? 1 : value;
   const crop = {
     left: snap(draft.crop.left),
     top: snap(draft.crop.top),
@@ -217,7 +219,12 @@ export function CropPanel({
             ...draft,
             rotation: (draft.rotation + 90) % 360,
             crop: turnCrop(draft.crop),
-            flipped: !draft.flipped,
+            // Fixed presets need the flip so the lock follows the turned
+            // rect; original/transposed already follow via the swapped frame
+            // dims, and free has nothing to lock.
+            flipped: draft.aspect.includes(":")
+              ? !draft.flipped
+              : draft.flipped,
           })
         }
         className="text-xs"

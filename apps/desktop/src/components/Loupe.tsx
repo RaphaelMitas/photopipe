@@ -21,7 +21,12 @@ import {
   type ZoomState,
   zoomAt,
 } from "@/lib/zoom";
-import { type CropDraft, CropOverlay, capturePointer } from "./CropTool";
+import {
+  type CropDraft,
+  CropOverlay,
+  capturePointer,
+  draftWithAngle,
+} from "./CropTool";
 import { Filmstrip, type FilmstripMode } from "./Filmstrip";
 
 export const EXPOSURE_STEP = 0.25;
@@ -225,7 +230,10 @@ export function Loupe({
         className="relative min-h-0 flex-1 touch-none overflow-hidden"
         {...(cropDraft
           ? {
-              onDoubleClick: () => onCropDraft({ ...cropDraft, angle: 0 }),
+              onDoubleClick: () =>
+                onCropDraft(
+                  draftWithAngle(cropDraft, 0, displayWidth, displayHeight),
+                ),
             }
           : zoom.stageProps)}
       >

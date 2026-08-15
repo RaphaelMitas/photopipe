@@ -216,6 +216,20 @@ describe("turn, transpose, and ratio helpers", () => {
     expect(aspectRatioFor("4:5", true, 3000, 2000)).toBeCloseTo(1.25);
   });
 
+  it("commit snaps slivers but preserves the rotated overhang", () => {
+    const draft = {
+      ...draftFromEdit(identityEdit),
+      angle: 12,
+      crop: { left: -0.05, top: 0.00003, right: 1.02, bottom: 0.9994 },
+    };
+    expect(commitDraft(draft).crop).toEqual({
+      left: -0.05,
+      top: 0,
+      right: 1.02,
+      bottom: 1,
+    });
+  });
+
   it("a turn-only draft commits rotation without a crop rect", () => {
     const turned = { ...draftFromEdit(identityEdit), rotation: 90 };
     expect(commitDraft(turned)).toEqual({

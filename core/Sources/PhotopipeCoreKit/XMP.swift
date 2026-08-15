@@ -22,19 +22,34 @@ public enum XMP {
     }
 
     // Exponents appear in foreign sidecars; non-finite values must never
-    // reach the edit model (they poison JSON encoding and CI geometry).
+    // reach the edit model (they poison JSON encoding and CI geometry), and
+    // finite-but-huge ones would trap the integer tag writes later. No real
+    // crs value exceeds Kelvin range, so a generous magnitude cap is safe.
     private static let number = "([-+]?[\\d.]+(?:[eE][-+]?\\d+)?)"
+    static let scalarMagnitudeLimit = 1e6
+
+    private static func sane(_ parsed: Double?) -> Double? {
+        guard let parsed, parsed.isFinite, abs(parsed) <= scalarMagnitudeLimit
+        else { return nil }
+        return parsed
+    }
+
+    // `Int(Double)` traps beyond Int.max; edits can arrive over IPC with
+    // values the parsers never vetted.
+    private static func saneInt(_ value: Double) -> Int {
+        Int(min(max(value.rounded(), -scalarMagnitudeLimit), scalarMagnitudeLimit))
+    }
 
     static func parseDouble(_ tag: String, in text: String) -> Double? {
         let attribute = try? Regex("crs:\(tag)\\s*=\\s*\"\(number)\"")
         if let attribute, let match = text.firstMatch(of: attribute),
-            let value = match[1].substring, let parsed = Double(value), parsed.isFinite
+            let value = match[1].substring, let parsed = sane(Double(value))
         {
             return parsed
         }
         let element = try? Regex("<crs:\(tag)>\\s*\(number)\\s*</crs:\(tag)>")
         if let element, let match = text.firstMatch(of: element),
-            let value = match[1].substring, let parsed = Double(value), parsed.isFinite
+            let value = match[1].substring, let parsed = sane(Double(value))
         {
             return parsed
         }
@@ -127,7 +142,9 @@ public enum XMP {
             let right = value("Right"), let bottom = value("Bottom"),
             left.isFinite, top.isFinite, right.isFinite, bottom.isFinite
         else { return nil }
-        let clamp = { (value: Double) in min(max(value, 0), 1) }
+        // A straightened crop may run past the frame box over the rotated
+        // photo's overhang; one frame beyond matches Renderer.applyCrop.
+        let clamp = { (value: Double) in min(max(value, -1), 2) }
         let rect = CropRect(
             left: clamp(left), top: clamp(top), right: clamp(right), bottom: clamp(bottom))
         guard rect.right - rect.left > 0.001, rect.bottom - rect.top > 0.001 else { return nil }
@@ -136,25 +153,33 @@ public enum XMP {
 
     private static let crsNamespace = "http://ns.adobe.com/camera-raw-settings/1.0/"
 
-    /// The file's own EXIF orientation (1 when unreadable), the baseline the
-    /// absolute tiff:Orientation is compared against.
-    static func baseOrientation(at url: URL) -> Int {
+    public enum XMPError: Error {
+        case unreadableOrientation(String)
+    }
+
+    /// The file's own display orientation (nil when unreadable), the baseline
+    /// the absolute tiff:Orientation is compared against.
+    static func baseOrientation(at url: URL) -> Int? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
             let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil)
-                as? [String: Any],
-            let value = properties[kCGImagePropertyOrientation as String] as? Int
-        else { return 1 }
-        return value
+                as? [String: Any]
+        else { return nil }
+        // A readable file without an orientation tag is upright, not unknown.
+        return properties[kCGImagePropertyOrientation as String] as? Int ?? 1
     }
 
     /// The XMP packet's own tiff:Orientation, read from the raw bytes.
     /// ImageIO's metadata API reconciles EXIF and XMP into one value, which
     /// hides exactly the difference the additive-rotation model needs.
     static func embeddedXMPOrientation(at url: URL) -> Int? {
+        // Real packets are well under a megabyte; a crafted delimiter pair
+        // spanning the file must not become a giant String.
+        let sizeLimit = 4 << 20
         guard let data = try? Data(contentsOf: url, options: .mappedIfSafe),
             let start = data.range(of: Data("<x:xmpmeta".utf8)),
             let end = data.range(
-                of: Data("</x:xmpmeta>".utf8), in: start.upperBound..<data.endIndex)
+                of: Data("</x:xmpmeta>".utf8), in: start.upperBound..<data.endIndex),
+            end.upperBound - start.lowerBound <= sizeLimit
         else { return nil }
         let text = String(decoding: data[start.lowerBound..<end.upperBound], as: UTF8.self)
         return parseOrientation(in: text)
@@ -182,10 +207,10 @@ public enum XMP {
             } else if name == "HasCrop" {
                 if let text = value as? String { hasCrop = text.lowercased() == "true" }
                 if let flag = value as? Bool { hasCrop = flag }
-            } else if let text = value as? String, let number = Double(text), number.isFinite {
+            } else if let text = value as? String, let number = sane(Double(text)) {
                 scalars[name] = number
-            } else if let number = value as? Double, number.isFinite {
-                scalars[name] = number
+            } else if let number = value as? Double, let checked = sane(number) {
+                scalars[name] = checked
             }
             return true
         }
@@ -205,7 +230,7 @@ public enum XMP {
             cropAngle: hasCrop == false ? 0 : scalars["CropAngle"] ?? 0,
             rotation: rotation(
                 fromXMP: embeddedXMPOrientation(at: url),
-                base: baseOrientation(at: url)))
+                base: baseOrientation(at: url) ?? 1))
         return (rating, edit)
     }
 
@@ -241,7 +266,7 @@ public enum XMP {
             else { return .identity }
             return parseEdit(
                 text, isRaw: file.isRaw,
-                baseOrientation: baseOrientation(at: URL(fileURLWithPath: file.path)))
+                baseOrientation: baseOrientation(at: URL(fileURLWithPath: file.path)) ?? 1)
         }
         return embeddedCached(for: file).edit
     }
@@ -276,7 +301,7 @@ public enum XMP {
         // a "10.0" for them with only a warning, so integer tags must be
         // formatted as integers.
         func integerScalar(_ tag: String, _ value: Double) {
-            args.append(value == 0 ? "-XMP-crs:\(tag)=" : "-XMP-crs:\(tag)=\(Int(value.rounded()))")
+            args.append(value == 0 ? "-XMP-crs:\(tag)=" : "-XMP-crs:\(tag)=\(saneInt(value))")
         }
         // Replacing a list tag needs repeated `=` args: the first replaces the
         // list, the rest add to it. `-TAG=` followed by `-TAG+=` looks
@@ -302,12 +327,12 @@ public enum XMP {
         let temperatureTag = file.isRaw ? "ColorTemperature" : "IncrementalTemperature"
         let tintTag = file.isRaw ? "Tint" : "IncrementalTint"
         if let temperature = edit.temperature {
-            args.append("-XMP-crs:\(temperatureTag)=\(Int(temperature.rounded()))")
+            args.append("-XMP-crs:\(temperatureTag)=\(saneInt(temperature))")
         } else {
             args.append("-XMP-crs:\(temperatureTag)=")
         }
         if let tint = edit.tint {
-            args.append("-XMP-crs:\(tintTag)=\(Int(tint.rounded()))")
+            args.append("-XMP-crs:\(tintTag)=\(saneInt(tint))")
         } else {
             args.append("-XMP-crs:\(tintTag)=")
         }
@@ -334,11 +359,31 @@ public enum XMP {
                 ? "-XMP-crs:CropAngle=" : "-XMP-crs:CropAngle=\(plainDecimal(edit.cropAngle))")
         args.append(edit.hasCropComponent ? "-XMP-crs:HasCrop=True" : "-XMP-crs:HasCrop=")
         // Absolute display orientation, like Lightroom writes it. The `#`
-        // suffix keeps exiftool in numeric mode for this tag.
+        // suffix keeps exiftool in numeric mode for this tag. A failed base
+        // read must never produce a write: for sidecar files 1 is a safe
+        // default (nothing in the original is touched), but for embedded
+        // files a guessed base would be burned into the photo's real EXIF.
+        let fileURL = URL(fileURLWithPath: file.path)
+        let base =
+            baseOrientation(at: fileURL) ?? (file.usesSidecar ? 1 : nil)
+        let currentXMP =
+            file.usesSidecar
+            ? (try? String(
+                contentsOf: sidecarURL(forImagePath: file.path), encoding: .utf8))
+                .flatMap { parseOrientation(in: $0) }
+            : embeddedXMPOrientation(at: fileURL)
         if edit.normalizedRotation == 0 {
-            args.append("-XMP-tiff:Orientation=")
+            // No turn to record. Leave any existing tag alone — for a photo
+            // rotated by another tool the XMP value can be the only record of
+            // its orientation — and only write the base back when clearing a
+            // turn of our own (tag present and disagreeing with the base).
+            if let currentXMP, let base, currentXMP != base {
+                args.append("-XMP-tiff:Orientation#=\(base)")
+            }
         } else {
-            let base = baseOrientation(at: URL(fileURLWithPath: file.path))
+            guard let base else {
+                throw XMPError.unreadableOrientation(file.path)
+            }
             let absolute = absoluteOrientation(
                 rotation: edit.normalizedRotation, base: base)
             args.append("-XMP-tiff:Orientation#=\(absolute)")

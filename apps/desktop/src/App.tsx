@@ -497,7 +497,10 @@ export default function App() {
                 variant={editOpen ? "secondary" : "ghost"}
                 data-testid="toggle-edit"
                 onClick={toggleEditPanel}
-                title="Toggle edit panel (e)"
+                disabled={cropping}
+                title={
+                  cropping ? "Finish the crop first" : "Toggle edit panel (e)"
+                }
                 className="h-7 text-xs"
               >
                 <SlidersHorizontal />

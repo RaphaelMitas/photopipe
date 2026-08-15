@@ -303,11 +303,28 @@ describe("EditSidebar", () => {
     expect(onCropDraft).toHaveBeenCalledWith({
       ...draft,
       rotation: 90,
-      flipped: true,
       // The left half of the frame becomes the top half after a clockwise
-      // turn.
+      // turn. "free" has no ratio lock, so flipped stays put.
       crop: { left: 0, top: 0, right: 1, bottom: 0.5 },
     });
+  });
+
+  it("turn 90° flips the lock only for fixed ratio presets", () => {
+    const preset = {
+      ...draftFromEdit(identityEdit),
+      aspect: "16:9",
+      crop: { left: 0.2, top: 0.2, right: 0.8, bottom: 0.8 },
+    };
+    const first = renderEditSidebar(identityEdit, preset);
+    fireEvent.click(screen.getByTestId("crop-turn"));
+    expect(first.onCropDraft.mock.calls[0][0].flipped).toBe(true);
+    cleanup();
+    // original/transposed follow the turned frame dims by themselves; a
+    // flip on top would invert the lock against the turned rect.
+    const original = { ...preset, aspect: "original" };
+    const second = renderEditSidebar(identityEdit, original);
+    fireEvent.click(screen.getByTestId("crop-turn"));
+    expect(second.onCropDraft.mock.calls[0][0].flipped).toBe(false);
   });
 
   it("the flip button transposes the crop about its center", () => {
