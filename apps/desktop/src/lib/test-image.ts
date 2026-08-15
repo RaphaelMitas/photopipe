@@ -15,6 +15,7 @@ export function makeImage(
     edit: { ...identityEdit },
     width: 3000,
     height: 2000,
+    enriched: true,
     ...overrides,
   };
 }

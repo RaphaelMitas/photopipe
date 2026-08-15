@@ -26,6 +26,7 @@ import {
 import type { FilmstripMode } from "@/components/Filmstrip";
 import { ImageGrid } from "@/components/ImageGrid";
 import { ImageList } from "@/components/ImageList";
+import { IndexingStatus } from "@/components/IndexingStatus";
 import { Loupe } from "@/components/Loupe";
 import { LoupeSidebar } from "@/components/LoupeSidebar";
 import { NewProjectDialog } from "@/components/NewProjectDialog";
@@ -50,9 +51,9 @@ import {
 } from "@/lib/core";
 import {
   useExportFiles,
-  useGenerationPoll,
   useImages,
   useImportFiles,
+  useLibrarySync,
   useReveal,
   useSetEdit,
   useSetRating,
@@ -154,7 +155,7 @@ export default function App() {
   const trash = useTrash(openShoot);
   const exportFiles = useExportFiles();
   const importFiles = useImportFiles(openShoot);
-  useGenerationPoll(ready, ready ? rootState.generation : null);
+  const scan = useLibrarySync(ready, ready ? rootState.generation : null);
 
   const allImages = images.data ?? [];
   const filteredImages = useMemo(
@@ -190,8 +191,12 @@ export default function App() {
     (path, edit) => setEdit.mutate({ path, edit }),
     EDIT_COMMIT_MS,
   );
-  const changeEdit = (image: ImageFile, edit: Edit) =>
+  // Until the core has read what the file already carries, every edit here is
+  // relative to a blank placeholder and would erase the real one.
+  const changeEdit = (image: ImageFile, edit: Edit) => {
+    if (!image.enriched) return;
     scrubEdit(image.path, edit);
+  };
 
   const installBlocked = jobs.some((job) => job.status === "running")
     ? "Finish the running export first; installing restarts Photopipe."
@@ -465,6 +470,7 @@ export default function App() {
               <span className="text-muted-foreground text-sm">Library</span>
             )}
             <span className="flex-1" />
+            <IndexingStatus progress={scan} />
             {jobs.length > 0 && (
               <Button
                 size="sm"

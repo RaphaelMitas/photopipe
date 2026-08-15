@@ -81,7 +81,7 @@ private func makeService(in dir: URL) -> LibraryService {
     // An empty folder without photopipe.json is not a project.
     try FileManager.default.createDirectory(
         at: dir.appendingPathComponent("2026-08-10_random"), withIntermediateDirectories: true)
-    let snapshot = try scanLibrary(root: dir.path)
+    let snapshot = try walkLibrary(root: dir.path)
     #expect(snapshot.shoots.isEmpty)
 }
 

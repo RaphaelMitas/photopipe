@@ -12,13 +12,23 @@ public struct LibrarySnapshot: Equatable, Sendable {
         self.imagesByShoot = imagesByShoot
         self.fileCount = fileCount
     }
+
+    public var unenriched: [String: [ImageFile]] {
+        imagesByShoot.compactMapValues { images in
+            let pending = images.filter { !$0.enriched }
+            return pending.isEmpty ? nil : pending
+        }
+    }
 }
 
 public enum ScanError: Error {
     case rootNotFound(String)
 }
 
-public func scanLibrary(root: String) throws -> LibrarySnapshot {
+/// Finds every shoot and file by stat alone. Nothing here opens an image, so
+/// the cost is one directory enumeration — this is what the library can be
+/// drawn from while `enrich` catches up in the background.
+public func walkLibrary(root: String) throws -> LibrarySnapshot {
     let fm = FileManager.default
     var isDirectory: ObjCBool = false
     guard fm.fileExists(atPath: root, isDirectory: &isDirectory), isDirectory.boolValue else {
@@ -38,7 +48,7 @@ public func scanLibrary(root: String) throws -> LibrarySnapshot {
     var fileCount = 0
 
     for dir in shootDirs {
-        let images = scanShootDirectory(dir)
+        let images = walkShootDirectory(dir)
         let isProject = fm.fileExists(atPath: ProjectFile.url(inShoot: dir.path).path)
         guard !images.isEmpty || isProject else { continue }
         fileCount += images.count
@@ -62,7 +72,44 @@ public func scanLibrary(root: String) throws -> LibrarySnapshot {
     return LibrarySnapshot(shoots: shoots, imagesByShoot: imagesByShoot, fileCount: fileCount)
 }
 
-private func scanShootDirectory(_ dir: URL) -> [ImageFile] {
+/// Reads the metadata the walk skipped: dimensions, rating and edit. Each call
+/// opens the file, twice for a raw with a sidecar, which is why this runs off
+/// the request path.
+public func enrich(_ file: ImageFile) -> ImageFile {
+    file.with(
+        rating: XMP.readRating(file: file),
+        edit: XMP.readEdit(file: file),
+        dimensions: Dimensions.cached(for: file) ?? Dimensions.fallback,
+        enriched: true)
+}
+
+/// Rebuilds a walked snapshot on top of metadata that was already paid for,
+/// keyed by path. A cached record only counts while the file it describes is
+/// byte-for-byte the one on disk.
+public func carryEnrichment(
+    into walked: LibrarySnapshot, from cache: [String: ImageFile]
+) -> LibrarySnapshot {
+    var imagesByShoot: [String: [ImageFile]] = [:]
+    for (shoot, images) in walked.imagesByShoot {
+        imagesByShoot[shoot] = images.map { image in
+            guard let known = cache[image.path], known.enriched,
+                known.mtime == image.mtime, known.size == image.size
+            else { return image }
+            return image.with(
+                rating: known.rating, edit: known.edit,
+                dimensions: (known.width, known.height), enriched: true)
+        }
+    }
+    let shoots = walked.shoots.map { shoot in
+        makeShoot(
+            name: shoot.name, path: shoot.path, images: imagesByShoot[shoot.name] ?? [],
+            notes: shoot.notes, cover: shoot.cover)
+    }
+    return LibrarySnapshot(
+        shoots: shoots, imagesByShoot: imagesByShoot, fileCount: walked.fileCount)
+}
+
+private func walkShootDirectory(_ dir: URL) -> [ImageFile] {
     let fm = FileManager.default
     guard
         let enumerator = fm.enumerator(
@@ -82,20 +129,13 @@ private func scanShootDirectory(_ dir: URL) -> [ImageFile] {
             isImagePath(url.path)
         else { continue }
         let path = url.path
-        let stub = ImageFile(
-            path: path,
-            rel: String(path.dropFirst(prefix.count)),
-            ext: url.pathExtension,
-            size: Int64(values.fileSize ?? 0),
-            mtime: values.contentModificationDate?.timeIntervalSince1970 ?? 0)
-        let dims = Dimensions.cached(for: stub) ?? Dimensions.fallback
         images.append(
             ImageFile(
-                path: stub.path, rel: stub.rel, ext: stub.ext,
-                size: stub.size, mtime: stub.mtime,
-                rating: XMP.readRating(file: stub),
-                edit: XMP.readEdit(file: stub),
-                width: dims.width, height: dims.height))
+                path: path,
+                rel: String(path.dropFirst(prefix.count)),
+                ext: url.pathExtension,
+                size: Int64(values.fileSize ?? 0),
+                mtime: values.contentModificationDate?.timeIntervalSince1970 ?? 0))
     }
     return images.sorted { $0.rel.localizedStandardCompare($1.rel) == .orderedAscending }
 }

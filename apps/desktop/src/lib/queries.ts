@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getVersion } from "@tauri-apps/api/app";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   type CreateProjectResult,
@@ -341,29 +341,78 @@ export function useCreateProject() {
   });
 }
 
-export function useGenerationPoll(
+export type ScanProgress = {
+  scanning: boolean;
+  found: number;
+  enriched: number;
+};
+
+const IDLE_POLL_MS = 2000;
+/// While the core is still indexing there is a live counter to drive, and the
+/// shoot list is cheap; the expensive per-shoot refetches are rate-limited by
+/// the core, not by this interval.
+const INDEXING_POLL_MS = 250;
+
+const NOT_SCANNING: ScanProgress = {
+  scanning: false,
+  found: 0,
+  enriched: 0,
+};
+
+/// Watches the core's generation and pulls in whatever changed: the shoot list
+/// on every bump, and images only for the shoots the core names.
+export function useLibrarySync(
   enabled: boolean,
   initialGeneration: number | null,
-  intervalMs = 2000,
 ) {
   const queryClient = useQueryClient();
-  const lastGeneration = useRef<number | null>(null);
+  const [progress, setProgress] = useState<ScanProgress>(NOT_SCANNING);
+  const seen = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!enabled) return;
-    lastGeneration.current = initialGeneration;
-    const timer = setInterval(async () => {
+    if (!enabled) {
+      setProgress(NOT_SCANNING);
+      return;
+    }
+    seen.current = initialGeneration;
+    let timer: ReturnType<typeof setTimeout>;
+    let stopped = false;
+
+    const poll = async () => {
+      let next = IDLE_POLL_MS;
       try {
-        const status = await coreRequest<StatusResult>("status");
-        if (status.generation === lastGeneration.current) return;
-        if (xmpWritesInFlight(queryClient) > 0) {
-          return;
+        const status = await coreRequest<StatusResult>("status", {
+          since: seen.current,
+        });
+        if (stopped) return;
+        setProgress({
+          scanning: status.scanning,
+          found: status.filesFound,
+          enriched: status.filesEnriched,
+        });
+        next = status.scanning ? INDEXING_POLL_MS : IDLE_POLL_MS;
+        // A rating write in flight owns the images cache until it settles.
+        if (
+          status.generation !== seen.current &&
+          xmpWritesInFlight(queryClient) === 0
+        ) {
+          queryClient.invalidateQueries({ queryKey: ["shoots"] });
+          for (const shoot of status.changedShoots ?? []) {
+            queryClient.invalidateQueries({ queryKey: ["images", shoot] });
+          }
+          seen.current = status.generation;
         }
-        queryClient.invalidateQueries({ queryKey: ["shoots"] });
-        queryClient.invalidateQueries({ queryKey: ["images"] });
-        lastGeneration.current = status.generation;
       } catch {}
-    }, intervalMs);
-    return () => clearInterval(timer);
-  }, [enabled, initialGeneration, intervalMs, queryClient]);
+      if (!stopped) timer = setTimeout(poll, next);
+    };
+
+    // Straight away, so a library that opened mid-index says so on first paint.
+    timer = setTimeout(poll, 0);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [enabled, initialGeneration, queryClient]);
+
+  return progress;
 }

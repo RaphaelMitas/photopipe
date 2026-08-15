@@ -204,3 +204,26 @@ test("library cards show a cover and open project settings", async ({
     page.getByText(/Renamed to 2026-07-12_zell-revisited/),
   ).toBeVisible();
 });
+
+test("a library that is still indexing says so and holds edits back", async ({
+  page,
+}) => {
+  await page.goto("/?indexing=1");
+  await page.getByTestId("root-input").fill("/fake");
+  await page.getByTestId("root-submit").click();
+
+  // The library is browsable immediately; the header owns up to the rest.
+  await expect(page.getByTestId("shoot-2026-07-12_zell")).toBeVisible();
+  await expect(page.getByTestId("indexing-status")).toContainText(
+    "Indexing 12,800 of 41,203",
+  );
+
+  await page.getByTestId("shoot-2026-07-12_zell").click();
+  await expect(page.getByTestId("ratings-indexing")).toBeVisible();
+
+  // Editing against placeholder metadata would erase the file's real edit.
+  await page.getByTestId("thumb").first().click();
+  await expect(page.getByTestId("loupe")).toBeVisible();
+  await expect(page.getByTestId("edit-not-indexed")).toBeVisible();
+  await expect(page.getByTestId("exposure")).toHaveCount(0);
+});

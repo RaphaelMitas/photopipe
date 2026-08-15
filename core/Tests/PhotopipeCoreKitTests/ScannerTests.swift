@@ -14,6 +14,16 @@ func scratchDir(_ prefix: String) -> URL {
         .appendingPathComponent("photopipe-tests/\(prefix)-\(UUID().uuidString)")
 }
 
+/// `setRoot` returns as soon as the tree is walked, so anything that asserts on
+/// ratings, edits, dimensions or a settled generation has to wait for the
+/// background enrichment to land first.
+func waitUntilIndexed(_ service: LibraryService, timeout: TimeInterval = 10) {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline, service.status().scanning {
+        Thread.sleep(forTimeInterval: 0.02)
+    }
+}
+
 /// Builds a scratch photo tree: [shootName: [relative file paths]] → root URL.
 func makeTree(_ layout: [String: [String]]) throws -> URL {
     let root = scratchDir("tree")
@@ -75,7 +85,7 @@ func makeTree(_ layout: [String: [String]]) throws -> URL {
     ])
     defer { try? FileManager.default.removeItem(at: root) }
 
-    let snapshot = try scanLibrary(root: root.path)
+    let snapshot = try walkLibrary(root: root.path)
     // not-a-shoot has no images and no photopipe.json → dropped entirely
     #expect(snapshot.shoots.map(\.name) == ["2026-08-01_beach", "2026-07-12_zell"])
     #expect(snapshot.fileCount == 5)
@@ -100,12 +110,12 @@ func makeTree(_ layout: [String: [String]]) throws -> URL {
     ])
     defer { try? FileManager.default.removeItem(at: root) }
 
-    let names = try scanLibrary(root: root.path).shoots.map(\.name)
+    let names = try walkLibrary(root: root.path).shoots.map(\.name)
     #expect(names == ["2026-12-31_new", "2026-01-01_old", "misc"])
 }
 
 @Test func scanMissingRootThrows() {
     #expect(throws: ScanError.self) {
-        try scanLibrary(root: "/nonexistent/path/\(UUID().uuidString)")
+        try walkLibrary(root: "/nonexistent/path/\(UUID().uuidString)")
     }
 }
