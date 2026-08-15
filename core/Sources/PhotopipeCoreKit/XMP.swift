@@ -40,36 +40,33 @@ public enum XMP {
         Int(min(max(value.rounded(), -scalarMagnitudeLimit), scalarMagnitudeLimit))
     }
 
-    static func parseDouble(_ tag: String, in text: String) -> Double? {
-        let attribute = try? Regex("crs:\(tag)\\s*=\\s*\"\(number)\"")
+    /// XMP tags appear as attributes (`crs:Tag="v"`) or elements
+    /// (`<crs:Tag>v</crs:Tag>`) depending on the writer; capture either.
+    private static func firstCapture(
+        _ tag: String, ns: String = "crs", pattern: String, in text: String
+    ) -> String? {
+        let attribute = try? Regex("\(ns):\(tag)\\s*=\\s*\"\(pattern)\"")
         if let attribute, let match = text.firstMatch(of: attribute),
-            let value = match[1].substring, let parsed = sane(Double(value))
+            let value = match[1].substring
         {
-            return parsed
+            return String(value)
         }
-        let element = try? Regex("<crs:\(tag)>\\s*\(number)\\s*</crs:\(tag)>")
+        let element = try? Regex("<\(ns):\(tag)>\\s*\(pattern)\\s*</\(ns):\(tag)>")
         if let element, let match = text.firstMatch(of: element),
-            let value = match[1].substring, let parsed = sane(Double(value))
+            let value = match[1].substring
         {
-            return parsed
+            return String(value)
         }
         return nil
     }
 
+    static func parseDouble(_ tag: String, in text: String) -> Double? {
+        sane(firstCapture(tag, pattern: number, in: text).flatMap(Double.init))
+    }
+
     static func parseHasCrop(in text: String) -> Bool? {
-        let attribute = try? Regex("crs:HasCrop\\s*=\\s*\"(\\w+)\"")
-        if let attribute, let match = text.firstMatch(of: attribute),
-            let value = match[1].substring
-        {
-            return value.lowercased() == "true"
-        }
-        let element = try? Regex("<crs:HasCrop>\\s*(\\w+)\\s*</crs:HasCrop>")
-        if let element, let match = text.firstMatch(of: element),
-            let value = match[1].substring
-        {
-            return value.lowercased() == "true"
-        }
-        return nil
+        firstCapture("HasCrop", pattern: "(\\w+)", in: text)
+            .map { $0.lowercased() == "true" }
     }
 
     static func parseCurve(_ tag: String, in text: String) -> [CurvePoint] {
@@ -106,31 +103,39 @@ public enum XMP {
 
     // tiff:Orientation stores the ABSOLUTE display orientation (Lightroom
     // mirrors the file's own orientation there even without a user turn), so
-    // the model's additive rotation is the difference against the base.
-    // Only the rotation subgroup 1/6/3/8 is handled; mirrored values pass
-    // through as "no turn".
-    private static let orientationDegrees = [1: 0, 6: 90, 3: 180, 8: 270]
+    // the model's additive rotation is the difference against the base. A
+    // display rotation on top of any orientation only changes its degrees:
+    // R(k)∘(R(r)∘M) = R(r+k)∘M, so a mirrored base keeps its mirror.
+    // Values follow exiftool's "Mirror horizontal and rotate N CW" naming.
+    private static let orientationParts: [Int: (mirrored: Bool, degrees: Int)] = [
+        1: (false, 0), 6: (false, 90), 3: (false, 180), 8: (false, 270),
+        2: (true, 0), 7: (true, 90), 4: (true, 180), 5: (true, 270),
+    ]
+
+    private static func orientationValue(mirrored: Bool, degrees: Int) -> Int {
+        let normalized = ((degrees % 360) + 360) % 360
+        return orientationParts.first {
+            $0.value.mirrored == mirrored && $0.value.degrees == normalized
+        }?.key ?? 1
+    }
 
     static func rotation(fromXMP xmp: Int?, base: Int) -> Int {
-        guard let xmp, let xmpDegrees = orientationDegrees[xmp] else { return 0 }
-        let baseDegrees = orientationDegrees[base] ?? 0
-        return (xmpDegrees - baseDegrees + 360) % 360
+        guard let xmp, let xmpParts = orientationParts[xmp],
+            let baseParts = orientationParts[base],
+            xmpParts.mirrored == baseParts.mirrored
+        else { return 0 }
+        return (xmpParts.degrees - baseParts.degrees + 360) % 360
     }
 
     static func absoluteOrientation(rotation: Int, base: Int) -> Int {
-        let baseDegrees = orientationDegrees[base] ?? 0
-        let total = (baseDegrees + rotation + 360) % 360
-        return orientationDegrees.first { $0.value == total }?.key ?? 1
+        let baseParts = orientationParts[base] ?? (false, 0)
+        return orientationValue(
+            mirrored: baseParts.mirrored, degrees: baseParts.degrees + rotation)
     }
 
     static func parseOrientation(in text: String) -> Int? {
-        if let match = text.firstMatch(of: /tiff:Orientation\s*=\s*"([1368])"/) {
-            return Int(match.1)
-        }
-        if let match = text.firstMatch(of: /<tiff:Orientation>\s*([1368])\s*<\/tiff:Orientation>/) {
-            return Int(match.1)
-        }
-        return nil
+        firstCapture("Orientation", ns: "tiff", pattern: "([1-8])", in: text)
+            .flatMap(Int.init)
     }
 
     /// Lightroom's crop-reset keeps the Crop* values and flips HasCrop to
@@ -172,17 +177,57 @@ public enum XMP {
     /// ImageIO's metadata API reconciles EXIF and XMP into one value, which
     /// hides exactly the difference the additive-rotation model needs.
     static func embeddedXMPOrientation(at url: URL) -> Int? {
-        // Real packets are well under a megabyte; a crafted delimiter pair
-        // spanning the file must not become a giant String.
-        let sizeLimit = 4 << 20
-        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe),
-            let start = data.range(of: Data("<x:xmpmeta".utf8)),
-            let end = data.range(
-                of: Data("</x:xmpmeta>".utf8), in: start.upperBound..<data.endIndex),
-            end.upperBound - start.lowerBound <= sizeLimit
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else {
+            return nil
+        }
+        // JPEGs get a real segment walk so a decoy packet in a comment or
+        // the compressed stream cannot win, and the scan stops at the image
+        // data instead of walking a whole file with no packet.
+        if data.starts(with: [0xFF, 0xD8]) {
+            return jpegXMPPacket(in: data).flatMap { parseOrientation(in: $0) }
+        }
+        // Other containers (HEIC, PNG, TIFF): delimiter scan over the head of
+        // the file. Real packets are well under a megabyte; a crafted
+        // delimiter pair must not become a giant String.
+        let head = data.prefix(16 << 20)
+        guard let start = head.range(of: Data("<x:xmpmeta".utf8)),
+            let end = head.range(
+                of: Data("</x:xmpmeta>".utf8), in: start.upperBound..<head.endIndex),
+            end.upperBound - start.lowerBound <= 4 << 20
         else { return nil }
-        let text = String(decoding: data[start.lowerBound..<end.upperBound], as: UTF8.self)
+        let text = String(decoding: head[start.lowerBound..<end.upperBound], as: UTF8.self)
         return parseOrientation(in: text)
+    }
+
+    private static let jpegXMPHeader = Data("http://ns.adobe.com/xap/1.0/\0".utf8)
+
+    private static func jpegXMPPacket(in data: Data) -> String? {
+        var index = data.startIndex + 2
+        while index + 4 <= data.endIndex {
+            guard data[index] == 0xFF else { return nil }
+            let marker = data[index + 1]
+            if marker == 0xFF {
+                index += 1
+                continue
+            }
+            // SOS/EOI: metadata segments are over.
+            if marker == 0xDA || marker == 0xD9 { return nil }
+            if (0xD0...0xD7).contains(marker) || marker == 0x01 {
+                index += 2
+                continue
+            }
+            let length = Int(data[index + 2]) << 8 | Int(data[index + 3])
+            guard length >= 2, index + 2 + length <= data.endIndex else { return nil }
+            if marker == 0xE1 {
+                let payload = data[(index + 4)..<(index + 2 + length)]
+                if payload.starts(with: jpegXMPHeader) {
+                    return String(
+                        decoding: payload.dropFirst(jpegXMPHeader.count), as: UTF8.self)
+                }
+            }
+            index += 2 + length
+        }
+        return nil
     }
 
     static func readEmbedded(at url: URL, isRaw: Bool) -> (rating: Int?, edit: Edit) {

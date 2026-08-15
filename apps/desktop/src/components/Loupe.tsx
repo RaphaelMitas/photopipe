@@ -321,12 +321,17 @@ export function Loupe({
         )}
       </div>
       {filmstrip !== "off" && (
-        <Filmstrip
-          images={images}
-          index={index}
-          mode={filmstrip}
-          onNavigate={onNavigate}
-        />
+        // Navigating away would silently discard the crop draft.
+        <div
+          className={cropping ? "pointer-events-none opacity-40" : undefined}
+        >
+          <Filmstrip
+            images={images}
+            index={index}
+            mode={filmstrip}
+            onNavigate={onNavigate}
+          />
+        </div>
       )}
     </div>
   );

@@ -158,7 +158,13 @@ export function CropPanel({
           data-testid="crop-reset"
           disabled={isIdentityDraft(draft)}
           onClick={() =>
-            onDraft({ ...draft, crop: fullCrop, angle: 0, rotation: 0 })
+            onDraft({
+              crop: fullCrop,
+              angle: 0,
+              rotation: 0,
+              aspect: "free",
+              flipped: false,
+            })
           }
           className="ml-auto h-6 px-1.5 text-[10px] text-muted-foreground"
         >
@@ -414,7 +420,12 @@ export function CropOverlay({
       if (delta > 180) delta -= 360;
       if (delta <= -180) delta += 360;
       active.lastPointerAngle = pointer;
-      active.angle += delta;
+      // Clamp the accumulator too, or winding past the limit builds up
+      // slack that must be dragged back before the photo responds again.
+      active.angle = Math.min(
+        Math.max(active.angle + delta, -STRAIGHTEN_RANGE),
+        STRAIGHTEN_RANGE,
+      );
       onChange(draftWithAngle(draft, active.angle, imageWidth, imageHeight));
       return;
     }

@@ -196,6 +196,32 @@ private func image(_ url: URL) throws -> ImageFile {
     #expect(overhang.crop == CropRect(left: -0.05, top: 0, right: 1.02, bottom: 1))
 }
 
+/// The JPEG segment walk must ignore a decoy packet in a comment segment and
+/// read the orientation from the real APP1 XMP.
+@Test func decoyXMPPacketInAJPEGCommentIsIgnored() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let jpg = dir.appendingPathComponent("DSC00013.JPG")
+    try writeGrayJPEG(to: jpg)
+    try ExifTool.shared.write(["-overwrite_original", "-XMP-tiff:Orientation#=6", jpg.path])
+
+    // Splice a decoy packet into a COM segment right after SOI — earlier in
+    // the byte stream than the genuine APP1.
+    var bytes = try Data(contentsOf: jpg)
+    let decoy = Data(#"<x:xmpmeta><rdf:Description tiff:Orientation="3"/></x:xmpmeta>"#.utf8)
+    var segment = Data([0xFF, 0xFE])
+    let length = decoy.count + 2
+    segment.append(UInt8(length >> 8))
+    segment.append(UInt8(length & 0xFF))
+    segment.append(decoy)
+    bytes.insert(contentsOf: segment, at: bytes.startIndex + 2)
+    try bytes.write(to: jpg)
+
+    #expect(XMP.embeddedXMPOrientation(at: jpg) == 6)
+}
+
 /// A base orientation guessed from a failed read must never be written into
 /// an embedded file's real EXIF; the turn fails loudly instead.
 @Test func turningAnUnreadableEmbeddedFileThrows() throws {
@@ -298,6 +324,14 @@ private func image(_ url: URL) throws -> ImageFile {
     #expect(XMP.absoluteOrientation(rotation: 90, base: 1) == 6)
     #expect(XMP.absoluteOrientation(rotation: 90, base: 6) == 3)
     #expect(XMP.absoluteOrientation(rotation: 270, base: 6) == 1)
+
+    // Mirrored bases keep their mirror through turns: a turn only adds
+    // display degrees, it never unflips the photo for other readers.
+    #expect(XMP.absoluteOrientation(rotation: 90, base: 2) == 7)
+    #expect(XMP.absoluteOrientation(rotation: 180, base: 5) == 7)
+    #expect(XMP.rotation(fromXMP: 7, base: 2) == 90)
+    #expect(XMP.rotation(fromXMP: 2, base: 2) == 0)
+    #expect(XMP.rotation(fromXMP: 6, base: 2) == 0, "mirror mismatch is not our turn")
 
     let sidecar = #"<rdf:Description tiff:Orientation="6" crs:Exposure2012="0.5"/>"#
     #expect(XMP.parseEdit(sidecar, isRaw: true, baseOrientation: 1).rotation == 90)
