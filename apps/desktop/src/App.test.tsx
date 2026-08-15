@@ -1,7 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import type { ReactElement } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
 const invoke = vi.hoisted(() => vi.fn());
@@ -10,6 +18,20 @@ vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => `asset://${path}`,
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
+
+const menu = vi.hoisted(() => new Map<string, (event: unknown) => void>());
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: async (event: string, handler: (event: unknown) => void) => {
+    menu.set(event, handler);
+    return () => menu.delete(event);
+  },
+}));
+
+function chooseMenuItem(event: string) {
+  const handler = menu.get(event);
+  if (!handler) throw new Error(`nothing listening for ${event}`);
+  act(() => handler({ event, payload: null }));
+}
 
 function renderWithQueries(ui: ReactElement) {
   const client = new QueryClient({
@@ -31,9 +53,12 @@ const SHOOT = {
   coverPath: null,
 };
 
+afterEach(cleanup);
+
 beforeEach(() => {
   invoke.mockReset();
   localStorage.clear();
+  menu.clear();
 });
 
 describe("App", () => {
@@ -56,6 +81,24 @@ describe("App", () => {
     renderWithQueries(<App />);
     const entry = await screen.findByTestId("shoot-2026-07-12_zell");
     expect(within(entry).getByText("4 photos")).toBeInTheDocument();
+  });
+
+  it("opens settings from the menu bar before a folder is picked", async () => {
+    renderWithQueries(<App />);
+    expect(screen.getByTestId("root-input")).toBeInTheDocument();
+
+    chooseMenuItem("menu:settings");
+    expect(await screen.findByTestId("auto-score")).toBeInTheDocument();
+
+    // And again after closing it, not just the first time.
+    act(() => {
+      fireEvent.keyDown(document.body, { key: "Escape" });
+    });
+    await waitFor(() =>
+      expect(screen.queryByTestId("auto-score")).not.toBeInTheDocument(),
+    );
+    chooseMenuItem("menu:settings");
+    expect(await screen.findByTestId("auto-score")).toBeInTheDocument();
   });
 
   it("drops back to the picker with the error when setRoot fails", async () => {

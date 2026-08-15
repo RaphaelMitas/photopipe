@@ -104,6 +104,9 @@ export type ImageFile = {
   edit: Edit;
   width: number;
   height: number;
+  // Vision's aesthetic score, -1..1. Null until the shoot has been scored, and
+  // for a file Vision could not read.
+  score: number | null;
 };
 
 export function isRawFile(file: { ext: string }): boolean {

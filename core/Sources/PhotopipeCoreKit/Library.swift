@@ -20,10 +20,12 @@ public struct ImageFile: Codable, Equatable, Sendable {
     public let edit: Edit
     public let width: Int
     public let height: Int
+    public let score: Double?
 
     public init(
         path: String, rel: String, ext: String, size: Int64, mtime: Double,
-        rating: Int = 0, edit: Edit = .identity, width: Int = 3000, height: Int = 2000
+        rating: Int = 0, edit: Edit = .identity, width: Int = 3000, height: Int = 2000,
+        score: Double? = nil
     ) {
         self.path = path
         self.rel = rel
@@ -34,6 +36,7 @@ public struct ImageFile: Codable, Equatable, Sendable {
         self.edit = edit
         self.width = width
         self.height = height
+        self.score = score
     }
 
     public var usesSidecar: Bool {
@@ -44,11 +47,11 @@ public struct ImageFile: Codable, Equatable, Sendable {
         rawExtensions.contains(ext.lowercased())
     }
 
-    public func with(rating: Int? = nil, edit: Edit? = nil) -> ImageFile {
+    public func with(rating: Int? = nil, edit: Edit? = nil, score: Double? = nil) -> ImageFile {
         ImageFile(
             path: path, rel: rel, ext: ext, size: size, mtime: mtime,
             rating: rating ?? self.rating, edit: edit ?? self.edit,
-            width: width, height: height)
+            width: width, height: height, score: score ?? self.score)
     }
 }
 

@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getVersion } from "@tauri-apps/api/app";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   type CreateProjectResult,
@@ -16,15 +15,6 @@ import {
   type StatusResult,
   type WhiteBalanceResult,
 } from "./core";
-
-export function useAppVersion(enabled: boolean) {
-  return useQuery({
-    queryKey: ["appVersion"],
-    queryFn: getVersion,
-    enabled,
-    staleTime: Number.POSITIVE_INFINITY,
-  });
-}
 
 export function useShoots(enabled: boolean) {
   return useQuery({
@@ -43,6 +33,57 @@ export function useImages(shoot: string | null) {
         .images,
     enabled: shoot !== null,
   });
+}
+
+export type ScoreProgress = {
+  done: number;
+  total: number;
+  running: boolean;
+};
+
+/// How long the browser offers the new sort after a pass ends.
+const RATED_OFFER_MS = 8000;
+
+/// Scores a shoot in the background, once per shoot, and watches it finish.
+/// Scores reach the grid through `listImages`, so the images are refetched when
+/// the pass ends rather than on every tick. `justRated` is the short window
+/// afterwards where the browser can hand the sort over.
+export function useScoring(shoot: string | null, enabled: boolean) {
+  const client = useQueryClient();
+  const startedFor = useRef<string | null>(null);
+  const wasRunning = useRef(false);
+  const [justRated, setJustRated] = useState(false);
+
+  const query = useQuery({
+    queryKey: ["scoring", shoot],
+    queryFn: async () => {
+      const method =
+        startedFor.current === shoot ? "scoreStatus" : "scoreShoot";
+      startedFor.current = shoot;
+      return coreRequest<ScoreProgress>(method, { shoot });
+    },
+    enabled: enabled && shoot !== null,
+    refetchInterval: (query) => (query.state.data?.running ? 1000 : false),
+  });
+
+  const running = query.data?.running ?? false;
+  const lastShoot = useRef(shoot);
+  useEffect(() => {
+    const finished = wasRunning.current && !running;
+    wasRunning.current = running;
+    if (lastShoot.current !== shoot) {
+      lastShoot.current = shoot;
+      setJustRated(false);
+      return;
+    }
+    if (!finished) return;
+    void client.invalidateQueries({ queryKey: ["images", shoot] });
+    setJustRated(true);
+    const timer = setTimeout(() => setJustRated(false), RATED_OFFER_MS);
+    return () => clearTimeout(timer);
+  }, [running, shoot, client]);
+
+  return { progress: query.data ?? null, justRated };
 }
 
 export function useThumbnail(

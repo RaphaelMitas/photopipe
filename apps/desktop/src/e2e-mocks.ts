@@ -24,25 +24,36 @@ const zellImages: ImageFile[] = [
   image("/fake/2026-07-12_zell", "DSC00832.ARW", {
     width: 4672,
     height: 7008,
+    score: 0.41,
   }),
   image("/fake/2026-07-12_zell", "DSC00832.jpg", {
     edit: { ...identityEdit, exposure: 0.5 },
+    score: 0.62,
   }),
-  image("/fake/2026-07-12_zell", "abends/DSC00938.ARW", { rating: 2 }),
+  image("/fake/2026-07-12_zell", "abends/DSC00938.ARW", {
+    rating: 2,
+    score: 0.74,
+  }),
   image("/fake/2026-07-12_zell", "abends/DSC00943.ARW", {
     width: 4672,
     height: 7008,
+    score: -0.12,
   }),
 ];
 
 const miscImages: ImageFile[] = [
-  image("/fake/misc", "IMG_0001.ARW", { width: 4672, height: 7008 }),
+  image("/fake/misc", "IMG_0001.ARW", {
+    width: 4672,
+    height: 7008,
+    score: 0.33,
+  }),
 ];
 
 const bigImages: ImageFile[] = Array.from({ length: 200 }, (_, i) =>
   image("/fake/2026-08-01_dolomites", `DSC0${String(1200 + i)}.ARW`, {
     width: i % 3 === 0 ? 4672 : 7008,
     height: i % 3 === 0 ? 7008 : 4672,
+    score: 0.5 - (i % 37) / 50,
   }),
 );
 
@@ -88,6 +99,28 @@ function imagesFor(shoot: string): ImageFile[] {
   return miscImages;
 }
 
+// The fake core has every photo rated already, so the sort by Instinct is
+// usable the moment a project opens. With ?scoring in the URL a pass takes
+// three polls instead, which is how the rating progress gets tested without
+// putting a clock into every other spec.
+const scorePolls = new Map<string, number>();
+const SLOW_SCORING_POLLS = 3;
+
+function scored(shoot: string) {
+  const total = imagesFor(shoot).length;
+  if (!location.search.includes("scoring")) {
+    return { done: total, total, running: false };
+  }
+  const poll = (scorePolls.get(shoot) ?? 0) + 1;
+  scorePolls.set(shoot, poll);
+  if (poll >= SLOW_SCORING_POLLS) return { done: total, total, running: false };
+  return {
+    done: Math.floor((total * poll) / SLOW_SCORING_POLLS),
+    total,
+    running: true,
+  };
+}
+
 export const E2E_HANDLERS: Record<
   string,
   (params: Record<string, unknown>) => unknown
@@ -102,6 +135,8 @@ export const E2E_HANDLERS: Record<
   listImages: (params) => ({
     images: [...imagesFor(String(params.shoot))],
   }),
+  scoreShoot: (params) => scored(String(params.shoot)),
+  scoreStatus: (params) => scored(String(params.shoot)),
   thumbnail: (params) => ({
     cachePath: `/fake/thumbs/${String(params.path)}.jpg`,
   }),

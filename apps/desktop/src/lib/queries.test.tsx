@@ -23,6 +23,7 @@ function image(name: string): ImageFile {
     edit: identityEdit,
     width: 3000,
     height: 2000,
+    score: null,
   };
 }
 

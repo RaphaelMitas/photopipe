@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   AlertCircle,
@@ -8,7 +9,6 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { AboutDialog } from "@/components/AboutDialog";
 import { AppSidebar } from "@/components/AppSidebar";
 import { BrowserToolbar, type ViewMode } from "@/components/BrowserToolbar";
 import {
@@ -36,6 +36,7 @@ import {
 } from "@/components/RatingFilter";
 import { RootPicker, rememberRoot } from "@/components/RootPicker";
 import { SelectionBar } from "@/components/SelectionBar";
+import { SettingsDialog } from "@/components/SettingsDialog";
 import { ShootSettingsDialog } from "@/components/ShootSettingsDialog";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
@@ -48,24 +49,30 @@ import {
   isIdentityEdit,
   type SetRootResult,
 } from "@/lib/core";
+import { betterThan, scoreRanks } from "@/lib/instinct";
 import {
+  type ScoreProgress,
   useExportFiles,
   useGenerationPoll,
   useImages,
   useImportFiles,
   useReveal,
+  useScoring,
   useSetEdit,
   useSetRating,
   useShoots,
   useTrash,
 } from "@/lib/queries";
 import { useSelection } from "@/lib/selection";
+import { type SortKey, sortImages } from "@/lib/sort";
 import { useDebouncedEdit } from "@/lib/useDebouncedEdit";
 import { useUpdater } from "@/lib/useUpdater";
 
 const ROOT_KEY = "photopipe.root";
 const VIEW_KEY = "photopipe.view";
 const EDIT_PANEL_KEY = "photopipe.editPanel";
+const SORT_KEY = "photopipe.sort";
+const AUTO_SCORE_KEY = "photopipe.autoScore";
 
 type RootState =
   | { kind: "picking"; error: string | null; busy: boolean }
@@ -82,7 +89,7 @@ export default function App() {
   const [openShoot, setOpenShoot] = useState<string | null>(null);
   const [newProject, setNewProject] = useState(false);
   const [shootSettings, setShootSettings] = useState<string | null>(null);
-  const [about, setAbout] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const updater = useUpdater();
   const [view, setView] = useState<ViewMode>(() =>
     localStorage.getItem(VIEW_KEY) === "list" ? "list" : "grid",
@@ -90,6 +97,21 @@ export default function App() {
   const changeView = (next: ViewMode) => {
     setView(next);
     localStorage.setItem(VIEW_KEY, next);
+  };
+  const [sort, setSort] = useState<SortKey>(() => {
+    const stored = localStorage.getItem(SORT_KEY);
+    return stored === "date" || stored === "score" ? stored : "name";
+  });
+  const changeSort = (next: SortKey) => {
+    setSort(next);
+    localStorage.setItem(SORT_KEY, next);
+  };
+  const [autoScore, setAutoScore] = useState(
+    () => localStorage.getItem(AUTO_SCORE_KEY) !== "off",
+  );
+  const changeAutoScore = (on: boolean) => {
+    setAutoScore(on);
+    localStorage.setItem(AUTO_SCORE_KEY, on ? "on" : "off");
   };
   const [loupePath, setLoupePath] = useState<string | null>(null);
   const [ratingOp, setRatingOp] = useState<RatingOp>("gte");
@@ -148,6 +170,10 @@ export default function App() {
   const ready = rootState.kind === "ready";
   const shoots = useShoots(ready);
   const images = useImages(openShoot);
+  const { progress: scoring, justRated } = useScoring(
+    openShoot,
+    ready && autoScore,
+  );
   const setRating = useSetRating(openShoot);
   const setEdit = useSetEdit(openShoot);
   const reveal = useReveal();
@@ -157,13 +183,22 @@ export default function App() {
   useGenerationPoll(ready, ready ? rootState.generation : null);
 
   const allImages = images.data ?? [];
+  const scoreReady =
+    allImages.length > 0 && allImages.every((image) => image.score !== null);
+  // Sorting a half-scored shoot would put photos in an order the scores do not
+  // support, so until every one has an answer the browser falls back to name.
+  const activeSort = sort === "score" && !scoreReady ? "name" : sort;
   const filteredImages = useMemo(
     () =>
-      allImages.filter((image) =>
-        matchesRatingFilter(image.rating, ratingOp, ratingStars),
+      sortImages(
+        allImages.filter((image) =>
+          matchesRatingFilter(image.rating, ratingOp, ratingStars),
+        ),
+        activeSort,
       ),
-    [allImages, ratingOp, ratingStars],
+    [allImages, ratingOp, ratingStars, activeSort],
   );
+  const ranks = useMemo(() => scoreRanks(allImages), [allImages]);
   const counts = useMemo(() => ratingCounts(allImages), [allImages]);
   const filterActive = ratingOp === "unrated" || ratingStars > 0;
 
@@ -202,22 +237,55 @@ export default function App() {
     void updater.install();
   }, [installBlocked, flushEdit, updater]);
 
+  const offerUpdate = useCallback(
+    (version: string, id?: string | number) => {
+      toast(`Photopipe ${version} is available`, {
+        id,
+        duration: Number.POSITIVE_INFINITY,
+        action: { label: "Install", onClick: startInstall },
+      });
+    },
+    [startInstall],
+  );
+
   const { state: updateState } = updater;
   const offered = useRef(false);
   useEffect(() => {
     if (updateState.kind !== "available" || offered.current) return;
     offered.current = true;
-    toast(`Photopipe ${updateState.version} is available`, {
-      duration: Number.POSITIVE_INFINITY,
-      action: {
-        label: "Install",
-        onClick: () => {
-          setAbout(true);
-          startInstall();
-        },
-      },
-    });
-  }, [updateState, startInstall]);
+    offerUpdate(updateState.version);
+  }, [updateState, offerUpdate]);
+
+  const { check: checkUpdate } = updater;
+  const checkForUpdates = useCallback(async () => {
+    // The startup check offers on its own; this one owns the toast instead.
+    offered.current = true;
+    const id = toast.loading("Checking for updates…");
+    const result = await checkUpdate();
+    if (result.kind === "available") offerUpdate(result.version, id);
+    else if (result.kind === "error") toast.error(result.message, { id });
+    else toast.success("Photopipe is up to date", { id });
+  }, [checkUpdate, offerUpdate]);
+
+  // Subscribe once for the app's lifetime. Re-subscribing whenever the check
+  // callback changes identity leaves gaps where a menu click reaches nobody.
+  const latestCheck = useRef(checkForUpdates);
+  useEffect(() => {
+    latestCheck.current = checkForUpdates;
+  }, [checkForUpdates]);
+
+  useEffect(() => {
+    const subscriptions = [
+      listen("menu:settings", () => setSettingsOpen(true)),
+      listen("menu:check-updates", () => void latestCheck.current()),
+    ];
+    for (const subscription of subscriptions) subscription.catch(() => {});
+    return () => {
+      for (const subscription of subscriptions) {
+        void subscription.then((unlisten) => unlisten()).catch(() => {});
+      }
+    };
+  }, []);
 
   const runImport = async () => {
     const chosen = await openDialog({
@@ -359,13 +427,28 @@ export default function App() {
     selection.clear();
   };
 
+  // Settings is reachable from the menu bar at any time, including before a
+  // photos folder is picked, so it lives outside the browser chrome.
+  const settingsDialog = (
+    <SettingsDialog
+      open={settingsOpen}
+      onOpenChange={setSettingsOpen}
+      autoScore={autoScore}
+      onAutoScore={changeAutoScore}
+      onCheckUpdates={checkForUpdates}
+    />
+  );
+
   if (!ready) {
     return (
-      <RootPicker
-        error={rootState.error}
-        busy={rootState.busy}
-        onSubmit={connectRoot}
-      />
+      <>
+        <RootPicker
+          error={rootState.error}
+          busy={rootState.busy}
+          onSubmit={connectRoot}
+        />
+        {settingsDialog}
+      </>
     );
   }
 
@@ -405,19 +488,17 @@ export default function App() {
         onOpenChange={setNewProject}
         onCreated={enterShoot}
       />
-      <AboutDialog
-        open={about}
-        onOpenChange={setAbout}
-        updater={updater}
-        onInstall={startInstall}
-        blocked={installBlocked}
-      />
+      {settingsDialog}
       <SidebarProvider>
         {inLoupe && loupeImage ? (
           <LoupeSidebar
             image={loupeImage}
             position={loupeIndex + 1}
             count={loupeImages.length}
+            betterThan={betterThan(
+              ranks.get(loupeImage.path) ?? null,
+              ranks.size,
+            )}
             filmstrip={filmstrip}
             onFilmstrip={changeFilmstrip}
             ratingCounts={counts}
@@ -447,7 +528,7 @@ export default function App() {
             onChangeRoot={() =>
               setRootState({ kind: "picking", error: null, busy: false })
             }
-            onAbout={() => setAbout(true)}
+            onSettings={() => setSettingsOpen(true)}
           />
         )}
         <SidebarInset className="flex h-screen min-w-0 flex-col bg-background text-foreground">
@@ -544,6 +625,11 @@ export default function App() {
                 onNewProject={() => setNewProject(true)}
                 view={view}
                 onView={changeView}
+                sort={activeSort}
+                onSort={changeSort}
+                scoreReady={scoreReady}
+                scoring={scoring}
+                justRated={justRated}
                 onImport={runImport}
                 onShootSettings={setShootSettings}
                 filterActive={filterActive}
@@ -620,6 +706,11 @@ type ContentProps = {
   onNewProject: () => void;
   view: ViewMode;
   onView: (view: ViewMode) => void;
+  sort: SortKey;
+  onSort: (sort: SortKey) => void;
+  scoreReady: boolean;
+  scoring: ScoreProgress | null;
+  justRated: boolean;
   onImport: () => void;
   onShootSettings: (shoot: string) => void;
   filterActive: boolean;
@@ -650,6 +741,11 @@ function Content({
   onNewProject,
   view,
   onView,
+  sort,
+  onSort,
+  scoreReady,
+  scoring,
+  justRated,
   onImport,
   onShootSettings,
   filterActive,
@@ -719,6 +815,11 @@ function Content({
           purpose="Cull and rate. Click a photo for the loupe; Export takes the selection."
           view={view}
           onView={onView}
+          sort={sort}
+          onSort={onSort}
+          scoreReady={scoreReady}
+          scoring={scoring}
+          justRated={justRated}
         />
         <div className="flex flex-col items-start gap-3 p-8">
           <p
@@ -745,6 +846,11 @@ function Content({
         purpose="Cull and rate. Click a photo for the loupe; Export takes the selection."
         view={view}
         onView={onView}
+        sort={sort}
+        onSort={onSort}
+        scoreReady={scoreReady}
+        scoring={scoring}
+        justRated={justRated}
       />
       <div className="min-h-0 flex-1">
         {view === "grid" ? (

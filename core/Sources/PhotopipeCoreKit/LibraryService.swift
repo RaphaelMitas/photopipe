@@ -20,15 +20,18 @@ public final class LibraryService {
     private var index: SQLiteIndex?
     private let thumbnailer: Thumbnailer
     private let renderer: Renderer
+    private let scorer: Scorer
     private let rescanQueue = DispatchQueue(label: "photopipe.rescan")
     private var pendingRescan: DispatchWorkItem?
 
     public init(
         thumbnailer: Thumbnailer = Thumbnailer(cacheDir: Thumbnailer.defaultCacheDir()),
-        renderer: Renderer = Renderer(cacheDir: Renderer.defaultCacheDir())
+        renderer: Renderer = Renderer(cacheDir: Renderer.defaultCacheDir()),
+        scorer: Scorer = Scorer()
     ) {
         self.thumbnailer = thumbnailer
         self.renderer = renderer
+        self.scorer = scorer
     }
 
     public static func defaultIndexPath() -> String {
@@ -54,6 +57,7 @@ public final class LibraryService {
         lock.lock()
         self.index = index
         lock.unlock()
+        scorer.use(index: index)
 
         let newWatcher = Watcher(path: path, queue: rescanQueue) { [weak self] in
             self?.scheduleRescan()
@@ -72,6 +76,23 @@ public final class LibraryService {
     }
 
     public func listImages(shoot: String) throws -> [ImageFile] {
+        let images = try images(inShoot: shoot)
+        let scores = scorer.scores(for: images)
+        return images.map { image in
+            scores[image.path].map { image.with(score: $0) } ?? image
+        }
+    }
+
+    /// Score everything in the shoot that has no current score, or report the pass already running.
+    public func scoreShoot(shoot: String) throws -> Scorer.Progress {
+        scorer.start(shoot: shoot, files: try images(inShoot: shoot))
+    }
+
+    public func scoreStatus(shoot: String) throws -> Scorer.Progress {
+        scorer.progress(shoot: shoot, files: try images(inShoot: shoot))
+    }
+
+    private func images(inShoot shoot: String) throws -> [ImageFile] {
         lock.lock()
         defer { lock.unlock() }
         guard root != nil else { throw ServiceError.noRoot }

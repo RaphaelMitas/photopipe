@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export type UpdateState =
   | { kind: "idle" }
-  | { kind: "checking" }
   | { kind: "current" }
   | { kind: "available"; version: string; notes: string }
   | { kind: "downloading"; percent: number | null }
@@ -13,7 +12,9 @@ export type UpdateState =
 
 export type Updater = {
   state: UpdateState;
-  check: () => Promise<void>;
+  /// Resolves with what the check found, so the caller can report it in the
+  /// toast it already opened rather than watching `state` change.
+  check: () => Promise<UpdateState>;
   install: () => Promise<void>;
 };
 
@@ -29,27 +30,32 @@ export function useUpdater(): Updater {
   const [state, setState] = useState<UpdateState>({ kind: "idle" });
   const pending = useRef<Update | null>(null);
 
-  const run = useCallback(async (silent: boolean) => {
+  const run = useCallback(async (silent: boolean): Promise<UpdateState> => {
     if (!updatable()) {
-      if (!silent) setState({ kind: "error", message: "Not a release build." });
-      return;
+      const blocked: UpdateState = {
+        kind: "error",
+        message: "Not a release build.",
+      };
+      if (!silent) setState(blocked);
+      return blocked;
     }
-    if (!silent) setState({ kind: "checking" });
     try {
       const update = await check();
       await pending.current?.close();
       pending.current = update;
-      setState(
-        update
-          ? {
-              kind: "available",
-              version: update.version,
-              notes: update.body ?? "",
-            }
-          : { kind: "current" },
-      );
+      const found: UpdateState = update
+        ? {
+            kind: "available",
+            version: update.version,
+            notes: update.body ?? "",
+          }
+        : { kind: "current" };
+      setState(found);
+      return found;
     } catch (error) {
-      if (!silent) setState({ kind: "error", message: message(error) });
+      const failed: UpdateState = { kind: "error", message: message(error) };
+      if (!silent) setState(failed);
+      return failed;
     }
   }, []);
 
