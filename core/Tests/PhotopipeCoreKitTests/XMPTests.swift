@@ -119,6 +119,246 @@ private func image(_ url: URL) throws -> ImageFile {
     #expect(XMP.readRating(file: try image(arw)) == 3, "clearing the edit keeps the rating")
 }
 
+@Test func sidecarCropRoundTrip() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let arw = dir.appendingPathComponent("DSC00008.ARW")
+    try Data("fake".utf8).write(to: arw)
+
+    let edit = Edit(
+        crop: CropRect(left: 0.125, top: 0.05, right: 0.875, bottom: 0.95), cropAngle: -1.5)
+    try XMP.writeEdit(edit, file: try image(arw), tool: .shared)
+
+    let read = XMP.readEdit(file: try image(arw))
+    #expect(read.crop == edit.crop)
+    #expect(read.cropAngle == -1.5)
+
+    let sidecar = XMP.sidecarURL(forImagePath: arw.path)
+    #expect(try exiftoolTag("-XMP-crs:CropLeft", of: sidecar) == "0.125")
+    #expect(try exiftoolTag("-XMP-crs:CropAngle", of: sidecar) == "-1.5")
+    #expect(try exiftoolTag("-XMP-crs:HasCrop", of: sidecar) == "True")
+
+    // Clearing the crop removes every crop tag again.
+    try XMP.writeEdit(.identity, file: try image(arw), tool: .shared)
+    #expect(XMP.readEdit(file: try image(arw)) == .identity)
+    #expect(try exiftoolTag("-XMP-crs:HasCrop", of: sidecar).isEmpty)
+    #expect(try exiftoolTag("-XMP-crs:CropLeft", of: sidecar).isEmpty)
+}
+
+@Test func hasCropFalseSuppressesStaleCropValues() {
+    // Lightroom's crop-reset keeps the Crop* tags and flips HasCrop to False.
+    let sidecar = """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF><rdf:Description
+        crs:HasCrop="False" crs:CropLeft="0.1" crs:CropTop="0.1"
+        crs:CropRight="0.9" crs:CropBottom="0.9" crs:CropAngle="2.5"/>
+        </rdf:RDF></x:xmpmeta>
+        """
+    let edit = XMP.parseEdit(sidecar, isRaw: true)
+    #expect(edit.crop == nil)
+    #expect(edit.cropAngle == 0)
+
+    let active = XMP.parseEdit(sidecar.replacingOccurrences(of: "\"False\"", with: "\"True\""), isRaw: true)
+    #expect(active.crop == CropRect(left: 0.1, top: 0.1, right: 0.9, bottom: 0.9))
+    #expect(active.cropAngle == 2.5)
+}
+
+@Test func hostileCropValuesAreRejectedOnParse() {
+    let digits = String(repeating: "9", count: 400)
+    let sidecar = """
+        <x:xmpmeta><rdf:Description crs:Exposure2012="\(digits)"
+        crs:CropLeft="\(digits)" crs:CropTop="0" crs:CropRight="1"
+        crs:CropBottom="1" crs:CropAngle="\(digits)"/></x:xmpmeta>
+        """
+    let edit = XMP.parseEdit(sidecar, isRaw: true)
+    #expect(edit.exposure == 0, "an overflowing scalar must not become infinity")
+    #expect(edit.crop == nil)
+    #expect(edit.cropAngle == 0)
+
+    // Degenerate rects (right <= left) never become a crop.
+    let inverted = XMP.parseEdit(
+        #"<x:xmpmeta><rdf:Description crs:CropLeft="0.9" crs:CropTop="0" crs:CropRight="0.1" crs:CropBottom="1"/></x:xmpmeta>"#,
+        isRaw: true)
+    #expect(inverted.crop == nil)
+
+    // Finite-but-huge exponent values would trap the integer tag writes.
+    let huge = XMP.parseEdit(
+        #"<x:xmpmeta><rdf:Description crs:Highlights2012="1e308"/></x:xmpmeta>"#,
+        isRaw: true)
+    #expect(huge.highlights == 0)
+
+    // A straightened crop legitimately overhangs the frame box; the parse
+    // tolerance matches the renderer's.
+    let overhang = XMP.parseEdit(
+        #"<x:xmpmeta><rdf:Description crs:CropLeft="-0.05" crs:CropTop="0" crs:CropRight="1.02" crs:CropBottom="1" crs:CropAngle="12"/></x:xmpmeta>"#,
+        isRaw: true)
+    #expect(overhang.crop == CropRect(left: -0.05, top: 0, right: 1.02, bottom: 1))
+}
+
+/// The JPEG segment walk must ignore a decoy packet in a comment segment and
+/// read the orientation from the real APP1 XMP.
+@Test func decoyXMPPacketInAJPEGCommentIsIgnored() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let jpg = dir.appendingPathComponent("DSC00013.JPG")
+    try writeGrayJPEG(to: jpg)
+    try ExifTool.shared.write(["-overwrite_original", "-XMP-tiff:Orientation#=6", jpg.path])
+
+    // Splice a decoy packet into a COM segment right after SOI — earlier in
+    // the byte stream than the genuine APP1.
+    var bytes = try Data(contentsOf: jpg)
+    let decoy = Data(#"<x:xmpmeta><rdf:Description tiff:Orientation="3"/></x:xmpmeta>"#.utf8)
+    var segment = Data([0xFF, 0xFE])
+    let length = decoy.count + 2
+    segment.append(UInt8(length >> 8))
+    segment.append(UInt8(length & 0xFF))
+    segment.append(decoy)
+    bytes.insert(contentsOf: segment, at: bytes.startIndex + 2)
+    try bytes.write(to: jpg)
+
+    #expect(XMP.embeddedXMPOrientation(at: jpg) == 6)
+}
+
+/// A base orientation guessed from a failed read must never be written into
+/// an embedded file's real EXIF; the turn fails loudly instead.
+@Test func turningAnUnreadableEmbeddedFileThrows() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let jpg = dir.appendingPathComponent("DSC00012.JPG")
+    try Data("not a jpeg".utf8).write(to: jpg)
+
+    #expect(throws: XMP.XMPError.self) {
+        try XMP.writeEdit(Edit(rotation: 90), file: try image(jpg), tool: .shared)
+    }
+}
+
+@Test func tinyCropEdgeSurvivesTheSidecarRoundTrip() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00009.ARW")
+    try Data("fake".utf8).write(to: arw)
+
+    // 3e-05 in Swift's default interpolation — must be written as a plain
+    // decimal or the whole crop is lost on the next read.
+    let edit = Edit(crop: CropRect(left: 0.00003, top: 0, right: 0.9, bottom: 1))
+    try XMP.writeEdit(edit, file: try image(arw), tool: .shared)
+
+    let sidecar = XMP.sidecarURL(forImagePath: arw.path)
+    #expect(try exiftoolTag("-XMP-crs:CropLeft", of: sidecar) == "0.00003")
+    #expect(XMP.readEdit(file: try image(arw)).crop == edit.crop)
+
+    // Exponent forms in foreign sidecars parse anyway.
+    #expect(XMP.parseDouble("CropLeft", in: #"crs:CropLeft="3e-05""#) == 3e-05)
+}
+
+/// Regression: for embedded formats ImageIO reports our own freshly written
+/// XMP orientation back as the file's orientation, so without a pinned EXIF
+/// base the turn cancelled itself on the next read ("applies briefly, then
+/// resets").
+@Test func embeddedRotationSurvivesWithoutExifOrientation() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let jpg = dir.appendingPathComponent("DSC00009.JPG")
+    try writeGrayJPEG(to: jpg)
+
+    try XMP.writeEdit(Edit(rotation: 90), file: try image(jpg), tool: .shared)
+    #expect(XMP.readEdit(file: try image(jpg)).rotation == 90)
+    #expect(
+        try exiftoolTag("-IFD0:Orientation#", of: jpg) == "1",
+        "the pre-edit base gets pinned as real EXIF")
+
+    // A second write reads the pinned base, not our own XMP echo.
+    try XMP.writeEdit(Edit(rotation: 180), file: try image(jpg), tool: .shared)
+    #expect(XMP.readEdit(file: try image(jpg)).rotation == 180)
+    #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: jpg) == "3")
+
+    // Un-turning restores the pinned base instead of deleting the tag.
+    try XMP.writeEdit(Edit(rotation: 0), file: try image(jpg), tool: .shared)
+    #expect(XMP.readEdit(file: try image(jpg)).rotation == 0)
+    #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: jpg) == "1")
+}
+
+/// Regression: any edit used to emit `-XMP-tiff:Orientation=` when the model
+/// rotation was 0, deleting the only orientation record of a photo rotated
+/// by another tool (Lightroom writes XMP only for JPEG turns).
+@Test func foreignXMPOrientationSurvivesUnrelatedEdits() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let jpg = dir.appendingPathComponent("DSC00011.JPG")
+    try writeGrayJPEG(to: jpg)
+    try ExifTool.shared.write([
+        "-overwrite_original", "-XMP-tiff:Orientation#=6", jpg.path,
+    ])
+
+    // The foreign turn reads as no model rotation (it is the display base).
+    #expect(XMP.readEdit(file: try image(jpg)).rotation == 0)
+
+    try XMP.writeEdit(Edit(exposure: 0.5), file: try image(jpg), tool: .shared)
+    #expect(
+        try exiftoolTag("-XMP-tiff:Orientation#", of: jpg) == "6",
+        "a slider edit must not delete a foreign orientation record")
+    #expect(XMP.readEdit(file: try image(jpg)).exposure == 0.5)
+
+    try XMP.writeEdit(.identity, file: try image(jpg), tool: .shared)
+    #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: jpg) == "6")
+}
+
+@Test func rotationIsTheDifferenceAgainstTheBaseOrientation() {
+    // A Lightroom sidecar for a portrait shot mirrors the file's own
+    // orientation without any user turn.
+    #expect(XMP.rotation(fromXMP: 6, base: 6) == 0)
+    #expect(XMP.rotation(fromXMP: 6, base: 1) == 90)
+    #expect(XMP.rotation(fromXMP: 3, base: 6) == 90)
+    #expect(XMP.rotation(fromXMP: 1, base: 6) == 270)
+    #expect(XMP.rotation(fromXMP: nil, base: 6) == 0)
+    #expect(XMP.rotation(fromXMP: 2, base: 1) == 0, "mirrored orientations pass through as no turn")
+
+    #expect(XMP.absoluteOrientation(rotation: 90, base: 1) == 6)
+    #expect(XMP.absoluteOrientation(rotation: 90, base: 6) == 3)
+    #expect(XMP.absoluteOrientation(rotation: 270, base: 6) == 1)
+
+    // Mirrored bases keep their mirror through turns: a turn only adds
+    // display degrees, it never unflips the photo for other readers.
+    #expect(XMP.absoluteOrientation(rotation: 90, base: 2) == 7)
+    #expect(XMP.absoluteOrientation(rotation: 180, base: 5) == 7)
+    #expect(XMP.rotation(fromXMP: 7, base: 2) == 90)
+    #expect(XMP.rotation(fromXMP: 2, base: 2) == 0)
+    #expect(XMP.rotation(fromXMP: 6, base: 2) == 0, "mirror mismatch is not our turn")
+
+    let sidecar = #"<rdf:Description tiff:Orientation="6" crs:Exposure2012="0.5"/>"#
+    #expect(XMP.parseEdit(sidecar, isRaw: true, baseOrientation: 1).rotation == 90)
+    #expect(XMP.parseEdit(sidecar, isRaw: true, baseOrientation: 6).rotation == 0)
+}
+
+@Test func sidecarRotationRoundTrip() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00010.ARW")
+    try Data("fake".utf8).write(to: arw)
+
+    // The fake ARW has no readable orientation, so base is 1 and the
+    // absolute tag equals the user turn.
+    try XMP.writeEdit(Edit(rotation: 90), file: try image(arw), tool: .shared)
+    let sidecar = XMP.sidecarURL(forImagePath: arw.path)
+    #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: sidecar) == "6")
+    #expect(XMP.readEdit(file: try image(arw)).rotation == 90)
+
+    // Clearing a turn restores the base rather than deleting the tag, so a
+    // foreign orientation record can never be collateral damage.
+    try XMP.writeEdit(.identity, file: try image(arw), tool: .shared)
+    #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: sidecar) == "1")
+    #expect(XMP.readEdit(file: try image(arw)) == .identity)
+}
+
 /// Regression: `-TAG= -TAG+=…` appends to the existing list in exiftool, so
 /// every scrub grew the tone curve until a sidecar held thousands of points
 /// and writes took seconds. Rewrites must replace the list wholesale.

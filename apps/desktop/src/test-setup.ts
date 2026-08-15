@@ -8,6 +8,11 @@ class ResizeObserverStub {
 globalThis.ResizeObserver ??=
   ResizeObserverStub as unknown as typeof ResizeObserver;
 
+// Radix Select needs these in jsdom.
+window.HTMLElement.prototype.hasPointerCapture ??= () => false;
+window.HTMLElement.prototype.releasePointerCapture ??= () => {};
+window.HTMLElement.prototype.scrollIntoView ??= () => {};
+
 globalThis.matchMedia ??= ((query: string) => ({
   matches: false,
   media: query,

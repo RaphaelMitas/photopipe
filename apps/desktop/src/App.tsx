@@ -11,6 +11,11 @@ import { toast } from "sonner";
 import { AboutDialog } from "@/components/AboutDialog";
 import { AppSidebar } from "@/components/AppSidebar";
 import { BrowserToolbar, type ViewMode } from "@/components/BrowserToolbar";
+import {
+  type CropDraft,
+  commitDraft,
+  draftFromEdit,
+} from "@/components/CropTool";
 import { Dashboard } from "@/components/Dashboard";
 import { EditSidebar } from "@/components/EditPanel";
 import {
@@ -117,6 +122,8 @@ export default function App() {
       return !open;
     });
   }, []);
+  const [cropDraft, setCropDraft] = useState<CropDraft | null>(null);
+  const cropping = cropDraft !== null;
   const [jobs, setJobs] = useState<ExportJob[]>([]);
   const nextJobId = useRef(1);
 
@@ -297,6 +304,9 @@ export default function App() {
     if (loupePath && loupeIndex === -1) setLoupePath(null);
   }, [loupePath, loupeIndex]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: leave crop mode when the loupe photo changes
+  useEffect(() => setCropDraft(null), [loupePath]);
+
   const openExport = useCallback(() => {
     const loupeImage = loupeIndex >= 0 ? loupeImages[loupeIndex] : null;
     if (loupeImage) {
@@ -319,7 +329,7 @@ export default function App() {
           event.preventDefault();
           selection.selectAll();
         }
-        if (event.key === "e" && openShoot) {
+        if (event.key === "e" && openShoot && !cropping) {
           event.preventDefault();
           openExport();
         }
@@ -328,13 +338,13 @@ export default function App() {
       if (event.key === "Escape" && loupeIndex === -1 && !selection.isEmpty) {
         selection.clear();
       }
-      if (event.key === "e" && !event.altKey && loupeIndex >= 0) {
+      if (event.key === "e" && !event.altKey && loupeIndex >= 0 && !cropping) {
         toggleEditPanel();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [selection, loupeIndex, openShoot, openExport, toggleEditPanel]);
+  }, [selection, loupeIndex, openShoot, cropping, openExport, toggleEditPanel]);
 
   const changeRatingStars = (stars: number) => {
     setRatingStars(stars);
@@ -371,6 +381,13 @@ export default function App() {
   const currentShoot = shoots.data?.find((s) => s.name === openShoot);
   const runningJobs = jobs.filter((job) => job.status === "running").length;
   const latestJob = jobs[0];
+
+  const applyCrop = () => {
+    if (!cropDraft || !loupeImage) return;
+    changeEdit(loupeImage, { ...loupeEdit, ...commitDraft(cropDraft) });
+    setCropDraft(null);
+  };
+  const cancelCrop = () => setCropDraft(null);
 
   return (
     <TooltipProvider>
@@ -409,7 +426,7 @@ export default function App() {
             ratingStars={ratingStars}
             onRatingStars={changeRatingStars}
             onRate={(path, rating) => setRating.mutate({ path, rating })}
-            onBackToGrid={() => setLoupePath(null)}
+            onBackToGrid={() => (cropping ? cancelCrop() : setLoupePath(null))}
           />
         ) : (
           <AppSidebar
@@ -480,7 +497,10 @@ export default function App() {
                 variant={editOpen ? "secondary" : "ghost"}
                 data-testid="toggle-edit"
                 onClick={toggleEditPanel}
-                title="Toggle edit panel (e)"
+                disabled={cropping}
+                title={
+                  cropping ? "Finish the crop first" : "Toggle edit panel (e)"
+                }
                 className="h-7 text-xs"
               >
                 <SlidersHorizontal />
@@ -531,6 +551,10 @@ export default function App() {
                 loupeImages={loupeImages}
                 loupeIndex={loupeIndex}
                 loupeEdit={loupeEdit}
+                cropDraft={cropDraft}
+                onCropDraft={setCropDraft}
+                onApplyCrop={applyCrop}
+                onCancelCrop={cancelCrop}
                 filmstrip={filmstrip}
                 showInfo={showInfo}
                 selection={selection}
@@ -550,6 +574,11 @@ export default function App() {
                 image={loupeImage}
                 edit={loupeEdit}
                 onChange={(edit) => changeEdit(loupeImage, edit)}
+                cropDraft={cropDraft}
+                onCropDraft={setCropDraft}
+                onEnterCrop={() => setCropDraft(draftFromEdit(loupeEdit))}
+                onApplyCrop={applyCrop}
+                onCancelCrop={cancelCrop}
                 onClose={toggleEditPanel}
               />
             )}
@@ -598,6 +627,10 @@ type ContentProps = {
   loupeImages: ImageFile[];
   loupeIndex: number;
   loupeEdit: Edit;
+  cropDraft: CropDraft | null;
+  onCropDraft: (draft: CropDraft | null) => void;
+  onApplyCrop: () => void;
+  onCancelCrop: () => void;
   filmstrip: FilmstripMode;
   showInfo: boolean;
   selection: ReturnType<typeof useSelection>;
@@ -624,6 +657,10 @@ function Content({
   loupeImages,
   loupeIndex,
   loupeEdit,
+  cropDraft,
+  onCropDraft,
+  onApplyCrop,
+  onCancelCrop,
   filmstrip,
   showInfo,
   selection,
@@ -660,6 +697,10 @@ function Content({
         index={loupeIndex}
         edit={loupeEdit}
         filmstrip={filmstrip}
+        cropDraft={cropDraft}
+        onCropDraft={onCropDraft}
+        onApplyCrop={onApplyCrop}
+        onCancelCrop={onCancelCrop}
         onEditChange={(edit) => onEditChange(image, edit)}
         onNavigate={onNavigate}
         onClose={onCloseLoupe}

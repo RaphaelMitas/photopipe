@@ -10,10 +10,31 @@ public struct CurvePoint: Codable, Equatable, Sendable {
     }
 }
 
+/// Normalized crop in the unit square with a top-left origin, crs-style:
+/// `left`/`top`/`right`/`bottom` are fractions of the full frame.
+public struct CropRect: Codable, Equatable, Sendable {
+    public let left: Double
+    public let top: Double
+    public let right: Double
+    public let bottom: Double
+
+    public init(left: Double, top: Double, right: Double, bottom: Double) {
+        self.left = left
+        self.top = top
+        self.right = right
+        self.bottom = bottom
+    }
+}
+
 /// Every per-photo adjustment. Curve points live in the unit square with an
 /// empty array meaning the identity ramp. `temperature`/`tint` are Kelvin and
 /// green–magenta offset for raw files (nil = as shot), incremental -100..100
 /// for embedded formats where the as-shot neutral is unknowable.
+/// `cropAngle` is degrees, positive rotating the photo clockwise on screen
+/// about the photo's center while the crop rect stays axis-aligned.
+/// `rotation` is a whole-photo turn in clockwise degrees (0/90/180/270) on
+/// top of the file's own orientation; the crop rect is defined against the
+/// turned frame.
 public struct Edit: Codable, Equatable, Sendable {
     public var exposure: Double
     public var highlights: Double
@@ -26,15 +47,24 @@ public struct Edit: Codable, Equatable, Sendable {
     public var curveRed: [CurvePoint]
     public var curveGreen: [CurvePoint]
     public var curveBlue: [CurvePoint]
+    public var crop: CropRect?
+    public var cropAngle: Double
+    public var rotation: Int
 
     public static let identity = Edit()
+
+    enum CodingKeys: String, CodingKey {
+        case exposure, highlights, shadows, temperature, tint, vibrance, saturation
+        case curveRGB, curveRed, curveGreen, curveBlue, crop, cropAngle, rotation
+    }
 
     public init(
         exposure: Double = 0, highlights: Double = 0, shadows: Double = 0,
         temperature: Double? = nil, tint: Double? = nil,
         vibrance: Double = 0, saturation: Double = 0,
         curveRGB: [CurvePoint] = [], curveRed: [CurvePoint] = [],
-        curveGreen: [CurvePoint] = [], curveBlue: [CurvePoint] = []
+        curveGreen: [CurvePoint] = [], curveBlue: [CurvePoint] = [],
+        crop: CropRect? = nil, cropAngle: Double = 0, rotation: Int = 0
     ) {
         self.exposure = exposure
         self.highlights = highlights
@@ -47,6 +77,9 @@ public struct Edit: Codable, Equatable, Sendable {
         self.curveRed = curveRed
         self.curveGreen = curveGreen
         self.curveBlue = curveBlue
+        self.crop = crop
+        self.cropAngle = cropAngle
+        self.rotation = rotation
     }
 
     public init(from decoder: Decoder) throws {
@@ -62,10 +95,46 @@ public struct Edit: Codable, Equatable, Sendable {
         curveRed = try container.decodeIfPresent([CurvePoint].self, forKey: .curveRed) ?? []
         curveGreen = try container.decodeIfPresent([CurvePoint].self, forKey: .curveGreen) ?? []
         curveBlue = try container.decodeIfPresent([CurvePoint].self, forKey: .curveBlue) ?? []
+        crop = try container.decodeIfPresent(CropRect.self, forKey: .crop)
+        cropAngle = try container.decodeIfPresent(Double.self, forKey: .cropAngle) ?? 0
+        rotation = try container.decodeIfPresent(Int.self, forKey: .rotation) ?? 0
+    }
+
+    /// Crop fields are omitted at their defaults so uncropped edits keep the
+    /// cache keys (and sidecar JSON) they had before crop existed.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(exposure, forKey: .exposure)
+        try container.encode(highlights, forKey: .highlights)
+        try container.encode(shadows, forKey: .shadows)
+        try container.encodeIfPresent(temperature, forKey: .temperature)
+        try container.encodeIfPresent(tint, forKey: .tint)
+        try container.encode(vibrance, forKey: .vibrance)
+        try container.encode(saturation, forKey: .saturation)
+        try container.encode(curveRGB, forKey: .curveRGB)
+        try container.encode(curveRed, forKey: .curveRed)
+        try container.encode(curveGreen, forKey: .curveGreen)
+        try container.encode(curveBlue, forKey: .curveBlue)
+        try container.encodeIfPresent(crop, forKey: .crop)
+        if cropAngle != 0 {
+            try container.encode(cropAngle, forKey: .cropAngle)
+        }
+        if rotation != 0 {
+            try container.encode(rotation, forKey: .rotation)
+        }
     }
 
     public var isIdentity: Bool {
         self == .identity
+    }
+
+    public var hasCropComponent: Bool {
+        crop != nil || cropAngle != 0
+    }
+
+    /// 0/90/180/270 clockwise; anything else from a hostile source becomes 0.
+    public var normalizedRotation: Int {
+        [90, 180, 270].contains(rotation) ? rotation : 0
     }
 
     public var hasToneComponent: Bool {

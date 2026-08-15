@@ -93,6 +93,27 @@ private let fixtureCases: [(name: String, points: [CurvePoint])] = [
     #expect(partial.curveRGB.isEmpty)
 }
 
+@Test func cropRoundTripsThroughCodableAndBreaksIdentity() throws {
+    let edit = Edit(crop: CropRect(left: 0.1, top: 0.2, right: 0.9, bottom: 0.8), cropAngle: 2.5)
+    #expect(!edit.isIdentity)
+    #expect(edit.hasCropComponent)
+    #expect(!Edit(exposure: 1).hasCropComponent)
+
+    let decoded = try JSONDecoder().decode(Edit.self, from: JSONEncoder().encode(edit))
+    #expect(decoded == edit)
+
+    // An uncropped edit must keep its pre-crop cache key so existing renders
+    // stay valid: nil crop may not appear in the encoded JSON.
+    let json = String(decoding: try JSONEncoder().encode(Edit(exposure: 1)), as: UTF8.self)
+    #expect(!json.contains("crop"))
+    #expect(!json.contains("rotation"))
+
+    let turned = try JSONDecoder().decode(Edit.self, from: JSONEncoder().encode(Edit(rotation: 90)))
+    #expect(turned.rotation == 90)
+    #expect(!turned.isIdentity)
+    #expect(Edit(rotation: 45).normalizedRotation == 0, "off-grid rotations are ignored")
+}
+
 @Test func cacheKeyIsDeterministic() {
     let a = Edit(exposure: 0.5, curveRGB: [CurvePoint(x: 0, y: 0), CurvePoint(x: 1, y: 0.9)])
     let b = Edit(exposure: 0.5, curveRGB: [CurvePoint(x: 0, y: 0), CurvePoint(x: 1, y: 0.9)])

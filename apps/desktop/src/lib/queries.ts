@@ -64,15 +64,23 @@ export function useThumbnail(
 
 type RenderFile = { path: string; mtime: number } | undefined;
 
-function renderQueryOptions(file: RenderFile, edit: Edit) {
+const PREVIEW_MAX_PIXEL = 2560;
+
+function renderQueryOptions(file: RenderFile, edit: Edit, maxPixel: number) {
   return {
-    queryKey: ["render", file?.path, file?.mtime, editKey(edit)] as const,
+    queryKey: [
+      "render",
+      file?.path,
+      file?.mtime,
+      editKey(edit),
+      maxPixel,
+    ] as const,
     queryFn: async () =>
       (
         await coreRequest<{ cachePath: string }>("render", {
           path: file?.path,
           edit,
-          maxPixel: 2560,
+          maxPixel,
         })
       ).cachePath,
     staleTime: Number.POSITIVE_INFINITY,
@@ -81,10 +89,24 @@ function renderQueryOptions(file: RenderFile, edit: Edit) {
 
 export function useRender(file: RenderFile, edit: Edit) {
   return useQuery({
-    ...renderQueryOptions(file, edit),
+    ...renderQueryOptions(file, edit, PREVIEW_MAX_PIXEL),
     enabled: file !== undefined,
     placeholderData: (previous: string | undefined, previousQuery) =>
       previousQuery?.queryKey[1] === file?.path ? previous : undefined,
+  });
+}
+
+/// Native-resolution render for the zoomed loupe; only worth requesting once
+/// the photo actually outresolves the preview render.
+export function useFullRender(
+  file: (RenderFile & { width: number; height: number }) | undefined,
+  edit: Edit,
+  enabled: boolean,
+) {
+  const maxPixel = Math.max(file?.width ?? 0, file?.height ?? 0);
+  return useQuery({
+    ...renderQueryOptions(file, edit, maxPixel),
+    enabled: file !== undefined && enabled && maxPixel > PREVIEW_MAX_PIXEL,
   });
 }
 
@@ -92,7 +114,9 @@ export function usePrefetchRender(file: RenderFile, edit: Edit | undefined) {
   const queryClient = useQueryClient();
   useEffect(() => {
     if (!file || !edit) return;
-    queryClient.prefetchQuery(renderQueryOptions(file, edit));
+    queryClient.prefetchQuery(
+      renderQueryOptions(file, edit, PREVIEW_MAX_PIXEL),
+    );
   }, [queryClient, file, edit]);
 }
 

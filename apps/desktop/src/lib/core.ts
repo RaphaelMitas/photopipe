@@ -1,9 +1,21 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { type CurvePoint, isIdentityCurve } from "./curve";
 
+// Normalized crop in the unit square with a top-left origin, crs-style.
+export type CropRect = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+};
+
 // temperature/tint: Kelvin and green–magenta offset for raw files where
 // null means "as shot"; incremental -100..100 for embedded formats. The core
 // omits null fields when encoding, so read them with `?? null`.
+// cropAngle: degrees, positive rotates the photo clockwise on screen about
+// the photo's center while the crop rect stays axis-aligned.
+// rotation: whole-photo turn in clockwise degrees (0/90/180/270); the crop
+// rect is defined against the turned frame.
 export type Edit = {
   exposure: number;
   highlights: number;
@@ -16,6 +28,9 @@ export type Edit = {
   curveRed: CurvePoint[];
   curveGreen: CurvePoint[];
   curveBlue: CurvePoint[];
+  crop?: CropRect | null;
+  cropAngle?: number;
+  rotation?: number;
 };
 
 export const identityEdit: Edit = Object.freeze({
@@ -30,6 +45,9 @@ export const identityEdit: Edit = Object.freeze({
   curveRed: [],
   curveGreen: [],
   curveBlue: [],
+  crop: null,
+  cropAngle: 0,
+  rotation: 0,
 });
 
 export function isIdentityEdit(edit: Edit): boolean {
@@ -44,7 +62,10 @@ export function isIdentityEdit(edit: Edit): boolean {
     isIdentityCurve(edit.curveRGB) &&
     isIdentityCurve(edit.curveRed) &&
     isIdentityCurve(edit.curveGreen) &&
-    isIdentityCurve(edit.curveBlue)
+    isIdentityCurve(edit.curveBlue) &&
+    (edit.crop ?? null) === null &&
+    (edit.cropAngle ?? 0) === 0 &&
+    (edit.rotation ?? 0) === 0
   );
 }
 
@@ -52,6 +73,9 @@ export function isIdentityEdit(edit: Edit): boolean {
 export function editKey(edit: Edit): string {
   const curve = (points: CurvePoint[]) =>
     points.map((point) => `${point.x},${point.y}`).join(";");
+  const crop = edit.crop
+    ? `${edit.crop.left},${edit.crop.top},${edit.crop.right},${edit.crop.bottom}`
+    : "";
   return [
     edit.exposure,
     edit.highlights,
@@ -64,6 +88,9 @@ export function editKey(edit: Edit): string {
     curve(edit.curveRed),
     curve(edit.curveGreen),
     curve(edit.curveBlue),
+    crop,
+    edit.cropAngle ?? 0,
+    edit.rotation ?? 0,
   ].join("|");
 }
 
