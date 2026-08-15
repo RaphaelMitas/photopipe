@@ -1,5 +1,6 @@
 import { ArrowUpDown, LayoutGrid, Rows3, Sparkles } from "lucide-react";
 import type { ScoreProgress } from "@/lib/queries";
+import type { SortKey } from "@/lib/sort";
 import { Button } from "./ui/button";
 import { ButtonGroup } from "./ui/button-group";
 import {
@@ -11,8 +12,6 @@ import {
 } from "./ui/dropdown-menu";
 
 export type ViewMode = "grid" | "list";
-
-export type SortKey = "name" | "date" | "score";
 
 const SORT_LABELS: Record<SortKey, string> = {
   name: "Name",

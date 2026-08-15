@@ -9,6 +9,7 @@ import {
   editKey,
   type ImageFile,
   isRawFile,
+  normalizeImage,
   type SetEditResult,
   type SetRatingResult,
   type Shoot,
@@ -29,8 +30,9 @@ export function useImages(shoot: string | null) {
   return useQuery({
     queryKey: ["images", shoot],
     queryFn: async () =>
-      (await coreRequest<{ images: ImageFile[] }>("listImages", { shoot }))
-        .images,
+      (
+        await coreRequest<{ images: ImageFile[] }>("listImages", { shoot })
+      ).images.map(normalizeImage),
     enabled: shoot !== null,
   });
 }
@@ -41,27 +43,23 @@ export type ScoreProgress = {
   running: boolean;
 };
 
-/// How long the browser offers the new sort after a pass ends.
 const RATED_OFFER_MS = 8000;
 
-/// Scores a shoot in the background, once per shoot, and watches it finish.
 /// Scores reach the grid through `listImages`, so the images are refetched when
 /// the pass ends rather than on every tick. `justRated` is the short window
 /// afterwards where the browser can hand the sort over.
+///
+/// Every fetch asks the core to score, not just the first: starting a pass that
+/// has nothing left to do is free, and it is what picks up photos imported into
+/// a project that is already open.
 export function useScoring(shoot: string | null, enabled: boolean) {
   const client = useQueryClient();
-  const startedFor = useRef<string | null>(null);
   const wasRunning = useRef(false);
   const [justRated, setJustRated] = useState(false);
 
   const query = useQuery({
     queryKey: ["scoring", shoot],
-    queryFn: async () => {
-      const method =
-        startedFor.current === shoot ? "scoreStatus" : "scoreShoot";
-      startedFor.current = shoot;
-      return coreRequest<ScoreProgress>(method, { shoot });
-    },
+    queryFn: () => coreRequest<ScoreProgress>("scoreShoot", { shoot }),
     enabled: enabled && shoot !== null,
     refetchInterval: (query) => (query.state.data?.running ? 1000 : false),
   });
@@ -83,7 +81,9 @@ export function useScoring(shoot: string | null, enabled: boolean) {
     return () => clearTimeout(timer);
   }, [running, shoot, client]);
 
-  return { progress: query.data ?? null, justRated };
+  // Turning rating off mid-pass leaves a stale `running` in the cache, which
+  // would freeze the toolbar's progress line where it stopped.
+  return { progress: enabled ? (query.data ?? null) : null, justRated };
 }
 
 export function useThumbnail(
@@ -338,6 +338,7 @@ export function useImportFiles(shoot: string | null) {
         },
       );
       queryClient.invalidateQueries({ queryKey: ["images", shoot] });
+      queryClient.invalidateQueries({ queryKey: ["scoring", shoot] });
       queryClient.invalidateQueries({ queryKey: ["shoots"] });
     },
     onError: (error) => {
@@ -382,29 +383,76 @@ export function useCreateProject() {
   });
 }
 
-export function useGenerationPoll(
+export type ScanProgress = Pick<
+  StatusResult,
+  "scanning" | "filesFound" | "filesEnriched"
+>;
+
+const IDLE_POLL_MS = 2000;
+/// While the core is still indexing there is a live counter to drive, and the
+/// shoot list is cheap; the expensive per-shoot refetches are rate-limited by
+/// the core, not by this interval.
+const INDEXING_POLL_MS = 250;
+
+const NOT_SCANNING: ScanProgress = {
+  scanning: false,
+  filesFound: 0,
+  filesEnriched: 0,
+};
+
+/// Polls faster while the core is still indexing, and refetches a shoot's
+/// photos only when the core names that shoot as changed.
+export function useLibrarySync(
   enabled: boolean,
   initialGeneration: number | null,
-  intervalMs = 2000,
 ) {
   const queryClient = useQueryClient();
-  const lastGeneration = useRef<number | null>(null);
+  const [progress, setProgress] = useState<ScanProgress>(NOT_SCANNING);
+  const seen = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!enabled) return;
-    lastGeneration.current = initialGeneration;
-    const timer = setInterval(async () => {
+    if (!enabled) {
+      setProgress(NOT_SCANNING);
+      return;
+    }
+    seen.current = initialGeneration;
+    let timer: ReturnType<typeof setTimeout>;
+    let stopped = false;
+
+    const poll = async () => {
+      let next = IDLE_POLL_MS;
       try {
-        const status = await coreRequest<StatusResult>("status");
-        if (status.generation === lastGeneration.current) return;
-        if (xmpWritesInFlight(queryClient) > 0) {
-          return;
+        const status = await coreRequest<StatusResult>("status", {
+          since: seen.current,
+        });
+        if (stopped) return;
+        setProgress(status);
+        next = status.scanning ? INDEXING_POLL_MS : IDLE_POLL_MS;
+        // A rating write in flight owns the images cache until it settles.
+        if (
+          status.generation !== seen.current &&
+          xmpWritesInFlight(queryClient) === 0
+        ) {
+          queryClient.invalidateQueries({ queryKey: ["shoots"] });
+          for (const shoot of status.changedShoots ?? []) {
+            queryClient.invalidateQueries({ queryKey: ["images", shoot] });
+            // Photos that arrived in a project you are looking at have to be
+            // rated too, and only a fresh scoreShoot picks them up.
+            queryClient.invalidateQueries({ queryKey: ["scoring", shoot] });
+          }
+          seen.current = status.generation;
         }
-        queryClient.invalidateQueries({ queryKey: ["shoots"] });
-        queryClient.invalidateQueries({ queryKey: ["images"] });
-        lastGeneration.current = status.generation;
       } catch {}
-    }, intervalMs);
-    return () => clearInterval(timer);
-  }, [enabled, initialGeneration, intervalMs, queryClient]);
+      if (!stopped) timer = setTimeout(poll, next);
+    };
+
+    // Straight away, so a library that opened mid-index says so on first paint.
+    timer = setTimeout(poll, 0);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [enabled, initialGeneration, queryClient]);
+
+  return progress;
 }

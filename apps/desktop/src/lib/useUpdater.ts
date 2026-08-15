@@ -12,10 +12,10 @@ export type UpdateState =
 
 export type Updater = {
   state: UpdateState;
-  /// Resolves with what the check found, so the caller can report it in the
-  /// toast it already opened rather than watching `state` change.
+  /// Both resolve with what happened, so the caller can report it in the toast
+  /// it already opened rather than watching `state` change.
   check: () => Promise<UpdateState>;
-  install: () => Promise<void>;
+  install: () => Promise<UpdateState>;
 };
 
 function updatable(): boolean {
@@ -63,10 +63,17 @@ export function useUpdater(): Updater {
     void run(true);
   }, [run]);
 
-  const install = useCallback(async () => {
+  const install = useCallback(async (): Promise<UpdateState> => {
     const update = pending.current;
     pending.current = null;
-    if (!update) return;
+    if (!update) {
+      const gone: UpdateState = {
+        kind: "error",
+        message: "That update is no longer available. Check again.",
+      };
+      setState(gone);
+      return gone;
+    }
     setState({ kind: "downloading", percent: null });
     try {
       let total = 0;
@@ -81,8 +88,11 @@ export function useUpdater(): Updater {
       });
       setState({ kind: "installed" });
       await relaunch();
+      return { kind: "installed" };
     } catch (error) {
-      setState({ kind: "error", message: message(error) });
+      const failed: UpdateState = { kind: "error", message: message(error) };
+      setState(failed);
+      return failed;
     }
   }, []);
 

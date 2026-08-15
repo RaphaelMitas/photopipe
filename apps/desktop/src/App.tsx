@@ -26,6 +26,7 @@ import {
 import type { FilmstripMode } from "@/components/Filmstrip";
 import { ImageGrid } from "@/components/ImageGrid";
 import { ImageList } from "@/components/ImageList";
+import { IndexingStatus } from "@/components/IndexingStatus";
 import { Loupe } from "@/components/Loupe";
 import { LoupeSidebar } from "@/components/LoupeSidebar";
 import { NewProjectDialog } from "@/components/NewProjectDialog";
@@ -53,9 +54,9 @@ import { betterThan, scoreRanks } from "@/lib/instinct";
 import {
   type ScoreProgress,
   useExportFiles,
-  useGenerationPoll,
   useImages,
   useImportFiles,
+  useLibrarySync,
   useReveal,
   useScoring,
   useSetEdit,
@@ -73,6 +74,9 @@ const VIEW_KEY = "photopipe.view";
 const EDIT_PANEL_KEY = "photopipe.editPanel";
 const SORT_KEY = "photopipe.sort";
 const AUTO_SCORE_KEY = "photopipe.autoScore";
+/// One toast id for the whole update conversation, so a download replaces the
+/// offer rather than stacking under it.
+const UPDATE_TOAST = "update";
 
 type RootState =
   | { kind: "picking"; error: string | null; busy: boolean }
@@ -180,13 +184,17 @@ export default function App() {
   const trash = useTrash(openShoot);
   const exportFiles = useExportFiles();
   const importFiles = useImportFiles(openShoot);
-  useGenerationPoll(ready, ready ? rootState.generation : null);
+  const scan = useLibrarySync(ready, ready ? rootState.generation : null);
 
   const allImages = images.data ?? [];
-  const scoreReady =
-    allImages.length > 0 && allImages.every((image) => image.score !== null);
-  // Sorting a half-scored shoot would put photos in an order the scores do not
-  // support, so until every one has an answer the browser falls back to name.
+  // A finished pass is the signal, not a score on every photo: the core counts
+  // a file it cannot read as answered, and one of those would otherwise keep
+  // Instinct greyed out for the whole project forever.
+  const scoreReady = scoring
+    ? scoring.total > 0 && !scoring.running && scoring.done >= scoring.total
+    : allImages.length > 0 && allImages.every((image) => image.score != null);
+  // Sorting a half-rated project would put photos in an order the scores do not
+  // support, so until the pass is done the browser falls back to name.
   const activeSort = sort === "score" && !scoreReady ? "name" : sort;
   const filteredImages = useMemo(
     () =>
@@ -225,24 +233,41 @@ export default function App() {
     (path, edit) => setEdit.mutate({ path, edit }),
     EDIT_COMMIT_MS,
   );
-  const changeEdit = (image: ImageFile, edit: Edit) =>
+  // Until the core has read what the file already carries, every edit here is
+  // relative to a blank placeholder and would erase the real one. The keyboard
+  // reaches this with the edit panel closed, so say why nothing happened.
+  const changeEdit = (image: ImageFile, edit: Edit) => {
+    if (!image.enriched) {
+      toast("Still reading this photo's existing edits", { id: "not-indexed" });
+      return;
+    }
     scrubEdit(image.path, edit);
+  };
 
   const installBlocked = jobs.some((job) => job.status === "running")
     ? "Finish the running export first; installing restarts Photopipe."
     : null;
-  const startInstall = useCallback(() => {
-    if (installBlocked) return;
+  const { install: installUpdate } = updater;
+  // Sonner dismisses the toast the moment Install is clicked, so anything that
+  // stops the install has to say so itself or it happens in silence.
+  const startInstall = useCallback(async () => {
+    if (installBlocked) {
+      toast.error(installBlocked, { id: UPDATE_TOAST });
+      return;
+    }
     flushEdit();
-    void updater.install();
-  }, [installBlocked, flushEdit, updater]);
+    const result = await installUpdate();
+    if (result.kind === "error") {
+      toast.error(`Install failed: ${result.message}`, { id: UPDATE_TOAST });
+    }
+  }, [installBlocked, flushEdit, installUpdate]);
 
   const offerUpdate = useCallback(
     (version: string, id?: string | number) => {
       toast(`Photopipe ${version} is available`, {
         id,
         duration: Number.POSITIVE_INFINITY,
-        action: { label: "Install", onClick: startInstall },
+        action: { label: "Install", onClick: () => void startInstall() },
       });
     },
     [startInstall],
@@ -251,6 +276,19 @@ export default function App() {
   const { state: updateState } = updater;
   const offered = useRef(false);
   useEffect(() => {
+    if (updateState.kind === "downloading") {
+      toast.loading(
+        updateState.percent === null
+          ? "Downloading update…"
+          : `Downloading update… ${updateState.percent}%`,
+        { id: UPDATE_TOAST, duration: Number.POSITIVE_INFINITY },
+      );
+      return;
+    }
+    if (updateState.kind === "installed") {
+      toast.success("Update installed, restarting…", { id: UPDATE_TOAST });
+      return;
+    }
     if (updateState.kind !== "available" || offered.current) return;
     offered.current = true;
     offerUpdate(updateState.version);
@@ -260,11 +298,12 @@ export default function App() {
   const checkForUpdates = useCallback(async () => {
     // The startup check offers on its own; this one owns the toast instead.
     offered.current = true;
-    const id = toast.loading("Checking for updates…");
+    toast.loading("Checking for updates…", { id: UPDATE_TOAST });
     const result = await checkUpdate();
-    if (result.kind === "available") offerUpdate(result.version, id);
-    else if (result.kind === "error") toast.error(result.message, { id });
-    else toast.success("Photopipe is up to date", { id });
+    if (result.kind === "available") offerUpdate(result.version, UPDATE_TOAST);
+    else if (result.kind === "error")
+      toast.error(result.message, { id: UPDATE_TOAST });
+    else toast.success("Photopipe is up to date", { id: UPDATE_TOAST });
   }, [checkUpdate, offerUpdate]);
 
   // Subscribe once for the app's lifetime. Re-subscribing whenever the check
@@ -546,6 +585,7 @@ export default function App() {
               <span className="text-muted-foreground text-sm">Library</span>
             )}
             <span className="flex-1" />
+            <IndexingStatus progress={scan} />
             {jobs.length > 0 && (
               <Button
                 size="sm"
@@ -808,19 +848,20 @@ function Content({
   const emptyMessage = filterActive
     ? "Nothing matches the rating filter."
     : "No photos in this project yet. Import them, or drop files into the folder — subfolders are fine.";
-  if (filteredImages.length === 0) {
-    return (
-      <div className="flex h-full min-h-0 flex-col">
-        <BrowserToolbar
-          purpose="Cull and rate. Click a photo for the loupe; Export takes the selection."
-          view={view}
-          onView={onView}
-          sort={sort}
-          onSort={onSort}
-          scoreReady={scoreReady}
-          scoring={scoring}
-          justRated={justRated}
-        />
+  const selectMode = !selection.isEmpty;
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <BrowserToolbar
+        purpose="Cull and rate. Click a photo for the loupe; Export takes the selection."
+        view={view}
+        onView={onView}
+        sort={sort}
+        onSort={onSort}
+        scoreReady={scoreReady}
+        scoring={scoring}
+        justRated={justRated}
+      />
+      {filteredImages.length === 0 ? (
         <div className="flex flex-col items-start gap-3 p-8">
           <p
             data-testid="browser-empty"
@@ -835,44 +876,29 @@ function Content({
             </Button>
           )}
         </div>
-      </div>
-    );
-  }
-
-  const selectMode = !selection.isEmpty;
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <BrowserToolbar
-        purpose="Cull and rate. Click a photo for the loupe; Export takes the selection."
-        view={view}
-        onView={onView}
-        sort={sort}
-        onSort={onSort}
-        scoreReady={scoreReady}
-        scoring={scoring}
-        justRated={justRated}
-      />
-      <div className="min-h-0 flex-1">
-        {view === "grid" ? (
-          <ImageGrid
-            images={filteredImages}
-            onOpen={onOpenLoupe}
-            showInfo={showInfo}
-            selected={selection.selected}
-            selectMode={selectMode}
-            onSelect={selection.click}
-          />
-        ) : (
-          <ImageList
-            images={filteredImages}
-            selected={selection.selected}
-            selectMode={selectMode}
-            onSelect={selection.click}
-            onOpen={onOpenLoupe}
-            emptyMessage={emptyMessage}
-          />
-        )}
-      </div>
+      ) : (
+        <div className="min-h-0 flex-1">
+          {view === "grid" ? (
+            <ImageGrid
+              images={filteredImages}
+              onOpen={onOpenLoupe}
+              showInfo={showInfo}
+              selected={selection.selected}
+              selectMode={selectMode}
+              onSelect={selection.click}
+            />
+          ) : (
+            <ImageList
+              images={filteredImages}
+              selected={selection.selected}
+              selectMode={selectMode}
+              onSelect={selection.click}
+              onOpen={onOpenLoupe}
+              emptyMessage={emptyMessage}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }

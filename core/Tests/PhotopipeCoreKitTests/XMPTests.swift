@@ -39,7 +39,7 @@ private func writeGrayJPEG(to url: URL) throws {
 
 /// Fresh stat every time: the embedded-read cache is (path, mtime)-keyed, so
 /// a stale mtime would serve pre-write values.
-private func image(_ url: URL) throws -> ImageFile {
+func image(_ url: URL) throws -> ImageFile {
     let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
     return ImageFile(
         path: url.path, rel: url.lastPathComponent, ext: url.pathExtension,
@@ -530,6 +530,7 @@ private func image(_ url: URL) throws -> ImageFile {
         thumbnailer: Thumbnailer(cacheDir: dir.appendingPathComponent("thumbs")),
         renderer: Renderer(cacheDir: dir.appendingPathComponent("renders")))
     _ = try fresh.setRoot(path: dir.path, indexPath: nil)
+    waitUntilIndexed(fresh)
     let rescanned = try fresh.listImages(shoot: "2026-01-01_xmptest")
     #expect(rescanned.first { $0.path == arw.path }?.rating == 4)
     let rescannedEdit = try #require(rescanned.first { $0.path == jpg.path }?.edit)

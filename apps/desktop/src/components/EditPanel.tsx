@@ -311,16 +311,25 @@ export function EditSidebar({
         </Button>
       </div>
       <div className="p-3">
-        <EditPanel
-          image={image}
-          edit={edit}
-          onChange={onChange}
-          cropDraft={cropDraft}
-          onCropDraft={onCropDraft}
-          onEnterCrop={onEnterCrop}
-          onApplyCrop={onApplyCrop}
-          onCancelCrop={onCancelCrop}
-        />
+        {image.enriched ? (
+          <EditPanel
+            image={image}
+            edit={edit}
+            onChange={onChange}
+            cropDraft={cropDraft}
+            onCropDraft={onCropDraft}
+            onEnterCrop={onEnterCrop}
+            onApplyCrop={onApplyCrop}
+            onCancelCrop={onCancelCrop}
+          />
+        ) : (
+          <p
+            data-testid="edit-not-indexed"
+            className="text-muted-foreground text-xs"
+          >
+            Reading this photo's existing edits…
+          </p>
+        )}
       </div>
     </div>
   );

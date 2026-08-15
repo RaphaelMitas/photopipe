@@ -12,7 +12,7 @@ export function instinctScore(score: number): number {
 export function scoreRanks(images: ImageFile[]): Map<string, number> {
   return new Map(
     sortImages(
-      images.filter((image) => image.score !== null),
+      images.filter((image) => image.score != null),
       "score",
     ).map((image, index) => [image.path, index + 1]),
   );

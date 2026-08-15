@@ -12,10 +12,12 @@ export function sortImages(images: ImageFile[], sort: SortKey): ImageFile[] {
     return sorted;
   }
   sorted.sort((a, b) => {
-    if (a.score === b.score) return 0;
-    if (a.score === null) return 1;
-    if (b.score === null) return -1;
-    return b.score - a.score;
+    const left = a.score ?? null;
+    const right = b.score ?? null;
+    if (left === right) return 0;
+    if (left === null) return 1;
+    if (right === null) return -1;
+    return right - left;
   });
   return sorted;
 }

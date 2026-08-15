@@ -6,6 +6,14 @@ public enum XMP {
         URL(fileURLWithPath: path).deletingPathExtension().appendingPathExtension("xmp")
     }
 
+    /// 0 when there is no sidecar, which is also what the walk records — the
+    /// two have to agree for a cached record to be recognised as still current.
+    public static func sidecarMtime(forImagePath path: String) -> Double {
+        let values = try? sidecarURL(forImagePath: path).resourceValues(
+            forKeys: [.contentModificationDateKey])
+        return values?.contentModificationDate?.timeIntervalSince1970 ?? 0
+    }
+
     public static func readSidecarRating(at url: URL) -> Int? {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         return parseRating(text)

@@ -56,6 +56,8 @@ export function LoupeSidebar({
   onRate,
   onBackToGrid,
 }: Props) {
+  const instinct = image.score == null ? null : instinctScore(image.score);
+
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
@@ -126,16 +128,16 @@ export function LoupeSidebar({
               onRate={(rating) => onRate(image.path, rating)}
               className="mt-1 text-base"
             />
-            {image.score !== null && (
+            {instinct !== null && (
               <div className="mt-2 flex flex-col gap-1" data-testid="instinct">
                 <div className="flex justify-between font-mono text-xs">
                   <span className="text-muted-foreground">Instinct</span>
-                  <span>{instinctScore(image.score)}</span>
+                  <span>{instinct}</span>
                 </div>
                 <div className="h-1 rounded-sm bg-foreground/10">
                   <div
                     className="h-full rounded-sm bg-primary"
-                    style={{ width: `${instinctScore(image.score)}%` }}
+                    style={{ width: `${instinct}%` }}
                   />
                 </div>
                 {betterThan !== null && (

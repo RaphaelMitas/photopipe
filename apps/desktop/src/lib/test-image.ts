@@ -16,6 +16,7 @@ export function makeImage(
     width: 3000,
     height: 2000,
     score: null,
+    enriched: true,
     ...overrides,
   };
 }

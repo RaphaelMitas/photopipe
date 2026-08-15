@@ -273,14 +273,19 @@ public final class Dispatcher {
                         "generation": .number(Double(renamed.generation)),
                     ]))
             case "status":
-                let status = library.status()
-                return .success(
-                    id: request.id,
-                    result: .object([
-                        "generation": .number(Double(status.generation)),
-                        "root": status.root.map { .string($0) } ?? .null,
-                        "shoots": .number(Double(status.shoots)),
-                    ]))
+                let status = library.status(since: request.params?["since"]?.intValue)
+                var result: [String: JSONValue] = [
+                    "generation": .number(Double(status.generation)),
+                    "root": status.root.map { .string($0) } ?? .null,
+                    "shoots": .number(Double(status.shoots)),
+                    "scanning": .bool(status.scanning),
+                    "filesFound": .number(Double(status.filesFound)),
+                    "filesEnriched": .number(Double(status.filesEnriched)),
+                ]
+                if let changed = status.changedShoots {
+                    result["changedShoots"] = .array(changed.map { .string($0) })
+                }
+                return .success(id: request.id, result: .object(result))
             default:
                 return .failure(id: request.id, code: "unknown_method", message: request.method)
             }

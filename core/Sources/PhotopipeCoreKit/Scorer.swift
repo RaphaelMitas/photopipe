@@ -22,22 +22,26 @@ public final class Scorer: @unchecked Sendable {
     private static let concurrency = 6
     private static let flushEvery = 32
 
+    public typealias Flush = @Sendable ([(String, ScoreRow)]) -> Void
+
     private let lock = NSLock()
-    private var index: SQLiteIndex?
+    private var flush: Flush?
     private var cache: [String: ScoreRow] = [:]
     private var progressByShoot: [String: Progress] = [:]
     private var passes: [String: Task<Void, Never>] = [:]
 
     public init() {}
 
-    /// Point the scorer at a library index, dropping whatever the previous one had.
-    public func use(index: SQLiteIndex?) {
+    /// Adopt a library's cached scores, dropping whatever the previous one had.
+    /// Results are handed to `flush` rather than written here, so the scorer
+    /// never touches the database directly.
+    public func use(cache: [String: ScoreRow], flush: @escaping Flush) {
         lock.lock()
         let cancelled = passes.values
         passes.removeAll()
         progressByShoot.removeAll()
-        self.index = index
-        cache = (try? index?.loadScores()) ?? [:]
+        self.flush = flush
+        self.cache = cache
         lock.unlock()
         for pass in cancelled { pass.cancel() }
     }
@@ -102,31 +106,37 @@ public final class Scorer: @unchecked Sendable {
             for _ in 0..<min(Self.concurrency, pending.count) { submit() }
 
             while let (file, score) = await group.next() {
-                if Task.isCancelled { group.cancelAll() } else { submit() }
+                let cancelled = Task.isCancelled
+                if cancelled { group.cancelAll() } else { submit() }
+                // Vision reports a cancelled read the same way it reports an
+                // unreadable file. Recording that would write the photo off for
+                // good, so a cancelled pass leaves it untouched instead.
+                if cancelled && score == nil { continue }
+
                 let row = ScoreRow(
                     score: score, mtime: file.mtime, size: file.size, version: Self.version)
                 buffer.append((file.path, row))
 
-                let (index, flush) = lock.withLock { () -> (SQLiteIndex?, Bool) in
+                let (write, full) = lock.withLock { () -> (Flush?, Bool) in
                     cache[file.path] = row
                     let done = scoredCount(pending) + (total - pending.count)
                     progressByShoot[shoot] = Progress(done: done, total: total, running: true)
-                    return (self.index, buffer.count >= Self.flushEvery)
+                    return (self.flush, buffer.count >= Self.flushEvery)
                 }
 
-                if flush {
-                    try? index?.saveScores(buffer)
+                if full {
+                    write?(buffer)
                     buffer.removeAll(keepingCapacity: true)
                 }
             }
         }
 
-        let index = lock.withLock { () -> SQLiteIndex? in
+        let write = lock.withLock { () -> Flush? in
             progressByShoot[shoot] = nil
             passes[shoot] = nil
-            return self.index
+            return self.flush
         }
-        try? index?.saveScores(buffer)
+        write?(buffer)
     }
 
     /// Caller holds the lock.

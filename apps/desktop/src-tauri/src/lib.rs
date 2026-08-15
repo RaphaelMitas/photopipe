@@ -34,8 +34,12 @@ pub fn run() {
             let updates = MenuItemBuilder::new("Check for Updates…")
                 .id("check-updates")
                 .build(app)?;
+            let about = AboutMetadataBuilder::new()
+                .name(Some("Photopipe"))
+                .version(Some(app.package_info().version.to_string()))
+                .build();
             let app_menu = SubmenuBuilder::new(app, "Photopipe")
-                .about(Some(AboutMetadataBuilder::new().build()))
+                .about(Some(about))
                 .separator()
                 .item(&updates)
                 .item(&settings)
@@ -57,6 +61,9 @@ pub fn run() {
                 .paste()
                 .select_all()
                 .build()?;
+            // Full screen lives here in every Mac app, and replacing the default
+            // menu is what took it away.
+            let view_menu = SubmenuBuilder::new(app, "View").fullscreen().build()?;
             let window_menu = SubmenuBuilder::new(app, "Window")
                 .minimize()
                 .maximize()
@@ -64,7 +71,7 @@ pub fn run() {
                 .close_window()
                 .build()?;
             let menu = MenuBuilder::new(app)
-                .items(&[&app_menu, &edit_menu, &window_menu])
+                .items(&[&app_menu, &edit_menu, &view_menu, &window_menu])
                 .build()?;
             app.set_menu(menu)?;
             Ok(())

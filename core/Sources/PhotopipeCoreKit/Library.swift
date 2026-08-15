@@ -20,12 +20,25 @@ public struct ImageFile: Codable, Equatable, Sendable {
     public let edit: Edit
     public let width: Int
     public let height: Int
+    /// Vision's aesthetic score, -1 to 1, or nil when the photo has not been
+    /// rated yet. Lives in its own table rather than the file record, so it is
+    /// filled in on the way out rather than carried through the snapshot.
     public let score: Double?
+    /// False while the walk's placeholder rating, edit and dimensions are still
+    /// standing in for the real ones. Writing an edit against a placeholder
+    /// would erase whatever the file actually carries, so the UI must wait.
+    public let enriched: Bool
+    /// Modification time of the `.xmp` beside a raw, or 0 when there is none.
+    /// A raw's own bytes never change when its rating does, so this is the only
+    /// thing that tells a cached record it has gone stale — including when
+    /// Lightroom is what wrote the sidecar.
+    public let sidecarMtime: Double
 
     public init(
         path: String, rel: String, ext: String, size: Int64, mtime: Double,
-        rating: Int = 0, edit: Edit = .identity, width: Int = 3000, height: Int = 2000,
-        score: Double? = nil
+        rating: Int = 0, edit: Edit = .identity,
+        width: Int = Dimensions.fallback.width, height: Int = Dimensions.fallback.height,
+        score: Double? = nil, enriched: Bool = false, sidecarMtime: Double = 0
     ) {
         self.path = path
         self.rel = rel
@@ -37,6 +50,8 @@ public struct ImageFile: Codable, Equatable, Sendable {
         self.width = width
         self.height = height
         self.score = score
+        self.enriched = enriched
+        self.sidecarMtime = sidecarMtime
     }
 
     public var usesSidecar: Bool {
@@ -47,11 +62,18 @@ public struct ImageFile: Codable, Equatable, Sendable {
         rawExtensions.contains(ext.lowercased())
     }
 
-    public func with(rating: Int? = nil, edit: Edit? = nil, score: Double? = nil) -> ImageFile {
+    public func with(
+        rating: Int? = nil, edit: Edit? = nil,
+        dimensions: (width: Int, height: Int)? = nil, enriched: Bool? = nil,
+        sidecarMtime: Double? = nil, score: Double? = nil
+    ) -> ImageFile {
         ImageFile(
             path: path, rel: rel, ext: ext, size: size, mtime: mtime,
             rating: rating ?? self.rating, edit: edit ?? self.edit,
-            width: width, height: height, score: score ?? self.score)
+            width: dimensions?.width ?? self.width, height: dimensions?.height ?? self.height,
+            score: score ?? self.score,
+            enriched: enriched ?? self.enriched,
+            sidecarMtime: sidecarMtime ?? self.sidecarMtime)
     }
 }
 
@@ -64,6 +86,9 @@ public struct Shoot: Codable, Equatable, Sendable {
     public let notes: String
     public let cover: String?
     public let coverPath: String?
+    /// Every image in the shoot has real metadata; ratings and dimensions can
+    /// be trusted, and the rating filter will not lie.
+    public let indexed: Bool
 }
 
 public func parseShootName(_ name: String) -> (day: String, project: String)? {
@@ -88,5 +113,6 @@ public func makeShoot(
         imageCount: images.count,
         notes: notes,
         cover: cover,
-        coverPath: chosen?.path)
+        coverPath: chosen?.path,
+        indexed: images.allSatisfy(\.enriched))
 }
