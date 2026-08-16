@@ -17,17 +17,23 @@ export function useDebouncedEdit(
   const commitRef = useRef(commit);
   commitRef.current = commit;
 
-  const flush = useCallback(() => {
+  // Drops the pending edit without writing it. Pasting onto the photo being
+  // scrubbed has to cancel, not flush: two writes to one file race in the
+  // core's work queue and the older one can land last.
+  const cancel = useCallback(() => {
     if (timer.current !== null) {
       clearTimeout(timer.current);
       timer.current = null;
     }
-    const next = pending.current;
-    if (!next) return;
     pending.current = null;
     setDraft(null);
-    commitRef.current(next.path, next.edit);
   }, []);
+
+  const flush = useCallback(() => {
+    const next = pending.current;
+    cancel();
+    if (next) commitRef.current(next.path, next.edit);
+  }, [cancel]);
 
   const scrub = useCallback(
     (path: string, edit: Edit) => {
@@ -42,5 +48,5 @@ export function useDebouncedEdit(
 
   useEffect(() => () => flush(), [flush]);
 
-  return { draft, scrub, flush };
+  return { draft, scrub, flush, cancel };
 }

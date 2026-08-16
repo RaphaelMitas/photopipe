@@ -45,18 +45,23 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   coreRequest,
   type Edit,
+  editKey,
   type ImageFile,
   identityEdit,
   isIdentityEdit,
+  isRawFile,
   type SetRootResult,
 } from "@/lib/core";
+import { type EditClipboard, pasteEdit } from "@/lib/editClipboard";
 import { betterThan, scoreRanks } from "@/lib/instinct";
 import {
+  type EditWrite,
   type ScoreProgress,
   useExportFiles,
   useImages,
   useImportFiles,
   useLibrarySync,
+  usePasteEdits,
   useReveal,
   useScoring,
   useSetEdit,
@@ -77,6 +82,14 @@ const AUTO_SCORE_KEY = "photopipe.autoScore";
 /// One toast id for the whole update conversation, so a download replaces the
 /// offer rather than stacking under it.
 const UPDATE_TOAST = "update";
+
+const isTyping = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable ||
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA");
+
+const fileName = (path: string) => path.split("/").pop() ?? path;
 
 type RootState =
   | { kind: "picking"; error: string | null; busy: boolean }
@@ -150,6 +163,7 @@ export default function App() {
   }, []);
   const [cropDraft, setCropDraft] = useState<CropDraft | null>(null);
   const cropping = cropDraft !== null;
+  const [clipboard, setClipboard] = useState<EditClipboard | null>(null);
   const [jobs, setJobs] = useState<ExportJob[]>([]);
   const nextJobId = useRef(1);
 
@@ -180,6 +194,7 @@ export default function App() {
   );
   const setRating = useSetRating(openShoot);
   const setEdit = useSetEdit(openShoot);
+  const pasteEdits = usePasteEdits(openShoot);
   const reveal = useReveal();
   const trash = useTrash(openShoot);
   const exportFiles = useExportFiles();
@@ -229,18 +244,26 @@ export default function App() {
     draft: editDraft,
     scrub: scrubEdit,
     flush: flushEdit,
+    cancel: cancelEdit,
   } = useDebouncedEdit(
     (path, edit) => setEdit.mutate({ path, edit }),
     EDIT_COMMIT_MS,
   );
-  // Until the core has read what the file already carries, every edit here is
+  // Until the core has read what the file already carries, every edit is
   // relative to a blank placeholder and would erase the real one. The keyboard
   // reaches this with the edit panel closed, so say why nothing happened.
+  const readable = useCallback((image: ImageFile) => {
+    if (image.enriched) return true;
+    toast("Still reading this photo's existing edits", { id: "not-indexed" });
+    return false;
+  }, []);
+  const editOf = useCallback(
+    (image: ImageFile) =>
+      editDraft?.path === image.path ? editDraft.edit : image.edit,
+    [editDraft],
+  );
   const changeEdit = (image: ImageFile, edit: Edit) => {
-    if (!image.enriched) {
-      toast("Still reading this photo's existing edits", { id: "not-indexed" });
-      return;
-    }
+    if (!readable(image)) return;
     scrubEdit(image.path, edit);
   };
 
@@ -406,16 +429,106 @@ export default function App() {
   const loupeIndex = loupePath
     ? loupeImages.findIndex((image) => image.path === loupePath)
     : -1;
+  const loupeImage = loupeIndex >= 0 ? loupeImages[loupeIndex] : null;
+  const loupeEdit = loupeImage === null ? identityEdit : editOf(loupeImage);
 
   useEffect(() => {
     if (loupePath && loupeIndex === -1) setLoupePath(null);
   }, [loupePath, loupeIndex]);
 
+  const copySource =
+    loupeImage ?? (selectedImages.length === 1 ? selectedImages[0] : null);
+  const pasteTargets = loupeImage ? [loupeImage] : selectedImages;
+
+  const copySettings = useCallback(
+    (image: ImageFile) => {
+      if (!readable(image)) return;
+      setClipboard({
+        path: image.path,
+        edit: editOf(image),
+        raw: isRawFile(image),
+      });
+      toast(`Copied settings from ${fileName(image.path)}`, {
+        id: "clipboard",
+      });
+    },
+    [editOf, readable],
+  );
+
+  // A mutation changes identity every render, so the paste reaches the
+  // keyboard through a ref rather than dragging the whole handler's identity
+  // into the shortcut effect.
+  const pasteMutation = useRef(pasteEdits);
+  pasteMutation.current = pasteEdits;
+
+  const pasteSettings = useCallback(
+    (targets: ImageFile[]) => {
+      if (!clipboard || targets.length === 0) return;
+      const ready = targets.filter((image) => image.enriched);
+      const writes: EditWrite[] = [];
+      const previous: EditWrite[] = [];
+      // Only worth mentioning when the copied photo actually carries a white
+      // balance that raw and non-raw cannot share.
+      const carriesWhiteBalance =
+        clipboard.edit.temperature != null || clipboard.edit.tint != null;
+      let keptWhiteBalance = 0;
+      for (const image of ready) {
+        const current = editOf(image);
+        const raw = isRawFile(image);
+        const next = pasteEdit(current, clipboard, raw);
+        if (editKey(next) === editKey(current)) continue;
+        if (carriesWhiteBalance && raw !== clipboard.raw) keptWhiteBalance += 1;
+        writes.push({ path: image.path, edit: next });
+        previous.push({ path: image.path, edit: current });
+      }
+      if (writes.length === 0) {
+        toast(
+          ready.length === 0
+            ? "Still reading these photos' existing edits"
+            : "Those photos already have these settings",
+          { id: "clipboard" },
+        );
+        return;
+      }
+      // A pending scrub on a photo being pasted over has to be dropped, not
+      // flushed: two writes to one file race in the core's work queue.
+      if (editDraft && writes.some((write) => write.path === editDraft.path)) {
+        cancelEdit();
+      }
+      const notReady = targets.length - ready.length;
+      const notes = [
+        notReady > 0 ? `${notReady} not read yet` : null,
+        keptWhiteBalance > 0
+          ? `${keptWhiteBalance} kept their own white balance`
+          : null,
+      ].filter(Boolean);
+      pasteMutation.current.mutate(writes, {
+        onSuccess: (result) => {
+          if (result.written === 0) return;
+          toast.success(
+            `Pasted settings onto ${result.written} ${
+              result.written === 1 ? "photo" : "photos"
+            }`,
+            {
+              // Its own toast, not the shared notice: each paste keeps the
+              // Undo that belongs to it.
+              description: notes.length > 0 ? notes.join(" · ") : undefined,
+              action: {
+                label: "Undo",
+                onClick: () => pasteMutation.current.mutate(previous),
+              },
+            },
+          );
+        },
+      });
+    },
+    [clipboard, editDraft, editOf, cancelEdit],
+  );
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: leave crop mode when the loupe photo changes
   useEffect(() => setCropDraft(null), [loupePath]);
 
   const openExport = useCallback(() => {
-    const loupeImage = loupeIndex >= 0 ? loupeImages[loupeIndex] : null;
     if (loupeImage) {
       setLoupePath(null);
       if (!filteredImages.some((image) => image.path === loupeImage.path)) {
@@ -427,11 +540,24 @@ export default function App() {
       return;
     }
     setDrawerOpen((open) => !open);
-  }, [loupeIndex, loupeImages, filteredImages, selection]);
+  }, [loupeImage, filteredImages, selection]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
+      if (isTyping(event.target)) return;
       if (event.metaKey || event.ctrlKey) {
+        if (event.shiftKey && !cropping) {
+          const key = event.key.toLowerCase();
+          if (key === "c" && copySource) {
+            event.preventDefault();
+            copySettings(copySource);
+          }
+          if (key === "v") {
+            event.preventDefault();
+            pasteSettings(pasteTargets);
+          }
+          return;
+        }
         if (event.key === "a" && loupeIndex === -1) {
           event.preventDefault();
           selection.selectAll();
@@ -451,7 +577,18 @@ export default function App() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [selection, loupeIndex, openShoot, cropping, openExport, toggleEditPanel]);
+  }, [
+    selection,
+    loupeIndex,
+    openShoot,
+    cropping,
+    openExport,
+    toggleEditPanel,
+    copySource,
+    copySettings,
+    pasteTargets,
+    pasteSettings,
+  ]);
 
   const changeRatingStars = (stars: number) => {
     setRatingStars(stars);
@@ -491,14 +628,7 @@ export default function App() {
     );
   }
 
-  const loupeImage = loupeIndex >= 0 ? loupeImages[loupeIndex] : null;
   const inLoupe = openShoot !== null && loupeImage !== null;
-  const loupeEdit =
-    loupeImage === null
-      ? identityEdit
-      : editDraft?.path === loupeImage.path
-        ? editDraft.edit
-        : loupeImage.edit;
 
   const currentShoot = shoots.data?.find((s) => s.name === openShoot);
   const runningJobs = jobs.filter((job) => job.status === "running").length;
@@ -645,6 +775,9 @@ export default function App() {
           <SelectionBar
             count={selection.selected.size}
             busy={exportFiles.isPending}
+            canPaste={clipboard !== null}
+            onCopySettings={() => copySource && copySettings(copySource)}
+            onPasteSettings={() => pasteSettings(pasteTargets)}
             onExport={() => setDrawerOpen(true)}
             onReveal={() =>
               reveal.mutate(selectedImages.map((image) => image.path))
@@ -705,6 +838,9 @@ export default function App() {
                 onEnterCrop={() => setCropDraft(draftFromEdit(loupeEdit))}
                 onApplyCrop={applyCrop}
                 onCancelCrop={cancelCrop}
+                canPaste={clipboard !== null}
+                onCopySettings={() => copySettings(loupeImage)}
+                onPasteSettings={() => pasteSettings([loupeImage])}
                 onClose={toggleEditPanel}
               />
             )}

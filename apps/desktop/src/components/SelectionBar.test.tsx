@@ -4,14 +4,16 @@ import { SelectionBar } from "./SelectionBar";
 
 afterEach(cleanup);
 
-function renderBar() {
+function renderBar(count = 2, canPaste = true) {
   const handlers = {
+    onCopySettings: vi.fn(),
+    onPasteSettings: vi.fn(),
     onExport: vi.fn(),
     onReveal: vi.fn(),
     onDelete: vi.fn(),
     onClear: vi.fn(),
   };
-  render(<SelectionBar count={2} {...handlers} />);
+  render(<SelectionBar count={count} canPaste={canPaste} {...handlers} />);
   return handlers;
 }
 
@@ -20,6 +22,7 @@ describe("SelectionBar", () => {
     const handlers = renderBar();
     for (const [id, handler] of [
       ["action-export", handlers.onExport],
+      ["action-paste-settings", handlers.onPasteSettings],
       ["action-reveal", handlers.onReveal],
       ["action-delete", handlers.onDelete],
       ["action-clear", handlers.onClear],
@@ -29,16 +32,20 @@ describe("SelectionBar", () => {
     }
   });
 
+  // Copying a look off several photos at once has no meaning; pasting one
+  // needs a look on the clipboard.
+  it("offers copy on a single photo and paste only with a clipboard", () => {
+    renderBar(2, true);
+    expect(screen.queryByTestId("action-copy-settings")).toBeNull();
+    cleanup();
+
+    renderBar(1, false);
+    expect(screen.getByTestId("action-copy-settings")).toBeInTheDocument();
+    expect(screen.queryByTestId("action-paste-settings")).toBeNull();
+  });
+
   it("stays out of the way when nothing is selected", () => {
-    render(
-      <SelectionBar
-        count={0}
-        onExport={vi.fn()}
-        onReveal={vi.fn()}
-        onDelete={vi.fn()}
-        onClear={vi.fn()}
-      />,
-    );
+    renderBar(0);
     expect(screen.queryByTestId("selection-bar")).toBeNull();
   });
 });

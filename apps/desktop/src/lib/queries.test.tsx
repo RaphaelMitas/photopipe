@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ImageFile } from "./core";
-import { useLibrarySync, useSetRating } from "./queries";
+import { type Edit, type ImageFile, identityEdit } from "./core";
+import { useLibrarySync, usePasteEdits, useSetRating } from "./queries";
 import { makeImage } from "./test-image";
 
 afterEach(cleanup);
@@ -67,6 +67,44 @@ describe("useLibrarySync", () => {
       filesFound: 100,
       filesEnriched: 40,
     });
+  });
+});
+
+describe("usePasteEdits", () => {
+  it("keeps the pasted look and reverts only the photo whose write failed", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    client.setQueryData(["images", "shoot1"], [image("A"), image("B")]);
+    invoke.mockImplementation(
+      (_command, args: { params: { path: string; edit: Edit } }) =>
+        args.params.path.endsWith("B.ARW")
+          ? Promise.reject("disk full")
+          : Promise.resolve({ edit: args.params.edit, generation: 2 }),
+    );
+
+    let mutation!: ReturnType<typeof usePasteEdits>;
+    function Paste() {
+      mutation = usePasteEdits("shoot1");
+      return null;
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Paste />
+      </QueryClientProvider>,
+    );
+
+    const look: Edit = { ...identityEdit, exposure: 1.5 };
+    mutation.mutate([
+      { path: "/r/shoot1/A.ARW", edit: look },
+      { path: "/r/shoot1/B.ARW", edit: look },
+    ]);
+
+    await waitFor(() => expect(mutation.isSuccess).toBe(true));
+    const images = client.getQueryData<ImageFile[]>(["images", "shoot1"]);
+    // B goes back on its own; A keeps the optimistic paste, not collateral.
+    expect(images?.[0].edit.exposure).toBe(1.5);
+    expect(images?.[1].edit.exposure).toBe(0);
   });
 });
 

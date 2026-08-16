@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -217,27 +222,132 @@ export function useSetRating(shoot: string | null) {
   });
 }
 
+export type EditWrite = { path: string; edit: Edit };
+
+/// Optimistic edits, per path. A whole-list snapshot cannot be rolled back
+/// safely while other writes are in flight — restoring it would take their
+/// edits down with the failed one.
+function patchEdits(
+  queryClient: QueryClient,
+  shoot: string | null,
+  edits: Map<string, Edit>,
+) {
+  queryClient.setQueryData<ImageFile[]>(["images", shoot], (old) =>
+    old?.map((image) => {
+      const edit = edits.get(image.path);
+      return edit ? { ...image, edit } : image;
+    }),
+  );
+}
+
+function currentEdits(
+  queryClient: QueryClient,
+  shoot: string | null,
+  paths: string[],
+): Map<string, Edit> {
+  const images = queryClient.getQueryData<ImageFile[]>(["images", shoot]) ?? [];
+  const byPath = new Map(images.map((image) => [image.path, image.edit]));
+  const wanted = new Map<string, Edit>();
+  for (const path of paths) {
+    const edit = byPath.get(path);
+    if (edit) wanted.set(path, edit);
+  }
+  return wanted;
+}
+
 export function useSetEdit(shoot: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: SET_EDIT_KEY,
-    mutationFn: ({ path, edit }: { path: string; edit: Edit }) =>
+    mutationFn: ({ path, edit }: EditWrite) =>
       coreRequest<SetEditResult>("setEdit", { shoot, path, edit }),
     onMutate: async ({ path, edit }) => {
       await queryClient.cancelQueries({ queryKey: ["images", shoot] });
-      const previous = queryClient.getQueryData<ImageFile[]>(["images", shoot]);
-      queryClient.setQueryData<ImageFile[]>(["images", shoot], (old) =>
-        old?.map((image) => (image.path === path ? { ...image, edit } : image)),
-      );
+      const previous = currentEdits(queryClient, shoot, [path]);
+      patchEdits(queryClient, shoot, new Map([[path, edit]]));
       return { previous };
     },
     onError: (error, vars, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(["images", shoot], context.previous);
-      }
+      if (context?.previous) patchEdits(queryClient, shoot, context.previous);
       toast.error(`Saving edits for ${vars.path.split("/").pop()} failed`, {
         description: String(error),
       });
+    },
+    onSettled: () => {
+      if (queryClient.isMutating({ mutationKey: SET_EDIT_KEY }) === 1) {
+        queryClient.invalidateQueries({ queryKey: ["images", shoot] });
+      }
+    },
+  });
+}
+
+export type PasteResult = { written: number; failed: string[] };
+
+/// Enough writes in flight to keep exiftool busy without starving the core's
+/// bounded work queue of the renders and thumbnails the browser is asking for.
+const PASTE_CONCURRENCY = 4;
+
+/// Pasting a look onto a selection. One mutation for the whole batch, under
+/// the same key as a single edit so the library poller leaves the images cache
+/// alone until every write has settled, and so a photo whose write fails is
+/// the only one that goes back.
+export function usePasteEdits(shoot: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: SET_EDIT_KEY,
+    mutationFn: async (writes: EditWrite[]): Promise<PasteResult> => {
+      const failed: string[] = [];
+      let next = 0;
+      const worker = async () => {
+        while (next < writes.length) {
+          const write = writes[next++];
+          try {
+            await coreRequest<SetEditResult>("setEdit", {
+              shoot,
+              path: write.path,
+              edit: write.edit,
+            });
+          } catch {
+            failed.push(write.path);
+          }
+        }
+      };
+      await Promise.all(
+        Array.from(
+          { length: Math.min(PASTE_CONCURRENCY, writes.length) },
+          worker,
+        ),
+      );
+      return { written: writes.length - failed.length, failed };
+    },
+    onMutate: async (writes) => {
+      await queryClient.cancelQueries({ queryKey: ["images", shoot] });
+      const previous = currentEdits(
+        queryClient,
+        shoot,
+        writes.map((write) => write.path),
+      );
+      patchEdits(
+        queryClient,
+        shoot,
+        new Map(writes.map((write) => [write.path, write.edit])),
+      );
+      return { previous };
+    },
+    onSuccess: (result, _writes, context) => {
+      if (result.failed.length === 0) return;
+      const rollback = new Map<string, Edit>();
+      for (const path of result.failed) {
+        const edit = context?.previous.get(path);
+        if (edit) rollback.set(path, edit);
+      }
+      patchEdits(queryClient, shoot, rollback);
+      toast.error(
+        `${result.failed.length} ${
+          result.failed.length === 1 ? "photo" : "photos"
+        } kept the settings they had`,
+        { description: "Saving failed" },
+      );
     },
     onSettled: () => {
       if (queryClient.isMutating({ mutationKey: SET_EDIT_KEY }) === 1) {
