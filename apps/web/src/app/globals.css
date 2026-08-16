@@ -1,0 +1,22 @@
+@import "tailwindcss";
+@import "@photopipe/ui/tokens.css";
+
+@source "../";
+
+@theme inline {
+  --font-sans: var(--font-inter), sans-serif;
+  --font-heading: var(--font-montserrat), sans-serif;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+    scroll-behavior: smooth;
+  }
+}

@@ -4,6 +4,9 @@
   "version": "0.0.0",
   "license": "MIT",
   "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "exports": {
     "./components/*": "./src/components/*.tsx",
     "./hooks/*": "./src/hooks/*.ts",
@@ -26,6 +29,7 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@photopipe/tsconfig": "workspace:*",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "typescript": "5.9.3"

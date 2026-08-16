@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "./scripts/prepare-bundle.sh && pnpm --filter desktop tauri dev",
     "check": "biome check .",
+    "typecheck": "pnpm -r typecheck",
     "check:fix": "biome check --write .",
     "release": "node scripts/release.mjs",
     "screenshots": "pnpm --filter desktop screenshots"
