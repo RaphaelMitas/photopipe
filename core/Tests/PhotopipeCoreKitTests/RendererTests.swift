@@ -506,10 +506,14 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
 
     let left = Edit(crop: CropRect(left: 0, top: 0, right: 0.25, bottom: 1))
     let right = Edit(crop: CropRect(left: 0.75, top: 0, right: 1, bottom: 1))
-    let first = try #require(CIImage(contentsOf: renderer.render(
-        file: file, edit: left, maxPixel: 400)))
-    let second = try #require(CIImage(contentsOf: renderer.render(
-        file: file, edit: right, maxPixel: 400)))
+    let first = try #require(
+        CIImage(
+            contentsOf: renderer.render(
+                file: file, edit: left, maxPixel: 400)))
+    let second = try #require(
+        CIImage(
+            contentsOf: renderer.render(
+                file: file, edit: right, maxPixel: 400)))
 
     #expect(
         first.extent.size == second.extent.size,
