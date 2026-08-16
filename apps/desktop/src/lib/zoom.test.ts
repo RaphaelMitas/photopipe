@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   centerOn,
   clampPan,
-  regionScreenRect,
-  stillServes,
+  viewportKey,
   viewportRequest,
   visibleRect,
+  visibleScreenRect,
   zoomAt,
 } from "./zoom";
 
@@ -121,75 +121,35 @@ describe("viewportRequest", () => {
     expect(deep.maxPixel).toBeLessThanOrEqual(Math.round(regionPixels) + 1);
   });
 
-  it("renders past the viewport so a drag has somewhere to go", () => {
+  it("marks a moved view as no longer matching what was rendered", () => {
     const zoomed = zoomAt(null, { x: 500, y: 250 }, 8, 8, photo, 1000, 500);
     expect(zoomed).not.toBeNull();
     if (!zoomed) return;
-    const centred = centerOn(zoomed, { x: 0.5, y: 0.5 }, photo, 1000, 500);
-    const got = request(centred);
-    expect(got).not.toBeNull();
-    if (!got) return;
-
-    const visible = visibleRect(centred, photo, view.width, view.height);
-    expect(got.viewport.left).toBeLessThan(visible.x);
-    expect(got.viewport.right).toBeGreaterThan(visible.x + visible.width);
-  });
-
-  it("keeps a slice through a drag inside its margin, drops it past", () => {
-    const zoomed = zoomAt(null, { x: 500, y: 250 }, 8, 8, photo, 1000, 500);
-    expect(zoomed).not.toBeNull();
-    if (!zoomed) return;
-    const centred = centerOn(zoomed, { x: 0.5, y: 0.5 }, photo, 1000, 500);
-    const held = request(centred);
-
-    const serves = (state: typeof centred) =>
-      stillServes(held, request(state), state, photo, view.width, view.height);
-
-    expect(serves(centred)).toBe(true);
-    const nudged = clampPan(
-      { ...centred, tx: centred.tx - 30 },
-      photo,
-      view.width,
-      view.height,
+    const held = request(zoomed);
+    expect(viewportKey(held)).toBe(viewportKey(request(zoomed)));
+    expect(viewportKey(held)).not.toBe(
+      viewportKey(request({ ...zoomed, tx: zoomed.tx - 40 })),
     );
-    expect(serves(nudged)).toBe(true);
-    const far = clampPan(
-      { ...centred, tx: centred.tx - 400 },
-      photo,
-      view.width,
-      view.height,
-    );
-    expect(serves(far)).toBe(false);
+    expect(viewportKey(null)).toBe("");
   });
 
-  it("drops a slice too coarse for a deeper zoom", () => {
-    const shallow = zoomAt(null, { x: 500, y: 250 }, 2, 64, photo, 1000, 500);
-    const deep = zoomAt(null, { x: 500, y: 250 }, 16, 64, photo, 1000, 500);
-    expect(shallow).not.toBeNull();
-    expect(deep).not.toBeNull();
-    if (!shallow || !deep) return;
-
-    // The shallow slice spans the deeper view, but far too coarsely for it.
-    const wide = request(shallow);
-    const close = request(deep);
-    expect(wide?.viewport.left).toBeLessThan(close?.viewport.left ?? 0);
-    expect(wide?.density ?? 1).toBeLessThan(close?.density ?? 0);
-    expect(stillServes(wide, close, deep, photo, 1000, 500)).toBe(false);
-  });
-
-  it("places a slice by the bounds it was rendered for", () => {
+  it("covers the stage where the photo covers it", () => {
     const zoomed = zoomAt(null, { x: 500, y: 250 }, 4, 8, photo, 1000, 500);
     expect(zoomed).not.toBeNull();
     if (!zoomed) return;
-    const got = request(zoomed);
-    expect(got).not.toBeNull();
-    if (!got) return;
 
-    // The margin puts its edges outside the stage, so it covers it fully.
-    const rect = regionScreenRect(got.viewport, photo, zoomed);
-    expect(rect.left).toBeLessThanOrEqual(0.01);
-    expect(rect.top).toBeLessThanOrEqual(0.01);
-    expect(rect.left + rect.width).toBeGreaterThanOrEqual(view.width - 0.01);
-    expect(rect.top + rect.height).toBeGreaterThanOrEqual(view.height - 0.01);
+    const rect = visibleScreenRect(zoomed, photo, view.width, view.height);
+    expect(rect.left).toBeCloseTo(0);
+    expect(rect.top).toBeCloseTo(0);
+    expect(rect.width).toBeCloseTo(view.width);
+    expect(rect.height).toBeCloseTo(view.height);
+  });
+
+  it("stops at the photo edge when it does not fill the stage", () => {
+    // scale 1.2 leaves the 750-wide photo at 900, short of the 1000 viewport.
+    const state = clampPan({ scale: 1.2, tx: 0, ty: 0 }, photo, 1000, 500);
+    const rect = visibleScreenRect(state, photo, view.width, view.height);
+    expect(rect.width).toBeCloseTo(900);
+    expect(rect.left).toBeCloseTo((1000 - 900) / 2);
   });
 });

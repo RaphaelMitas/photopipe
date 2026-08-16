@@ -86,19 +86,11 @@ export function visibleRect(
 export type ViewportRequest = {
   viewport: { left: number; top: number; right: number; bottom: number };
   maxPixel: number;
-  /// Output pixels per source pixel, 1 being 1:1. Slices of different sizes
-  /// only compare on this, not on `maxPixel`.
-  density: number;
 };
 
-/// Rendered past the edges of the viewport, so a drag has somewhere to go
-/// before the slice runs out. Costs (1 + margin)² in decode time and buys
-/// that much pan for free.
-const MARGIN = 0.25;
-
-/// What the core should render for the current zoom: the slice on screen plus
-/// a margin, at the resolution the screen can show, instead of the whole
-/// frame. Null when the photo fits, where the ordinary render covers it.
+/// What the core should render for the current zoom: the slice on screen at
+/// the resolution the screen can show, instead of the whole frame. Null when
+/// the photo fits, where the ordinary render already covers it.
 export function viewportRequest(
   state: ZoomState | null,
   photo: Box,
@@ -113,63 +105,52 @@ export function viewportRequest(
   if (visible.width <= 0 || visible.height <= 0) return null;
   if (visible.width >= 1 && visible.height >= 1) return null;
 
-  const viewport = {
-    left: Math.max(0, visible.x - (visible.width * MARGIN) / 2),
-    top: Math.max(0, visible.y - (visible.height * MARGIN) / 2),
-    right: Math.min(1, visible.x + visible.width * (1 + MARGIN / 2)),
-    bottom: Math.min(1, visible.y + visible.height * (1 + MARGIN / 2)),
-  };
-  const width = viewport.right - viewport.left;
-  const height = viewport.bottom - viewport.top;
+  const onScreen = visibleScreenRect(state, photo, viewWidth, viewHeight);
   // Never more than the slice holds: upscaling would cost a bigger decode for
   // pixels the sensor never recorded.
-  const sourcePixels = Math.max(width * pixelWidth, height * pixelHeight);
   const maxPixel = Math.round(
     Math.min(
-      sourcePixels,
-      Math.max(width * photo.width, height * photo.height) *
-        state.scale *
-        devicePixelRatio,
+      Math.max(visible.width * pixelWidth, visible.height * pixelHeight),
+      Math.max(onScreen.width, onScreen.height) * devicePixelRatio,
     ),
   );
-  if (maxPixel <= 0 || sourcePixels <= 0) return null;
-  return { viewport, maxPixel, density: maxPixel / sourcePixels };
+  if (maxPixel <= 0) return null;
+  return {
+    viewport: {
+      left: visible.x,
+      top: visible.y,
+      right: visible.x + visible.width,
+      bottom: visible.y + visible.height,
+    },
+    maxPixel,
+  };
 }
 
-/// Whether a slice already rendered still serves the view: it has to cover
-/// what is on screen, and not be coarser than what the screen can show. A
-/// slice that fails either would clip or look soft, so it must not be drawn.
-export function stillServes(
-  held: ViewportRequest | null,
-  wanted: ViewportRequest | null,
-  state: ZoomState | null,
+/// Identity of a request, so the loupe can tell whether the slice it holds
+/// still matches the view. Anything else is stale and must not be drawn.
+export function viewportKey(request: ViewportRequest | null): string {
+  if (!request) return "";
+  const { left, top, right, bottom } = request.viewport;
+  return `${left},${top},${right},${bottom}@${request.maxPixel}`;
+}
+
+/// The part of the stage the photo actually covers. A slice rendered for this
+/// state lands here exactly.
+export function visibleScreenRect(
+  state: ZoomState,
   photo: Box,
   viewWidth: number,
   viewHeight: number,
-): boolean {
-  if (!held || !wanted || !state) return false;
-  const visible = visibleRect(state, photo, viewWidth, viewHeight);
-  const slack = 1e-6;
-  return (
-    held.viewport.left <= visible.x + slack &&
-    held.viewport.top <= visible.y + slack &&
-    held.viewport.right >= visible.x + visible.width - slack &&
-    held.viewport.bottom >= visible.y + visible.height - slack &&
-    held.density >= wanted.density - slack
-  );
-}
-
-/// Where a slice sits on the stage, from the bounds it was rendered for.
-export function regionScreenRect(
-  viewport: ViewportRequest["viewport"],
-  photo: Box,
-  state: ZoomState,
 ) {
+  const left = photo.x * state.scale + state.tx;
+  const top = photo.y * state.scale + state.ty;
+  const clampedLeft = Math.max(0, left);
+  const clampedTop = Math.max(0, top);
   return {
-    left: (photo.x + viewport.left * photo.width) * state.scale + state.tx,
-    top: (photo.y + viewport.top * photo.height) * state.scale + state.ty,
-    width: (viewport.right - viewport.left) * photo.width * state.scale,
-    height: (viewport.bottom - viewport.top) * photo.height * state.scale,
+    left: clampedLeft,
+    top: clampedTop,
+    width: Math.min(viewWidth, left + photo.width * state.scale) - clampedLeft,
+    height: Math.min(viewHeight, top + photo.height * state.scale) - clampedTop,
   };
 }
 
