@@ -1,4 +1,4 @@
-import { Crop, RotateCcw, X } from "lucide-react";
+import { ClipboardPaste, Copy, Crop, RotateCcw, X } from "lucide-react";
 import { useDeferredValue } from "react";
 import {
   type Edit,
@@ -276,8 +276,16 @@ export function EditSidebar({
   onEnterCrop,
   onApplyCrop,
   onCancelCrop,
+  canPaste,
+  onCopySettings,
+  onPasteSettings,
   onClose,
-}: Props & { onClose: () => void }) {
+}: Props & {
+  canPaste: boolean;
+  onCopySettings: () => void;
+  onPasteSettings: () => void;
+  onClose: () => void;
+}) {
   const cropping = cropDraft !== null;
   return (
     <div
@@ -288,12 +296,38 @@ export function EditSidebar({
         <span className="font-medium text-sm">Edit</span>
         <Button
           variant="ghost"
+          size="icon"
+          data-testid="edit-copy-settings"
+          onClick={onCopySettings}
+          disabled={cropping}
+          title="Copy settings (⌘C)"
+          className="ml-auto size-6 text-muted-foreground"
+        >
+          <Copy className="size-3" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          data-testid="edit-paste-settings"
+          onClick={onPasteSettings}
+          disabled={cropping || !canPaste}
+          title={
+            canPaste
+              ? "Paste settings (⌘V)"
+              : "Copy settings from a photo first"
+          }
+          className="size-6 text-muted-foreground"
+        >
+          <ClipboardPaste className="size-3" />
+        </Button>
+        <Button
+          variant="ghost"
           size="sm"
           data-testid="edit-reset-all"
           onClick={() => onChange({ ...identityEdit })}
           disabled={isIdentityEdit(edit) || cropping}
           title="Reset all edits"
-          className="ml-auto h-6 px-1.5 text-[10px] text-muted-foreground"
+          className="h-6 px-1.5 text-[10px] text-muted-foreground"
         >
           <RotateCcw className="size-3" />
           Reset all

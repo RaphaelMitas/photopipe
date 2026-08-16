@@ -96,6 +96,17 @@ files that leave can never disagree, because there is only the selection.
 *Select all* drops the rating filter first so no part of the selection is
 ever invisible.
 
+## Pasted settings never carry the framing
+
+⌘C copies the look off a photo, ⌘V puts it on the loupe photo or on the
+whole selection. It takes tone, colour and curves; crop, straighten and
+rotation stay with the photo they were made for, because a crop rect is
+normalized against its own turned frame and means something different on a
+photo of another shape. White balance is Kelvin on raw and incremental
+elsewhere, so it only crosses between photos of the same kind and the toast
+says when it was left behind. There is no scope dialog: paste takes
+everything it can, every time, and the toast offers Undo.
+
 ## Activity, not toasts
 
 Exports run as jobs in the drawer's activity section: running, done (with a
