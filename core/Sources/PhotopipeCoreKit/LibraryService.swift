@@ -12,6 +12,7 @@ public final class LibraryService: @unchecked Sendable {
         case invalidProjectName(String)
         case invalidProjectDay(String)
         case projectExists(String)
+        case unknownExport(String)
     }
 
     private let lock = NSLock()
@@ -29,6 +30,7 @@ public final class LibraryService: @unchecked Sendable {
     private let thumbnailer: Thumbnailer
     private let renderer: Renderer
     private let scorer: Scorer
+    private let exporter = Exporter()
     private let rescanQueue = DispatchQueue(label: "photopipe.rescan")
     /// One connection, one writer: enrichment batches and full saves both land
     /// here so they never interleave on the same sqlite handle.
@@ -269,6 +271,29 @@ public final class LibraryService: @unchecked Sendable {
             mtime: ((attrs[.modificationDate] as? Date) ?? .distantPast).timeIntervalSince1970)
     }
 
+    /// One canonical index for the whole selection: resolving each path against
+    /// a linear scan makes selecting a whole shoot quadratic.
+    private func images(inShoot shootName: String, paths: [String]) throws -> [ImageFile] {
+        lock.lock()
+        let images = snapshot.imagesByShoot[shootName]
+        let hasRoot = root != nil
+        lock.unlock()
+        guard hasRoot else { throw ServiceError.noRoot }
+        guard let images else { throw ServiceError.unknownShoot(shootName) }
+
+        var byCanonical: [String: ImageFile] = [:]
+        for image in images {
+            byCanonical[URL(fileURLWithPath: image.path).standardizedFileURL.path] = image
+        }
+        return try paths.map { path in
+            let canonical = URL(fileURLWithPath: path).standardizedFileURL.path
+            guard let image = byCanonical[canonical] else {
+                throw ServiceError.unknownImage(path)
+            }
+            return image
+        }
+    }
+
     private func image(shoot shootName: String, path: String) throws -> ImageFile {
         lock.lock()
         let images = snapshot.imagesByShoot[shootName]
@@ -500,19 +525,26 @@ public final class LibraryService: @unchecked Sendable {
         case jpeg
     }
 
-    public func exportFiles(
+    /// Everything that can be refused outright is refused here, so a bad
+    /// request comes back as an error rather than as a job that fails a
+    /// minute later.
+    public func startExport(
         shoot shootName: String, paths: [String], destination: String,
         zip: Bool, flatten: Bool, format: ExportFormat, quality: Int
-    ) throws -> Int {
-        // An export must carry the real edit and rating even if enrichment has
-        // not reached these files yet.
-        let images = try pathsUnderRoot(paths)
-            .map { try image(shoot: shootName, path: $0) }
-            .map(enrich)
+    ) throws -> Exporter.Progress {
+        let images = try images(inShoot: shootName, paths: pathsUnderRoot(paths))
         guard !images.isEmpty else { throw FileActions.ActionError.noFiles }
 
+        let fm = FileManager.default
+        let staging =
+            zip
+            ? fm.temporaryDirectory
+                .appendingPathComponent("photopipe-export-\(UUID().uuidString)")
+            : nil
+        let base = staging ?? URL(fileURLWithPath: destination)
+
         var used: Set<String> = []
-        let items: [(image: ImageFile, rel: String)] = images.map { image in
+        let items = images.map { image in
             var rel = image.rel
             if format == .jpeg {
                 rel = (rel as NSString).deletingPathExtension + ".jpg"
@@ -520,38 +552,53 @@ public final class LibraryService: @unchecked Sendable {
             if flatten {
                 rel = (rel as NSString).lastPathComponent
             }
-            let name = FileActions.uniqueName(rel) { used.contains($0.lowercased()) }
+            let name = FileActions.uniqueName(rel) { candidate in
+                used.contains(candidate.lowercased())
+                    || (staging == nil
+                        && fm.fileExists(atPath: base.appendingPathComponent(candidate).path))
+            }
             used.insert(name.lowercased())
-            return (image, name)
+            return Exporter.Plan.Item(image: image, target: base.appendingPathComponent(name))
         }
 
-        let fm = FileManager.default
-        if zip {
-            let staging = fm.temporaryDirectory
-                .appendingPathComponent("photopipe-export-\(UUID().uuidString)")
-            defer { try? fm.removeItem(at: staging) }
-            for (image, rel) in items {
-                try write(
-                    image, format: format, quality: quality,
-                    to: staging.appendingPathComponent(rel), staging: true)
-            }
-            try FileActions.zipDirectory(at: staging, to: destination)
-        } else {
-            let base = URL(fileURLWithPath: destination)
-            for (image, rel) in items {
-                let target = FileActions.uniqueURL(for: base.appendingPathComponent(rel))
-                try write(image, format: format, quality: quality, to: target, staging: false)
-            }
+        if let staging { try fm.createDirectory(at: staging, withIntermediateDirectories: true) }
+        return exporter.start(
+            plan: Exporter.Plan(items: items, destination: destination, staging: staging)
+        ) { image, target in
+            // An export carries the real edit and rating even where enrichment
+            // has not reached yet. Reading them opens the file, so it happens
+            // here, four wide, rather than in the request that plans the job.
+            try self.write(
+                enrich(image), format: format, quality: quality, to: target, staging: zip)
         }
-        return items.count
+    }
+
+    public func stopExports() {
+        exporter.cancelAll(waitingUpTo: 2)
+    }
+
+    public func exportStatus(id: String) throws -> Exporter.Progress {
+        guard let progress = exporter.progress(id: id) else { throw ServiceError.unknownExport(id) }
+        return progress
+    }
+
+    public func cancelExport(id: String) throws -> Exporter.Progress {
+        guard let progress = exporter.cancel(id: id) else { throw ServiceError.unknownExport(id) }
+        return progress
     }
 
     private func write(
-        _ image: ImageFile, format: ExportFormat, quality: Int, to target: URL, staging: Bool
+        _ image: ImageFile, format: ExportFormat, quality: Int, to planned: URL, staging: Bool
     ) throws {
         let fm = FileManager.default
         try fm.createDirectory(
-            at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            at: planned.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // Names were picked before the first write, and on a long export
+        // something else can reach the folder in between. Suffixing beats
+        // failing the file over a name.
+        let target =
+            staging || !fm.fileExists(atPath: planned.path)
+            ? planned : FileActions.uniqueURL(for: planned)
         switch format {
         case .original:
             let source = URL(fileURLWithPath: image.path)
@@ -560,7 +607,17 @@ public final class LibraryService: @unchecked Sendable {
                     try fm.copyItem(at: source, to: target)
                 }
             } else {
-                try fm.copyItem(at: source, to: target)
+                // Copying straight to the target leaves a half-written file
+                // under the real name if the process goes away mid-copy.
+                let temp = target.deletingLastPathComponent()
+                    .appendingPathComponent(".photopipe-\(UUID().uuidString)")
+                try fm.copyItem(at: source, to: temp)
+                do {
+                    try fm.moveItem(at: temp, to: target)
+                } catch {
+                    try? fm.removeItem(at: temp)
+                    throw error
+                }
             }
         case .jpeg:
             try renderer.exportJPEG(

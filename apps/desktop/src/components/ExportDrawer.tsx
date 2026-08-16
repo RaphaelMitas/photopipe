@@ -1,19 +1,13 @@
 import { Button } from "@photopipe/ui/components/button";
+import { Progress } from "@photopipe/ui/components/progress";
 import { Segmented } from "@photopipe/ui/components/segmented";
 import { Switch } from "@photopipe/ui/components/switch";
+import { cn } from "@photopipe/ui/lib/utils";
 import { open as openDialog, save } from "@tauri-apps/plugin-dialog";
 import { AlertCircle, Check, FolderOpen, Upload, X } from "lucide-react";
 import { useState } from "react";
 import type { ExportFormat } from "@/lib/core";
-
-export type ExportJob = {
-  id: number;
-  label: string;
-  destination: string;
-  status: "running" | "done" | "failed";
-  detail?: string;
-  files?: number;
-};
+import { type ExportJob, type JobStatus, jobStatus } from "@/lib/queries";
 
 export type ExportOptions = {
   format: ExportFormat;
@@ -21,6 +15,10 @@ export type ExportOptions = {
   zip: boolean;
   flatten: boolean;
 };
+
+export function exportLabel(count: number, format: ExportFormat): string {
+  return `Export ${count} ${format === "jpeg" ? "as JPEG" : "originals"}`;
+}
 
 type Props = {
   shoot: string;
@@ -35,9 +33,41 @@ type Props = {
   onSelectAll: () => void;
   onClearSelection: () => void;
   onExport: (options: ExportOptions, destination: string) => void;
+  onCancel: (id: string) => void;
   onReveal: (path: string) => void;
   onClose: () => void;
 };
+
+/// Held back until a few files are in: the first render of a shoot pays for a
+/// cold cache and would promise a number nothing else lives up to.
+function timeLeft(job: ExportJob, settled: number): string {
+  const elapsed = Date.now() - job.startedAt;
+  if (settled < 3 || elapsed < 2000) return "";
+  const remaining = ((job.total - settled) * elapsed) / settled / 1000;
+  if (remaining < 60) return " · under a minute left";
+  return ` · about ${Math.round(remaining / 60)} min left`;
+}
+
+function jobDetail(job: ExportJob, status: JobStatus, settled: number): string {
+  const files = `${job.done} ${job.done === 1 ? "file" : "files"}`;
+  switch (status) {
+    case "running":
+      if (job.archiving) return `${files} · building the archive`;
+      // Settled, not delivered: a count that skipped the failures would sit
+      // still while the bar and the estimate kept moving.
+      return `${settled} of ${job.total}${
+        job.failed > 0 ? ` · ${job.failed} failed` : ""
+      }${timeLeft(job, settled)}`;
+    case "failed":
+      return job.error ?? `${job.failed} failed`;
+    case "partial":
+      return `${files} · ${job.failed} of ${job.total} failed`;
+    case "cancelled":
+      return `Cancelled · ${files}`;
+    case "done":
+      return `${files} · ${job.destination}`;
+  }
+}
 
 function Section({
   label,
@@ -91,6 +121,7 @@ export function ExportDrawer({
   onSelectAll,
   onClearSelection,
   onExport,
+  onCancel,
   onReveal,
   onClose,
 }: Props) {
@@ -255,53 +286,105 @@ export function ExportDrawer({
           <Upload />
           {selectedCount === 0
             ? "Export"
-            : `Export ${selectedCount} ${
-                options.format === "jpeg" ? "as JPEG" : "originals"
-              }`}
+            : exportLabel(selectedCount, options.format)}
         </Button>
       </Section>
 
       {jobs.length > 0 && (
         <Section label="Activity">
           <ul className="flex flex-col gap-2">
-            {jobs.map((job) => (
-              <li
-                key={job.id}
-                data-testid={`job-${job.status}`}
-                className="flex flex-col gap-0.5 text-xs"
-              >
-                <span className="flex items-center gap-1.5">
-                  {job.status === "running" && (
-                    <span className="size-2 shrink-0 animate-pulse rounded-full bg-primary" />
+            {jobs.map((job) => {
+              const status = jobStatus(job);
+              const settled = job.done + job.failed;
+              return (
+                <li
+                  key={job.key}
+                  data-testid={`job-${status}`}
+                  className="flex flex-col gap-0.5 text-xs"
+                >
+                  <span className="flex items-center gap-1.5">
+                    {status === "running" && (
+                      <span className="size-2 shrink-0 animate-pulse rounded-full bg-primary" />
+                    )}
+                    {status === "done" && (
+                      <Check className="size-3.5 shrink-0 text-emerald-400" />
+                    )}
+                    {status === "cancelled" && (
+                      <X className="size-3.5 shrink-0 text-muted-foreground" />
+                    )}
+                    {status === "partial" && (
+                      <AlertCircle className="size-3.5 shrink-0 text-amber-400" />
+                    )}
+                    {status === "failed" && (
+                      <AlertCircle className="size-3.5 shrink-0 text-destructive" />
+                    )}
+                    <span className="min-w-0 flex-1 truncate">{job.label}</span>
+                    {status === "running" && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        data-testid="job-cancel"
+                        title="Cancel export"
+                        onClick={() => onCancel(job.key)}
+                        className="size-5 shrink-0 text-muted-foreground"
+                      >
+                        <X />
+                      </Button>
+                    )}
+                    {/* A cancelled zip deletes its staging, so there is no
+                        archive at the path to reveal. */}
+                    {!job.running && job.done > 0 && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        title="Reveal in Finder"
+                        onClick={() => onReveal(job.destination)}
+                        className="size-5 shrink-0 text-muted-foreground"
+                      >
+                        <FolderOpen />
+                      </Button>
+                    )}
+                  </span>
+                  {status === "running" && (
+                    <Progress
+                      data-testid="job-bar"
+                      value={(settled / Math.max(job.total, 1)) * 100}
+                      className={cn(
+                        "ml-5 h-0.5 bg-border",
+                        job.archiving && "animate-pulse",
+                      )}
+                    />
                   )}
-                  {job.status === "done" && (
-                    <Check className="size-3.5 shrink-0 text-emerald-400" />
+                  <span
+                    title={jobDetail(job, status, settled)}
+                    className="truncate pl-5 font-mono text-[10px] text-muted-foreground"
+                  >
+                    {jobDetail(job, status, settled)}
+                  </span>
+                  {job.failures.length > 0 && (
+                    <details className="pl-5 text-[10px] text-muted-foreground">
+                      <summary className="cursor-pointer">
+                        Which {job.failures.length === 1 ? "file" : "files"}?
+                      </summary>
+                      <ul
+                        data-testid="job-failures"
+                        className="max-h-32 overflow-y-auto font-mono"
+                      >
+                        {job.failures.map((failure) => (
+                          <li
+                            key={failure}
+                            className="truncate"
+                            title={failure}
+                          >
+                            {failure}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
                   )}
-                  {job.status === "failed" && (
-                    <AlertCircle className="size-3.5 shrink-0 text-destructive" />
-                  )}
-                  <span className="min-w-0 flex-1 truncate">{job.label}</span>
-                  {job.status === "done" && (
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      title="Reveal in Finder"
-                      onClick={() => onReveal(job.destination)}
-                      className="size-5 shrink-0 text-muted-foreground"
-                    >
-                      <FolderOpen />
-                    </Button>
-                  )}
-                </span>
-                <span className="truncate pl-5 font-mono text-[10px] text-muted-foreground">
-                  {job.status === "failed"
-                    ? job.detail
-                    : job.status === "done" && job.files !== undefined
-                      ? `${job.files} ${job.files === 1 ? "file" : "files"} · ${job.destination}`
-                      : job.destination}
-                </span>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         </Section>
       )}

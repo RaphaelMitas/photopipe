@@ -300,6 +300,32 @@ private func tempIndexPath() -> String {
     #expect(elapsed < 5.0, "1000-file scan+index took \(elapsed)s")
 }
 
+@Test func planningAnExportOfAWholeShootMeetsPerfBudget() throws {
+    let root = try makeTree(["2026-01-01_perf": (0..<1000).map { "DSC\($0).ARW" }])
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let service = makeService()
+    _ = try service.setRoot(path: root.path, indexPath: tempIndexPath())
+    let paths = try service.listImages(shoot: "2026-01-01_perf").map(\.path)
+
+    let start = Date()
+    let job = try service.startExport(
+        shoot: "2026-01-01_perf", paths: paths,
+        destination: root.appendingPathComponent("delivery").path,
+        zip: false, flatten: true, format: .original, quality: 90)
+    let elapsed = Date().timeIntervalSince(start)
+    _ = try service.cancelExport(id: job.id)
+
+    // the client gives up on a request long before a big export is planned
+    #expect(elapsed < 1.0, "planning 1000 files took \(elapsed)s")
+
+    var settled = try service.exportStatus(id: job.id)
+    while settled.running {
+        Thread.sleep(forTimeInterval: 0.01)
+        settled = try service.exportStatus(id: job.id)
+    }
+}
+
 // MARK: - Dispatcher JSON layer
 
 @Test func dispatcherServesLibraryMethodsOverProtocol() throws {

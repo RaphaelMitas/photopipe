@@ -26,6 +26,23 @@ private func makeShoot(in root: URL, named name: String = "2026-06-06_actions") 
     return shoot
 }
 
+@discardableResult
+private func exportNow(
+    _ service: LibraryService, shoot: String, paths: [String], destination: String,
+    zip: Bool = false, flatten: Bool = true, format: LibraryService.ExportFormat = .original,
+    quality: Int = 90
+) throws -> Exporter.Progress {
+    var job = try service.startExport(
+        shoot: shoot, paths: paths, destination: destination,
+        zip: zip, flatten: flatten, format: format, quality: quality)
+    let deadline = Date().addingTimeInterval(60)
+    while job.running && Date() < deadline {
+        Thread.sleep(forTimeInterval: 0.01)
+        job = try service.exportStatus(id: job.id)
+    }
+    return job
+}
+
 @Test func trashRemovesTheFileAndItsSidecar() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
@@ -69,7 +86,7 @@ private func makeShoot(in root: URL, named name: String = "2026-06-06_actions") 
     // (Reveal is the exception: it shows export destinations the user chose
     // outside the root, and touches nothing.)
     #expect(throws: LibraryService.ServiceError.self) {
-        try service.exportFiles(
+        try service.startExport(
             shoot: shoot.lastPathComponent, paths: ["/etc/hosts"],
             destination: dir.appendingPathComponent("out").path,
             zip: false, flatten: true, format: .original, quality: 90)
@@ -86,13 +103,12 @@ private func makeShoot(in root: URL, named name: String = "2026-06-06_actions") 
     let out = dir.appendingPathComponent("delivery")
     let jpg = shoot.appendingPathComponent("DSC00001.jpg").path
     let export = {
-        try service.exportFiles(
-            shoot: shoot.lastPathComponent, paths: [jpg], destination: out.path,
-            zip: false, flatten: true, format: .original, quality: 90)
+        try exportNow(
+            service, shoot: shoot.lastPathComponent, paths: [jpg], destination: out.path)
     }
-    #expect(try export() == 1)
+    #expect(try export().done == 1)
     // Exporting the same file twice keeps both rather than clobbering.
-    #expect(try export() == 1)
+    #expect(try export().done == 1)
 
     let delivered = try FileManager.default.contentsOfDirectory(atPath: out.path).sorted()
     #expect(delivered == ["DSC00001-1.jpg", "DSC00001.jpg"])
@@ -106,14 +122,14 @@ private func makeShoot(in root: URL, named name: String = "2026-06-06_actions") 
     _ = try service.setRoot(path: dir.path, indexPath: nil)
 
     let out = dir.appendingPathComponent("flat")
-    let count = try service.exportFiles(
-        shoot: shoot.lastPathComponent,
+    let job = try exportNow(
+        service, shoot: shoot.lastPathComponent,
         paths: [
             shoot.appendingPathComponent("Tag1/DSC00002.jpg").path,
             shoot.appendingPathComponent("Tag2/DSC00002.jpg").path,
         ],
-        destination: out.path, zip: false, flatten: true, format: .original, quality: 90)
-    #expect(count == 2)
+        destination: out.path)
+    #expect(job.done == 2)
 
     // Same basename in two subfolders: different photos, both must arrive.
     let delivered = try FileManager.default.contentsOfDirectory(atPath: out.path).sorted()
@@ -134,14 +150,14 @@ private func makeShoot(in root: URL, named name: String = "2026-06-06_actions") 
     _ = try service.setRoot(path: dir.path, indexPath: nil)
 
     let out = dir.appendingPathComponent("mirrored")
-    let count = try service.exportFiles(
-        shoot: shoot.lastPathComponent,
+    let job = try exportNow(
+        service, shoot: shoot.lastPathComponent,
         paths: [
             shoot.appendingPathComponent("Tag1/DSC00002.jpg").path,
             shoot.appendingPathComponent("Tag2/DSC00002.jpg").path,
         ],
-        destination: out.path, zip: false, flatten: false, format: .original, quality: 90)
-    #expect(count == 2)
+        destination: out.path, flatten: false)
+    #expect(job.done == 2)
 
     let fm = FileManager.default
     #expect(fm.fileExists(atPath: out.appendingPathComponent("Tag1/DSC00002.jpg").path))
@@ -162,9 +178,10 @@ private func makeShoot(in root: URL, named name: String = "2026-06-06_actions") 
 
     let flatZip = dir.appendingPathComponent("flat.zip").path
     #expect(
-        try service.exportFiles(
-            shoot: shoot.lastPathComponent, paths: paths, destination: flatZip,
-            zip: true, flatten: true, format: .original, quality: 90) == 2)
+        try exportNow(
+            service, shoot: shoot.lastPathComponent, paths: paths, destination: flatZip,
+            zip: true
+        ).done == 2)
     let flatEntries = try FileActions.list(zip: flatZip).filter { !$0.hasSuffix("/") }
     #expect(
         flatEntries.sorted() == ["DSC00002-1.jpg", "DSC00002.jpg"],
@@ -172,9 +189,10 @@ private func makeShoot(in root: URL, named name: String = "2026-06-06_actions") 
 
     let mirroredZip = dir.appendingPathComponent("mirrored.zip").path
     #expect(
-        try service.exportFiles(
-            shoot: shoot.lastPathComponent, paths: paths, destination: mirroredZip,
-            zip: true, flatten: false, format: .original, quality: 90) == 2)
+        try exportNow(
+            service, shoot: shoot.lastPathComponent, paths: paths, destination: mirroredZip,
+            zip: true, flatten: false
+        ).done == 2)
     let mirroredEntries = try FileActions.list(zip: mirroredZip).filter { !$0.hasSuffix("/") }
     #expect(mirroredEntries.sorted() == ["Tag1/DSC00002.jpg", "Tag2/DSC00002.jpg"])
 }
@@ -188,9 +206,8 @@ private func makeShoot(in root: URL, named name: String = "2026-06-06_actions") 
 
     let source = shoot.appendingPathComponent("Tag1/DSC00002.jpg")
     let out = dir.appendingPathComponent("delivery")
-    _ = try service.exportFiles(
-        shoot: shoot.lastPathComponent, paths: [source.path], destination: out.path,
-        zip: false, flatten: true, format: .original, quality: 90)
+    try exportNow(
+        service, shoot: shoot.lastPathComponent, paths: [source.path], destination: out.path)
 
     // A hardlink would share the inode, so the source's link count would be
     // 2 and an edit to the delivered file would corrupt the library original.
@@ -244,10 +261,10 @@ private func makeShoot(in root: URL, named name: String = "2026-06-06_actions") 
     _ = try service.setRoot(path: dir.path, indexPath: nil)
 
     let out = dir.appendingPathComponent("delivery")
-    let count = try service.exportFiles(
-        shoot: "2026-06-07_jpeg", paths: [png.path], destination: out.path,
-        zip: false, flatten: true, format: .jpeg, quality: 90)
-    #expect(count == 1)
+    let job = try exportNow(
+        service, shoot: "2026-06-07_jpeg", paths: [png.path], destination: out.path,
+        format: .jpeg)
+    #expect(job.done == 1)
 
     let delivered = out.appendingPathComponent("IMG_0001.jpg")
     #expect(FileManager.default.fileExists(atPath: delivered.path))

@@ -1,10 +1,11 @@
 import {
   type QueryClient,
   useMutation,
+  useQueries,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   type CreateProjectResult,
@@ -511,12 +512,125 @@ export type ExportRequest = {
   quality: number;
 };
 
-export function useExportFiles() {
-  return useMutation({
-    mutationKey: ["write", "exportFiles"],
-    mutationFn: (request: ExportRequest) =>
-      coreRequest<{ files: number }>("exportFiles", request),
+export type ExportProgress = {
+  id: string;
+  done: number;
+  failed: number;
+  total: number;
+  running: boolean;
+  cancelled: boolean;
+  archiving: boolean;
+  error: string | null;
+  failures: string[];
+};
+
+export type ExportJob = ExportProgress & {
+  key: string;
+  label: string;
+  destination: string;
+  startedAt: number;
+};
+
+export type JobStatus = "running" | "failed" | "partial" | "cancelled" | "done";
+
+export function jobStatus(job: ExportJob): JobStatus {
+  if (job.running) return "running";
+  if (job.error) return "failed";
+  if (job.cancelled) return "cancelled";
+  // Two thirds of a delivery missing is not a success, and a green check is
+  // how it goes unnoticed until the photos are wanted.
+  return job.failed > 0 ? "partial" : "done";
+}
+
+const EXPORT_POLL_MS = 400;
+let nextJobKey = 1;
+
+/// Addressed by `key`, so a row outlives the core process that issued its `id`.
+type JobRow = {
+  key: string;
+  id: string;
+  label: string;
+  destination: string;
+  startedAt: number;
+  initial: ExportProgress;
+};
+
+export function useExportJobs() {
+  const client = useQueryClient();
+  const [rows, setRows] = useState<JobRow[]>([]);
+
+  const results = useQueries({
+    queries: rows.map((row) => ({
+      queryKey: ["export", row.key],
+      queryFn: () =>
+        coreRequest<ExportProgress>("exportStatus", { id: row.id }),
+      initialData: row.initial,
+      enabled: row.id !== "",
+      refetchInterval: (query: { state: { data?: ExportProgress } }) =>
+        query.state.data?.running ? EXPORT_POLL_MS : false,
+      retry: false,
+    })),
   });
+
+  const jobs: ExportJob[] = rows.map((row, index) => {
+    const result = results[index];
+    const progress = result?.data ?? row.initial;
+    // The core went away mid-export; this job is not coming back.
+    const lost = result?.error
+      ? { running: false, error: String(result.error) }
+      : null;
+    return { ...row, ...progress, ...lost };
+  });
+  const running = jobs.some((job) => job.running);
+
+  const start = useCallback(async (label: string, request: ExportRequest) => {
+    const key = String(nextJobKey++);
+    const settled: ExportProgress = {
+      id: "",
+      done: 0,
+      failed: 0,
+      total: request.paths.length,
+      running: false,
+      cancelled: false,
+      archiving: false,
+      error: null,
+      failures: [],
+    };
+    const row = {
+      key,
+      label,
+      destination: request.destination,
+      startedAt: Date.now(),
+    };
+    try {
+      const job = await coreRequest<ExportProgress>("exportFiles", request);
+      setRows((current) => [{ ...row, id: job.id, initial: job }, ...current]);
+    } catch (error) {
+      // A refusal the user can still read after the toast has gone.
+      setRows((current) => [
+        { ...row, id: "", initial: { ...settled, error: String(error) } },
+        ...current,
+      ]);
+      toast.error("Could not start the export", { description: String(error) });
+    }
+  }, []);
+
+  const cancel = useCallback(
+    (key: string) => {
+      const row = rows.find((candidate) => candidate.key === key);
+      if (!row) return;
+      coreRequest<ExportProgress>("cancelExport", { id: row.id })
+        .then((update) => client.setQueryData(["export", key], update))
+        .catch((error: unknown) => {
+          toast.error("Could not cancel the export", {
+            description: String(error),
+          });
+        });
+    },
+    [client, rows],
+  );
+
+  return { jobs, start, cancel, running };
 }
 
 export function useCreateProject() {
