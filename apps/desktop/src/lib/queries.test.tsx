@@ -1,8 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ImageFile } from "./core";
-import { useLibrarySync, useSetRating } from "./queries";
+import { type Edit, type ImageFile, identityEdit } from "./core";
+import {
+  useLibrarySync,
+  usePasteEdits,
+  useSetEdit,
+  useSetRating,
+} from "./queries";
 import { makeImage } from "./test-image";
 
 afterEach(cleanup);
@@ -67,6 +72,149 @@ describe("useLibrarySync", () => {
       filesFound: 100,
       filesEnriched: 40,
     });
+  });
+});
+
+describe("usePasteEdits", () => {
+  it("keeps the pasted look and reverts only the photo whose write failed", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    client.setQueryData(["images", "shoot1"], [image("A"), image("B")]);
+    invoke.mockImplementation(
+      (_command, args: { params: { path: string; edit: Edit } }) =>
+        args.params.path.endsWith("B.ARW")
+          ? Promise.reject("disk full")
+          : Promise.resolve({ edit: args.params.edit, generation: 2 }),
+    );
+
+    let mutation!: ReturnType<typeof usePasteEdits>;
+    function Paste() {
+      mutation = usePasteEdits("shoot1");
+      return null;
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Paste />
+      </QueryClientProvider>,
+    );
+
+    const look: Edit = { ...identityEdit, exposure: 1.5 };
+    mutation.mutate([
+      { path: "/r/shoot1/A.ARW", edit: look },
+      { path: "/r/shoot1/B.ARW", edit: look },
+    ]);
+
+    await waitFor(() => expect(mutation.isSuccess).toBe(true));
+    const images = client.getQueryData<ImageFile[]>(["images", "shoot1"]);
+    expect(images?.[0].edit.exposure).toBe(1.5);
+    expect(images?.[1].edit.exposure).toBe(0);
+  });
+
+  it("leaves a photo the user edited while the batch was still queued alone", async () => {
+    const names = ["A", "B", "C", "D", "E", "F"];
+    const last = "/r/shoot1/F.ARW";
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    client.setQueryData(["images", "shoot1"], names.map(image));
+
+    const gate: Array<(value: unknown) => void> = [];
+    const written: string[] = [];
+    invoke.mockImplementation(
+      (_command, args: { params: { path: string; edit: Edit } }) => {
+        written.push(args.params.path);
+        return new Promise((resolve) => gate.push(resolve));
+      },
+    );
+
+    let mutation!: ReturnType<typeof usePasteEdits>;
+    function Paste() {
+      mutation = usePasteEdits("shoot1");
+      return null;
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Paste />
+      </QueryClientProvider>,
+    );
+
+    const look: Edit = { ...identityEdit, exposure: 1.5 };
+    mutation.mutate(
+      names.map((name) => ({ path: `/r/shoot1/${name}.ARW`, edit: look })),
+    );
+    // Four workers, six photos: F is still queued.
+    await waitFor(() => expect(written.length).toBe(4));
+
+    client.setQueryData<ImageFile[]>(["images", "shoot1"], (old) =>
+      old?.map((file) =>
+        file.path === last
+          ? { ...file, edit: { ...identityEdit, exposure: -1 } }
+          : file,
+      ),
+    );
+    let released = 0;
+    await waitFor(() => {
+      while (released < gate.length) gate[released++]({ generation: 2 });
+      expect(mutation.isSuccess).toBe(true);
+    });
+
+    expect(written).not.toContain(last);
+    expect(mutation.data?.overtaken).toBe(1);
+    expect(mutation.data?.written).toBe(5);
+    expect(
+      client.getQueryData<ImageFile[]>(["images", "shoot1"])?.[5].edit.exposure,
+    ).toBe(-1);
+  });
+});
+
+describe("edit writes to one photo", () => {
+  it("never overlap, so the older value cannot land last", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    client.setQueryData(["images", "shoot1"], [image("A")]);
+
+    const events: string[] = [];
+    const gate: Array<(value: unknown) => void> = [];
+    invoke.mockImplementation((_command, args: { params: { edit: Edit } }) => {
+      events.push(`start ${args.params.edit.exposure}`);
+      return new Promise((resolve) =>
+        gate.push((value) => {
+          events.push(`end ${args.params.edit.exposure}`);
+          resolve(value);
+        }),
+      );
+    });
+
+    let single!: ReturnType<typeof useSetEdit>;
+    let paste!: ReturnType<typeof usePasteEdits>;
+    function Writers() {
+      single = useSetEdit("shoot1");
+      paste = usePasteEdits("shoot1");
+      return null;
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Writers />
+      </QueryClientProvider>,
+    );
+
+    single.mutate({
+      path: "/r/shoot1/A.ARW",
+      edit: { ...identityEdit, exposure: 1 },
+    });
+    paste.mutate([
+      { path: "/r/shoot1/A.ARW", edit: { ...identityEdit, exposure: 2 } },
+    ]);
+
+    await waitFor(() => expect(gate.length).toBe(1));
+    gate[0]({ edit: identityEdit, generation: 2 });
+    await waitFor(() => expect(gate.length).toBe(2));
+    gate[1]({ edit: identityEdit, generation: 3 });
+
+    await waitFor(() => expect(paste.isSuccess).toBe(true));
+    expect(events).toEqual(["start 1", "end 1", "start 2", "end 2"]);
   });
 });
 

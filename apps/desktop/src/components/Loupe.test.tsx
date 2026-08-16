@@ -252,6 +252,9 @@ describe("EditSidebar", () => {
           onEnterCrop={onEnterCrop}
           onApplyCrop={onApplyCrop}
           onCancelCrop={onCancelCrop}
+          canPaste={false}
+          onCopySettings={vi.fn()}
+          onPasteSettings={vi.fn()}
           onClose={onClose}
         />
       </QueryClientProvider>,

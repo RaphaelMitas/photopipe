@@ -1,8 +1,18 @@
-import { FolderOpen, Trash2, Upload, X } from "lucide-react";
+import {
+  ClipboardPaste,
+  Copy,
+  FolderOpen,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 import { Button } from "./ui/button";
 
 type Props = {
   count: number;
+  canPaste: boolean;
+  onCopySettings: () => void;
+  onPasteSettings: () => void;
   onExport: () => void;
   onReveal: () => void;
   onDelete: () => void;
@@ -12,6 +22,9 @@ type Props = {
 
 export function SelectionBar({
   count,
+  canPaste,
+  onCopySettings,
+  onPasteSettings,
   onExport,
   onReveal,
   onDelete,
@@ -43,6 +56,32 @@ export function SelectionBar({
           <Upload />
           Export…
         </Button>
+        {count === 1 && (
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="action-copy-settings"
+            onClick={() => onCopySettings()}
+            title="Copy settings (⌘C)"
+            className="h-7 text-xs text-muted-foreground"
+          >
+            <Copy />
+            Copy settings
+          </Button>
+        )}
+        {canPaste && (
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="action-paste-settings"
+            onClick={() => onPasteSettings()}
+            title="Paste settings (⌘V)"
+            className="h-7 text-xs text-muted-foreground"
+          >
+            <ClipboardPaste />
+            Paste settings
+          </Button>
+        )}
         <Button
           size="sm"
           variant="ghost"

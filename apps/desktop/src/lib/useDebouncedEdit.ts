@@ -17,17 +17,22 @@ export function useDebouncedEdit(
   const commitRef = useRef(commit);
   commitRef.current = commit;
 
-  const flush = useCallback(() => {
+  // Pasting over the photo being scrubbed cancels rather than flushes: the
+  // pending value would land after the paste.
+  const cancel = useCallback(() => {
     if (timer.current !== null) {
       clearTimeout(timer.current);
       timer.current = null;
     }
-    const next = pending.current;
-    if (!next) return;
     pending.current = null;
     setDraft(null);
-    commitRef.current(next.path, next.edit);
   }, []);
+
+  const flush = useCallback(() => {
+    const next = pending.current;
+    cancel();
+    if (next) commitRef.current(next.path, next.edit);
+  }, [cancel]);
 
   const scrub = useCallback(
     (path: string, edit: Edit) => {
@@ -42,5 +47,5 @@ export function useDebouncedEdit(
 
   useEffect(() => () => flush(), [flush]);
 
-  return { draft, scrub, flush };
+  return { draft, scrub, flush, cancel };
 }

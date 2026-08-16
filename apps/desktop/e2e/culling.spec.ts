@@ -196,3 +196,35 @@ test("exposure is per photo and survives leaving and returning", async ({
     page.locator("[data-path='DSC00832.jpg']").getByTestId("thumb-edited"),
   ).toHaveText("+0.5 EV");
 });
+
+test("a look copied off one photo lands on a selection, and undo takes it back", async ({
+  page,
+}) => {
+  await openZell(page);
+
+  await page.getByTestId("thumb").first().click();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.jpg");
+  await page.keyboard.press("ControlOrMeta+c");
+  await page.keyboard.press("Escape");
+
+  await page
+    .locator("[data-path='DSC00832.ARW']")
+    .click({ modifiers: ["ControlOrMeta"] });
+  await page
+    .locator("[data-path='abends/DSC00938.ARW']")
+    .click({ modifiers: ["ControlOrMeta"] });
+  await expect(page.getByTestId("selection-count")).toHaveText("2 selected");
+
+  await page.keyboard.press("ControlOrMeta+v");
+  for (const path of ["DSC00832.ARW", "abends/DSC00938.ARW"]) {
+    await expect(
+      page.locator(`[data-path='${path}']`).getByTestId("thumb-edited"),
+    ).toHaveText("+0.5 EV");
+  }
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(
+    page.locator("[data-path='DSC00832.ARW']").getByTestId("thumb-edited"),
+  ).toHaveCount(0);
+});
