@@ -152,9 +152,9 @@ export const E2E_HANDLERS: Record<
     cachePath: `/fake/thumbs/${String(params.path)}.jpg`,
   }),
   render: (params) => ({
-    cachePath: `/fake/renders/${String(params.path)}@${editKey(
+    cachePath: `/fake/renders/${editKey(
       (params.edit as Edit | undefined) ?? identityEdit,
-    )}.jpg`,
+    )}/${String(params.path)}.jpg`,
   }),
   setRating: (params) => {
     const all = [...zellImages, ...miscImages, ...bigImages];

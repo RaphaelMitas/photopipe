@@ -154,7 +154,7 @@ The cask in `RaphaelMitas/homebrew-tap` needs `auto_updates true`, or
 
 `pnpm screenshots` captures `docs/screenshots/*.png` from the real UI against
 the e2e mock, so the README cannot show an app that no longer exists. The
-photos are stand-in gradients derived from each path, deterministic and
+photos are landscapes drawn from each file name, deterministic and
 machine-independent.
 
 ## Still to do
