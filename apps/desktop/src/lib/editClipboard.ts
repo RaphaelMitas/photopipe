@@ -8,6 +8,8 @@ export type EditClipboard = {
 
 // A crop rect is normalized against its own turned frame, and white balance is
 // Kelvin on raw but incremental everywhere else — neither survives the trip.
+// Denoise only exists on raw, and null there means the decoder's own per-image
+// amount, so it cannot be carried onto a JPEG either.
 export function pasteEdit(
   target: Edit,
   clipboard: EditClipboard,
@@ -24,5 +26,6 @@ export function pasteEdit(
     ...pasted,
     temperature: target.temperature ?? null,
     tint: target.tint ?? null,
+    denoise: target.denoise ?? null,
   };
 }

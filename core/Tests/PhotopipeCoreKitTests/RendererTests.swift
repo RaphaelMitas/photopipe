@@ -439,31 +439,23 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
     #expect(try renderer.rawDefaults(for: imageFile(for: jpegURL)) == nil)
 }
 
+/// Older Macs top out at RAW 8, which is already a fresh filter's default, so
+/// the opt-in is only observable where a newer version exists. Asserting the
+/// resolved version holds everywhere; asserting it *changed* does not.
 @Test func newestDecoderVersionIsUsed() throws {
     guard let fixture = fixtureARW() else { return }
-    let filter = try #require(CIRAWFilter(imageURL: fixture))
-    let newest = try #require(filter.supportedDecoderVersions.last)
-    #expect(
-        filter.decoderVersion != newest,
-        "a fresh filter already starting on the newest version makes this opt-in moot")
-
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
-    let ours = try Data(
-        contentsOf: renderer.render(
-            file: try imageFile(for: fixture), edit: .identity, maxPixel: 400))
 
-    filter.scaleFactor = Float(400 / max(filter.nativeSize.width, filter.nativeSize.height))
-    let oldOutput = try #require(filter.outputImage)
-    let old = try #require(
-        CIContext().jpegRepresentation(
-            of: oldOutput,
-            colorSpace: CGColorSpace(name: CGColorSpace.displayP3)!,
-            options: [
-                kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.85
-            ]))
-    #expect(ours != old, "the render is indistinguishable from the older decoder")
+    let fresh = try #require(CIRAWFilter(imageURL: fixture))
+    let newest = try #require(fresh.supportedDecoderVersions.last)
+    let ours = try renderer.makeFilter(for: try imageFile(for: fixture)).filter
+
+    #expect(ours.decoderVersion == newest)
+    if fresh.decoderVersion == newest {
+        print("NOTE: this Mac has no decoder newer than \(newest.rawValue)")
+    }
 }
 
 @Test func denoiseOverridesTheDecoderDefault() throws {

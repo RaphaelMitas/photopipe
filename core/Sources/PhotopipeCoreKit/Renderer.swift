@@ -29,7 +29,7 @@ public final class Renderer {
         public let denoise: Double
     }
 
-    private struct CachedFilter {
+    struct CachedFilter {
         let filter: CIRAWFilter
         let mtime: Double
         let orientedSizeBeforeScaling: CGSize
@@ -308,7 +308,7 @@ public final class Renderer {
         return entry
     }
 
-    private func makeFilter(for file: ImageFile) throws -> CachedFilter {
+    func makeFilter(for file: ImageFile) throws -> CachedFilter {
         guard let filter = CIRAWFilter(imageURL: URL(fileURLWithPath: file.path)) else {
             throw RenderError.unreadable(file.path)
         }

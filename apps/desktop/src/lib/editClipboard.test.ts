@@ -9,6 +9,7 @@ const source: Edit = {
   shadows: 20,
   temperature: 5200,
   tint: 8,
+  denoise: 60,
   vibrance: 15,
   saturation: -5,
   curveRGB: [
@@ -36,6 +37,7 @@ describe("pasteEdit", () => {
       shadows: 20,
       temperature: 5200,
       tint: 8,
+      denoise: 60,
       vibrance: 15,
       saturation: -5,
       curveRGB: source.curveRGB,
@@ -87,6 +89,18 @@ describe("pasteEdit", () => {
     expect(pasted.tint).toBe(5);
     expect(pasted.exposure).toBe(0.75);
     expect(pasted.vibrance).toBe(15);
+  });
+
+  it("does not paste raw denoise onto a JPEG", () => {
+    const pasted = pasteEdit(identityEdit, clipboard, false);
+
+    expect(pasted.denoise).toBeNull();
+  });
+
+  it("carries denoise between two raws", () => {
+    const pasted = pasteEdit({ ...identityEdit, denoise: 10 }, clipboard, true);
+
+    expect(pasted.denoise).toBe(60);
   });
 
   it("carries white balance between two non-raw photos", () => {
