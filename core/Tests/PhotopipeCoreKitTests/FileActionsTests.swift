@@ -10,12 +10,6 @@ private func tempDir() throws -> URL {
     return dir
 }
 
-private func makeService(in dir: URL) -> LibraryService {
-    LibraryService(
-        thumbnailer: Thumbnailer(cacheDir: dir.appendingPathComponent("thumbs")),
-        renderer: Renderer(cacheDir: dir.appendingPathComponent("renders")))
-}
-
 /// A project with a raw + sidecar + JPEG at the root and the same basename
 /// sorted into two subfolders — the flatten-collision shape.
 private func makeShoot(in root: URL, named name: String = "2026-06-06_actions") throws -> URL {

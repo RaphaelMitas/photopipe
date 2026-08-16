@@ -9,12 +9,6 @@ private func tempDir() throws -> URL {
     return dir
 }
 
-private func makeService(in dir: URL) -> LibraryService {
-    LibraryService(
-        thumbnailer: Thumbnailer(cacheDir: dir.appendingPathComponent("thumbs")),
-        renderer: Renderer(cacheDir: dir.appendingPathComponent("renders")))
-}
-
 @Test func createProjectMakesFolderAndNotes() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }

@@ -34,6 +34,14 @@ func waitUntilIndexed(
         sourceLocation: sourceLocation)
 }
 
+/// Caches under the fixture's own directory, so one test's thumbnails and
+/// renders can never be served to another.
+func makeService(in dir: URL) -> LibraryService {
+    LibraryService(
+        thumbnailer: Thumbnailer(cacheDir: dir.appendingPathComponent("thumbs")),
+        renderer: Renderer(cacheDir: dir.appendingPathComponent("renders")))
+}
+
 /// Builds a scratch photo tree: [shootName: [relative file paths]] → root URL.
 func makeTree(_ layout: [String: [String]]) throws -> URL {
     let root = scratchDir("tree")
