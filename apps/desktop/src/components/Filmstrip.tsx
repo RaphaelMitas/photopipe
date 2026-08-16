@@ -1,9 +1,9 @@
+import { Skeleton } from "@photopipe/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Star } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import { fileSrc, type ImageFile } from "@/lib/core";
 import { useThumbnail } from "@/lib/queries";
-import { Skeleton } from "./ui/skeleton";
 
 export type FilmstripMode = "off" | "thumbs" | "ratings";
 

@@ -1,3 +1,7 @@
+import { Button } from "@photopipe/ui/components/button";
+import { Separator } from "@photopipe/ui/components/separator";
+import { Slider } from "@photopipe/ui/components/slider";
+import { cn } from "@photopipe/ui/lib/utils";
 import { ClipboardPaste, Copy, Crop, RotateCcw, X } from "lucide-react";
 import { useDeferredValue } from "react";
 import {
@@ -8,13 +12,9 @@ import {
   isRawFile,
 } from "@/lib/core";
 import { useRawDefaults, useRender } from "@/lib/queries";
-import { cn } from "@/lib/utils";
 import { type CropDraft, CropPanel } from "./CropTool";
 import { CurveEditor } from "./CurveEditor";
 import { EXPOSURE_RANGE } from "./Loupe";
-import { Button } from "./ui/button";
-import { Separator } from "./ui/separator";
-import { Slider } from "./ui/slider";
 
 type CropProps = {
   cropDraft: CropDraft | null;

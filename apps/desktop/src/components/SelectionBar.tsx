@@ -1,3 +1,4 @@
+import { Button } from "@photopipe/ui/components/button";
 import {
   ClipboardPaste,
   Copy,
@@ -6,7 +7,6 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { Button } from "./ui/button";
 
 type Props = {
   count: number;

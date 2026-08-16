@@ -1,3 +1,18 @@
+import { Button } from "@photopipe/ui/components/button";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarTrigger,
+} from "@photopipe/ui/components/sidebar";
+import { Switch } from "@photopipe/ui/components/switch";
 import {
   ChevronLeft,
   Download,
@@ -12,21 +27,6 @@ import {
   RatingHistogram,
   type RatingOp,
 } from "./RatingFilter";
-import { Button } from "./ui/button";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarTrigger,
-} from "./ui/sidebar";
-import { Switch } from "./ui/switch";
 
 type Props = {
   currentShoot: Shoot | undefined;

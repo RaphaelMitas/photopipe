@@ -1,3 +1,4 @@
+import { Skeleton } from "@photopipe/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Check } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -5,7 +6,6 @@ import { fileSrc, type ImageFile } from "@/lib/core";
 import { useThumbnail } from "@/lib/queries";
 import { useVirtualJump } from "@/lib/useVirtualJump";
 import { ExposureBadge, RatingBadge } from "./PhotoBadges";
-import { Skeleton } from "./ui/skeleton";
 
 const TARGET_ROW_HEIGHT = 220;
 const GAP = 8;

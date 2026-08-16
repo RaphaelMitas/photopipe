@@ -1,15 +1,4 @@
-import { ChevronLeft } from "lucide-react";
-import type { ImageFile } from "@/lib/core";
-import { instinctScore } from "@/lib/instinct";
-import type { FilmstripMode } from "./Filmstrip";
-import { Photopipe } from "./Photopipe";
-import {
-  RatingFilterOps,
-  RatingHistogram,
-  type RatingOp,
-} from "./RatingFilter";
-import { Stars } from "./Stars";
-import { Segmented } from "./ui/segmented";
+import { Segmented } from "@photopipe/ui/components/segmented";
 import {
   Sidebar,
   SidebarContent,
@@ -23,7 +12,18 @@ import {
   SidebarMenuItem,
   SidebarSeparator,
   SidebarTrigger,
-} from "./ui/sidebar";
+} from "@photopipe/ui/components/sidebar";
+import { ChevronLeft } from "lucide-react";
+import type { ImageFile } from "@/lib/core";
+import { instinctScore } from "@/lib/instinct";
+import type { FilmstripMode } from "./Filmstrip";
+import { Photopipe } from "./Photopipe";
+import {
+  RatingFilterOps,
+  RatingHistogram,
+  type RatingOp,
+} from "./RatingFilter";
+import { Stars } from "./Stars";
 
 type Props = {
   image: ImageFile;

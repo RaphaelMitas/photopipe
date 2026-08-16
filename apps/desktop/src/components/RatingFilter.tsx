@@ -1,5 +1,5 @@
-import { Button } from "./ui/button";
-import { ButtonGroup } from "./ui/button-group";
+import { Button } from "@photopipe/ui/components/button";
+import { ButtonGroup } from "@photopipe/ui/components/button-group";
 
 export type RatingOp = "gte" | "eq" | "lte" | "unrated";
 
