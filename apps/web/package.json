@@ -2,6 +2,7 @@
   "name": "web",
   "private": true,
   "version": "0.4.0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "screenshots": "mkdir -p public/screenshots && cp ../../docs/screenshots/browse.png ../../docs/screenshots/loupe.png public/screenshots/",
