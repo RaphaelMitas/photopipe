@@ -271,6 +271,31 @@ public final class LibraryService: @unchecked Sendable {
             mtime: ((attrs[.modificationDate] as? Date) ?? .distantPast).timeIntervalSince1970)
     }
 
+    /// One canonical index for the whole selection. Resolving each path against
+    /// a linear scan costs a standardization per photo scanned, so selecting a
+    /// whole shoot is quadratic and, on a few thousand raws, slower than the
+    /// ten seconds the client waits for an answer.
+    private func images(inShoot shootName: String, paths: [String]) throws -> [ImageFile] {
+        lock.lock()
+        let images = snapshot.imagesByShoot[shootName]
+        let hasRoot = root != nil
+        lock.unlock()
+        guard hasRoot else { throw ServiceError.noRoot }
+        guard let images else { throw ServiceError.unknownShoot(shootName) }
+
+        var byCanonical: [String: ImageFile] = [:]
+        for image in images {
+            byCanonical[URL(fileURLWithPath: image.path).standardizedFileURL.path] = image
+        }
+        return try paths.map { path in
+            let canonical = URL(fileURLWithPath: path).standardizedFileURL.path
+            guard let image = byCanonical[canonical] else {
+                throw ServiceError.unknownImage(path)
+            }
+            return image
+        }
+    }
+
     private func image(shoot shootName: String, path: String) throws -> ImageFile {
         lock.lock()
         let images = snapshot.imagesByShoot[shootName]
@@ -509,11 +534,7 @@ public final class LibraryService: @unchecked Sendable {
         shoot shootName: String, paths: [String], destination: String,
         zip: Bool, flatten: Bool, format: ExportFormat, quality: Int
     ) throws -> Exporter.Progress {
-        // An export must carry the real edit and rating even if enrichment has
-        // not reached these files yet.
-        let images = try pathsUnderRoot(paths)
-            .map { try image(shoot: shootName, path: $0) }
-            .map(enrich)
+        let images = try images(inShoot: shootName, paths: pathsUnderRoot(paths))
         guard !images.isEmpty else { throw FileActions.ActionError.noFiles }
 
         let fm = FileManager.default
@@ -546,7 +567,11 @@ public final class LibraryService: @unchecked Sendable {
         return exporter.start(
             plan: Exporter.Plan(items: items, destination: destination, staging: staging)
         ) { image, target in
-            try self.write(image, format: format, quality: quality, to: target, staging: zip)
+            // An export carries the real edit and rating even where enrichment
+            // has not reached yet. Reading them opens the file, so it happens
+            // here, four wide, rather than in the request that plans the job.
+            try self.write(
+                enrich(image), format: format, quality: quality, to: target, staging: zip)
         }
     }
 
