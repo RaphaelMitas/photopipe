@@ -1,11 +1,7 @@
 @import "tailwindcss";
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
 @import "@photopipe/ui/tokens.css";
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/montserrat";
-
-@source "../../../packages/ui/src";
 
 @theme inline {
   --font-sans: "Inter Variable", sans-serif;
