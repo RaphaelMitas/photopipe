@@ -1,11 +1,11 @@
+import { Skeleton } from "@photopipe/ui/components/skeleton";
+import { cn } from "@photopipe/ui/lib/utils";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useMemo, useRef } from "react";
 import { fileSrc, type ImageFile } from "@/lib/core";
 import { useThumbnail } from "@/lib/queries";
 import { useVirtualJump } from "@/lib/useVirtualJump";
-import { cn } from "@/lib/utils";
 import { ExposureBadge, RatingBadge } from "./PhotoBadges";
-import { Skeleton } from "./ui/skeleton";
 
 const ROW_HEIGHT = 44;
 

@@ -1,10 +1,10 @@
+import { Button } from "@photopipe/ui/components/button";
+import { Segmented } from "@photopipe/ui/components/segmented";
+import { Switch } from "@photopipe/ui/components/switch";
 import { open as openDialog, save } from "@tauri-apps/plugin-dialog";
 import { AlertCircle, Check, FolderOpen, Upload, X } from "lucide-react";
 import { useState } from "react";
 import type { ExportFormat } from "@/lib/core";
-import { Button } from "./ui/button";
-import { Segmented } from "./ui/segmented";
-import { Switch } from "./ui/switch";
 
 export type ExportJob = {
   id: number;

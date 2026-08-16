@@ -1,3 +1,4 @@
+import { Button } from "@photopipe/ui/components/button";
 import { Check, ChevronDown, RotateCw, X } from "lucide-react";
 import { useRef, useState } from "react";
 import type { CropRect, ImageFile } from "@/lib/core";
@@ -17,7 +18,6 @@ import {
   turnCrop,
 } from "@/lib/crop";
 import { capturePointer, cursorIn } from "@/lib/pointer";
-import { Button } from "./ui/button";
 
 export type CropDraft = {
   crop: CropRect;

@@ -1,21 +1,21 @@
 {
   "$schema": "https://ui.shadcn.com/schema.json",
   "style": "radix-luma",
-  "rsc": false,
+  "rsc": true,
   "tsx": true,
   "tailwind": {
     "config": "",
-    "css": "src/index.css",
+    "css": "src/tokens.css",
     "baseColor": "zinc",
     "cssVariables": true,
     "prefix": ""
   },
   "aliases": {
-    "components": "@/components",
-    "utils": "@/lib/utils",
-    "ui": "@/components/ui",
-    "lib": "@/lib",
-    "hooks": "@/hooks"
+    "components": "@photopipe/ui/components",
+    "utils": "@photopipe/ui/lib/utils",
+    "ui": "@photopipe/ui/components",
+    "lib": "@photopipe/ui/lib",
+    "hooks": "@photopipe/ui/hooks"
   },
   "iconLibrary": "lucide",
   "rtl": false,

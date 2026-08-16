@@ -1,3 +1,5 @@
+import { SidebarProvider } from "@photopipe/ui/components/sidebar";
+import { TooltipProvider } from "@photopipe/ui/components/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -7,8 +9,6 @@ import { type CropDraft, draftFromEdit } from "./CropTool";
 import { EditSidebar } from "./EditPanel";
 import { Loupe } from "./Loupe";
 import { LoupeSidebar } from "./LoupeSidebar";
-import { SidebarProvider } from "./ui/sidebar";
-import { TooltipProvider } from "./ui/tooltip";
 
 afterEach(cleanup);
 

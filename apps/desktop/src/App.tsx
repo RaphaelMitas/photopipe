@@ -1,3 +1,9 @@
+import { Button } from "@photopipe/ui/components/button";
+import {
+  SidebarInset,
+  SidebarProvider,
+} from "@photopipe/ui/components/sidebar";
+import { TooltipProvider } from "@photopipe/ui/components/tooltip";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
@@ -39,9 +45,6 @@ import { RootPicker, rememberRoot } from "@/components/RootPicker";
 import { SelectionBar } from "@/components/SelectionBar";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import { ShootSettingsDialog } from "@/components/ShootSettingsDialog";
-import { Button } from "@/components/ui/button";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   coreRequest,
   type Edit,
