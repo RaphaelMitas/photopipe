@@ -3,12 +3,22 @@ import Testing
 
 @testable import PhotopipeCoreKit
 
-private func waitForPass(_ scorer: Scorer, shoot: String, files: [ImageFile]) async throws {
+func waitForPass(
+    sourceLocation: SourceLocation = #_sourceLocation,
+    _ progress: () throws -> Scorer.Progress
+) async throws {
     for _ in 0..<200 {
-        if !scorer.progress(shoot: shoot, files: files).running { return }
+        if !(try progress()).running { return }
         try await Task.sleep(for: .milliseconds(50))
     }
-    Issue.record("scoring pass never finished")
+    Issue.record("scoring pass never finished", sourceLocation: sourceLocation)
+}
+
+/// The same photo as the walk would restat it after a write.
+private func touched(_ file: ImageFile) -> ImageFile {
+    ImageFile(
+        path: file.path, rel: file.rel, ext: file.ext, size: file.size + 64,
+        mtime: file.mtime + 5)
 }
 
 /// Wires a scorer to an index the way LibraryService does, minus the queue hop
@@ -31,7 +41,7 @@ private func attach(_ scorer: Scorer, to index: SQLiteIndex) {
     attach(scorer, to: try SQLiteIndex(path: indexPath))
     let started = scorer.start(shoot: "s", files: [file])
     #expect(started.total == 1)
-    try await waitForPass(scorer, shoot: "s", files: [file])
+    try await waitForPass { scorer.progress(shoot: "s", files: [file]) }
 
     let score = try #require(scorer.scores(for: [file])[file.path])
     #expect(score >= -1 && score <= 1)
@@ -81,7 +91,7 @@ private func attach(_ scorer: Scorer, to index: SQLiteIndex) {
     let scorer = Scorer()
     attach(scorer, to: try SQLiteIndex(path: indexPath))
     scorer.start(shoot: "s", files: [file])
-    try await waitForPass(scorer, shoot: "s", files: [file])
+    try await waitForPass { scorer.progress(shoot: "s", files: [file]) }
     #expect(scorer.scores(for: [file]).count == 1)
 
     let (replacement, replacementURL) = try makePNG(width: 96, height: 72)
@@ -94,6 +104,62 @@ private func attach(_ scorer: Scorer, to index: SQLiteIndex) {
 
     #expect(scorer.scores(for: [changed]).isEmpty)
     #expect(scorer.progress(shoot: "s", files: [changed]).done == 0)
+}
+
+@Test func restampCarriesACurrentScoreAndNeverRevivesAnExpiredOne() async throws {
+    let indexPath = tempFile("index.sqlite")
+    let (file, url) = try makePNG()
+    defer {
+        try? FileManager.default.removeItem(atPath: indexPath)
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    let scorer = Scorer()
+    attach(scorer, to: try SQLiteIndex(path: indexPath))
+    scorer.start(shoot: "s", files: [file])
+    try await waitForPass { scorer.progress(shoot: "s", files: [file]) }
+    let score = try #require(scorer.scores(for: [file])[file.path])
+
+    // A metadata write: same pixels, new stamps.
+    let written = touched(file)
+    scorer.restamp(file, to: written)
+    #expect(scorer.scores(for: [written])[written.path] == score)
+    #expect(scorer.progress(shoot: "s", files: [written]).done == 1)
+
+    // Something else replaced the photo, so the score expired before we wrote.
+    let replaced = touched(written)
+    let settled = touched(replaced)
+    scorer.restamp(replaced, to: settled)
+    #expect(scorer.scores(for: [settled]).isEmpty)
+    #expect(scorer.progress(shoot: "s", files: [settled]).done == 0)
+}
+
+@Test func aWriteWhileThePassRunsStillLeavesThePhotoScored() async throws {
+    let indexPath = tempFile("index.sqlite")
+    var files: [ImageFile] = []
+    var urls: [URL] = []
+    for _ in 0..<40 {
+        let (file, url) = try makePNG()
+        files.append(file)
+        urls.append(url)
+    }
+    defer {
+        try? FileManager.default.removeItem(atPath: indexPath)
+        for url in urls { try? FileManager.default.removeItem(at: url) }
+    }
+
+    let scorer = Scorer()
+    attach(scorer, to: try SQLiteIndex(path: indexPath))
+    scorer.start(shoot: "s", files: files)
+    // Six read at a time, so the last one is still queued: the pass would answer
+    // for the stamps it was queued with and leave the photo unscored.
+    let written = touched(files[files.count - 1])
+    scorer.restamp(files[files.count - 1], to: written)
+    let settled = files.dropLast() + [written]
+    try await waitForPass { scorer.progress(shoot: "s", files: Array(settled)) }
+
+    #expect(scorer.scores(for: [written])[written.path] != nil)
+    #expect(scorer.progress(shoot: "s", files: Array(settled)).done == files.count)
 }
 
 @Test func aFileVisionCannotReadStillCompletesThePass() async throws {
@@ -109,7 +175,7 @@ private func attach(_ scorer: Scorer, to index: SQLiteIndex) {
     let scorer = Scorer()
     attach(scorer, to: try SQLiteIndex(path: indexPath))
     scorer.start(shoot: "s", files: [broken])
-    try await waitForPass(scorer, shoot: "s", files: [broken])
+    try await waitForPass { scorer.progress(shoot: "s", files: [broken]) }
 
     let progress = scorer.progress(shoot: "s", files: [broken])
     #expect(progress.done == progress.total)

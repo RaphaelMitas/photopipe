@@ -29,6 +29,9 @@ public final class Scorer: @unchecked Sendable {
     private var cache: [String: ScoreRow] = [:]
     private var progressByShoot: [String: Progress] = [:]
     private var passes: [String: Task<Void, Never>] = [:]
+    /// Files one of our writes moved while a pass had them queued. Vision reads them as they
+    /// are now, so the pass records its answer under these stamps, not the ones it queued with.
+    private var moved: [String: ImageFile] = [:]
 
     public init() {}
 
@@ -40,6 +43,7 @@ public final class Scorer: @unchecked Sendable {
         let cancelled = passes.values
         passes.removeAll()
         progressByShoot.removeAll()
+        moved.removeAll()
         self.flush = flush
         self.cache = cache
         lock.unlock()
@@ -59,19 +63,20 @@ public final class Scorer: @unchecked Sendable {
         return result
     }
 
-    /// Carry a cached score onto the stamps a file has after we wrote metadata into it. That
-    /// write rewrites the file without touching a pixel, so letting the score expire would drop
-    /// the photo out of the sort and spend a Vision read arriving at the same number.
-    public func restamp(_ file: ImageFile) {
-        let (write, rows) = lock.withLock { () -> (Flush?, [(String, ScoreRow)]) in
-            guard let row = cache[file.path], row.version == Self.version, !row.matches(file)
-            else { return (nil, []) }
-            let moved = ScoreRow(
-                score: row.score, mtime: file.mtime, size: file.size, version: row.version)
-            cache[file.path] = moved
-            return (flush, [(file.path, moved)])
+    /// Carry a score across our own metadata write, which moves a file's mtime and size without
+    /// touching a pixel: expiring it would drop the photo out of the sort by score and spend a
+    /// Vision read arriving at the same number. Only a score that was current for `before`
+    /// travels, so a file something else had already changed stays unscored.
+    public func restamp(_ before: ImageFile, to after: ImageFile) {
+        let (write, carried) = lock.withLock { () -> (Flush?, ScoreRow?) in
+            if !passes.isEmpty { moved[after.path] = after }
+            guard let row = cache[before.path], row.matches(before), !row.matches(after)
+            else { return (nil, nil) }
+            let carried = ScoreRow(score: row.score, for: after)
+            cache[after.path] = carried
+            return (flush, carried)
         }
-        if !rows.isEmpty { write?(rows) }
+        if let carried { write?([(after.path, carried)]) }
     }
 
     /// Only a running pass reports stored progress. Once it ends the answer is recomputed from
@@ -128,12 +133,10 @@ public final class Scorer: @unchecked Sendable {
                 // good, so a cancelled pass leaves it untouched instead.
                 if cancelled && score == nil { continue }
 
-                let row = ScoreRow(
-                    score: score, mtime: file.mtime, size: file.size, version: Self.version)
-                buffer.append((file.path, row))
-
                 let (write, full) = lock.withLock { () -> (Flush?, Bool) in
+                    let row = ScoreRow(score: score, for: moved[file.path] ?? file)
                     cache[file.path] = row
+                    buffer.append((file.path, row))
                     let done = scoredCount(pending) + (total - pending.count)
                     progressByShoot[shoot] = Progress(done: done, total: total, running: true)
                     return (self.flush, buffer.count >= Self.flushEvery)
@@ -149,6 +152,7 @@ public final class Scorer: @unchecked Sendable {
         let write = lock.withLock { () -> Flush? in
             progressByShoot[shoot] = nil
             passes[shoot] = nil
+            if passes.isEmpty { moved.removeAll() }
             return self.flush
         }
         write?(buffer)
@@ -181,6 +185,11 @@ public struct ScoreRow: Equatable, Sendable {
         self.mtime = mtime
         self.size = size
         self.version = version
+    }
+
+    /// What the file was when the score was taken, which is what `matches` asks about later.
+    init(score: Double?, for file: ImageFile) {
+        self.init(score: score, mtime: file.mtime, size: file.size, version: Scorer.version)
     }
 
     public func matches(_ file: ImageFile) -> Bool {

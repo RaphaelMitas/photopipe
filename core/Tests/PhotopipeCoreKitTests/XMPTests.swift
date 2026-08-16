@@ -501,9 +501,7 @@ func image(_ url: URL) throws -> ImageFile {
     let jpg = shoot.appendingPathComponent("DSC00010.JPG")
     try writeGrayJPEG(to: jpg)
 
-    let service = LibraryService(
-        thumbnailer: Thumbnailer(cacheDir: dir.appendingPathComponent("thumbs")),
-        renderer: Renderer(cacheDir: dir.appendingPathComponent("renders")))
+    let service = makeService(in: dir)
     let before = try service.setRoot(path: dir.path, indexPath: nil)
 
     let result = try service.setRating(shoot: "2026-01-01_xmptest", path: arw.path, rating: 4)
@@ -528,9 +526,7 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(try exiftoolTag("-XMP-crs:Exposure2012", of: jpg) == "1.25")
 
     // A fresh scan (new service, no snapshot) reads the same values back.
-    let fresh = LibraryService(
-        thumbnailer: Thumbnailer(cacheDir: dir.appendingPathComponent("thumbs")),
-        renderer: Renderer(cacheDir: dir.appendingPathComponent("renders")))
+    let fresh = makeService(in: dir)
     _ = try fresh.setRoot(path: dir.path, indexPath: nil)
     waitUntilIndexed(fresh)
     let rescanned = try fresh.listImages(shoot: "2026-01-01_xmptest")
@@ -564,17 +560,12 @@ func image(_ url: URL) throws -> ImageFile {
         try writeGrayJPEG(to: shoot.appendingPathComponent(name))
     }
 
-    let service = LibraryService(
-        thumbnailer: Thumbnailer(cacheDir: dir.appendingPathComponent("thumbs")),
-        renderer: Renderer(cacheDir: dir.appendingPathComponent("renders")))
+    let service = makeService(in: dir)
     _ = try service.setRoot(path: dir.path, indexPath: nil)
     waitUntilIndexed(service)
 
     _ = try service.scoreShoot(shoot: "2026-01-01_instinct")
-    for _ in 0..<200 {
-        if !(try service.scoreStatus(shoot: "2026-01-01_instinct")).running { break }
-        try await Task.sleep(for: .milliseconds(50))
-    }
+    try await waitForPass { try service.scoreStatus(shoot: "2026-01-01_instinct") }
     let before = try service.listImages(shoot: "2026-01-01_instinct")
     let target = shoot.appendingPathComponent("b.JPG").path
     let score = try #require(before.first { $0.path == target }?.score)
