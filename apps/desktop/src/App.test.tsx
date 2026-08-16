@@ -61,8 +61,6 @@ beforeEach(() => {
   menu.clear();
 });
 
-/// Stands in for the shell: `remembered` are the roots it would reopen, and
-/// `core` answers the sidecar methods this test cares about.
 function mockShell(
   remembered: string[],
   core: (method: string, params: Record<string, unknown>) => unknown,
@@ -159,16 +157,16 @@ describe("App", () => {
     );
   });
 
-  it("keeps a root the shell cannot reopen out of the core's way", async () => {
+  it("keeps a root the shell cannot open out of the core's way", async () => {
     invoke.mockImplementation(async (cmd) => {
       if (cmd === "list_roots") return ["/gone"];
-      if (cmd === "open_root") throw "macOS would not reopen /gone";
+      if (cmd === "open_root") throw "roots.json is unreadable";
       throw new Error(`unexpected command ${cmd}`);
     });
 
     renderWithQueries(<App />);
     expect(await screen.findByTestId("root-error")).toHaveTextContent(
-      "would not reopen",
+      "unreadable",
     );
   });
 });

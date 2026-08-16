@@ -326,6 +326,8 @@ public final class Dispatcher {
                 id: request.id, code: "project_exists", message: "\(folder) already exists")
         } catch FileActions.ActionError.noFiles {
             return .failure(id: request.id, code: "no_files", message: "nothing selected")
+        } catch FileActions.ActionError.openFailed(let output) {
+            return .failure(id: request.id, code: "open_failed", message: output)
         } catch FileActions.ActionError.zipFailed(let output) {
             return .failure(id: request.id, code: "zip_failed", message: output)
         } catch ExifTool.ExifToolError.notInstalled {

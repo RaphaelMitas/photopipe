@@ -15,7 +15,6 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   autoScore: boolean;
   onAutoScore: (on: boolean) => void;
-  /// Absent in the App Store build, which has no updater to check with.
   onCheckUpdates?: () => void;
 };
 

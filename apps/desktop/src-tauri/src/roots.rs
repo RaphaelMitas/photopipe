@@ -21,15 +21,13 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, State};
 
-/// What the picker offers. The head of the list is the root to reopen.
 const MAX_ROOTS: usize = 5;
 
 #[derive(Default)]
 pub struct Roots {
-    /// Access ends when the URL is released, so a root opened this session is
-    /// held until the app exits. Keyed by path: reopening the same root twice
-    /// must not stack a second extension.
-    open: Mutex<HashMap<String, Retained<NSURL>>>,
+    /// Access ends when the URL is released, so these are held until the app
+    /// exits.
+    open_by_path: Mutex<HashMap<String, Retained<NSURL>>>,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -49,22 +47,32 @@ fn store_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("roots.json"))
 }
 
-fn load(app: &AppHandle) -> Store {
-    store_path(app)
-        .ok()
-        .and_then(|path| std::fs::read(path).ok())
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default()
+/// Only a missing file reads as an empty store. Anything else has to fail
+/// loudly: treating an unreadable one as empty and then saving over it would
+/// destroy the bookmarks, and under the sandbox those are the only way back
+/// into a folder without the open panel.
+fn load(app: &AppHandle) -> Result<Store, String> {
+    let path = store_path(app)?;
+    let bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Store::default()),
+        Err(e) => return Err(format!("{}: {e}", path.display())),
+    };
+    serde_json::from_slice(&bytes).map_err(|e| format!("{} is unreadable: {e}", path.display()))
 }
 
+/// Written beside the real file and renamed onto it, because the whole store
+/// is rewritten every time a root opens: a plain write truncates first, and
+/// losing power in that window would leave nothing to read back.
 fn save(app: &AppHandle, store: &Store) -> Result<(), String> {
     let path = store_path(app)?;
+    let temp = path.with_extension("json.tmp");
     let json = serde_json::to_vec_pretty(store).map_err(|e| e.to_string())?;
-    std::fs::write(path, json).map_err(|e| e.to_string())
+    std::fs::write(&temp, json).map_err(|e| e.to_string())?;
+    std::fs::rename(&temp, &path).map_err(|e| e.to_string())
 }
 
-fn mint(path: &str) -> Result<String, String> {
-    let url = NSURL::fileURLWithPath(&NSString::from_str(path));
+fn mint(url: &NSURL) -> Result<String, String> {
     let data = url
         .bookmarkDataWithOptions_includingResourceValuesForKeys_relativeToURL_error(
             NSURLBookmarkCreationOptions::WithSecurityScope,
@@ -94,9 +102,12 @@ fn resolve(encoded: &str) -> Result<(Retained<NSURL>, bool), String> {
     Ok((url, stale.as_bool()))
 }
 
+/// An unreadable store is an empty picker rather than an error page: the open
+/// panel still works, and it is the only way back from one.
 #[tauri::command]
 pub fn list_roots(app: AppHandle) -> Vec<String> {
     load(&app)
+        .unwrap_or_default()
         .roots
         .into_iter()
         .map(|entry| entry.path)
@@ -106,39 +117,54 @@ pub fn list_roots(app: AppHandle) -> Vec<String> {
 /// Regain access to a remembered root before the core is asked to scan it.
 /// A root with no bookmark needs nothing: either this build is unsandboxed, or
 /// the open panel just granted the folder and the grant is still live.
+///
+/// A bookmark that no longer works is dropped rather than reported. Failing
+/// here would be a dead end — the core never runs, so nothing re-mints, and
+/// picking the very same folder through the open panel would fail again on the
+/// stored bookmark for as long as it stayed there. Dropping it lets `setRoot`
+/// say whether the folder is actually reachable, and a `setRoot` that succeeds
+/// mints a fresh bookmark on the way out.
 #[tauri::command]
 pub fn open_root(app: AppHandle, roots: State<'_, Roots>, path: String) -> Result<(), String> {
-    if roots.open.lock().unwrap().contains_key(&path) {
+    if roots.open_by_path.lock().unwrap().contains_key(&path) {
         return Ok(());
     }
-    let mut store = load(&app);
+    let mut store = load(&app)?;
     let Some(index) = store.roots.iter().position(|entry| entry.path == path) else {
         return Ok(());
     };
     let Some(encoded) = store.roots[index].bookmark.clone() else {
         return Ok(());
     };
-    let (url, stale) = resolve(&encoded)?;
+    let Ok((url, stale)) = resolve(&encoded) else {
+        return forget_bookmark(&app, store, index);
+    };
     if !unsafe { url.startAccessingSecurityScopedResource() } {
-        return Err(format!("macOS would not reopen {path}"));
+        return forget_bookmark(&app, store, index);
     }
-    // Re-mint while the access it needs is held, so the next launch resolves
-    // cleanly instead of asking again.
+    // From the resolved URL, not the stored path: stale means the folder moved,
+    // and Apple's rule is to re-create the bookmark from where it landed. Best
+    // effort — macOS has already granted the folder, and failing to write the
+    // fresh bookmark is not worth refusing a root that works.
     if stale {
-        if let Ok(fresh) = mint(&path) {
+        if let Ok(fresh) = mint(&url) {
             store.roots[index].bookmark = Some(fresh);
-            save(&app, &store)?;
+            let _ = save(&app, &store);
         }
     }
-    roots.open.lock().unwrap().insert(path, url);
+    roots.open_by_path.lock().unwrap().insert(path, url);
     Ok(())
 }
 
-/// Record a root the core has accepted, minting its bookmark if this is the
-/// first time we have seen it.
+fn forget_bookmark(app: &AppHandle, mut store: Store, index: usize) -> Result<(), String> {
+    store.roots[index].bookmark = None;
+    let _ = save(app, &store);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn remember_root(app: AppHandle, path: String) -> Result<(), String> {
-    let mut store = load(&app);
+    let mut store = load(&app)?;
     let previous = store
         .roots
         .iter()
@@ -146,7 +172,7 @@ pub fn remember_root(app: AppHandle, path: String) -> Result<(), String> {
         .map(|index| store.roots.remove(index));
     let bookmark = previous
         .and_then(|entry| entry.bookmark)
-        .or_else(|| mint(&path).ok());
+        .or_else(|| mint(&NSURL::fileURLWithPath(&NSString::from_str(&path))).ok());
     store.roots.insert(0, Entry { path, bookmark });
     store.roots.truncate(MAX_ROOTS);
     save(&app, &store)

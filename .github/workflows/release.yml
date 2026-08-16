@@ -71,7 +71,10 @@ jobs:
   release:
     name: Build, sign, notarize
     needs: check
-    if: needs.check.outputs.is-release == 'true'
+    # A submit-only dispatch must not come through here: every workflow_dispatch
+    # counts as a release, and this job would re-notarize, overwrite the release
+    # assets and latest.json, and bump the cask a second time.
+    if: needs.check.outputs.is-release == 'true' && inputs.submit_to_app_store != true
     runs-on: macos-15
     permissions:
       contents: write
@@ -322,11 +325,13 @@ jobs:
     if: needs.check.outputs.is-release == 'true'
     runs-on: macos-15
     env:
-      # Step-level `if` cannot read `secrets`, and the App Store certificates
-      # will not exist until the store record does. Until then this job proves
-      # the build still assembles and stops short of signing.
-      MAS_CERTIFICATE: ${{ secrets.MAS_CERTIFICATE }}
-      ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      # Markers, not the secrets themselves. A step-level `if` cannot read
+      # `secrets`, but hoisting the certificate to job scope would put the
+      # private key in the environment of `pnpm install` and every build
+      # script. Compared against 'true' deliberately: the string "false" is
+      # non-empty, so a bare truthiness test would always pass.
+      HAS_MAS_CERTIFICATE: ${{ secrets.MAS_CERTIFICATE != '' }}
+      HAS_ASC_KEY: ${{ secrets.APP_STORE_CONNECT_KEY_ID != '' }}
       APP: apps/desktop/src-tauri/target/release/bundle/macos/Photopipe.app
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -359,8 +364,9 @@ jobs:
             --config src-tauri/mas.conf.json -- --no-default-features
 
       - name: Import the App Store signing certificates
-        if: ${{ env.MAS_CERTIFICATE != '' }}
+        if: ${{ env.HAS_MAS_CERTIFICATE == 'true' }}
         env:
+          MAS_CERTIFICATE: ${{ secrets.MAS_CERTIFICATE }}
           MAS_CERTIFICATE_PASSWORD: ${{ secrets.MAS_CERTIFICATE_PASSWORD }}
           MAS_PROVISION_PROFILE: ${{ secrets.MAS_PROVISION_PROFILE }}
         run: |
@@ -410,7 +416,7 @@ jobs:
       # hands it. No hardened runtime and no notarization — the App Store does
       # its own review.
       - name: Sign
-        if: ${{ env.MAS_CERTIFICATE != '' }}
+        if: ${{ env.HAS_MAS_CERTIFICATE == 'true' }}
         run: |
           ENTITLEMENTS=apps/desktop/src-tauri
           codesign --force --timestamp \
@@ -429,7 +435,7 @@ jobs:
         run: ./scripts/smoke-bundle.sh --mas "$APP"
 
       - name: Build the installer package
-        if: ${{ env.MAS_CERTIFICATE != '' }}
+        if: ${{ env.HAS_MAS_CERTIFICATE == 'true' }}
         id: pkg
         env:
           VERSION: ${{ needs.check.outputs.version }}
@@ -440,7 +446,7 @@ jobs:
           echo "PATH=$PKG" >> $GITHUB_OUTPUT
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: ${{ env.MAS_CERTIFICATE != '' }}
+        if: ${{ env.HAS_MAS_CERTIFICATE == 'true' }}
         with:
           name: photopipe-app-store
           path: ${{ steps.pkg.outputs.PATH }}
@@ -450,8 +456,9 @@ jobs:
       # the upload below is the only step that submits anything, and it needs a
       # deliberate workflow_dispatch.
       - name: Validate against App Store Connect
-        if: ${{ env.ASC_KEY_ID != '' }}
+        if: ${{ env.HAS_ASC_KEY == 'true' && env.HAS_MAS_CERTIFICATE == 'true' }}
         env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           ASC_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
         run: |
@@ -465,8 +472,9 @@ jobs:
       # uploaded, so re-submitting a version that was rejected needs a bump
       # first — App Store Connect refuses the duplicate outright.
       - name: Upload to App Store Connect
-        if: ${{ env.ASC_KEY_ID != '' && inputs.submit_to_app_store }}
+        if: ${{ env.HAS_ASC_KEY == 'true' && env.HAS_MAS_CERTIFICATE == 'true' && inputs.submit_to_app_store == true }}
         env:
+          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |
           xcrun altool --upload-app -t macos -f "${{ steps.pkg.outputs.PATH }}" \

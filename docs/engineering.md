@@ -167,9 +167,12 @@ Same tag, same version, second job. `mas` builds
 `tauri build --config src-tauri/mas.conf.json -- --no-default-features`, which
 is the same app minus everything Apple will not take: no updater plugin, no
 `updater:default` capability, no "Check for Updates…" item and no update
-offer in Settings. `--no-default-features` is not optional —
-`scripts/smoke-bundle.sh --mas` greps the executable for the update feed and
-fails if it survived.
+offer in Settings. `--no-default-features` is not optional, and the two halves
+fail independently: the config merge alone removes the feed but still compiles
+the plugin in. `scripts/smoke-bundle.sh --mas` greps the executable for both
+`download/latest.json` (which only proves `mas.conf.json` was merged, since the
+feed comes from the config) and `tauri_plugin_updater` (which proves the flag
+was passed, since the crate name comes from the plugin's own code).
 
 Two entitlement files, and the split matters. The app gets the sandbox, the
 open panel's `user-selected.read-write`, `bookmarks.app-scope` so the folder

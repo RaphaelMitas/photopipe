@@ -1,19 +1,21 @@
-import AppKit
 import Foundation
 
 public enum FileActions {
     public enum ActionError: Error, Equatable {
         case noFiles
+        case openFailed(String)
         case zipFailed(String)
     }
 
-    /// The sanctioned call, where `/usr/bin/open -R` is a shell-out the App
-    /// Store would rather not see. It reports nothing back: the Finder either
-    /// comes forward or it does not.
+    /// `NSWorkspace.activateFileViewerSelecting` is the sanctioned call and was
+    /// tried here, but it only works from the main thread, and this process
+    /// blocks its main thread reading stdin: off it, the Finder never comes
+    /// forward and the Void return reports success anyway. `open` also tells us
+    /// when the file is gone, which the sanctioned call cannot.
     public static func reveal(paths: [String]) throws {
         guard !paths.isEmpty else { throw ActionError.noFiles }
-        NSWorkspace.shared.activateFileViewerSelecting(
-            paths.map { URL(fileURLWithPath: $0) })
+        let result = try run("/usr/bin/open", ["-R"] + paths)
+        guard result.status == 0 else { throw ActionError.openFailed(result.output) }
     }
 
     @discardableResult
