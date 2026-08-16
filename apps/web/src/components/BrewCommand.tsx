@@ -6,6 +6,15 @@ import { useEffect, useState } from "react";
 
 const COMMAND = "brew install --cask raphaelmitas/tap/photopipe";
 
+function selectText(node: Element | null | undefined) {
+  if (!node) return;
+  const range = document.createRange();
+  range.selectNodeContents(node);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
 export function BrewCommand() {
   const [copied, setCopied] = useState(false);
 
@@ -16,14 +25,21 @@ export function BrewCommand() {
   }, [copied]);
 
   return (
-    <div className="flex items-center gap-1 rounded-4xl border border-border bg-card/60 py-1 pr-1 pl-4 font-mono text-muted-foreground text-xs sm:text-sm">
-      <code className="truncate">{COMMAND}</code>
+    <div className="flex max-w-full items-center gap-1 rounded-4xl border border-border bg-card/60 py-1 pr-1 pl-4 font-mono text-muted-foreground text-xs sm:text-sm">
+      <code className="min-w-0 truncate">{COMMAND}</code>
       <Button
         variant="ghost"
         size="icon-sm"
         aria-label={copied ? "Copied" : "Copy install command"}
-        onClick={() => {
-          navigator.clipboard.writeText(COMMAND).then(() => setCopied(true));
+        onClick={async (event) => {
+          try {
+            await navigator.clipboard.writeText(COMMAND);
+            setCopied(true);
+          } catch {
+            selectText(
+              event.currentTarget.parentElement?.querySelector("code"),
+            );
+          }
         }}
       >
         {copied ? <Check className="text-primary" /> : <Copy />}

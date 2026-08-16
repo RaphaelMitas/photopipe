@@ -43,7 +43,7 @@ const FEATURES = [
   {
     icon: ShieldCheck,
     title: "Native and self-contained",
-    body: "A Swift core doing every pixel, in one bundle with the raw pipeline inside. Nothing else to install, and it keeps itself up to date without ever asking who you are.",
+    body: "A Swift core doing every pixel, in one bundle with the raw pipeline inside. Nothing else to install, and it offers its own updates without ever asking who you are.",
   },
 ];
 
@@ -57,9 +57,7 @@ export function FeatureGrid() {
               <div className="mb-4 flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
                 <feature.icon className="size-5" />
               </div>
-              <CardTitle className="font-heading text-lg">
-                {feature.title}
-              </CardTitle>
+              <CardTitle className="text-lg">{feature.title}</CardTitle>
               <CardDescription className="mt-2 leading-relaxed">
                 {feature.body}
               </CardDescription>

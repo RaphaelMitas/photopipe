@@ -1,14 +1,13 @@
 {
   "name": "web",
   "private": true,
-  "version": "0.4.0",
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "screenshots": "mkdir -p public/screenshots && cp ../../docs/screenshots/browse.png ../../docs/screenshots/loupe.png public/screenshots/",
-    "predev": "pnpm screenshots",
+    "assets": "mkdir -p public/screenshots && cp ../../docs/screenshots/*.png public/screenshots/ && cp ../../brand/web/favicon.ico ../../brand/web/favicon.svg ../../brand/web/apple-touch-icon.png ../../brand/web/icon-*.png ../../brand/web/site.webmanifest ../../brand/social/og-dark.png public/",
+    "predev": "pnpm assets",
     "dev": "next dev",
-    "prebuild": "pnpm screenshots",
+    "prebuild": "pnpm assets",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit"

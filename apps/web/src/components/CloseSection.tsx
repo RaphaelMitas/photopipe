@@ -20,7 +20,7 @@ export function CloseSection({ href }: { href: string }) {
           Your next shoot is waiting.
         </h2>
         <p className="mt-4 text-lg text-muted-foreground">
-          Free, open source, and it updates itself.
+          Free and open source.
         </p>
         <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <DownloadButton href={href}>Download Photopipe</DownloadButton>

@@ -15,10 +15,10 @@ export function Hero({ href }: { href: string }) {
           <span className="text-primary">send</span>.
         </h1>
         <p className="mx-auto mt-7 max-w-2xl text-balance text-lg text-muted-foreground leading-relaxed md:text-xl">
-          A free culling and develop suite for macOS. Apple&rsquo;s raw decoder,
-          Neural Engine denoise, curves, crop and aesthetic scoring, all of it
-          on your own machine, over your own folders. No catalogue, no import,
-          no account.
+          A free culling and develop suite for macOS. Apple&rsquo;s latest raw
+          decoder, Neural Engine denoise, curves, crop and Vision aesthetic
+          scoring, all of it on your own machine, over your own folders. No
+          catalogue, no import, no account.
         </p>
         <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <DownloadButton href={href}>Download for macOS</DownloadButton>
@@ -36,6 +36,7 @@ export function Hero({ href }: { href: string }) {
           width={2560}
           height={1600}
           priority
+          sizes="(min-width: 1536px) 1440px, 100vw"
           className="w-full rounded-xl border border-border shadow-2xl shadow-black/40"
         />
       </div>

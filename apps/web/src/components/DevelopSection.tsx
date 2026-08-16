@@ -6,7 +6,10 @@ const CONTROLS = [
   { name: "Exposure", detail: "Written as Lightroom's own crs:Exposure2012." },
   { name: "Highlights · Shadows", detail: "Recovery either end of the range." },
   { name: "Temp · Tint", detail: "True Kelvin on raw, incremental elsewhere." },
-  { name: "Denoise", detail: "Apple's luminance NR, on the Neural Engine." },
+  {
+    name: "Denoise",
+    detail: "RAW 9 demosaics and denoises in one model, on the Neural Engine.",
+  },
   {
     name: "Vibrance · Saturation",
     detail: "Two separate controls, as they should be.",
@@ -16,7 +19,10 @@ const CONTROLS = [
     name: "Crop, straighten, rotate",
     detail: "Live angle, non-destructive, zoom to 1:1 to check focus.",
   },
-  { name: "⌘C / ⌘V", detail: "Copy a look onto the whole selection at once." },
+  {
+    name: "⌘C / ⌘V",
+    detail: "Copy a look from one photo, paste it onto the whole selection.",
+  },
 ];
 
 export function DevelopSection() {
@@ -45,6 +51,7 @@ export function DevelopSection() {
           alt="The Photopipe loupe with the edit panel open on a raw file"
           width={2560}
           height={1600}
+          sizes="(min-width: 1024px) 60vw, 100vw"
           className="w-full rounded-xl border border-border shadow-2xl shadow-black/40"
         />
       </div>

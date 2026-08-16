@@ -1,4 +1,4 @@
-const REPO = "https://github.com/RaphaelMitas/photopipe";
+export const REPO = "https://github.com/RaphaelMitas/photopipe";
 const LATEST_JSON = `${REPO}/releases/latest/download/latest.json`;
 const RELEASES_PAGE = `${REPO}/releases/latest`;
 
@@ -13,7 +13,10 @@ function versionOf(payload: unknown): string | null {
 
 export async function downloadUrl(): Promise<string> {
   try {
-    const response = await fetch(LATEST_JSON, { next: { revalidate: 3600 } });
+    const response = await fetch(LATEST_JSON, {
+      next: { revalidate: 3600 },
+      signal: AbortSignal.timeout(5000),
+    });
     if (!response.ok) return RELEASES_PAGE;
     const version = versionOf(await response.json());
     return version
