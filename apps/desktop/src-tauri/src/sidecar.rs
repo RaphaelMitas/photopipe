@@ -30,7 +30,7 @@ const SET_ROOT_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Requests that mutate state must never be silently re-sent after a respawn:
 /// the first send may have taken effect before the connection died.
-const MUTATING_METHODS: &[&str] = &["setRating", "setEdit"];
+const MUTATING_METHODS: &[&str] = &["setRating", "setEdit", "exportFiles"];
 
 #[derive(Debug, Deserialize)]
 struct WireError {

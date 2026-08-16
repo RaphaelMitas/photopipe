@@ -10,6 +10,9 @@ async function prepare() {
     const { mockIPC } = await import("@tauri-apps/api/mocks");
     const { E2E_HANDLERS } = await import("./e2e-mocks");
     mockIPC((cmd, args) => {
+      // The file pickers are OS windows with nothing to drive them from a
+      // browser, so e2e answers them with a destination and moves on.
+      if (cmd.startsWith("plugin:dialog|")) return "/fake/delivery";
       const method = (args as { method?: string } | undefined)?.method;
       const params = (args as { params?: Record<string, unknown> } | undefined)
         ?.params;

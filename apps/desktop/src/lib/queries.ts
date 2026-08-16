@@ -4,7 +4,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   type CreateProjectResult,
@@ -511,12 +511,98 @@ export type ExportRequest = {
   quality: number;
 };
 
-export function useExportFiles() {
-  return useMutation({
-    mutationKey: ["write", "exportFiles"],
-    mutationFn: (request: ExportRequest) =>
-      coreRequest<{ files: number }>("exportFiles", request),
-  });
+export type ExportProgress = {
+  id: string;
+  done: number;
+  failed: number;
+  total: number;
+  running: boolean;
+  cancelled: boolean;
+  destination: string;
+  error: string | null;
+};
+
+export type ExportJob = ExportProgress & {
+  label: string;
+  /// Only ever used to estimate what is left; the core does not keep clocks.
+  startedAt: number;
+};
+
+const EXPORT_POLL_MS = 400;
+
+/// A delivery of a few hundred raws takes minutes, so the core runs it as a job
+/// and `exportFiles` only hands back an id. Everything the drawer shows about a
+/// running export comes from polling that id.
+export function useExportJobs() {
+  const [jobs, setJobs] = useState<ExportJob[]>([]);
+  const live = useRef(jobs);
+  live.current = jobs;
+  const running = jobs.some((job) => job.running);
+
+  useEffect(() => {
+    if (!running) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const poll = async () => {
+      const updates = await Promise.all(
+        live.current
+          .filter((job) => job.running)
+          .map(async (job) => {
+            try {
+              return await coreRequest<ExportProgress>("exportStatus", {
+                id: job.id,
+              });
+            } catch (error) {
+              // The core went away mid-export; this job is not coming back.
+              return { id: job.id, running: false, error: String(error) };
+            }
+          }),
+      );
+      if (stopped) return;
+      setJobs((current) =>
+        current.map((job) => {
+          const update = updates.find((next) => next.id === job.id);
+          return update ? { ...job, ...update } : job;
+        }),
+      );
+      timer = setTimeout(poll, EXPORT_POLL_MS);
+    };
+
+    timer = setTimeout(poll, EXPORT_POLL_MS);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [running]);
+
+  const start = useCallback(async (label: string, request: ExportRequest) => {
+    try {
+      const job = await coreRequest<ExportProgress>("exportFiles", request);
+      setJobs((current) => [
+        { ...job, label, startedAt: Date.now() },
+        ...current,
+      ]);
+    } catch (error) {
+      toast.error("Could not start the export", { description: String(error) });
+    }
+  }, []);
+
+  const cancel = useCallback((id: string) => {
+    coreRequest<ExportProgress>("cancelExport", { id })
+      .then((update) =>
+        setJobs((current) =>
+          current.map((job) => (job.id === id ? { ...job, ...update } : job)),
+        ),
+      )
+      .catch((error: unknown) => {
+        toast.error("Could not cancel the export", {
+          description: String(error),
+        });
+      });
+  }, []);
+
+  return { jobs, start, cancel, running };
 }
 
 export function useCreateProject() {

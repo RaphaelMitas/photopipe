@@ -127,6 +127,31 @@ function scored(shoot: string) {
   };
 }
 
+type ExportJob = {
+  id: string;
+  done: number;
+  failed: number;
+  total: number;
+  running: boolean;
+  cancelled: boolean;
+  destination: string;
+  error: null;
+};
+
+// One photo per poll, so a spec can watch the bar move instead of catching a
+// delivery that was already over before the first status came back.
+const exportJobs = new Map<string, ExportJob>();
+
+function advanceExport(id: string): ExportJob {
+  const job = exportJobs.get(id);
+  if (!job) throw `unknown_export: ${id}`;
+  if (job.running) {
+    job.done = Math.min(job.done + 1, job.total);
+    job.running = job.done < job.total;
+  }
+  return job;
+}
+
 export const E2E_HANDLERS: Record<
   string,
   (params: Record<string, unknown>) => unknown
@@ -196,7 +221,29 @@ export const E2E_HANDLERS: Record<
     }
     return { files, generation: 1 };
   },
-  exportFiles: (params) => ({ files: (params.paths as string[]).length }),
+  exportFiles: (params) => {
+    const job = {
+      id: String(exportJobs.size + 1),
+      done: 0,
+      failed: 0,
+      total: (params.paths as string[]).length,
+      running: true,
+      cancelled: false,
+      destination: String(params.destination),
+      error: null,
+    };
+    exportJobs.set(job.id, job);
+    return { ...job };
+  },
+  exportStatus: (params) => advanceExport(String(params.id)),
+  cancelExport: (params) => {
+    const job = advanceExport(String(params.id));
+    if (job.running) {
+      job.cancelled = true;
+      job.running = false;
+    }
+    return { ...job };
+  },
   importFiles: (params) => ({
     imported: (params.paths as string[]).length,
     skipped: 0,

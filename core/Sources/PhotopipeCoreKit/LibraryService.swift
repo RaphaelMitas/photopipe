@@ -12,6 +12,7 @@ public final class LibraryService: @unchecked Sendable {
         case invalidProjectName(String)
         case invalidProjectDay(String)
         case projectExists(String)
+        case unknownExport(String)
     }
 
     private let lock = NSLock()
@@ -29,6 +30,7 @@ public final class LibraryService: @unchecked Sendable {
     private let thumbnailer: Thumbnailer
     private let renderer: Renderer
     private let scorer: Scorer
+    private let exporter = Exporter()
     private let rescanQueue = DispatchQueue(label: "photopipe.rescan")
     /// One connection, one writer: enrichment batches and full saves both land
     /// here so they never interleave on the same sqlite handle.
@@ -500,10 +502,14 @@ public final class LibraryService: @unchecked Sendable {
         case jpeg
     }
 
-    public func exportFiles(
+    /// Plans the delivery and hands it to the exporter, which writes the files
+    /// in the background. Everything that can be refused outright is refused
+    /// here, so a bad request still comes back as an error rather than as a job
+    /// that fails a minute later.
+    public func startExport(
         shoot shootName: String, paths: [String], destination: String,
         zip: Bool, flatten: Bool, format: ExportFormat, quality: Int
-    ) throws -> Int {
+    ) throws -> Exporter.Progress {
         // An export must carry the real edit and rating even if enrichment has
         // not reached these files yet.
         let images = try pathsUnderRoot(paths)
@@ -511,8 +517,16 @@ public final class LibraryService: @unchecked Sendable {
             .map(enrich)
         guard !images.isEmpty else { throw FileActions.ActionError.noFiles }
 
+        let fm = FileManager.default
+        let staging =
+            zip
+            ? fm.temporaryDirectory
+                .appendingPathComponent("photopipe-export-\(UUID().uuidString)")
+            : nil
+        let base = staging ?? URL(fileURLWithPath: destination)
+
         var used: Set<String> = []
-        let items: [(image: ImageFile, rel: String)] = images.map { image in
+        let items = images.map { image in
             var rel = image.rel
             if format == .jpeg {
                 rel = (rel as NSString).deletingPathExtension + ".jpg"
@@ -520,30 +534,31 @@ public final class LibraryService: @unchecked Sendable {
             if flatten {
                 rel = (rel as NSString).lastPathComponent
             }
-            let name = FileActions.uniqueName(rel) { used.contains($0.lowercased()) }
+            let name = FileActions.uniqueName(rel) { candidate in
+                used.contains(candidate.lowercased())
+                    || (staging == nil
+                        && fm.fileExists(atPath: base.appendingPathComponent(candidate).path))
+            }
             used.insert(name.lowercased())
-            return (image, name)
+            return Exporter.Plan.Item(image: image, target: base.appendingPathComponent(name))
         }
 
-        let fm = FileManager.default
-        if zip {
-            let staging = fm.temporaryDirectory
-                .appendingPathComponent("photopipe-export-\(UUID().uuidString)")
-            defer { try? fm.removeItem(at: staging) }
-            for (image, rel) in items {
-                try write(
-                    image, format: format, quality: quality,
-                    to: staging.appendingPathComponent(rel), staging: true)
-            }
-            try FileActions.zipDirectory(at: staging, to: destination)
-        } else {
-            let base = URL(fileURLWithPath: destination)
-            for (image, rel) in items {
-                let target = FileActions.uniqueURL(for: base.appendingPathComponent(rel))
-                try write(image, format: format, quality: quality, to: target, staging: false)
-            }
+        if let staging { try fm.createDirectory(at: staging, withIntermediateDirectories: true) }
+        return exporter.start(
+            plan: Exporter.Plan(items: items, destination: destination, staging: staging)
+        ) { image, target in
+            try self.write(image, format: format, quality: quality, to: target, staging: zip)
         }
-        return items.count
+    }
+
+    public func exportStatus(id: String) throws -> Exporter.Progress {
+        guard let progress = exporter.progress(id: id) else { throw ServiceError.unknownExport(id) }
+        return progress
+    }
+
+    public func cancelExport(id: String) throws -> Exporter.Progress {
+        guard let progress = exporter.cancel(id: id) else { throw ServiceError.unknownExport(id) }
+        return progress
     }
 
     private func write(

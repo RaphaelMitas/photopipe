@@ -73,6 +73,45 @@ test("export from the loupe returns to the grid with that photo selected", async
   );
 });
 
+test("a running export reports how far it got, and finishes", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("open-export").click();
+  await page.getByTestId("select-all").click();
+  await page.getByTestId("run-export").click();
+
+  // The request that starts the delivery returns at once: the row is there
+  // long before the files are, counting up as they land.
+  const running = page.getByTestId("job-running");
+  await expect(running).toBeVisible();
+  await expect(running).toContainText("of 4");
+  await expect(page.getByTestId("job-bar")).toBeVisible();
+
+  const done = page.getByTestId("job-done");
+  await expect(done).toBeVisible();
+  await expect(done).toContainText("4 files");
+  await expect(page.getByTestId("job-running")).toHaveCount(0);
+});
+
+test("a long export can be cancelled and says so", async ({ page }) => {
+  await page.goto("/");
+  await page.getByTestId("root-input").fill("/fake");
+  await page.getByTestId("root-submit").click();
+  // 200 photos, delivered one per poll: still running when cancel lands.
+  await page.getByTestId("shoot-2026-08-01_dolomites").click();
+  await page.getByTestId("open-export").click();
+  await page.getByTestId("select-all").click();
+  await page.getByTestId("run-export").click();
+
+  await expect(page.getByTestId("job-running")).toBeVisible();
+  await page.getByTestId("job-cancel").click();
+  const stopped = page.getByTestId("job-cancelled");
+  await expect(stopped).toContainText("Cancelled");
+  // What did land is still a delivery, so it stays revealable.
+  await expect(stopped.getByTitle("Reveal in Finder")).toBeVisible();
+});
+
 test("format choice shows JPEG quality and names the button", async ({
   page,
 }) => {

@@ -52,6 +52,7 @@ public final class Dispatcher {
             return .shutdown(.success(id: request.id, result: .object(["bye": .bool(true)])))
         case "setRoot", "listShoots", "listImages", "thumbnail", "render", "setRating",
             "setEdit", "rawDefaults", "status", "reveal", "trash", "exportFiles",
+            "exportStatus", "cancelExport",
             "createProject", "importFiles", "updateProject", "renameProject",
             "scoreShoot", "scoreStatus":
             return .respond(libraryResponse(request))
@@ -76,6 +77,19 @@ public final class Dispatcher {
             let right = value["right"]?.doubleValue, let bottom = value["bottom"]?.doubleValue
         else { return nil }
         return CropRect(left: left, top: top, right: right, bottom: bottom).sanitized()
+    }
+
+    private static func exportProgress(_ job: Exporter.Progress) -> JSONValue {
+        .object([
+            "id": .string(job.id),
+            "done": .number(Double(job.done)),
+            "failed": .number(Double(job.failed)),
+            "total": .number(Double(job.total)),
+            "running": .bool(job.running),
+            "cancelled": .bool(job.cancelled),
+            "destination": .string(job.destination),
+            "error": job.error.map { .string($0) } ?? .null,
+        ])
     }
 
     private func libraryResponse(_ request: Request) -> Response {
@@ -215,14 +229,22 @@ public final class Dispatcher {
                     LibraryService.ExportFormat(
                         rawValue: request.params?["format"]?.stringValue ?? "original")
                     ?? .original
-                let count = try library.exportFiles(
+                let job = try library.startExport(
                     shoot: shoot, paths: paths, destination: destination,
                     zip: request.params?["zip"]?.boolValue ?? false,
                     flatten: request.params?["flatten"]?.boolValue ?? true,
                     format: format,
                     quality: request.params?["quality"]?.intValue ?? 90)
-                return .success(
-                    id: request.id, result: .object(["files": .number(Double(count))]))
+                return .success(id: request.id, result: Self.exportProgress(job))
+            case "exportStatus", "cancelExport":
+                guard let id = request.params?["id"]?.stringValue else {
+                    return .failure(id: request.id, code: "invalid_params", message: "id required")
+                }
+                let job =
+                    request.method == "exportStatus"
+                    ? try library.exportStatus(id: id)
+                    : try library.cancelExport(id: id)
+                return .success(id: request.id, result: Self.exportProgress(job))
             case "createProject":
                 guard let day = request.params?["day"]?.stringValue,
                     let name = request.params?["name"]?.stringValue
@@ -321,6 +343,8 @@ public final class Dispatcher {
             return .failure(
                 id: request.id, code: "invalid_project_day",
                 message: "\(day) is not a YYYY-MM-DD date")
+        } catch LibraryService.ServiceError.unknownExport(let id) {
+            return .failure(id: request.id, code: "unknown_export", message: id)
         } catch LibraryService.ServiceError.projectExists(let folder) {
             return .failure(
                 id: request.id, code: "project_exists", message: "\(folder) already exists")
