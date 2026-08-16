@@ -1,3 +1,17 @@
+import { Button } from "@photopipe/ui/components/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@photopipe/ui/components/dialog";
+import { Input } from "@photopipe/ui/components/input";
+import { Label } from "@photopipe/ui/components/label";
+import { Skeleton } from "@photopipe/ui/components/skeleton";
+import { Textarea } from "@photopipe/ui/components/textarea";
+import { cn } from "@photopipe/ui/lib/utils";
 import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
 import { fileSrc, type ImageFile, type Shoot } from "@/lib/core";
@@ -7,20 +21,6 @@ import {
   useThumbnail,
   useUpdateProject,
 } from "@/lib/queries";
-import { cn } from "@/lib/utils";
-import { Button } from "./ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "./ui/dialog";
-import { Input } from "./ui/input";
-import { Label } from "./ui/label";
-import { Skeleton } from "./ui/skeleton";
-import { Textarea } from "./ui/textarea";
 
 function CoverChoice({
   image,

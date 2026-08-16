@@ -1,9 +1,9 @@
+import { Button } from "@photopipe/ui/components/button";
+import { Card, CardContent } from "@photopipe/ui/components/card";
+import { Skeleton } from "@photopipe/ui/components/skeleton";
 import { Images, Plus, Settings2 } from "lucide-react";
 import { fileSrc, type Shoot } from "@/lib/core";
 import { useThumbnail } from "@/lib/queries";
-import { Button } from "./ui/button";
-import { Card, CardContent } from "./ui/card";
-import { Skeleton } from "./ui/skeleton";
 
 function Cover({ path }: { path: string | null }) {
   const thumb = useThumbnail(path ? { path, mtime: 0 } : undefined);

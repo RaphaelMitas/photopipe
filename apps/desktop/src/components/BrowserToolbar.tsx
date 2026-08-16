@@ -1,15 +1,15 @@
-import { ArrowUpDown, LayoutGrid, Rows3, Sparkles } from "lucide-react";
-import type { ScoreProgress } from "@/lib/queries";
-import type { SortKey } from "@/lib/sort";
-import { Button } from "./ui/button";
-import { ButtonGroup } from "./ui/button-group";
+import { Button } from "@photopipe/ui/components/button";
+import { ButtonGroup } from "@photopipe/ui/components/button-group";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from "./ui/dropdown-menu";
+} from "@photopipe/ui/components/dropdown-menu";
+import { ArrowUpDown, LayoutGrid, Rows3, Sparkles } from "lucide-react";
+import type { ScoreProgress } from "@/lib/queries";
+import type { SortKey } from "@/lib/sort";
 
 export type ViewMode = "grid" | "list";
 

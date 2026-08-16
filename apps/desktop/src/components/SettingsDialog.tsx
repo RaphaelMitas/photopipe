@@ -1,4 +1,4 @@
-import { Button } from "./ui/button";
+import { Button } from "@photopipe/ui/components/button";
 import {
   Dialog,
   DialogContent,
@@ -6,9 +6,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "./ui/dialog";
-import { Label } from "./ui/label";
-import { Switch } from "./ui/switch";
+} from "@photopipe/ui/components/dialog";
+import { Label } from "@photopipe/ui/components/label";
+import { Switch } from "@photopipe/ui/components/switch";
 
 type Props = {
   open: boolean;

@@ -1,9 +1,9 @@
+import { Button } from "@photopipe/ui/components/button";
+import { cn } from "@photopipe/ui/lib/utils";
 import { RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Edit } from "@/lib/core";
 import { type CurvePoint, isIdentityCurve, sampleCurve } from "@/lib/curve";
-import { cn } from "@/lib/utils";
-import { Button } from "./ui/button";
 
 export type CurveChannel = "rgb" | "red" | "green" | "blue";
 

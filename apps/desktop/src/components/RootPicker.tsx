@@ -1,16 +1,16 @@
-import { open } from "@tauri-apps/plugin-dialog";
-import { FolderOpen, History } from "lucide-react";
-import { useEffect, useState } from "react";
-import { listRoots } from "@/lib/roots";
-import { Photopipe } from "./Photopipe";
-import { Button } from "./ui/button";
-import { Input } from "./ui/input";
+import { Button } from "@photopipe/ui/components/button";
+import { Input } from "@photopipe/ui/components/input";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "./ui/tooltip";
+} from "@photopipe/ui/components/tooltip";
+import { open } from "@tauri-apps/plugin-dialog";
+import { FolderOpen, History } from "lucide-react";
+import { useEffect, useState } from "react";
+import { listRoots } from "@/lib/roots";
+import { Photopipe } from "./Photopipe";
 
 function folderName(path: string): string {
   return path.replace(/\/+$/, "").split("/").pop() || path;
