@@ -120,6 +120,11 @@ public final class Renderer {
         file: ImageFile, edit: Edit, quality: Double, to destination: URL
     ) throws {
         let image = try sourceImage(for: file, edit: edit, maxPixel: nil)
+        // A full-resolution render holds on to surfaces the context will happily
+        // keep for the next one. Nothing else reuses them, and about a hundred
+        // in they stop being handed out at all: every render after that comes
+        // back nil while memory still looks fine.
+        defer { exportContext.clearCaches() }
         guard
             let jpeg = exportContext.jpegRepresentation(
                 of: image, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,

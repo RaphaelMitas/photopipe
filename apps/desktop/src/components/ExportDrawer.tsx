@@ -53,9 +53,11 @@ function jobDetail(job: ExportJob): string {
   }
   if (job.error) return job.error;
   const files = `${job.done} ${job.done === 1 ? "file" : "files"}`;
-  const failed = job.failed > 0 ? ` · ${job.failed} failed` : "";
   const stopped = job.cancelled ? "Cancelled · " : "";
-  return `${stopped}${files}${failed} · ${job.destination}`;
+  if (job.failed > 0) {
+    return `${stopped}${files} · ${job.failed} failed${job.reason ? `: ${job.reason}` : ""}`;
+  }
+  return `${stopped}${files} · ${job.destination}`;
 }
 
 function Section({

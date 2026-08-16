@@ -520,6 +520,8 @@ export type ExportProgress = {
   cancelled: boolean;
   destination: string;
   error: string | null;
+  /// Why the first file that failed did, when the delivery itself went through.
+  reason: string | null;
 };
 
 export type ExportJob = ExportProgress & {
@@ -609,6 +611,7 @@ export function useExportJobs() {
           cancelled: false,
           destination: request.destination,
           error: String(error),
+          reason: null,
         },
         ...current,
       ]);

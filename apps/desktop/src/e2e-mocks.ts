@@ -136,6 +136,7 @@ type ExportJob = {
   cancelled: boolean;
   destination: string;
   error: null;
+  reason: null;
 };
 
 // One photo per poll, so a spec can watch the bar move instead of catching a
@@ -231,6 +232,7 @@ export const E2E_HANDLERS: Record<
       cancelled: false,
       destination: String(params.destination),
       error: null,
+      reason: null,
     };
     exportJobs.set(job.id, job);
     return { ...job };

@@ -15,6 +15,10 @@ public final class Exporter: @unchecked Sendable {
         /// Set when the delivery as a whole did not happen. Individual files
         /// that failed are in `failed` and leave this nil.
         public var error: String?
+        /// Why the first file that failed did, kept even when the rest of the
+        /// delivery succeeded. A count on its own says something went wrong
+        /// without saying what, which is no help to whoever has to fix it.
+        public var reason: String?
     }
 
     /// Names are decided here, before the first write, so four writers cannot
@@ -62,7 +66,7 @@ public final class Exporter: @unchecked Sendable {
         nextID += 1
         let initial = Progress(
             id: id, total: plan.items.count, destination: plan.destination,
-            done: 0, failed: 0, running: true, cancelled: false, error: nil)
+            done: 0, failed: 0, running: true, cancelled: false, error: nil, reason: nil)
         jobs[id] = initial
         tasks[id] = Task.detached(priority: .utility) { [weak self] in
             await self?.run(id: id, plan: plan, write: write)
@@ -108,7 +112,12 @@ public final class Exporter: @unchecked Sendable {
                 if Task.isCancelled { group.cancelAll() } else { submit() }
                 if let failure, firstFailure == nil { firstFailure = failure }
                 lock.withLock {
-                    if failure == nil { jobs[id]?.done += 1 } else { jobs[id]?.failed += 1 }
+                    if failure == nil {
+                        jobs[id]?.done += 1
+                    } else {
+                        jobs[id]?.failed += 1
+                        jobs[id]?.reason = firstFailure
+                    }
                 }
             }
         }
@@ -124,6 +133,7 @@ public final class Exporter: @unchecked Sendable {
                 // that exists: a cancelled zip delivered nothing at all.
                 written = 0
                 failed = 0
+                firstFailure = nil
             } else if written > 0 {
                 do {
                     try FileActions.zipDirectory(at: staging, to: plan.destination)
@@ -144,6 +154,7 @@ public final class Exporter: @unchecked Sendable {
             jobs[id]?.running = false
             jobs[id]?.cancelled = cancelled
             jobs[id]?.error = error
+            jobs[id]?.reason = failed > 0 ? firstFailure : nil
             tasks[id] = nil
         }
     }

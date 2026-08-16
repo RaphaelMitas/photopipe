@@ -89,6 +89,7 @@ public final class Dispatcher {
             "cancelled": .bool(job.cancelled),
             "destination": .string(job.destination),
             "error": job.error.map { .string($0) } ?? .null,
+            "reason": job.reason.map { .string($0) } ?? .null,
         ])
     }
 
