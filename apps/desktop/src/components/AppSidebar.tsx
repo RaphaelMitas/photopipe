@@ -1,5 +1,4 @@
 import { Button } from "@photopipe/ui/components/button";
-import { Photopipe } from "@photopipe/ui/components/photopipe-mark";
 import {
   Sidebar,
   SidebarContent,
@@ -7,11 +6,9 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
-  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarTrigger,
 } from "@photopipe/ui/components/sidebar";
 import { Switch } from "@photopipe/ui/components/switch";
 import {
@@ -27,6 +24,7 @@ import {
   RatingHistogram,
   type RatingOp,
 } from "./RatingFilter";
+import { SidebarBrandHeader } from "./SidebarBrandHeader";
 
 type Props = {
   currentShoot: Shoot | undefined;
@@ -66,16 +64,8 @@ export function AppSidebar({
   onSettings,
 }: Props) {
   return (
-    <Sidebar collapsible="icon">
-      <SidebarHeader>
-        <div className="flex items-center gap-2 px-2 py-1">
-          <Photopipe className="h-6 w-6 shrink-0" />
-          <span className="font-heading font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
-            Photopipe
-          </span>
-          <SidebarTrigger className="ml-auto text-muted-foreground" />
-        </div>
-      </SidebarHeader>
+    <Sidebar>
+      <SidebarBrandHeader />
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupContent>
@@ -84,19 +74,16 @@ export function AppSidebar({
                 <SidebarMenuButton
                   data-testid="back-to-shoots"
                   onClick={onBack}
-                  tooltip="All shoots"
                 >
                   <ChevronLeft className="shrink-0" />
-                  <span className="group-data-[collapsible=icon]:hidden">
-                    All shoots
-                  </span>
+                  <span>All shoots</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
         {currentShoot && (
-          <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+          <SidebarGroup>
             <SidebarGroupLabel>Project</SidebarGroupLabel>
             <SidebarGroupContent
               data-testid="current-shoot"
@@ -157,7 +144,7 @@ export function AppSidebar({
             </SidebarGroupContent>
           </SidebarGroup>
         )}
-        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+        <SidebarGroup>
           <SidebarGroupLabel className="justify-between">
             Rating
             <RatingFilterOps
@@ -186,7 +173,7 @@ export function AppSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+        <SidebarGroup>
           <SidebarGroupLabel>View</SidebarGroupLabel>
           <SidebarGroupContent className="px-2 py-1">
             <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
@@ -201,7 +188,7 @@ export function AppSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter className="group-data-[collapsible=icon]:hidden">
+      <SidebarFooter>
         <div className="flex items-center gap-1 px-2 py-1">
           <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">
             {rootPath}

@@ -193,15 +193,44 @@ test("grid and list are two views of the same set", async ({ page }) => {
   await expect(page.getByTestId("grid")).toBeVisible();
 });
 
+const sidebarTrigger = (page: import("@playwright/test").Page) =>
+  page.locator("[data-slot='sidebar'] [data-slot='sidebar-trigger']");
+
+const headerTrigger = (page: import("@playwright/test").Page) =>
+  page.locator("header [data-slot='sidebar-trigger']");
+
+const sidebar = (page: import("@playwright/test").Page) =>
+  page.locator("[data-slot='sidebar']");
+
 test("the sidebar collapses in browse and loupe alike", async ({ page }) => {
   await openZell(page);
-  await expect(page.locator("[data-slot='sidebar-trigger']")).toBeVisible();
+  await expect(headerTrigger(page)).toBeHidden();
+
+  // The sidebar slides out whole, so the header takes over its trigger.
+  await sidebarTrigger(page).click();
+  await expect(sidebar(page)).toHaveAttribute("data-state", "collapsed");
+  await headerTrigger(page).click();
+  await expect(sidebar(page)).toHaveAttribute("data-state", "expanded");
+  await expect(headerTrigger(page)).toBeHidden();
 
   // …and in the loupe, where the sidebar becomes the photo's options.
   await page.getByTestId("thumb").first().click();
   await expect(page.getByTestId("loupe")).toBeVisible();
-  await expect(page.locator("[data-slot='sidebar-trigger']")).toBeVisible();
+  await sidebarTrigger(page).click();
+  await expect(sidebar(page)).toHaveAttribute("data-state", "collapsed");
+  await headerTrigger(page).click();
   await expect(page.getByTestId("back-to-grid")).toBeVisible();
+});
+
+test("narrow windows keep a way back to the sidebar", async ({ page }) => {
+  // Below the mobile breakpoint the sidebar is a sheet: its own trigger goes
+  // with it, so the header carries the only way to open it again.
+  await page.setViewportSize({ width: 600, height: 800 });
+  await openZell(page);
+  await expect(page.getByTestId("back-to-shoots")).toBeHidden();
+
+  await page.locator("header [data-slot='sidebar-trigger']").click();
+  await expect(page.getByTestId("back-to-shoots")).toBeVisible();
 });
 
 test("a new project is created from the library and opens empty", async ({
