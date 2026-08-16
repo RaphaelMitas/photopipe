@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
@@ -29,6 +30,7 @@
     "sonner": "^2.0.7"
   },
   "devDependencies": {
+    "@photopipe/tsconfig": "workspace:*",
     "@playwright/test": "1.62.1",
     "@tailwindcss/vite": "4.3.3",
     "@tauri-apps/cli": "2.11.4",
