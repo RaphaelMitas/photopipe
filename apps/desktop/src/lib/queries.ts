@@ -10,11 +10,11 @@ import {
   type ImageFile,
   isRawFile,
   normalizeImage,
+  type RawDefaultsResult,
   type SetEditResult,
   type SetRatingResult,
   type Shoot,
   type StatusResult,
-  type WhiteBalanceResult,
 } from "./core";
 
 export function useShoots(enabled: boolean) {
@@ -45,13 +45,10 @@ export type ScoreProgress = {
 
 const RATED_OFFER_MS = 8000;
 
-/// Scores reach the grid through `listImages`, so the images are refetched when
-/// the pass ends rather than on every tick. `justRated` is the short window
-/// afterwards where the browser can hand the sort over.
-///
-/// Every fetch asks the core to score, not just the first: starting a pass that
-/// has nothing left to do is free, and it is what picks up photos imported into
-/// a project that is already open.
+/// Scores reach the grid through `listImages`, so images refetch when the pass
+/// ends, not every tick. `justRated` is the window where the browser can hand
+/// the sort over. Every fetch asks the core to score, not just the first: an
+/// empty pass is free, and it is what picks up newly imported photos.
 export function useScoring(shoot: string | null, enabled: boolean) {
   const client = useQueryClient();
   const wasRunning = useRef(false);
@@ -81,8 +78,7 @@ export function useScoring(shoot: string | null, enabled: boolean) {
     return () => clearTimeout(timer);
   }, [running, shoot, client]);
 
-  // Turning rating off mid-pass leaves a stale `running` in the cache, which
-  // would freeze the toolbar's progress line where it stopped.
+  // a stale `running` would freeze the toolbar's progress line where it stopped
   return { progress: enabled ? (query.data ?? null) : null, justRated };
 }
 
@@ -137,8 +133,7 @@ export function useRender(file: RenderFile, edit: Edit) {
   });
 }
 
-/// Native-resolution render for the zoomed loupe; only worth requesting once
-/// the photo actually outresolves the preview render.
+/// Only worth requesting once the photo outresolves the preview render.
 export function useFullRender(
   file: (RenderFile & { width: number; height: number }) | undefined,
   edit: Edit,
@@ -161,13 +156,13 @@ export function usePrefetchRender(file: RenderFile, edit: Edit | undefined) {
   }, [queryClient, file, edit]);
 }
 
-export function useWhiteBalance(
+export function useRawDefaults(
   file: { path: string; mtime: number; ext: string } | undefined,
 ) {
   return useQuery({
-    queryKey: ["whiteBalance", file?.path, file?.mtime],
+    queryKey: ["rawDefaults", file?.path, file?.mtime],
     queryFn: async () =>
-      coreRequest<WhiteBalanceResult>("whiteBalance", { path: file?.path }),
+      coreRequest<RawDefaultsResult>("rawDefaults", { path: file?.path }),
     enabled: file !== undefined && isRawFile(file),
     staleTime: Number.POSITIVE_INFINITY,
   });
@@ -389,9 +384,7 @@ export type ScanProgress = Pick<
 >;
 
 const IDLE_POLL_MS = 2000;
-/// While the core is still indexing there is a live counter to drive, and the
-/// shoot list is cheap; the expensive per-shoot refetches are rate-limited by
-/// the core, not by this interval.
+/// The shoot list is cheap; per-shoot refetches are rate-limited by the core.
 const INDEXING_POLL_MS = 250;
 
 const NOT_SCANNING: ScanProgress = {
@@ -436,8 +429,7 @@ export function useLibrarySync(
           queryClient.invalidateQueries({ queryKey: ["shoots"] });
           for (const shoot of status.changedShoots ?? []) {
             queryClient.invalidateQueries({ queryKey: ["images", shoot] });
-            // Photos that arrived in a project you are looking at have to be
-            // rated too, and only a fresh scoreShoot picks them up.
+            // newly arrived photos need rating, and only scoreShoot picks them up
             queryClient.invalidateQueries({ queryKey: ["scoring", shoot] });
           }
           seen.current = status.generation;

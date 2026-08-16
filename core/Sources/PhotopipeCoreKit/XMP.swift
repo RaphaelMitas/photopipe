@@ -29,10 +29,8 @@ public enum XMP {
         return nil
     }
 
-    // Exponents appear in foreign sidecars; non-finite values must never
-    // reach the edit model (they poison JSON encoding and CI geometry), and
-    // finite-but-huge ones would trap the integer tag writes later. No real
-    // crs value exceeds Kelvin range, so a generous magnitude cap is safe.
+    // foreign sidecars carry exponents, and non-finite or huge values poison
+    // JSON encoding, CI geometry and the integer tag writes downstream
     private static let number = "([-+]?[\\d.]+(?:[eE][-+]?\\d+)?)"
     static let scalarMagnitudeLimit = 1e6
 
@@ -42,8 +40,7 @@ public enum XMP {
         return parsed
     }
 
-    // `Int(Double)` traps beyond Int.max; edits can arrive over IPC with
-    // values the parsers never vetted.
+    // `Int(Double)` traps beyond Int.max, and IPC edits skip the parsers
     private static func saneInt(_ value: Double) -> Int {
         Int(min(max(value.rounded(), -scalarMagnitudeLimit), scalarMagnitudeLimit))
     }
@@ -96,6 +93,7 @@ public enum XMP {
             shadows: parseDouble("Shadows2012", in: text) ?? 0,
             temperature: parseDouble(isRaw ? "Temperature" : "IncrementalTemperature", in: text),
             tint: parseDouble(isRaw ? "Tint" : "IncrementalTint", in: text),
+            denoise: isRaw ? parseDouble("LuminanceSmoothing", in: text) : nil,
             vibrance: parseDouble("Vibrance", in: text) ?? 0,
             saturation: parseDouble("Saturation", in: text) ?? 0,
             curveRGB: parseCurve("ToneCurvePV2012", in: text),
@@ -109,12 +107,9 @@ public enum XMP {
             rotation: rotation(fromXMP: parseOrientation(in: text), base: baseOrientation))
     }
 
-    // tiff:Orientation stores the ABSOLUTE display orientation (Lightroom
-    // mirrors the file's own orientation there even without a user turn), so
-    // the model's additive rotation is the difference against the base. A
-    // display rotation on top of any orientation only changes its degrees:
-    // R(k)∘(R(r)∘M) = R(r+k)∘M, so a mirrored base keeps its mirror.
-    // Values follow exiftool's "Mirror horizontal and rotate N CW" naming.
+    // tiff:Orientation is ABSOLUTE, so our additive rotation is its difference
+    // against the base. R(k)∘(R(r)∘M) = R(r+k)∘M, so a mirrored base stays
+    // mirrored. Naming follows exiftool's "Mirror horizontal and rotate N CW".
     private static let orientationParts: [Int: (mirrored: Bool, degrees: Int)] = [
         1: (false, 0), 6: (false, 90), 3: (false, 180), 8: (false, 270),
         2: (true, 0), 7: (true, 90), 4: (true, 180), 5: (true, 270),
@@ -147,16 +142,13 @@ public enum XMP {
     }
 
     /// Lightroom's crop-reset keeps the Crop* values and flips HasCrop to
-    /// False, so HasCrop is authoritative when present. The values themselves
-    /// are clamped and rejected when degenerate — they come from foreign
-    /// files.
+    /// False, so HasCrop wins when present.
     private static func cropRect(_ value: (String) -> Double?) -> CropRect? {
         guard let left = value("Left"), let top = value("Top"),
             let right = value("Right"), let bottom = value("Bottom"),
             left.isFinite, top.isFinite, right.isFinite, bottom.isFinite
         else { return nil }
-        // A straightened crop may run past the frame box over the rotated
-        // photo's overhang; one frame beyond matches Renderer.applyCrop.
+        // straightened crops overhang the frame box; matches Renderer.saneCrop
         let clamp = { (value: Double) in min(max(value, -1), 2) }
         let rect = CropRect(
             left: clamp(left), top: clamp(top), right: clamp(right), bottom: clamp(bottom))
@@ -170,8 +162,7 @@ public enum XMP {
         case unreadableOrientation(String)
     }
 
-    /// The file's own display orientation (nil when unreadable), the baseline
-    /// the absolute tiff:Orientation is compared against.
+    /// The baseline the absolute tiff:Orientation is compared against.
     static func baseOrientation(at url: URL) -> Int? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
             let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil)
@@ -181,22 +172,17 @@ public enum XMP {
         return properties[kCGImagePropertyOrientation as String] as? Int ?? 1
     }
 
-    /// The XMP packet's own tiff:Orientation, read from the raw bytes.
-    /// ImageIO's metadata API reconciles EXIF and XMP into one value, which
-    /// hides exactly the difference the additive-rotation model needs.
+    /// Read from raw bytes: ImageIO reconciles EXIF and XMP into one value,
+    /// hiding exactly the difference the additive-rotation model needs.
     static func embeddedXMPOrientation(at url: URL) -> Int? {
         guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else {
             return nil
         }
-        // JPEGs get a real segment walk so a decoy packet in a comment or
-        // the compressed stream cannot win, and the scan stops at the image
-        // data instead of walking a whole file with no packet.
+        // a segment walk, so a decoy packet in a comment cannot win
         if data.starts(with: [0xFF, 0xD8]) {
             return jpegXMPPacket(in: data).flatMap { parseOrientation(in: $0) }
         }
-        // Other containers (HEIC, PNG, TIFF): delimiter scan over the head of
-        // the file. Real packets are well under a megabyte; a crafted
-        // delimiter pair must not become a giant String.
+        // HEIC, PNG, TIFF: a crafted delimiter pair must not become a giant String
         let head = data.prefix(16 << 20)
         guard let start = head.range(of: Data("<x:xmpmeta".utf8)),
             let end = head.range(
@@ -273,6 +259,7 @@ public enum XMP {
             shadows: scalars["Shadows2012"] ?? 0,
             temperature: scalars[isRaw ? "Temperature" : "IncrementalTemperature"],
             tint: scalars[isRaw ? "Tint" : "IncrementalTint"],
+            denoise: isRaw ? scalars["LuminanceSmoothing"] : nil,
             vibrance: scalars["Vibrance"] ?? 0,
             saturation: scalars["Saturation"] ?? 0,
             curveRGB: curves["ToneCurvePV2012"] ?? [],
@@ -350,16 +337,12 @@ public enum XMP {
 
     public static func writeEdit(_ edit: Edit, file: ImageFile, tool: ExifTool) throws {
         var args: [String] = []
-        // The 2012-era slider tags are XMP integers; exiftool silently drops
-        // a "10.0" for them with only a warning, so integer tags must be
-        // formatted as integers.
+        // exiftool drops a "10.0" for these integer tags with only a warning
         func integerScalar(_ tag: String, _ value: Double) {
             args.append(value == 0 ? "-XMP-crs:\(tag)=" : "-XMP-crs:\(tag)=\(saneInt(value))")
         }
-        // Replacing a list tag needs repeated `=` args: the first replaces the
-        // list, the rest add to it. `-TAG=` followed by `-TAG+=` looks
-        // equivalent but appends to the EXISTING items — every write then
-        // grows the sidecar until exiftool crawls.
+        // repeated `=` replaces the list; `+=` appends to the EXISTING items,
+        // growing the sidecar on every write until exiftool crawls
         func curve(_ tag: String, _ points: [CurvePoint]) {
             guard !Curve.isIdentity(points) else {
                 args.append("-XMP-crs:\(tag)=")
@@ -389,6 +372,11 @@ public enum XMP {
         } else {
             args.append("-XMP-crs:\(tintTag)=")
         }
+        if let denoise = edit.denoise, file.isRaw {
+            args.append("-XMP-crs:LuminanceSmoothing=\(saneInt(denoise))")
+        } else {
+            args.append("-XMP-crs:LuminanceSmoothing=")
+        }
         integerScalar("Vibrance", edit.vibrance)
         integerScalar("Saturation", edit.saturation)
         // Swift's Double interpolation switches to exponent form below 1e-4,
@@ -411,11 +399,9 @@ public enum XMP {
             edit.cropAngle == 0
                 ? "-XMP-crs:CropAngle=" : "-XMP-crs:CropAngle=\(plainDecimal(edit.cropAngle))")
         args.append(edit.hasCropComponent ? "-XMP-crs:HasCrop=True" : "-XMP-crs:HasCrop=")
-        // Absolute display orientation, like Lightroom writes it. The `#`
-        // suffix keeps exiftool in numeric mode for this tag. A failed base
-        // read must never produce a write: for sidecar files 1 is a safe
-        // default (nothing in the original is touched), but for embedded
-        // files a guessed base would be burned into the photo's real EXIF.
+        // Absolute, like Lightroom writes it; `#` keeps exiftool numeric here.
+        // An unreadable base can default to 1 only for sidecars: guessing one
+        // for an embedded file would burn it into the photo's real EXIF.
         let fileURL = URL(fileURLWithPath: file.path)
         let base =
             baseOrientation(at: fileURL) ?? (file.usesSidecar ? 1 : nil)
@@ -426,10 +412,8 @@ public enum XMP {
                 .flatMap { parseOrientation(in: $0) }
             : embeddedXMPOrientation(at: fileURL)
         if edit.normalizedRotation == 0 {
-            // No turn to record. Leave any existing tag alone — for a photo
-            // rotated by another tool the XMP value can be the only record of
-            // its orientation — and only write the base back when clearing a
-            // turn of our own (tag present and disagreeing with the base).
+            // another tool's XMP value can be the only record of its turn, so
+            // only write the base back when clearing a turn of our own
             if let currentXMP, let base, currentXMP != base {
                 args.append("-XMP-tiff:Orientation#=\(base)")
             }
@@ -441,10 +425,9 @@ public enum XMP {
                 rotation: edit.normalizedRotation, base: base)
             args.append("-XMP-tiff:Orientation#=\(absolute)")
             if !file.usesSidecar {
-                // Embedded formats: ImageIO folds the XMP value we just wrote
-                // into the merged orientation of the NEXT read, which would
-                // make base == absolute and the rotation read back as zero.
-                // Real EXIF wins that merge, so pin the base there.
+                // ImageIO folds this XMP value into the next read's merged
+                // orientation, reading the rotation back as zero. EXIF wins
+                // that merge, so pin the base there.
                 args.append("-IFD0:Orientation#=\(base)")
             }
         }

@@ -26,21 +26,23 @@ public struct CropRect: Codable, Equatable, Sendable {
     }
 }
 
-/// Every per-photo adjustment. Curve points live in the unit square with an
-/// empty array meaning the identity ramp. `temperature`/`tint` are Kelvin and
-/// green–magenta offset for raw files (nil = as shot), incremental -100..100
-/// for embedded formats where the as-shot neutral is unknowable.
-/// `cropAngle` is degrees, positive rotating the photo clockwise on screen
-/// about the photo's center while the crop rect stays axis-aligned.
-/// `rotation` is a whole-photo turn in clockwise degrees (0/90/180/270) on
-/// top of the file's own orientation; the crop rect is defined against the
-/// turned frame.
+/// Every per-photo adjustment. Curve points live in the unit square, empty
+/// meaning the identity ramp.
+/// `temperature`/`tint`: Kelvin and green–magenta for raws (nil = as shot),
+/// incremental -100..100 for embedded formats, whose neutral is unknowable.
+/// `denoise`: luminance NR 0...100, raws only. nil is the decoder's own
+/// amount, which is not zero, so nil and 0 have to stay distinct.
+/// `cropAngle`: degrees, positive clockwise on screen about the center while
+/// the crop rect stays axis-aligned.
+/// `rotation`: whole-photo turn (0/90/180/270) on top of the file's own
+/// orientation; the crop rect is against the turned frame.
 public struct Edit: Codable, Equatable, Sendable {
     public var exposure: Double
     public var highlights: Double
     public var shadows: Double
     public var temperature: Double?
     public var tint: Double?
+    public var denoise: Double?
     public var vibrance: Double
     public var saturation: Double
     public var curveRGB: [CurvePoint]
@@ -54,13 +56,13 @@ public struct Edit: Codable, Equatable, Sendable {
     public static let identity = Edit()
 
     enum CodingKeys: String, CodingKey {
-        case exposure, highlights, shadows, temperature, tint, vibrance, saturation
+        case exposure, highlights, shadows, temperature, tint, denoise, vibrance, saturation
         case curveRGB, curveRed, curveGreen, curveBlue, crop, cropAngle, rotation
     }
 
     public init(
         exposure: Double = 0, highlights: Double = 0, shadows: Double = 0,
-        temperature: Double? = nil, tint: Double? = nil,
+        temperature: Double? = nil, tint: Double? = nil, denoise: Double? = nil,
         vibrance: Double = 0, saturation: Double = 0,
         curveRGB: [CurvePoint] = [], curveRed: [CurvePoint] = [],
         curveGreen: [CurvePoint] = [], curveBlue: [CurvePoint] = [],
@@ -71,6 +73,7 @@ public struct Edit: Codable, Equatable, Sendable {
         self.shadows = shadows
         self.temperature = temperature
         self.tint = tint
+        self.denoise = denoise
         self.vibrance = vibrance
         self.saturation = saturation
         self.curveRGB = curveRGB
@@ -89,6 +92,7 @@ public struct Edit: Codable, Equatable, Sendable {
         shadows = try container.decodeIfPresent(Double.self, forKey: .shadows) ?? 0
         temperature = try container.decodeIfPresent(Double.self, forKey: .temperature)
         tint = try container.decodeIfPresent(Double.self, forKey: .tint)
+        denoise = try container.decodeIfPresent(Double.self, forKey: .denoise)
         vibrance = try container.decodeIfPresent(Double.self, forKey: .vibrance) ?? 0
         saturation = try container.decodeIfPresent(Double.self, forKey: .saturation) ?? 0
         curveRGB = try container.decodeIfPresent([CurvePoint].self, forKey: .curveRGB) ?? []
@@ -100,8 +104,8 @@ public struct Edit: Codable, Equatable, Sendable {
         rotation = try container.decodeIfPresent(Int.self, forKey: .rotation) ?? 0
     }
 
-    /// Crop fields are omitted at their defaults so uncropped edits keep the
-    /// cache keys (and sidecar JSON) they had before crop existed.
+    /// Later-added fields are omitted at their defaults, so older edits keep
+    /// the cache keys and sidecar JSON they already had.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(exposure, forKey: .exposure)
@@ -109,6 +113,7 @@ public struct Edit: Codable, Equatable, Sendable {
         try container.encode(shadows, forKey: .shadows)
         try container.encodeIfPresent(temperature, forKey: .temperature)
         try container.encodeIfPresent(tint, forKey: .tint)
+        try container.encodeIfPresent(denoise, forKey: .denoise)
         try container.encode(vibrance, forKey: .vibrance)
         try container.encode(saturation, forKey: .saturation)
         try container.encode(curveRGB, forKey: .curveRGB)

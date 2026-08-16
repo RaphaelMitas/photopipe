@@ -244,8 +244,8 @@ public final class LibraryService: @unchecked Sendable {
         ).path
     }
 
-    public func whiteBalance(path: String) throws -> (temperature: Double, tint: Double)? {
-        try renderer.whiteBalance(for: recordUnderRoot(path: path))
+    public func rawDefaults(path: String) throws -> Renderer.RawDefaults? {
+        try renderer.rawDefaults(for: recordUnderRoot(path: path))
     }
 
     private func recordUnderRoot(path: String) throws -> ImageFile {

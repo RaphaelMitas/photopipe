@@ -106,10 +106,9 @@ function imagesFor(shoot: string): ImageFile[] {
   return miscImages;
 }
 
-// The fake core has every photo rated already, so the sort by Instinct is
-// usable the moment a project opens. With ?scoring in the URL a pass takes
-// three polls instead, which is how the rating progress gets tested without
-// putting a clock into every other spec.
+// Every photo is rated already, so sorting by Instinct works the moment a
+// project opens. `?scoring` stretches a pass to three polls, which is how the
+// progress line gets tested without a clock in every other spec.
 const scorePolls = new Map<string, number>();
 const SLOW_SCORING_POLLS = 3;
 
@@ -171,10 +170,10 @@ export const E2E_HANDLERS: Record<
     target.edit = params.edit as Edit;
     return { edit: target.edit, generation: 1 };
   },
-  whiteBalance: (params) =>
+  rawDefaults: (params) =>
     String(params.path).toLowerCase().endsWith(".arw")
-      ? { temperature: 5250, tint: 8 }
-      : { temperature: null, tint: null },
+      ? { temperature: 5250, tint: 8, denoise: 38 }
+      : { temperature: null, tint: null, denoise: null },
   reveal: () => ({ revealed: true }),
   trash: (params) => {
     const paths = new Set(params.paths as string[]);

@@ -82,7 +82,7 @@ func image(_ url: URL) throws -> ImageFile {
 
     let edit = Edit(
         exposure: 1.5, highlights: -42, shadows: 18, temperature: 5600, tint: 12,
-        vibrance: 10, saturation: -5,
+        denoise: 25, vibrance: 10, saturation: -5,
         curveRGB: [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.6), CurvePoint(x: 1, y: 1)],
         curveRed: [CurvePoint(x: 0, y: 0.1), CurvePoint(x: 1, y: 0.9)])
     try XMP.writeEdit(edit, file: try image(arw), tool: .shared)
@@ -93,6 +93,7 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(read.shadows == 18)
     #expect(read.temperature == 5600)
     #expect(read.tint == 12)
+    #expect(read.denoise == 25)
     #expect(read.vibrance == 10)
     #expect(read.saturation == -5)
     #expect(read.curveRGB.count == 3)
@@ -105,6 +106,7 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(try exiftoolTag("-XMP-crs:Exposure2012", of: sidecar) == "1.5")
     #expect(try exiftoolTag("-XMP-crs:Highlights2012", of: sidecar) == "-42")
     #expect(try exiftoolTag("-XMP-crs:ColorTemperature", of: sidecar) == "5600")
+    #expect(try exiftoolTag("-XMP-crs:LuminanceSmoothing", of: sidecar) == "25")
     #expect(try exiftoolTag("-XMP-crs:ToneCurvePV2012", of: sidecar).contains("128, 153"))
 
     // Edit and rating live in the same sidecar without clobbering each other.
