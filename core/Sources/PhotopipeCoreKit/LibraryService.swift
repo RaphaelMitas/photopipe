@@ -302,6 +302,7 @@ public final class LibraryService: @unchecked Sendable {
     /// placeholder by the very next rescan.
     private func settleAfterWrite(shoot: String, image: ImageFile) -> ImageFile {
         let settled = enrich(Self.restat(image))
+        scorer.restamp(settled)
         updateSnapshot(shoot: shoot, path: image.path) { _ in settled }
         lock.lock()
         let index = self.index

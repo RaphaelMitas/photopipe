@@ -549,3 +549,42 @@ func image(_ url: URL) throws -> ImageFile {
             rating: 1)
     }
 }
+
+/// Writing to a JPEG changes its mtime and size, which is how the scorer spots
+/// a file that really changed. Our own metadata writes must not read that way,
+/// or every slider commit knocks the photo out of the sort by score.
+@Test func editingAPhotoKeepsItsScore() async throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let shoot = dir.appendingPathComponent("2026-01-01_instinct")
+    try FileManager.default.createDirectory(at: shoot, withIntermediateDirectories: true)
+    for name in ["a.JPG", "b.JPG", "c.JPG"] {
+        try writeGrayJPEG(to: shoot.appendingPathComponent(name))
+    }
+
+    let service = LibraryService(
+        thumbnailer: Thumbnailer(cacheDir: dir.appendingPathComponent("thumbs")),
+        renderer: Renderer(cacheDir: dir.appendingPathComponent("renders")))
+    _ = try service.setRoot(path: dir.path, indexPath: nil)
+    waitUntilIndexed(service)
+
+    _ = try service.scoreShoot(shoot: "2026-01-01_instinct")
+    for _ in 0..<200 {
+        if !(try service.scoreStatus(shoot: "2026-01-01_instinct")).running { break }
+        try await Task.sleep(for: .milliseconds(50))
+    }
+    let before = try service.listImages(shoot: "2026-01-01_instinct")
+    let target = shoot.appendingPathComponent("b.JPG").path
+    let score = try #require(before.first { $0.path == target }?.score)
+
+    _ = try service.setEdit(
+        shoot: "2026-01-01_instinct", path: target, edit: Edit(exposure: 0.5))
+
+    let after = try service.listImages(shoot: "2026-01-01_instinct")
+    #expect(after.first { $0.path == target }?.score == score)
+    let progress = try service.scoreStatus(shoot: "2026-01-01_instinct")
+    #expect(progress.running == false)
+    #expect(progress.done == progress.total)
+}

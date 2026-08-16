@@ -59,6 +59,21 @@ public final class Scorer: @unchecked Sendable {
         return result
     }
 
+    /// Carry a cached score onto the stamps a file has after we wrote metadata into it. That
+    /// write rewrites the file without touching a pixel, so letting the score expire would drop
+    /// the photo out of the sort and spend a Vision read arriving at the same number.
+    public func restamp(_ file: ImageFile) {
+        let (write, rows) = lock.withLock { () -> (Flush?, [(String, ScoreRow)]) in
+            guard let row = cache[file.path], row.version == Self.version, !row.matches(file)
+            else { return (nil, []) }
+            let moved = ScoreRow(
+                score: row.score, mtime: file.mtime, size: file.size, version: row.version)
+            cache[file.path] = moved
+            return (flush, [(file.path, moved)])
+        }
+        if !rows.isEmpty { write?(rows) }
+    }
+
     /// Only a running pass reports stored progress. Once it ends the answer is recomputed from
     /// the cache, so a file that changed since goes back to being unscored.
     public func progress(shoot: String, files: [ImageFile]) -> Progress {
