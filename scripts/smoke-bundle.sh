@@ -64,6 +64,21 @@ if [ "$MAS" = true ]; then
   done
   echo "  updater:  compiled out"
 
+  # App Store validation rejects a pkg whose payload is not world-readable, a
+  # known failure mode of Tauri-built bundles (tauri#13118).
+  UNREADABLE=$(find "$APP" ! -perm -004 | head -5)
+  if [ -n "$UNREADABLE" ]; then
+    echo "::error::Bundle files not world-readable; the pkg would be rejected: $UNREADABLE" >&2
+    exit 1
+  fi
+  echo "  perms:    payload is world-readable"
+
+  if ! grep -q "ITSAppUsesNonExemptEncryption" "$APP/Contents/Info.plist"; then
+    echo "::error::Info.plist lost ITSAppUsesNonExemptEncryption; every upload will stall on the export questionnaire" >&2
+    exit 1
+  fi
+  echo "  plist:    export compliance declared"
+
   entitlements() {
     codesign --display --entitlements - --xml "$1" 2>/dev/null || true
   }
@@ -72,6 +87,15 @@ if [ "$MAS" = true ]; then
     echo "  sandbox:  skipped, this bundle is not signed for the App Store yet"
     exit 0
   fi
+
+  # An app carrying a provisioning profile must claim its own identity; raw
+  # codesign does not inject these the way Xcode would.
+  for key in com.apple.application-identifier com.apple.developer.team-identifier; do
+    if ! entitlements "$APP" | grep -q "$key"; then
+      echo "::error::the app is missing $key" >&2
+      exit 1
+    fi
+  done
 
   # Miss one of these and the app is rejected, or the core silently loses the
   # file access it inherits and every read fails at runtime.

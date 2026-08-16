@@ -10,9 +10,18 @@
   sandboxed WKWebView never loads the page at all — not even tauri://localhost,
   which is served from inside the app. Photopipe itself calls nothing out; the
   updater, its only network code, is compiled out of this build.
+
+  The two identifier keys exist because CI embeds a provisioning profile, and
+  an app carrying one must claim its own identity. Xcode injects these when it
+  signs; raw codesign does not. They belong here and only here — on the core
+  they would break sandbox inheritance.
 -->
 <plist version="1.0">
 <dict>
+	<key>com.apple.application-identifier</key>
+	<string>52U823A4VX.net.photopipe.desktop</string>
+	<key>com.apple.developer.team-identifier</key>
+	<string>52U823A4VX</string>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
 	<key>com.apple.security.network.client</key>

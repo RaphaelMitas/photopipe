@@ -178,10 +178,22 @@ Two entitlement files, and the split matters. The app gets the sandbox, the
 open panel's `user-selected.read-write`, `bookmarks.app-scope` so the folder
 survives a relaunch, and `network.client`. That last one is not about the
 network: without it a sandboxed WKWebView never loads the page at all, not
-even `tauri://localhost`, which is served from inside the app. The core gets
-`app-sandbox` and `inherit` and nothing else — any further key and it stops
-inheriting the shell's file access and starts asking for its own, which it
-cannot have.
+even `tauri://localhost`, which is served from inside the app. The app also
+claims `com.apple.application-identifier` and
+`com.apple.developer.team-identifier`: an app carrying an embedded
+provisioning profile must state its own identity, and Xcode injects these at
+signing where raw `codesign` does not. The core gets `app-sandbox` and
+`inherit` and nothing else — any further key, including those two, and it
+stops inheriting the shell's file access and starts asking for its own, which
+it cannot have.
+
+Store-side plist duties are covered in config: `bundle.copyright` becomes
+`NSHumanReadableCopyright` (a submission requirement), and the `Info.plist`
+beside `tauri.conf.json` merges `ITSAppUsesNonExemptEncryption` so uploads do
+not stall in App Store Connect behind the export-compliance questionnaire.
+`smoke-bundle.sh --mas` asserts both, plus world-readable payload permissions,
+which App Store validation rejects when Tauri leaves files root-only
+(tauri#13118).
 
 exiftool stays in `Contents/Resources` despite the rule of thumb that says
 executables belong in `Contents/MacOS`. codesign seals Resources as data but
