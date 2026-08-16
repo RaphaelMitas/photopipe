@@ -18,10 +18,11 @@ import {
 import {
   centerOn,
   clampPan,
-  viewportKey,
+  regionScreenRect,
+  stillServes,
+  type ViewportRequest,
   viewportRequest,
   visibleRect,
-  visibleScreenRect,
   type ZoomState,
   zoomAt,
 } from "@/lib/zoom";
@@ -143,13 +144,22 @@ export function Loupe({
   );
   // Only ask once the gesture settles, or a pinch fires a render per frame.
   const settled = useSettled(wanted, 180);
-  const regionRender = useViewportRender(image, previewEdit, settled);
-  // A slice rendered for a view you have already moved past would sit in the
-  // wrong place, so it is drawn only while it still matches.
-  const sharp =
-    viewportKey(wanted) === viewportKey(settled)
-      ? regionRender.data
-      : undefined;
+  // The slice outlives the view it was rendered for: a drag inside its margin
+  // needs no new render, so only replace it once it stops serving.
+  const [held, setHeld] = useState<ViewportRequest | null>(null);
+  const serves = stillServes(
+    held,
+    wanted,
+    zoom.state,
+    photoBox,
+    stage.width,
+    stage.height,
+  );
+  useEffect(() => {
+    setHeld((current) => (serves ? current : settled));
+  }, [serves, settled]);
+  const regionRender = useViewportRender(image, previewEdit, held);
+  const sharp = serves ? regionRender.data : undefined;
   const sharpening = wanted !== null && !sharp;
 
   useEffect(() => {
@@ -237,15 +247,10 @@ export function Loupe({
   // The slice sits outside the zoom transform, laid out at its own on-screen
   // size, so it is never a scaled-up copy of the fitted render.
   const region =
-    sharp && zoom.state
+    sharp && held && zoom.state
       ? {
           src: sharp,
-          rect: visibleScreenRect(
-            zoom.state,
-            photoBox,
-            stage.width,
-            stage.height,
-          ),
+          rect: regionScreenRect(held.viewport, photoBox, zoom.state),
         }
       : null;
   const ratio = cropDraft
