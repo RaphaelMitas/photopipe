@@ -138,16 +138,25 @@ describe("Loupe crop mode", () => {
   });
 
   it("escape cancels, enter applies", () => {
-    const { onApplyCrop, onCancelCrop, onEditChange } = renderLoupe(
-      0,
-      0.25,
-      draft(),
-    );
+    const cancelled = renderLoupe(0, 0.25, draft());
     fireEvent.keyDown(window, { key: "Escape" });
-    expect(onCancelCrop).toHaveBeenCalled();
+    expect(cancelled.onCancelCrop).toHaveBeenCalled();
+    cleanup();
+
+    const applied = renderLoupe(0, 0.25, draft());
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(applied.onApplyCrop).toHaveBeenCalled();
+    expect(applied.onEditChange).not.toHaveBeenCalled();
+  });
+
+  it("a key after apply cannot reopen the crop that was just committed", () => {
+    const { onApplyCrop, onCropDraft } = renderLoupe(0, 0, draft());
     fireEvent.keyDown(window, { key: "Enter" });
     expect(onApplyCrop).toHaveBeenCalled();
-    expect(onEditChange).not.toHaveBeenCalled();
+    // The parent clears the draft on the next render; a nudge landing in that
+    // gap must not push the photo back into crop mode.
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(onCropDraft).not.toHaveBeenCalled();
   });
 
   it("arrow keys nudge the crop by a pixel, ten with shift", () => {
@@ -157,7 +166,6 @@ describe("Loupe crop mode", () => {
     };
     const { onCropDraft } = renderLoupe(0, 0, inset);
     fireEvent.keyDown(window, { key: "ArrowRight" });
-    // 3000x2000 test image, so one pixel is 1/3000 of the width.
     expect(onCropDraft.mock.calls[0][0].crop.left).toBeCloseTo(0.2 + 1 / 3000);
     fireEvent.keyDown(window, { key: "ArrowUp", shiftKey: true });
     expect(onCropDraft.mock.calls[1][0].crop.top).toBeCloseTo(0.2 - 10 / 2000);
@@ -345,6 +353,14 @@ describe("EditSidebar", () => {
     expect(next.crop.right).toBeCloseTo(5 / 6);
     expect(next.crop.top).toBeCloseTo(0);
     expect(next.crop.bottom).toBeCloseTo(1);
+  });
+
+  it("picking a ratio hands the keyboard back to the crop frame", () => {
+    renderEditSidebar(identityEdit, draftFromEdit(identityEdit, 3000, 2000));
+    const select = screen.getByTestId("crop-aspect");
+    select.focus();
+    fireEvent.change(select, { target: { value: "1:1" } });
+    expect(document.activeElement).not.toBe(select);
   });
 
   it("turn 90° rotates the draft and carries the crop along", () => {

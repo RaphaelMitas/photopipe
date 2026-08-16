@@ -37,7 +37,7 @@ import { Filmstrip, type FilmstripMode } from "./Filmstrip";
 export const EXPOSURE_STEP = 0.25;
 export const EXPOSURE_RANGE = 3;
 
-// Arrow nudges are counted in photo pixels; shift takes the coarse step.
+// Nudges are counted in photo pixels, not screen pixels.
 const NUDGE: Record<string, { x: number; y: number }> = {
   ArrowLeft: { x: -1, y: 0 },
   ArrowRight: { x: 1, y: 0 },
@@ -166,6 +166,11 @@ export function Loupe({
       : undefined;
   const sharpening = wanted !== null && !sharp;
 
+  // Key repeat outruns re-rendering, so a nudge composes on the ref instead of
+  // the draft this listener closed over.
+  const draftRef = useRef(cropDraft);
+  draftRef.current = cropDraft;
+
   useEffect(() => {
     if (!image) return;
     const handler = (event: KeyboardEvent) => {
@@ -177,28 +182,35 @@ export function Loupe({
       ) {
         return;
       }
-      if (cropDraft) {
-        if (event.key === "Escape") onCancelCrop();
+      const draft = draftRef.current;
+      if (draft) {
+        if (event.key === "Escape") {
+          draftRef.current = null;
+          onCancelCrop();
+        }
         // A focused button (Cancel, Reset) or the aspect select acts on
         // Enter itself.
         if (event.key === "Enter" && !target?.closest?.("button, select")) {
+          draftRef.current = null;
           onApplyCrop();
         }
         const nudge = NUDGE[event.key];
         if (nudge) {
           event.preventDefault();
           const step = event.shiftKey ? 10 : 1;
-          onCropDraft({
-            ...cropDraft,
+          const nudged = {
+            ...draft,
             crop: moveCrop(
-              cropDraft.crop,
+              draft.crop,
               (nudge.x * step) / displayWidth,
               (nudge.y * step) / displayHeight,
-              cropDraft.angle,
+              draft.angle,
               displayWidth,
               displayHeight,
             ),
-          });
+          };
+          draftRef.current = nudged;
+          onCropDraft(nudged);
         }
         return;
       }
@@ -248,7 +260,6 @@ export function Loupe({
     images.length,
     index,
     edit,
-    cropDraft,
     displayWidth,
     displayHeight,
     onApplyCrop,

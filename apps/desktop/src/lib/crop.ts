@@ -340,9 +340,9 @@ export function moveCrop(
 export type CropHandle = "tl" | "tr" | "bl" | "br" | "t" | "b" | "l" | "r";
 
 /// Drag a handle by (dx, dy), bounded only by the rotated photo's coverage
-/// and the minimum size. `ratio` locks the pixel aspect: on a corner the
-/// width leads and the opposite edge anchors, on an edge the dragged axis
-/// leads and the other opens about the center. When the full delta would
+/// and the minimum size. `ratio` locks the pixel aspect: a corner drag leads
+/// with width and anchors the opposite edge, an edge drag opens the other
+/// axis about the center. When the full delta would
 /// leave the rotated photo, the largest feasible fraction applies, so a
 /// fast drag still lands flush on the border instead of freezing.
 export function resizeCrop(
@@ -393,7 +393,16 @@ export function resizeCrop(
   const fraction = largestFeasible((t) =>
     cropInsideImage(apply(t), angleDeg, imageWidth, imageHeight),
   );
-  return snapToBox(apply(fraction), angleDeg, imageWidth, imageHeight);
+  // A locked ratio reshapes the rect even at fraction 0, so a crop that does
+  // not already match the lock starts outside the photo and no fraction is
+  // feasible. Pull it back in rather than returning blank edges.
+  const resized = constrainCrop(
+    apply(fraction),
+    angleDeg,
+    imageWidth,
+    imageHeight,
+  );
+  return snapToBox(resized, angleDeg, imageWidth, imageHeight);
 }
 
 /// The pixel width/height ratio a dropdown selection locks the crop to, in

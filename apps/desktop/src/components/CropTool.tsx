@@ -1,7 +1,7 @@
 import { Button } from "@photopipe/ui/components/button";
 import { Check, ChevronDown, RotateCw, X } from "lucide-react";
 import { useRef, useState } from "react";
-import type { CropRect, ImageFile } from "@/lib/core";
+import { type CropRect, type ImageFile, identityEdit } from "@/lib/core";
 import {
   aspectRatioFor,
   type Box,
@@ -46,8 +46,7 @@ const ASPECTS: [string, string][] = [
 ];
 
 /// The dropdown entry a crop already sits at, so re-entering crop mode keeps
-/// a locked shape locked. Unflipped matches win, and an unrecognised shape
-/// falls back to Original without reshaping the rect.
+/// a locked shape locked.
 function matchAspect(
   crop: CropRect,
   displayWidth: number,
@@ -188,13 +187,7 @@ export function CropPanel({
           data-testid="crop-reset"
           disabled={isIdentityDraft(draft)}
           onClick={() =>
-            onDraft({
-              crop: fullCrop,
-              angle: 0,
-              rotation: 0,
-              aspect: "original",
-              flipped: false,
-            })
+            onDraft(draftFromEdit(identityEdit, image.width, image.height))
           }
           className="ml-auto h-6 px-1.5 text-[10px] text-muted-foreground"
         >
@@ -210,9 +203,11 @@ export function CropPanel({
             <select
               data-testid="crop-aspect"
               value={draft.aspect}
-              onChange={(event) =>
-                onDraft(applyAspect({ ...draft, aspect: event.target.value }))
-              }
+              onChange={(event) => {
+                // Hands the arrow keys back to the crop frame.
+                event.target.blur();
+                onDraft(applyAspect({ ...draft, aspect: event.target.value }));
+              }}
               className="h-8 w-full appearance-none rounded-3xl border border-transparent bg-input/50 px-3 pr-8 text-foreground text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
             >
               {ASPECTS.map(([value, label]) => (
@@ -506,28 +501,14 @@ export function CropOverlay({
     height: percent(crop.bottom - crop.top),
   };
 
-  // The drawn handles are thin; the pseudo-element gives each one a grab area
-  // 8px wider on every side without changing how it looks.
+  // The drawn handles are thin, so the pseudo-element widens what you can
+  // grab without changing what you see.
   const hitArea = "before:absolute before:-inset-2 before:content-['']";
   const corner = `absolute size-3.5 border-2 border-white ${hitArea}`;
   const edge = `absolute bg-white ${hitArea}`;
+  // Corners last: on a crop small enough for the grab areas to overlap, the
+  // later element wins the click, and a corner has nowhere else to grab from.
   const handles: [Handle, string][] = [
-    [
-      "tl",
-      `${corner} -top-px -left-px border-r-0 border-b-0 cursor-nwse-resize`,
-    ],
-    [
-      "tr",
-      `${corner} -top-px -right-px border-l-0 border-b-0 cursor-nesw-resize`,
-    ],
-    [
-      "bl",
-      `${corner} -bottom-px -left-px border-r-0 border-t-0 cursor-nesw-resize`,
-    ],
-    [
-      "br",
-      `${corner} -bottom-px -right-px border-l-0 border-t-0 cursor-nwse-resize`,
-    ],
     [
       "t",
       `${edge} -top-0.5 left-1/2 h-1 w-6 -translate-x-1/2 cursor-ns-resize`,
@@ -543,6 +524,22 @@ export function CropOverlay({
     [
       "r",
       `${edge} -right-0.5 top-1/2 h-6 w-1 -translate-y-1/2 cursor-ew-resize`,
+    ],
+    [
+      "tl",
+      `${corner} -top-px -left-px border-r-0 border-b-0 cursor-nwse-resize`,
+    ],
+    [
+      "tr",
+      `${corner} -top-px -right-px border-l-0 border-b-0 cursor-nesw-resize`,
+    ],
+    [
+      "bl",
+      `${corner} -bottom-px -left-px border-r-0 border-t-0 cursor-nesw-resize`,
+    ],
+    [
+      "br",
+      `${corner} -bottom-px -right-px border-l-0 border-t-0 cursor-nwse-resize`,
     ],
   ];
   const rotateZones = [
@@ -578,6 +575,16 @@ export function CropOverlay({
           <div className="absolute left-1/3 h-full w-px bg-white/30" />
           <div className="absolute left-2/3 h-full w-px bg-white/30" />
         </div>
+        {handles.map(([handle, className]) => (
+          <div
+            key={handle}
+            data-testid={`crop-handle-${handle}`}
+            className={className}
+            onPointerDown={(event) => onPointerDown(event, handle)}
+          />
+        ))}
+        {/* After the handles: the corner grab areas now reach into the band
+            just outside the crop, which belongs to straightening. */}
         {rotateZones.map((position) => (
           <div
             key={position}
@@ -585,14 +592,6 @@ export function CropOverlay({
             className={`absolute size-7 ${position}`}
             style={{ cursor: rotateCursor }}
             onPointerDown={onRotateDown}
-          />
-        ))}
-        {handles.map(([handle, className]) => (
-          <div
-            key={handle}
-            data-testid={`crop-handle-${handle}`}
-            className={className}
-            onPointerDown={(event) => onPointerDown(event, handle)}
           />
         ))}
       </div>

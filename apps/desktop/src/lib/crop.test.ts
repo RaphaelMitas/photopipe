@@ -159,8 +159,6 @@ describe("moveCrop and resizeCrop", () => {
   });
 
   it("a locked edge drag leads its own axis and opens the other symmetrically", () => {
-    // 1:1 in pixels, dragging the top edge up: height leads, and the width
-    // grows the same amount left and right.
     const tall = resizeCrop(centered, "t", 0, -0.1, 1, 0, 3000, 2000);
     expect(tall.top).toBeCloseTo(0.2);
     expect(tall.bottom).toBeCloseTo(0.7);
@@ -169,8 +167,6 @@ describe("moveCrop and resizeCrop", () => {
     );
     expect(tall.left + tall.right).toBeCloseTo(1);
 
-    // Dragging the left edge out: width leads and the height opens about the
-    // same vertical center.
     const wide = resizeCrop(centered, "l", -0.1, 0, 1, 0, 3000, 2000);
     expect(wide.left).toBeCloseTo(0.2);
     expect(wide.right).toBeCloseTo(0.7);
@@ -178,6 +174,28 @@ describe("moveCrop and resizeCrop", () => {
       (wide.bottom - wide.top) * 2000,
     );
     expect(wide.top + wide.bottom).toBeCloseTo(1);
+  });
+
+  it("a lock the crop does not match yet reshapes it inside the photo", () => {
+    // Entering crop mode on a free-form crop leaves Original selected against
+    // a rect that is not 3:2, so the very first drag reshapes it.
+    const free = { left: 0, top: 0, right: 0.3, bottom: 1 };
+    for (const handle of ["t", "tl", "r"] as const) {
+      const dragged = resizeCrop(
+        free,
+        handle,
+        0.001,
+        0.001,
+        1.5,
+        0,
+        3000,
+        2000,
+      );
+      expect(cropInsideImage(dragged, 0, 3000, 2000)).toBe(true);
+      const widthPx = (dragged.right - dragged.left) * 3000;
+      const heightPx = (dragged.bottom - dragged.top) * 2000;
+      expect(widthPx / heightPx).toBeCloseTo(1.5);
+    }
   });
 
   it("a locked edge drag stops at the photo instead of overflowing", () => {
@@ -259,11 +277,10 @@ describe("turn, transpose, and ratio helpers", () => {
     expect(
       enter({ left: 1 / 6, top: 0, right: 5 / 6, bottom: 1 }),
     ).toMatchObject({ aspect: "1:1", flipped: false });
-    // 1125x2000 px: only the flipped 16:9 fits.
+    // 1125x2000 px.
     expect(
       enter({ left: 0.3125, top: 0, right: 0.6875, bottom: 1 }),
     ).toMatchObject({ aspect: "16:9", flipped: true });
-    // Nothing matches a free-form shape: Original shows, the rect stays.
     const odd = { left: 0.1, top: 0.2, right: 0.7, bottom: 0.75 };
     expect(enter(odd)).toMatchObject({ aspect: "original", crop: odd });
   });
