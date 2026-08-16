@@ -1,6 +1,7 @@
 import {
   type QueryClient,
   useMutation,
+  useQueries,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -518,124 +519,116 @@ export type ExportProgress = {
   total: number;
   running: boolean;
   cancelled: boolean;
-  destination: string;
+  archiving: boolean;
   error: string | null;
-  /// Why the first file that failed did, when the delivery itself went through.
-  reason: string | null;
+  failures: string[];
 };
 
 export type ExportJob = ExportProgress & {
-  /// The core numbers its jobs from one per process, so a sidecar restart
-  /// hands a fresh export the id of one still on this list. Rows are addressed
-  /// by this instead, and `id` only ever goes back to the core that issued it.
   key: string;
   label: string;
-  /// Only ever used to estimate what is left; the core does not keep clocks.
+  destination: string;
   startedAt: number;
 };
 
-export function jobStatus(
-  job: ExportJob,
-): "running" | "failed" | "cancelled" | "done" {
+export type JobStatus = "running" | "failed" | "partial" | "cancelled" | "done";
+
+export function jobStatus(job: ExportJob): JobStatus {
   if (job.running) return "running";
   if (job.error) return "failed";
-  return job.cancelled ? "cancelled" : "done";
+  if (job.cancelled) return "cancelled";
+  // Two thirds of a delivery missing is not a success, and a green check is
+  // how it goes unnoticed until the photos are wanted.
+  return job.failed > 0 ? "partial" : "done";
 }
 
 const EXPORT_POLL_MS = 400;
 let nextJobKey = 1;
 
-/// A delivery of a few hundred raws takes minutes, so the core runs it as a job
-/// and `exportFiles` only hands back an id. Everything the drawer shows about a
-/// running export comes from polling that id.
+/// Addressed by `key`, so a row outlives the core process that issued its `id`.
+type JobRow = {
+  key: string;
+  id: string;
+  label: string;
+  destination: string;
+  startedAt: number;
+  initial: ExportProgress;
+};
+
 export function useExportJobs() {
-  const [jobs, setJobs] = useState<ExportJob[]>([]);
-  const live = useRef(jobs);
-  live.current = jobs;
+  const client = useQueryClient();
+  const [rows, setRows] = useState<JobRow[]>([]);
+
+  const results = useQueries({
+    queries: rows.map((row) => ({
+      queryKey: ["export", row.key],
+      queryFn: () =>
+        coreRequest<ExportProgress>("exportStatus", { id: row.id }),
+      initialData: row.initial,
+      enabled: row.id !== "",
+      refetchInterval: (query: { state: { data?: ExportProgress } }) =>
+        query.state.data?.running ? EXPORT_POLL_MS : false,
+      retry: false,
+    })),
+  });
+
+  const jobs: ExportJob[] = rows.map((row, index) => {
+    const result = results[index];
+    const progress = result?.data ?? row.initial;
+    // The core went away mid-export; this job is not coming back.
+    const lost = result?.error
+      ? { running: false, error: String(result.error) }
+      : null;
+    return { ...row, ...progress, ...lost };
+  });
   const running = jobs.some((job) => job.running);
-
-  useEffect(() => {
-    if (!running) return;
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-
-    const poll = async () => {
-      const updates = await Promise.all(
-        live.current
-          .filter((job) => job.running)
-          .map(async (job) => {
-            try {
-              const next = await coreRequest<ExportProgress>("exportStatus", {
-                id: job.id,
-              });
-              return { ...next, key: job.key };
-            } catch (error) {
-              // The core went away mid-export; this job is not coming back.
-              return { key: job.key, running: false, error: String(error) };
-            }
-          }),
-      );
-      if (stopped) return;
-      setJobs((current) =>
-        current.map((job) => {
-          const update = updates.find((next) => next.key === job.key);
-          return update ? { ...job, ...update } : job;
-        }),
-      );
-      timer = setTimeout(poll, EXPORT_POLL_MS);
-    };
-
-    timer = setTimeout(poll, EXPORT_POLL_MS);
-    return () => {
-      stopped = true;
-      clearTimeout(timer);
-    };
-  }, [running]);
 
   const start = useCallback(async (label: string, request: ExportRequest) => {
     const key = String(nextJobKey++);
-    const row = { key, label, startedAt: Date.now() };
+    const settled: ExportProgress = {
+      id: "",
+      done: 0,
+      failed: 0,
+      total: request.paths.length,
+      running: false,
+      cancelled: false,
+      archiving: false,
+      error: null,
+      failures: [],
+    };
+    const row = {
+      key,
+      label,
+      destination: request.destination,
+      startedAt: Date.now(),
+    };
     try {
       const job = await coreRequest<ExportProgress>("exportFiles", request);
-      setJobs((current) => [{ ...job, ...row }, ...current]);
+      setRows((current) => [{ ...row, id: job.id, initial: job }, ...current]);
     } catch (error) {
       // A refusal the user can still read after the toast has gone.
-      setJobs((current) => [
-        {
-          ...row,
-          id: "",
-          done: 0,
-          failed: 0,
-          total: request.paths.length,
-          running: false,
-          cancelled: false,
-          destination: request.destination,
-          error: String(error),
-          reason: null,
-        },
+      setRows((current) => [
+        { ...row, id: "", initial: { ...settled, error: String(error) } },
         ...current,
       ]);
       toast.error("Could not start the export", { description: String(error) });
     }
   }, []);
 
-  const cancel = useCallback((key: string) => {
-    const job = live.current.find((candidate) => candidate.key === key);
-    if (!job) return;
-    coreRequest<ExportProgress>("cancelExport", { id: job.id })
-      .then((update) =>
-        setJobs((current) =>
-          current.map((candidate) =>
-            candidate.key === key ? { ...candidate, ...update } : candidate,
-          ),
-        ),
-      )
-      .catch((error: unknown) => {
-        toast.error("Could not cancel the export", {
-          description: String(error),
+  const cancel = useCallback(
+    (key: string) => {
+      const row = rows.find((candidate) => candidate.key === key);
+      if (!row) return;
+      coreRequest<ExportProgress>("cancelExport", { id: row.id })
+        .then((update) => client.setQueryData(["export", key], update))
+        .catch((error: unknown) => {
+          toast.error("Could not cancel the export", {
+            description: String(error),
+          });
         });
-      });
-  }, []);
+    },
+    [client, rows],
+  );
 
   return { jobs, start, cancel, running };
 }

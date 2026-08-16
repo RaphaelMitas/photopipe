@@ -5,6 +5,7 @@ import {
   identityEdit,
   type Shoot,
 } from "./lib/core";
+import type { ExportProgress } from "./lib/queries";
 import { makeImage } from "./lib/test-image";
 
 function image(
@@ -127,28 +128,27 @@ function scored(shoot: string) {
   };
 }
 
-type ExportJob = {
-  id: string;
-  done: number;
-  failed: number;
-  total: number;
-  running: boolean;
-  cancelled: boolean;
-  destination: string;
-  error: null;
-  reason: null;
-};
+const exportJobs = new Map<string, ExportProgress>();
+const zipJobs = new Map<string, boolean>();
 
-// One photo per poll, so a spec can watch the bar move instead of catching a
-// delivery that was already over before the first status came back.
-const exportJobs = new Map<string, ExportJob>();
+/// `?exportfails=N` makes the first N files of every export fail the way a
+/// full-resolution render does, which a spec cannot otherwise reach.
+const exportFails = Number(
+  new URLSearchParams(location.search).get("exportfails") ?? 0,
+);
 
-function advanceExport(id: string): ExportJob {
+function advanceExport(id: string): ExportProgress {
   const job = exportJobs.get(id);
   if (!job) throw `unknown_export: ${id}`;
+  // one photo per poll, so a spec can watch the bar move
   if (job.running) {
-    job.done = Math.min(job.done + 1, job.total);
-    job.running = job.done < job.total;
+    if (job.failed < exportFails) {
+      job.failed += 1;
+      job.failures.push(`DSC0${1200 + job.failed}.ARW: encodeFailed`);
+    } else {
+      job.done += 1;
+    }
+    job.running = job.done + job.failed < job.total;
   }
   return job;
 }
@@ -223,18 +223,20 @@ export const E2E_HANDLERS: Record<
     return { files, generation: 1 };
   },
   exportFiles: (params) => {
-    const job = {
+    const paths = params.paths as string[];
+    const job: ExportProgress = {
       id: String(exportJobs.size + 1),
       done: 0,
       failed: 0,
-      total: (params.paths as string[]).length,
+      total: paths.length,
       running: true,
       cancelled: false,
-      destination: String(params.destination),
+      archiving: false,
       error: null,
-      reason: null,
+      failures: [],
     };
     exportJobs.set(job.id, job);
+    zipJobs.set(job.id, params.zip === true);
     return { ...job };
   },
   exportStatus: (params) => advanceExport(String(params.id)),
@@ -243,6 +245,12 @@ export const E2E_HANDLERS: Record<
     if (job.running) {
       job.cancelled = true;
       job.running = false;
+      // Staging goes with it, so a cancelled zip delivered nothing at all.
+      if (zipJobs.get(job.id)) {
+        job.done = 0;
+        job.failed = 0;
+        job.failures = [];
+      }
     }
     return { ...job };
   },

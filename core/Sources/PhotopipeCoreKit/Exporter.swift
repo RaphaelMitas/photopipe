@@ -7,44 +7,32 @@ public final class Exporter: @unchecked Sendable {
     public struct Progress: Equatable, Sendable {
         public let id: String
         public let total: Int
-        public let destination: String
         public var done: Int
         public var failed: Int
         public var running: Bool
         public var cancelled: Bool
-        /// Set when the delivery as a whole did not happen. Individual files
-        /// that failed are in `failed` and leave this nil.
+        /// Every file is written by now, so the counts stop moving until zip is
+        /// done with them.
+        public var archiving: Bool
+        /// Set when the delivery as a whole did not happen; files that failed
+        /// on their own leave this nil.
         public var error: String?
-        /// Why the first file that failed did, kept even when the rest of the
-        /// delivery succeeded. A count on its own says something went wrong
-        /// without saying what, which is no help to whoever has to fix it.
-        public var reason: String?
+        /// A count does not say which photos are missing from the folder.
+        public var failures: [String]
     }
 
-    /// Names are decided here, before the first write, so four writers cannot
+    /// Names are decided here, before the first write, so the writers cannot
     /// pick the same one from a listing that keeps changing under them.
     public struct Plan: Sendable {
         public struct Item: Sendable {
             public let image: ImageFile
             public let target: URL
-
-            public init(image: ImageFile, target: URL) {
-                self.image = image
-                self.target = target
-            }
         }
 
         public let items: [Item]
         public let destination: String
-        /// Set for a zip delivery: every target sits in here and the archive is
-        /// built from it once the last file has landed.
+        /// Set for a zip delivery; the archive is built from it at the end.
         public let staging: URL?
-
-        public init(items: [Item], destination: String, staging: URL?) {
-            self.items = items
-            self.destination = destination
-            self.staging = staging
-        }
     }
 
     /// A full-resolution render saturates a core, and the machine has to stay
@@ -56,17 +44,22 @@ public final class Exporter: @unchecked Sendable {
     private let lock = NSLock()
     private var jobs: [String: Progress] = [:]
     private var tasks: [String: Task<Void, Never>] = [:]
-    private var nextID = 1
+    private var settledAt: [String: Date] = [:]
 
     public init() {}
 
     public func start(plan: Plan, write: @escaping Write) -> Progress {
         lock.lock()
-        let id = String(nextID)
-        nextID += 1
+        // A counter would restart at 1 with the process, and a client that
+        // outlives a sidecar respawn would poll and cancel a stranger's job.
+        let id = UUID().uuidString
+        for (old, settled) in settledAt where settled.timeIntervalSinceNow < -600 {
+            jobs[old] = nil
+            settledAt[old] = nil
+        }
         let initial = Progress(
-            id: id, total: plan.items.count, destination: plan.destination,
-            done: 0, failed: 0, running: true, cancelled: false, error: nil, reason: nil)
+            id: id, total: plan.items.count, done: 0, failed: 0, running: true,
+            cancelled: false, archiving: false, error: nil, failures: [])
         jobs[id] = initial
         tasks[id] = Task.detached(priority: .utility) { [weak self] in
             await self?.run(id: id, plan: plan, write: write)
@@ -88,7 +81,7 @@ public final class Exporter: @unchecked Sendable {
     }
 
     private func run(id: String, plan: Plan, write: @escaping Write) async {
-        var firstFailure: String?
+        var failures: [String] = []
         await withTaskGroup(of: String?.self) { group in
             var next = 0
             func submit() {
@@ -110,13 +103,18 @@ public final class Exporter: @unchecked Sendable {
                 // A render cannot be interrupted mid-file, so cancelling stops
                 // the queue rather than the writes already under way.
                 if Task.isCancelled { group.cancelAll() } else { submit() }
-                if let failure, firstFailure == nil { firstFailure = failure }
+                if let failure {
+                    failures.append(failure)
+                    // the drawer is the only other place these show, and it
+                    // goes away with the window
+                    FileHandle.standardError.write(Data("export failed: \(failure)\n".utf8))
+                }
                 lock.withLock {
                     if failure == nil {
                         jobs[id]?.done += 1
                     } else {
                         jobs[id]?.failed += 1
-                        jobs[id]?.reason = firstFailure
+                        jobs[id]?.failures = failures
                     }
                 }
             }
@@ -133,8 +131,9 @@ public final class Exporter: @unchecked Sendable {
                 // that exists: a cancelled zip delivered nothing at all.
                 written = 0
                 failed = 0
-                firstFailure = nil
+                failures = []
             } else if written > 0 {
+                lock.withLock { jobs[id]?.archiving = true }
                 do {
                     try FileActions.zipDirectory(at: staging, to: plan.destination)
                 } catch let zip {
@@ -146,16 +145,28 @@ public final class Exporter: @unchecked Sendable {
         }
         // An empty delivery reported as a success sends the user looking for
         // files that are not there.
-        if error == nil && !cancelled && written == 0 { error = firstFailure }
+        if error == nil && !cancelled && written == 0 { error = failures.first }
 
         lock.withLock {
             jobs[id]?.done = written
             jobs[id]?.failed = failed
             jobs[id]?.running = false
             jobs[id]?.cancelled = cancelled
+            jobs[id]?.archiving = false
             jobs[id]?.error = error
-            jobs[id]?.reason = failed > 0 ? firstFailure : nil
+            jobs[id]?.failures = failures
             tasks[id] = nil
+            settledAt[id] = Date()
+        }
+    }
+
+    /// Waits so that quitting mid-export still cleans up staging and the temp
+    /// files the writers work through.
+    public func cancelAll(waitingUpTo timeout: TimeInterval) {
+        for task in lock.withLock({ Array(tasks.values) }) { task.cancel() }
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline, !lock.withLock({ tasks.isEmpty }) {
+            Thread.sleep(forTimeInterval: 0.02)
         }
     }
 }

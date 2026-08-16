@@ -26,7 +26,6 @@ private func makeShoot(in root: URL, named name: String = "2026-06-06_actions") 
     return shoot
 }
 
-/// Exports run in the background; these assertions are about the files.
 @discardableResult
 private func exportNow(
     _ service: LibraryService, shoot: String, paths: [String], destination: String,

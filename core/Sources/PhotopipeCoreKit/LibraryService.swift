@@ -271,10 +271,8 @@ public final class LibraryService: @unchecked Sendable {
             mtime: ((attrs[.modificationDate] as? Date) ?? .distantPast).timeIntervalSince1970)
     }
 
-    /// One canonical index for the whole selection. Resolving each path against
-    /// a linear scan costs a standardization per photo scanned, so selecting a
-    /// whole shoot is quadratic and, on a few thousand raws, slower than the
-    /// ten seconds the client waits for an answer.
+    /// One canonical index for the whole selection: resolving each path against
+    /// a linear scan makes selecting a whole shoot quadratic.
     private func images(inShoot shootName: String, paths: [String]) throws -> [ImageFile] {
         lock.lock()
         let images = snapshot.imagesByShoot[shootName]
@@ -575,6 +573,10 @@ public final class LibraryService: @unchecked Sendable {
         }
     }
 
+    public func stopExports() {
+        exporter.cancelAll(waitingUpTo: 2)
+    }
+
     public func exportStatus(id: String) throws -> Exporter.Progress {
         guard let progress = exporter.progress(id: id) else { throw ServiceError.unknownExport(id) }
         return progress
@@ -586,11 +588,17 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     private func write(
-        _ image: ImageFile, format: ExportFormat, quality: Int, to target: URL, staging: Bool
+        _ image: ImageFile, format: ExportFormat, quality: Int, to planned: URL, staging: Bool
     ) throws {
         let fm = FileManager.default
         try fm.createDirectory(
-            at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            at: planned.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // Names were picked before the first write, and on a long export
+        // something else can reach the folder in between. Suffixing beats
+        // failing the file over a name.
+        let target =
+            staging || !fm.fileExists(atPath: planned.path)
+            ? planned : FileActions.uniqueURL(for: planned)
         switch format {
         case .original:
             let source = URL(fileURLWithPath: image.path)
@@ -599,7 +607,17 @@ public final class LibraryService: @unchecked Sendable {
                     try fm.copyItem(at: source, to: target)
                 }
             } else {
-                try fm.copyItem(at: source, to: target)
+                // Copying straight to the target leaves a half-written file
+                // under the real name if the process goes away mid-copy.
+                let temp = target.deletingLastPathComponent()
+                    .appendingPathComponent(".photopipe-\(UUID().uuidString)")
+                try fm.copyItem(at: source, to: temp)
+                do {
+                    try fm.moveItem(at: temp, to: target)
+                } catch {
+                    try? fm.removeItem(at: temp)
+                    throw error
+                }
             }
         case .jpeg:
             try renderer.exportJPEG(

@@ -316,9 +316,7 @@ private func tempIndexPath() -> String {
     let elapsed = Date().timeIntervalSince(start)
     _ = try service.cancelExport(id: job.id)
 
-    // The client gives up on a request after ten seconds. Resolving a
-    // select-all against a linear scan, or reading every file's metadata
-    // before answering, spends that budget before a single photo is written.
+    // the client gives up on a request long before a big export is planned
     #expect(elapsed < 1.0, "planning 1000 files took \(elapsed)s")
 
     var settled = try service.exportStatus(id: job.id)

@@ -1,4 +1,5 @@
 import type { ScanProgress } from "@/lib/queries";
+import { ProgressBar } from "./ProgressBar";
 
 const format = new Intl.NumberFormat();
 
@@ -20,13 +21,7 @@ export function IndexingStatus({ progress }: { progress: ScanProgress }) {
         Indexing {format.format(progress.filesEnriched)} of{" "}
         {format.format(progress.filesFound)}
       </span>
-      <span className="h-0.5 w-16 overflow-hidden rounded-full bg-border">
-        <span
-          data-testid="indexing-bar"
-          className="block h-full bg-primary transition-[width] duration-200"
-          style={{ width: `${Math.round(share * 100)}%` }}
-        />
-      </span>
+      <ProgressBar share={share} testid="indexing-bar" className="w-16" />
     </div>
   );
 }

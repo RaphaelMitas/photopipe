@@ -26,8 +26,8 @@ private func waitUntilIdle(
     }
     Issue.record("export \(id) never finished", sourceLocation: sourceLocation)
     return .init(
-        id: id, total: 0, destination: "", done: 0, failed: 0, running: true, cancelled: false,
-        error: nil)
+        id: id, total: 0, done: 0, failed: 0, running: true, cancelled: false, archiving: false,
+        error: nil, failures: [])
 }
 
 @Test func startReturnsBeforeAnyFileIsWritten() throws {
@@ -35,8 +35,7 @@ private func waitUntilIdle(
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
 
-    // Held until the assertions are done, standing in for the minutes a
-    // few hundred full-resolution renders take.
+    // stands in for the minutes a few hundred full-resolution renders take
     let gate = DispatchSemaphore(value: 0)
     let exporter = Exporter()
     let began = Date()
@@ -78,6 +77,51 @@ private func waitUntilIdle(
         ])
 }
 
+@Test func everyFileThatFailedIsNamed() throws {
+    let dir = scratchDir("exporter")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let exporter = Exporter()
+    let job = exporter.start(plan: plan(6, in: dir)) { image, target in
+        guard image.rel.hasSuffix("0.jpg") || image.rel.hasSuffix("3.jpg") else {
+            throw Renderer.RenderError.encodeFailed
+        }
+        try Data("photo".utf8).write(to: target)
+    }
+
+    let finished = waitUntilIdle(exporter, job.id)
+    #expect(finished.failed == 4)
+    // A count alone does not say which photos are missing from the folder.
+    #expect(finished.failures.count == 4)
+    #expect(
+        finished.failures.map { String($0.prefix(12)) }.sorted() == [
+            "DSC00001.jpg", "DSC00002.jpg", "DSC00004.jpg", "DSC00005.jpg",
+        ])
+}
+
+@Test func twoJobsNeverShareAnID() throws {
+    let dir = scratchDir("exporter")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let first = Exporter()
+    let second = Exporter()
+    let a = first.start(plan: plan(1, in: dir)) { _, target in
+        try Data("photo".utf8).write(to: target)
+    }
+    let b = second.start(plan: plan(1, in: dir)) { _, target in
+        try Data("photo".utf8).write(to: target)
+    }
+
+    // A fresh process must not hand a new job the id a client is still polling
+    // for one it started before the sidecar was replaced.
+    #expect(a.id != b.id)
+    #expect(first.progress(id: b.id) == nil)
+    _ = waitUntilIdle(first, a.id)
+    _ = waitUntilIdle(second, b.id)
+}
+
 @Test func aFailedDeliveryReportsWhyRatherThanClaimingSuccess() throws {
     let dir = scratchDir("exporter")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -111,8 +155,6 @@ private func waitUntilIdle(
 
     let finished = waitUntilIdle(exporter, job.id)
     #expect(finished.cancelled)
-    // A render cannot be interrupted mid-file, so the four already under way
-    // finish and are kept; the queue behind them is dropped.
     #expect(finished.done == 4)
     #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).count == 4)
 }

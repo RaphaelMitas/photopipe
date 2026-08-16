@@ -347,7 +347,8 @@ impl Sidecar {
             let mut stdin = running.stdin.lock().unwrap();
             let _ = stdin.write_all(format!("{goodbye}\n").as_bytes());
         }
-        let deadline = Instant::now() + Duration::from_millis(500);
+        // long enough for a running export to drop its queue and clean up
+        let deadline = Instant::now() + Duration::from_millis(3000);
         while Instant::now() < deadline {
             match running.child.lock().unwrap().try_wait() {
                 Ok(Some(_)) => {

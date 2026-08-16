@@ -49,6 +49,7 @@ public final class Dispatcher {
                         "protocol": .number(Double(protocolVersion)),
                     ])))
         case "shutdown":
+            library.stopExports()
             return .shutdown(.success(id: request.id, result: .object(["bye": .bool(true)])))
         case "setRoot", "listShoots", "listImages", "thumbnail", "render", "setRating",
             "setEdit", "rawDefaults", "status", "reveal", "trash", "exportFiles",
@@ -87,9 +88,9 @@ public final class Dispatcher {
             "total": .number(Double(job.total)),
             "running": .bool(job.running),
             "cancelled": .bool(job.cancelled),
-            "destination": .string(job.destination),
+            "archiving": .bool(job.archiving),
             "error": job.error.map { .string($0) } ?? .null,
-            "reason": job.reason.map { .string($0) } ?? .null,
+            "failures": .array(job.failures.map { .string($0) }),
         ])
     }
 

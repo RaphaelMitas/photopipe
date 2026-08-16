@@ -24,7 +24,11 @@ import {
 } from "@/components/CropTool";
 import { Dashboard } from "@/components/Dashboard";
 import { EditSidebar } from "@/components/EditPanel";
-import { ExportDrawer, type ExportOptions } from "@/components/ExportDrawer";
+import {
+  ExportDrawer,
+  type ExportOptions,
+  exportLabel,
+} from "@/components/ExportDrawer";
 import type { FilmstripMode } from "@/components/Filmstrip";
 import { ImageGrid } from "@/components/ImageGrid";
 import { ImageList } from "@/components/ImageList";
@@ -367,20 +371,15 @@ export default function App() {
 
   const runExport = (options: ExportOptions, destination: string) => {
     if (!openShoot) return;
-    void exports.start(
-      `Export ${selectedImages.length} ${
-        options.format === "jpeg" ? "as JPEG" : "originals"
-      }`,
-      {
-        shoot: openShoot,
-        paths: selectedImages.map((image) => image.path),
-        destination,
-        zip: options.zip,
-        flatten: options.flatten,
-        format: options.format,
-        quality: options.quality,
-      },
-    );
+    void exports.start(exportLabel(selectedImages.length, options.format), {
+      shoot: openShoot,
+      paths: selectedImages.map((image) => image.path),
+      destination,
+      zip: options.zip,
+      flatten: options.flatten,
+      format: options.format,
+      quality: options.quality,
+    });
   };
 
   const loupeImages = useMemo(() => {

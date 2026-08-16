@@ -92,6 +92,47 @@ test("a running export reports how far it got, and finishes", async ({
   await expect(page.getByTestId("job-running")).toHaveCount(0);
 });
 
+test("an export that lost most of its files does not read as a success", async ({
+  page,
+}) => {
+  await page.goto("/?exportfails=3");
+  await page.getByTestId("root-input").fill("/fake");
+  await page.getByTestId("root-submit").click();
+  await page.getByTestId("shoot-2026-07-12_zell").click();
+  await page.getByTestId("open-export").click();
+  await page.getByTestId("select-all").click();
+  await page.getByTestId("run-export").click();
+
+  // Three of four gone is not a green check, and the row has to say which.
+  const partial = page.getByTestId("job-partial");
+  await expect(partial).toBeVisible();
+  await expect(partial).toContainText("3 of 4 failed");
+  await expect(page.getByTestId("job-done")).toHaveCount(0);
+
+  await partial.getByText("Which files?").click();
+  const failures = page.getByTestId("job-failures");
+  await expect(failures.getByRole("listitem")).toHaveCount(3);
+  await expect(failures).toContainText("encodeFailed");
+});
+
+test("a cancelled zip offers no archive to reveal", async ({ page }) => {
+  await page.goto("/");
+  await page.getByTestId("root-input").fill("/fake");
+  await page.getByTestId("root-submit").click();
+  await page.getByTestId("shoot-2026-08-01_dolomites").click();
+  await page.getByTestId("open-export").click();
+  await page.getByTestId("select-all").click();
+  await page.getByTestId("dest-zip").click();
+  await page.getByTestId("run-export").click();
+
+  await expect(page.getByTestId("job-running")).toBeVisible();
+  await page.getByTestId("job-cancel").click();
+  const stopped = page.getByTestId("job-cancelled");
+  await expect(stopped).toContainText("Cancelled · 0 files");
+  // The archive was never written, so revealing it would only raise an error.
+  await expect(stopped.getByTitle("Reveal in Finder")).toHaveCount(0);
+});
+
 test("a long export can be cancelled and says so", async ({ page }) => {
   await page.goto("/");
   await page.getByTestId("root-input").fill("/fake");
