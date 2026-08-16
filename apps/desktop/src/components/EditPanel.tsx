@@ -7,7 +7,7 @@ import {
   isIdentityEdit,
   isRawFile,
 } from "@/lib/core";
-import { useRender, useWhiteBalance } from "@/lib/queries";
+import { useRawDefaults, useRender } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { type CropDraft, CropPanel } from "./CropTool";
 import { CurveEditor } from "./CurveEditor";
@@ -108,18 +108,18 @@ export function EditPanel({
   onCancelCrop,
 }: Props) {
   const raw = isRawFile(image);
-  const whiteBalance = useWhiteBalance(raw ? image : undefined);
-  // Deferred like the Loupe's own render request, so both resolve to the same
-  // query and dragging never fans out into extra renders.
+  const rawDefaults = useRawDefaults(raw ? image : undefined);
+  // deferred like the Loupe's request, so both resolve to the same query
   const render = useRender(image, useDeferredValue(edit));
 
   const set = (partial: Partial<Edit>) => onChange({ ...edit, ...partial });
 
   const summary = cropSummary(edit);
-  const asShotTemperature = whiteBalance.data?.temperature ?? 6500;
-  const asShotTint = whiteBalance.data?.tint ?? 0;
+  const asShotTemperature = rawDefaults.data?.temperature ?? 6500;
+  const asShotTint = rawDefaults.data?.tint ?? 0;
   const temperature = edit.temperature ?? (raw ? asShotTemperature : 0);
   const tint = edit.tint ?? (raw ? asShotTint : 0);
+  const denoise = edit.denoise ?? rawDefaults.data?.denoise ?? 0;
 
   return (
     <div className="flex flex-col gap-3">
@@ -236,6 +236,21 @@ export function EditPanel({
           onValue={(value) => set({ tint: !raw && value === 0 ? null : value })}
           onReset={() => set({ tint: null })}
         />
+        {raw && (
+          <Row
+            label="Denoise"
+            value={denoise}
+            display={`${Math.round(denoise)}`}
+            min={0}
+            max={100}
+            step={1}
+            testid="denoise"
+            resetTitle="Reset to as decoded"
+            trackClassName="bg-gradient-to-r from-zinc-500/60 to-sky-400/70"
+            onValue={(value) => set({ denoise: value })}
+            onReset={() => set({ denoise: null })}
+          />
+        )}
         <Row
           label="Vibrance"
           value={edit.vibrance}

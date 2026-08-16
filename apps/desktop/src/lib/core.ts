@@ -9,19 +9,15 @@ export type CropRect = {
   bottom: number;
 };
 
-// temperature/tint: Kelvin and green–magenta offset for raw files where
-// null means "as shot"; incremental -100..100 for embedded formats. The core
-// omits null fields when encoding, so read them with `?? null`.
-// cropAngle: degrees, positive rotates the photo clockwise on screen about
-// the photo's center while the crop rect stays axis-aligned.
-// rotation: whole-photo turn in clockwise degrees (0/90/180/270); the crop
-// rect is defined against the turned frame.
+// Mirrors core Edit.swift, which documents the units. The core omits null
+// fields when encoding, so read them with `?? null`.
 export type Edit = {
   exposure: number;
   highlights: number;
   shadows: number;
   temperature?: number | null;
   tint?: number | null;
+  denoise?: number | null;
   vibrance: number;
   saturation: number;
   curveRGB: CurvePoint[];
@@ -39,6 +35,7 @@ export const identityEdit: Edit = Object.freeze({
   shadows: 0,
   temperature: null,
   tint: null,
+  denoise: null,
   vibrance: 0,
   saturation: 0,
   curveRGB: [],
@@ -57,6 +54,7 @@ export function isIdentityEdit(edit: Edit): boolean {
     edit.shadows === 0 &&
     (edit.temperature ?? null) === null &&
     (edit.tint ?? null) === null &&
+    (edit.denoise ?? null) === null &&
     edit.vibrance === 0 &&
     edit.saturation === 0 &&
     isIdentityCurve(edit.curveRGB) &&
@@ -82,6 +80,7 @@ export function editKey(edit: Edit): string {
     edit.shadows,
     edit.temperature ?? "",
     edit.tint ?? "",
+    edit.denoise ?? "",
     edit.vibrance,
     edit.saturation,
     curve(edit.curveRGB),
@@ -135,9 +134,10 @@ export type SetEditResult = {
   generation: number;
 };
 
-export type WhiteBalanceResult = {
+export type RawDefaultsResult = {
   temperature: number | null;
   tint: number | null;
+  denoise: number | null;
 };
 
 export type Shoot = {

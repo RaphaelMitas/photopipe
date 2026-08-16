@@ -14,20 +14,34 @@ public final class Renderer {
 
     public let cacheDir: URL
     private let context = CIContext(options: [.cacheIntermediates: true])
+    // an export renders each photo once, so there is nothing to reuse
+    private let exportContext = CIContext(options: [.cacheIntermediates: false])
     private let jpegColorSpace = CGColorSpace(name: CGColorSpace.displayP3)!
     private let curveColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
-    private struct CachedFilter {
+    // bump when the pixels change for an unchanged key
+    private static let pipelineVersion = 2
+
+    /// None of these are zero, so a slider left alone has to reach for them.
+    public struct RawDefaults: Sendable {
+        public let temperature: Double
+        public let tint: Double
+        public let denoise: Double
+    }
+
+    struct CachedFilter {
         let filter: CIRAWFilter
         let mtime: Double
-        let asShotTemperature: Double
-        let asShotTint: Double
+        let orientedSizeBeforeScaling: CGSize
+        let defaults: RawDefaults
         var lastUsed: Date
     }
 
     private let lock = NSLock()
-    private var filters: [String: CachedFilter] = [:]
-    private let filterCapacity = 4
+    private var filtersByPathAndSize: [String: CachedFilter] = [:]
+    private var defaultsByPath: [String: (values: RawDefaults, mtime: Double)] = [:]
+    // the loupe holds current, both neighbours and a zoom render at once
+    private let filterCapacity = 6
 
     public init(cacheDir: URL) {
         self.cacheDir = cacheDir
@@ -59,20 +73,23 @@ public final class Renderer {
     }
 
     public func cachePath(for file: ImageFile, edit: Edit, maxPixel: Int) -> URL {
-        let key = "\(file.path)|\(file.mtime)|\(file.size)|\(edit.cacheKey)|\(maxPixel)"
+        let key =
+            "\(file.path)|\(file.mtime)|\(file.size)|\(edit.cacheKey)|\(maxPixel)|v\(Self.pipelineVersion)"
         let digest = SHA256.hash(data: Data(key.utf8))
             .map { String(format: "%02x", $0) }.joined().prefix(32)
         return cacheDir.appendingPathComponent("\(digest).jpg")
     }
 
     public func render(file: ImageFile, edit: Edit, maxPixel: Int) throws -> URL {
+        guard maxPixel > 0 else { throw RenderError.encodeFailed }
         let dest = cachePath(for: file, edit: edit, maxPixel: maxPixel)
         if FileManager.default.fileExists(atPath: dest.path) {
             return dest
         }
         try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
 
-        var image = try sourceImage(for: file, edit: edit)
+        var image = try sourceImage(for: file, edit: edit, maxPixel: maxPixel)
+        // raws already decoded close to this; embedded formats did not
         let longEdge = max(image.extent.width, image.extent.height)
         let scale = CGFloat(maxPixel) / longEdge
         if scale < 1 {
@@ -96,9 +113,9 @@ public final class Renderer {
     public func exportJPEG(
         file: ImageFile, edit: Edit, quality: Double, to destination: URL
     ) throws {
-        let image = try sourceImage(for: file, edit: edit)
+        let image = try sourceImage(for: file, edit: edit, maxPixel: nil)
         guard
-            let jpeg = context.jpegRepresentation(
+            let jpeg = exportContext.jpegRepresentation(
                 of: image, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
                 options: [
                     kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption:
@@ -116,31 +133,46 @@ public final class Renderer {
         }
     }
 
-    /// The as-shot white balance a raw decode starts from; nil for embedded
-    /// formats, where there is no known neutral to offset against.
-    public func whiteBalance(for file: ImageFile) throws -> (temperature: Double, tint: Double)? {
+    /// nil for embedded formats, which have no neutral to offset against.
+    public func rawDefaults(for file: ImageFile) throws -> RawDefaults? {
         guard Self.rawExtensions.contains(file.ext.lowercased()) else { return nil }
-        let cached = try rawFilter(for: file)
-        return (cached.asShotTemperature, cached.asShotTint)
+        lock.lock()
+        if let cached = defaultsByPath[file.path], cached.mtime == file.mtime {
+            lock.unlock()
+            return cached.values
+        }
+        lock.unlock()
+        // reading these decodes nothing, so the filter is cheap and discarded
+        return try makeFilter(for: file).defaults
     }
 
-    private func sourceImage(for file: ImageFile, edit: Edit) throws -> CIImage {
+    /// nil renders the full sensor, for export.
+    private func sourceImage(for file: ImageFile, edit: Edit, maxPixel: Int?) throws -> CIImage {
         var image: CIImage
         if Self.rawExtensions.contains(file.ext.lowercased()) {
-            let cached = try rawFilter(for: file)
+            let cached = try rawFilter(for: file, maxPixel: maxPixel)
+            let filter = cached.filter
             lock.lock()
-            cached.filter.exposure = Float(edit.exposure)
-            cached.filter.neutralTemperature = Float(
-                edit.temperature ?? cached.asShotTemperature)
-            cached.filter.neutralTint = Float(edit.tint ?? cached.asShotTint)
-            let output = cached.filter.outputImage
+            let scale = Self.rawScaleFactor(
+                for: edit, orientedSize: cached.orientedSizeBeforeScaling, maxPixel: maxPixel)
+            // assigning drops the cached intermediates a slider re-render needs
+            if filter.scaleFactor != scale {
+                filter.scaleFactor = scale
+            }
+            filter.exposure = Float(edit.exposure)
+            filter.neutralTemperature = Float(edit.temperature ?? cached.defaults.temperature)
+            filter.neutralTint = Float(edit.tint ?? cached.defaults.tint)
+            if filter.isLuminanceNoiseReductionSupported {
+                let denoise = edit.denoise.map { min(max($0, 0), 100) / 100 }
+                filter.luminanceNoiseReductionAmount = Float(denoise ?? cached.defaults.denoise)
+            }
+            let output = filter.outputImage
             lock.unlock()
             guard let output else { throw RenderError.unreadable(file.path) }
             image = output
         } else {
-            // Bake EXIF orientation into the pixels (the option also drops the
-            // tag, so the encoded JPEG is not rotated twice): the crop rect is
-            // defined against the displayed frame, not the sensor layout.
+            // the crop rect is against the displayed frame, not the sensor
+            // layout, and the option drops the tag so nothing rotates twice
             guard
                 let base = CIImage(
                     contentsOf: URL(fileURLWithPath: file.path),
@@ -156,9 +188,8 @@ public final class Renderer {
             let temperature = edit.temperature ?? 0
             let tint = edit.tint ?? 0
             if temperature != 0 || tint != 0 {
-                // Moving the target neutral down in Kelvin renders warmer, so
-                // the slider sign flips here to match the raw pipeline's
-                // "higher temperature = warmer".
+                // a lower target neutral renders warmer, so the sign flips to
+                // match the raw pipeline's "higher temperature = warmer"
                 image = image.applyingFilter(
                     "CITemperatureAndTint",
                     parameters: [
@@ -185,8 +216,6 @@ public final class Renderer {
             image = image.applyingFilter(
                 "CIColorControls", parameters: ["inputSaturation": 1 + edit.saturation / 100])
         }
-        // The turn comes before the crop: the rect is defined against the
-        // turned frame.
         switch edit.normalizedRotation {
         case 90: image = image.oriented(forExifOrientation: 6)
         case 180: image = image.oriented(forExifOrientation: 3)
@@ -199,42 +228,39 @@ public final class Renderer {
         return image
     }
 
-    static func applyCrop(_ edit: Edit, to image: CIImage) -> CIImage {
-        let extent = image.extent
+    /// Crop values reach here from sidecars and IPC.
+    static func saneCrop(_ edit: Edit) -> CropRect? {
         let crop = edit.crop ?? CropRect(left: 0, top: 0, right: 1, bottom: 1)
-        // Values reach here from sidecars and IPC; refuse geometry that would
-        // put NaN or a negative size into Core Image.
         guard crop.left.isFinite, crop.top.isFinite, crop.right.isFinite,
             crop.bottom.isFinite, crop.right > crop.left, crop.bottom > crop.top,
             edit.cropAngle.isFinite
-        else { return image }
-        // A straightened photo's corners overhang the frame box, so crop
-        // values may run past [0, 1]; one frame beyond is plenty for any
-        // rotation, and clamping there keeps hostile values bounded.
+        else { return nil }
+        // a straightened photo's corners overhang, so values run past [0, 1]
         let sane: (Double) -> Double = { min(max($0, -1), 2) }
-        let left = sane(crop.left)
-        let top = sane(crop.top)
-        let right = sane(crop.right)
-        let bottom = sane(crop.bottom)
+        return CropRect(
+            left: sane(crop.left), top: sane(crop.top),
+            right: sane(crop.right), bottom: sane(crop.bottom))
+    }
+
+    static func applyCrop(_ edit: Edit, to image: CIImage) -> CIImage {
+        let extent = image.extent
+        guard let crop = saneCrop(edit) else { return image }
         // Normalized coordinates are top-left-origin; CI's are bottom-left.
         let raw = CGRect(
-            x: extent.minX + left * extent.width,
-            y: extent.minY + (1 - bottom) * extent.height,
-            width: (right - left) * extent.width,
-            height: (bottom - top) * extent.height)
-        // Round inward: expanding past the rotated photo's coverage would
-        // leave a thin blank edge on straightened crops.
+            x: extent.minX + crop.left * extent.width,
+            y: extent.minY + (1 - crop.bottom) * extent.height,
+            width: (crop.right - crop.left) * extent.width,
+            height: (crop.bottom - crop.top) * extent.height)
+        // round inward, or a straightened crop gets a thin blank edge
         let rect = CGRect(
             x: raw.minX.rounded(.up), y: raw.minY.rounded(.up),
             width: max(raw.maxX.rounded(.down) - raw.minX.rounded(.up), 1),
             height: max(raw.maxY.rounded(.down) - raw.minY.rounded(.up), 1))
         var result = image
         if edit.cropAngle != 0 {
-            // The straighten pivot is the photo's center (matching the UI:
-            // the photo stays put while the crop rect moves over it).
+            // pivot on center, matching the UI where the photo stays put
             let center = CGPoint(x: extent.midX, y: extent.midY)
-            // CI coordinates are y-up, so the on-screen-clockwise convention
-            // needs the negated angle here (CSS rotate() gets the raw value).
+            // CI is y-up, so on-screen-clockwise negates here; CSS gets it raw
             let angle = -edit.cropAngle * .pi / 180
             result = result.transformed(
                 by: CGAffineTransform(translationX: center.x, y: center.y)
@@ -245,26 +271,62 @@ public final class Renderer {
             .transformed(by: .init(translationX: -rect.minX, y: -rect.minY))
     }
 
-    private func rawFilter(for file: ImageFile) throws -> CachedFilter {
+    /// A preview that decodes the full sensor first costs RAW 9 three times
+    /// as much.
+    static func rawScaleFactor(for edit: Edit, orientedSize: CGSize, maxPixel: Int?) -> Float {
+        guard let maxPixel, maxPixel > 0, let crop = saneCrop(edit) else { return 1 }
+        var width = orientedSize.width
+        var height = orientedSize.height
+        // the turn comes before the crop, so the fractions are against it
+        if edit.normalizedRotation == 90 || edit.normalizedRotation == 270 {
+            swap(&width, &height)
+        }
+        let longEdge = max(
+            width * (crop.right - crop.left), height * (crop.bottom - crop.top))
+        guard longEdge > 0 else { return 1 }
+        return Float(min(CGFloat(maxPixel) / longEdge, 1))
+    }
+
+    private func rawFilter(for file: ImageFile, maxPixel: Int?) throws -> CachedFilter {
+        let key = "\(file.path)|\(maxPixel.map(String.init) ?? "full")"
         lock.lock()
-        defer { lock.unlock() }
-        if let cached = filters[file.path], cached.mtime == file.mtime {
-            filters[file.path]?.lastUsed = Date()
+        if let cached = filtersByPathAndSize[key], cached.mtime == file.mtime {
+            filtersByPathAndSize[key]?.lastUsed = Date()
+            lock.unlock()
             return cached
         }
+        lock.unlock()
+
+        let entry = try makeFilter(for: file)
+        lock.lock()
+        filtersByPathAndSize[key] = entry
+        if filtersByPathAndSize.count > filterCapacity {
+            let oldest = filtersByPathAndSize.min { $0.value.lastUsed < $1.value.lastUsed }
+            if let oldest { filtersByPathAndSize.removeValue(forKey: oldest.key) }
+        }
+        lock.unlock()
+        return entry
+    }
+
+    func makeFilter(for file: ImageFile) throws -> CachedFilter {
         guard let filter = CIRAWFilter(imageURL: URL(fileURLWithPath: file.path)) else {
             throw RenderError.unreadable(file.path)
         }
+        // RAW 9 is opt-in, and the list is sorted oldest to newest
+        if let newest = filter.supportedDecoderVersions.last {
+            filter.decoderVersion = newest
+        }
         let entry = CachedFilter(
             filter: filter, mtime: file.mtime,
-            asShotTemperature: Double(filter.neutralTemperature),
-            asShotTint: Double(filter.neutralTint),
+            orientedSizeBeforeScaling: filter.outputImage?.extent.size ?? filter.nativeSize,
+            defaults: RawDefaults(
+                temperature: Double(filter.neutralTemperature),
+                tint: Double(filter.neutralTint),
+                denoise: Double(filter.luminanceNoiseReductionAmount)),
             lastUsed: Date())
-        filters[file.path] = entry
-        if filters.count > filterCapacity {
-            let oldest = filters.min { $0.value.lastUsed < $1.value.lastUsed }
-            if let oldest { filters.removeValue(forKey: oldest.key) }
-        }
+        lock.lock()
+        defaultsByPath[file.path] = (entry.defaults, file.mtime)
+        lock.unlock()
         return entry
     }
 }

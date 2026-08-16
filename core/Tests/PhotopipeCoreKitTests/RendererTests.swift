@@ -105,20 +105,13 @@ private func tempCacheDir() -> URL {
         "mtime change must invalidate")
 }
 
-/// The killer-feature budget: warm scrubs must stay interactive. The spike
-/// measured ~35ms on real hardware, and 250ms fails the build long before a
-/// slider feels broken.
+/// Warm scrubs must stay interactive: ~35ms on real hardware, and 250ms fails
+/// the build long before a slider feels broken.
 ///
-/// On CI that number is meaningless. GitHub's macOS runners are VMs without
-/// GPU acceleration, so Core Image renders on the CPU: the same scrub took
-/// 2180ms and 3230ms on two consecutive runs, varying with whatever else the
-/// host was doing. Any absolute ceiling there measures the runner, and a
-/// ceiling loose enough to be stable is too loose to catch a regression.
-///
-/// So CI asserts the invariant that survives the environment instead: warm
-/// renders reuse the cached CIRAWFilter rather than decoding the raw again,
-/// which is exactly what makes scrubbing possible. That comparison is
-/// self-relative, so it holds on any hardware.
+/// CI is a GPU-less VM where the same scrub took 2180ms and 3230ms on
+/// consecutive runs, so any absolute ceiling there measures the runner. It
+/// asserts the self-relative invariant instead: warm renders reuse the cached
+/// CIRAWFilter rather than decoding again.
 @Test func warmRenderLatencyBudget() throws {
     guard let fixture = fixtureARW() else { return }
     let cacheDir = tempCacheDir()
@@ -424,7 +417,7 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
     let renderer = Renderer(cacheDir: cacheDir)
     let file = try imageFile(for: fixture)
 
-    let asShot = try #require(try renderer.whiteBalance(for: file))
+    let asShot = try #require(try renderer.rawDefaults(for: file))
     #expect(asShot.temperature > 1500 && asShot.temperature < 20000, "plausible Kelvin")
 
     let neutral = try meanChannels(of: renderer.render(file: file, edit: .identity, maxPixel: 400))
@@ -435,7 +428,6 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
         warm.red - warm.blue > neutral.red - neutral.blue + 5,
         "raising the neutral temperature must warm the raw render")
 
-    // A later as-shot render must not inherit the mutated filter state.
     let backToNeutral = try meanChannels(
         of: renderer.render(file: file, edit: Edit(exposure: 0.001), maxPixel: 400))
     #expect(
@@ -444,7 +436,77 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
 
     let jpegURL = try writeSyntheticJPEG(color: CIColor(red: 0.5, green: 0.5, blue: 0.5))
     defer { try? FileManager.default.removeItem(at: jpegURL) }
-    #expect(try renderer.whiteBalance(for: imageFile(for: jpegURL)) == nil)
+    #expect(try renderer.rawDefaults(for: imageFile(for: jpegURL)) == nil)
+}
+
+/// Older Macs top out at RAW 8, which is already a fresh filter's default, so
+/// the opt-in is only observable where a newer version exists. Asserting the
+/// resolved version holds everywhere; asserting it *changed* does not.
+@Test func newestDecoderVersionIsUsed() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+
+    let fresh = try #require(CIRAWFilter(imageURL: fixture))
+    let newest = try #require(fresh.supportedDecoderVersions.last)
+    let ours = try renderer.makeFilter(for: try imageFile(for: fixture)).filter
+
+    #expect(ours.decoderVersion == newest)
+    if fresh.decoderVersion == newest {
+        print("NOTE: this Mac has no decoder newer than \(newest.rawValue)")
+    }
+}
+
+@Test func denoiseOverridesTheDecoderDefault() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    let defaults = try #require(try renderer.rawDefaults(for: file))
+    #expect(defaults.denoise > 0, "the decoder's own amount is what nil has to mean")
+
+    // JPEG size stands in for retained grain: less smoothing compresses worse.
+    // Native size, since a downscale is itself a denoise.
+    let native = Int(max(CIRAWFilter(imageURL: fixture)?.nativeSize.width ?? 0, 1))
+    let off = try Data(
+        contentsOf: renderer.render(file: file, edit: Edit(denoise: 0), maxPixel: native))
+    let full = try Data(
+        contentsOf: renderer.render(file: file, edit: Edit(denoise: 100), maxPixel: native))
+    #expect(off.count > full.count, "the denoise slider must reach the decoder")
+}
+
+/// maxPixel crosses IPC unvalidated, and 0 must not read as "full sensor":
+/// that would decode every pixel of a 33MP raw on request, eight at a time.
+@Test func nonPositiveMaxPixelIsRefused() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    for maxPixel in [0, -1, Int.min] {
+        #expect(throws: (any Error).self) {
+            try renderer.render(file: file, edit: .identity, maxPixel: maxPixel)
+        }
+    }
+}
+
+@Test func scaleFactorSurvivesACrop() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    let half = Edit(crop: CropRect(left: 0.25, top: 0.25, right: 0.75, bottom: 0.75))
+    let url = try renderer.render(file: file, edit: half, maxPixel: 1200)
+    let image = try #require(CIImage(contentsOf: url))
+    #expect(
+        max(image.extent.width, image.extent.height) > 1100,
+        "a cropped render decoded too small: \(image.extent)")
 }
 
 @Test func exportJPEGBakesTheExposureIn() throws {

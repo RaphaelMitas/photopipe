@@ -51,7 +51,7 @@ public final class Dispatcher {
         case "shutdown":
             return .shutdown(.success(id: request.id, result: .object(["bye": .bool(true)])))
         case "setRoot", "listShoots", "listImages", "thumbnail", "render", "setRating",
-            "setEdit", "whiteBalance", "status", "reveal", "trash", "exportFiles",
+            "setEdit", "rawDefaults", "status", "reveal", "trash", "exportFiles",
             "createProject", "importFiles", "updateProject", "renameProject",
             "scoreShoot", "scoreStatus":
             return .respond(libraryResponse(request))
@@ -157,16 +157,17 @@ public final class Dispatcher {
                         "edit": try JSONValue(encoding: result.edit),
                         "generation": .number(Double(result.generation)),
                     ]))
-            case "whiteBalance":
+            case "rawDefaults":
                 guard let path = request.params?["path"]?.stringValue else {
                     return .failure(id: request.id, code: "invalid_params", message: "path required")
                 }
-                let asShot = try library.whiteBalance(path: path)
+                let asShot = try library.rawDefaults(path: path)
                 return .success(
                     id: request.id,
                     result: .object([
                         "temperature": asShot.map { .number($0.temperature) } ?? .null,
                         "tint": asShot.map { .number($0.tint) } ?? .null,
+                        "denoise": asShot.map { .number($0.denoise * 100) } ?? .null,
                     ]))
             case "reveal":
                 guard let paths = request.params?["paths"]?.stringArrayValue else {
