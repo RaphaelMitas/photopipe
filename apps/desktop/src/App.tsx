@@ -249,9 +249,8 @@ export default function App() {
     (path, edit) => setEdit.mutate({ path, edit }),
     EDIT_COMMIT_MS,
   );
-  // Until the core has read what the file already carries, every edit is
-  // relative to a blank placeholder and would erase the real one. The keyboard
-  // reaches this with the edit panel closed, so say why nothing happened.
+  // Before the core has read the file, an edit is relative to a blank
+  // placeholder and would erase the real one.
   const readable = useCallback((image: ImageFile) => {
     if (image.enriched) return true;
     toast("Still reading this photo's existing edits", { id: "not-indexed" });
@@ -455,74 +454,100 @@ export default function App() {
     [editOf, readable],
   );
 
-  // A mutation changes identity every render, so the paste reaches the
-  // keyboard through a ref rather than dragging the whole handler's identity
-  // into the shortcut effect.
+  // Both change identity every render; the shortcut effect reads them as refs.
   const pasteMutation = useRef(pasteEdits);
   pasteMutation.current = pasteEdits;
+  const liveImages = useRef(allImages);
+  liveImages.current = allImages;
+
+  // Skip photos edited or pasted over since: that value is newer than the undo.
+  const undoPaste = useCallback(
+    (pasted: EditWrite[], previous: EditWrite[]) => {
+      const restore = previous.filter((write, index) => {
+        const live = liveImages.current.find(
+          (image) => image.path === write.path,
+        )?.edit;
+        return live && editKey(live) === editKey(pasted[index].edit);
+      });
+      if (restore.length === 0) {
+        toast("Those photos have changed since", { id: "clipboard" });
+        return;
+      }
+      pasteMutation.current.mutate(restore);
+    },
+    [],
+  );
 
   const pasteSettings = useCallback(
-    (targets: ImageFile[]) => {
-      if (!clipboard || targets.length === 0) return;
+    async (targets: ImageFile[]) => {
+      if (!clipboard) {
+        toast("Copy settings off a photo first", { id: "clipboard" });
+        return;
+      }
+      if (targets.length === 0) {
+        toast("Select the photos to paste onto", { id: "clipboard" });
+        return;
+      }
       const ready = targets.filter((image) => image.enriched);
       const writes: EditWrite[] = [];
       const previous: EditWrite[] = [];
-      // Only worth mentioning when the copied photo actually carries a white
-      // balance that raw and non-raw cannot share.
-      const carriesWhiteBalance =
-        clipboard.edit.temperature != null || clipboard.edit.tint != null;
       let keptWhiteBalance = 0;
       for (const image of ready) {
         const current = editOf(image);
         const raw = isRawFile(image);
         const next = pasteEdit(current, clipboard, raw);
         if (editKey(next) === editKey(current)) continue;
-        if (carriesWhiteBalance && raw !== clipboard.raw) keptWhiteBalance += 1;
+        if (
+          next.temperature !== clipboard.edit.temperature ||
+          next.tint !== clipboard.edit.tint
+        ) {
+          keptWhiteBalance += 1;
+        }
         writes.push({ path: image.path, edit: next });
-        previous.push({ path: image.path, edit: current });
+        // Undo restores what is on disk, not the draft the paste discards.
+        previous.push({ path: image.path, edit: image.edit });
       }
+      const notReady = targets.length - ready.length;
+      const unchanged = ready.length - writes.length;
       if (writes.length === 0) {
         toast(
           ready.length === 0
-            ? "Still reading these photos' existing edits"
+            ? "Still reading those photos' existing edits"
             : "Those photos already have these settings",
           { id: "clipboard" },
         );
         return;
       }
-      // A pending scrub on a photo being pasted over has to be dropped, not
-      // flushed: two writes to one file race in the core's work queue.
       if (editDraft && writes.some((write) => write.path === editDraft.path)) {
         cancelEdit();
       }
-      const notReady = targets.length - ready.length;
+      const result = await pasteMutation.current
+        .mutateAsync(writes)
+        .catch(() => null);
+      if (!result) {
+        toast.error("Pasting settings failed", { id: "clipboard" });
+        return;
+      }
+      if (result.written === 0) return;
       const notes = [
         notReady > 0 ? `${notReady} not read yet` : null,
+        unchanged > 0 ? `${unchanged} already matched` : null,
+        result.overtaken > 0 ? `${result.overtaken} edited since` : null,
         keptWhiteBalance > 0
           ? `${keptWhiteBalance} kept their own white balance`
           : null,
       ].filter(Boolean);
-      pasteMutation.current.mutate(writes, {
-        onSuccess: (result) => {
-          if (result.written === 0) return;
-          toast.success(
-            `Pasted settings onto ${result.written} ${
-              result.written === 1 ? "photo" : "photos"
-            }`,
-            {
-              // Its own toast, not the shared notice: each paste keeps the
-              // Undo that belongs to it.
-              description: notes.length > 0 ? notes.join(" · ") : undefined,
-              action: {
-                label: "Undo",
-                onClick: () => pasteMutation.current.mutate(previous),
-              },
-            },
-          );
+      toast.success(
+        `Pasted settings onto ${result.written} ${
+          result.written === 1 ? "photo" : "photos"
+        }`,
+        {
+          description: notes.length > 0 ? notes.join(" · ") : undefined,
+          action: { label: "Undo", onClick: () => undoPaste(writes, previous) },
         },
-      });
+      );
     },
-    [clipboard, editDraft, editOf, cancelEdit],
+    [clipboard, editDraft, editOf, cancelEdit, undoPaste],
   );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: leave crop mode when the loupe photo changes

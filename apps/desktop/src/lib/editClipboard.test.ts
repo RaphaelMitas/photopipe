@@ -78,8 +78,6 @@ describe("pasteEdit", () => {
     expect(pasted.saturation).toBe(0);
   });
 
-  // 5200 K on a JPEG whose slider stops at 100 is nonsense, and there is no
-  // conversion without the target's as-shot neutral.
   it("keeps the target's white balance when raw and non-raw meet", () => {
     const target: Edit = { ...identityEdit, temperature: -20, tint: 5 };
 

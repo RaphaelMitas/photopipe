@@ -32,8 +32,6 @@ describe("SelectionBar", () => {
     }
   });
 
-  // Copying a look off several photos at once has no meaning; pasting one
-  // needs a look on the clipboard.
   it("offers copy on a single photo and paste only with a clipboard", () => {
     renderBar(2, true);
     expect(screen.queryByTestId("action-copy-settings")).toBeNull();

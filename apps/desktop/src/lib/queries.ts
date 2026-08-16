@@ -224,9 +224,8 @@ export function useSetRating(shoot: string | null) {
 
 export type EditWrite = { path: string; edit: Edit };
 
-/// Optimistic edits, per path. A whole-list snapshot cannot be rolled back
-/// safely while other writes are in flight — restoring it would take their
-/// edits down with the failed one.
+/// Per path: a whole-list snapshot rolled back would take concurrent writes
+/// down with the failed one.
 function patchEdits(
   queryClient: QueryClient,
   shoot: string | null,
@@ -255,12 +254,31 @@ function currentEdits(
   return wanted;
 }
 
+/// The core's queue runs eight wide with no per-file lock, so overlapping
+/// writes to one photo can land in either order.
+const writesByPath = new Map<string, Promise<unknown>>();
+
+function writeInOrder<T>(path: string, write: () => Promise<T>): Promise<T> {
+  const done = (writesByPath.get(path) ?? Promise.resolve()).then(write, write);
+  const settled = done
+    .catch(() => undefined)
+    .then(() => {
+      if (writesByPath.get(path) === settled) writesByPath.delete(path);
+    });
+  writesByPath.set(path, settled);
+  return done;
+}
+
+const writeEdit = (shoot: string | null, { path, edit }: EditWrite) =>
+  writeInOrder(path, () =>
+    coreRequest<SetEditResult>("setEdit", { shoot, path, edit }),
+  );
+
 export function useSetEdit(shoot: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: SET_EDIT_KEY,
-    mutationFn: ({ path, edit }: EditWrite) =>
-      coreRequest<SetEditResult>("setEdit", { shoot, path, edit }),
+    mutationFn: (write: EditWrite) => writeEdit(shoot, write),
     onMutate: async ({ path, edit }) => {
       await queryClient.cancelQueries({ queryKey: ["images", shoot] });
       const previous = currentEdits(queryClient, shoot, [path]);
@@ -281,32 +299,39 @@ export function useSetEdit(shoot: string | null) {
   });
 }
 
-export type PasteResult = { written: number; failed: string[] };
+export type PasteResult = {
+  written: number;
+  failed: string[];
+  overtaken: number;
+};
 
-/// Enough writes in flight to keep exiftool busy without starving the core's
-/// bounded work queue of the renders and thumbnails the browser is asking for.
+/// Enough to keep exiftool busy without starving renders and thumbnails.
 const PASTE_CONCURRENCY = 4;
 
-/// Pasting a look onto a selection. One mutation for the whole batch, under
-/// the same key as a single edit so the library poller leaves the images cache
-/// alone until every write has settled, and so a photo whose write fails is
-/// the only one that goes back.
+/// One mutation for the batch, under the single-edit key so the library poller
+/// leaves the images cache alone until every write has settled.
 export function usePasteEdits(shoot: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: SET_EDIT_KEY,
     mutationFn: async (writes: EditWrite[]): Promise<PasteResult> => {
+      const target = shoot;
       const failed: string[] = [];
+      let overtaken = 0;
       let next = 0;
       const worker = async () => {
         while (next < writes.length) {
           const write = writes[next++];
+          // Edited by hand since the batch started: that value is newer.
+          const live = currentEdits(queryClient, target, [write.path]).get(
+            write.path,
+          );
+          if (live && editKey(live) !== editKey(write.edit)) {
+            overtaken += 1;
+            continue;
+          }
           try {
-            await coreRequest<SetEditResult>("setEdit", {
-              shoot,
-              path: write.path,
-              edit: write.edit,
-            });
+            await writeEdit(target, write);
           } catch {
             failed.push(write.path);
           }
@@ -318,8 +343,14 @@ export function usePasteEdits(shoot: string | null) {
           worker,
         ),
       );
-      return { written: writes.length - failed.length, failed };
+      return {
+        written: writes.length - failed.length - overtaken,
+        failed,
+        overtaken,
+      };
     },
+    // A long paste outlives its shoot, and react-query hands a running
+    // mutation the latest options — so the shoot travels in the context.
     onMutate: async (writes) => {
       await queryClient.cancelQueries({ queryKey: ["images", shoot] });
       const previous = currentEdits(
@@ -332,7 +363,7 @@ export function usePasteEdits(shoot: string | null) {
         shoot,
         new Map(writes.map((write) => [write.path, write.edit])),
       );
-      return { previous };
+      return { previous, shoot };
     },
     onSuccess: (result, _writes, context) => {
       if (result.failed.length === 0) return;
@@ -341,7 +372,7 @@ export function usePasteEdits(shoot: string | null) {
         const edit = context?.previous.get(path);
         if (edit) rollback.set(path, edit);
       }
-      patchEdits(queryClient, shoot, rollback);
+      patchEdits(queryClient, context.shoot, rollback);
       toast.error(
         `${result.failed.length} ${
           result.failed.length === 1 ? "photo" : "photos"
@@ -349,9 +380,11 @@ export function usePasteEdits(shoot: string | null) {
         { description: "Saving failed" },
       );
     },
-    onSettled: () => {
+    onSettled: (_result, _error, _writes, context) => {
       if (queryClient.isMutating({ mutationKey: SET_EDIT_KEY }) === 1) {
-        queryClient.invalidateQueries({ queryKey: ["images", shoot] });
+        queryClient.invalidateQueries({
+          queryKey: ["images", context?.shoot ?? shoot],
+        });
       }
     },
   });

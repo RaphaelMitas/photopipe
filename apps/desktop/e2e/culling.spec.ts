@@ -202,7 +202,6 @@ test("a look copied off one photo lands on a selection, and undo takes it back",
 }) => {
   await openZell(page);
 
-  // DSC00832.jpg ships with +0.50 in the dataset; copy that look.
   await page.getByTestId("thumb").first().click();
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.jpg");

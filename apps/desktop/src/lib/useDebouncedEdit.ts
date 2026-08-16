@@ -17,9 +17,8 @@ export function useDebouncedEdit(
   const commitRef = useRef(commit);
   commitRef.current = commit;
 
-  // Drops the pending edit without writing it. Pasting onto the photo being
-  // scrubbed has to cancel, not flush: two writes to one file race in the
-  // core's work queue and the older one can land last.
+  // Pasting over the photo being scrubbed cancels rather than flushes: the
+  // pending value would land after the paste.
   const cancel = useCallback(() => {
     if (timer.current !== null) {
       clearTimeout(timer.current);
