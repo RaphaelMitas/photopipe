@@ -1,12 +1,13 @@
 import { Button } from "@photopipe/ui/components/button";
+import { Progress } from "@photopipe/ui/components/progress";
 import { Segmented } from "@photopipe/ui/components/segmented";
 import { Switch } from "@photopipe/ui/components/switch";
+import { cn } from "@photopipe/ui/lib/utils";
 import { open as openDialog, save } from "@tauri-apps/plugin-dialog";
 import { AlertCircle, Check, FolderOpen, Upload, X } from "lucide-react";
 import { useState } from "react";
 import type { ExportFormat } from "@/lib/core";
 import { type ExportJob, type JobStatus, jobStatus } from "@/lib/queries";
-import { ProgressBar } from "./ProgressBar";
 
 export type ExportOptions = {
   format: ExportFormat;
@@ -345,11 +346,13 @@ export function ExportDrawer({
                     )}
                   </span>
                   {status === "running" && (
-                    <ProgressBar
-                      share={settled / Math.max(job.total, 1)}
-                      testid="job-bar"
-                      className="ml-5"
-                      barClassName={job.archiving ? "animate-pulse" : undefined}
+                    <Progress
+                      data-testid="job-bar"
+                      value={(settled / Math.max(job.total, 1)) * 100}
+                      className={cn(
+                        "ml-5 h-0.5 bg-border",
+                        job.archiving && "animate-pulse",
+                      )}
                     />
                   )}
                   <span

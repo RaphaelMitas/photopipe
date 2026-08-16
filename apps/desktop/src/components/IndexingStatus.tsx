@@ -1,5 +1,5 @@
+import { Progress } from "@photopipe/ui/components/progress";
 import type { ScanProgress } from "@/lib/queries";
-import { ProgressBar } from "./ProgressBar";
 
 const format = new Intl.NumberFormat();
 
@@ -21,7 +21,11 @@ export function IndexingStatus({ progress }: { progress: ScanProgress }) {
         Indexing {format.format(progress.filesEnriched)} of{" "}
         {format.format(progress.filesFound)}
       </span>
-      <ProgressBar share={share} testid="indexing-bar" className="w-16" />
+      <Progress
+        data-testid="indexing-bar"
+        value={share * 100}
+        className="h-0.5 w-16 bg-border"
+      />
     </div>
   );
 }
