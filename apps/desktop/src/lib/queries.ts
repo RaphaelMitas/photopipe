@@ -21,6 +21,7 @@ import {
   type Shoot,
   type StatusResult,
 } from "./core";
+import type { ViewportRequest } from "./zoom";
 
 export function useShoots(enabled: boolean) {
   return useQuery({
@@ -108,7 +109,12 @@ type RenderFile = { path: string; mtime: number } | undefined;
 
 const PREVIEW_MAX_PIXEL = 2560;
 
-function renderQueryOptions(file: RenderFile, edit: Edit, maxPixel: number) {
+function renderQueryOptions(
+  file: RenderFile,
+  edit: Edit,
+  maxPixel: number,
+  viewport?: ViewportRequest["viewport"],
+) {
   return {
     queryKey: [
       "render",
@@ -116,6 +122,9 @@ function renderQueryOptions(file: RenderFile, edit: Edit, maxPixel: number) {
       file?.mtime,
       editKey(edit),
       maxPixel,
+      viewport
+        ? `${viewport.left},${viewport.top},${viewport.right},${viewport.bottom}`
+        : "",
     ] as const,
     queryFn: async () =>
       (
@@ -123,6 +132,7 @@ function renderQueryOptions(file: RenderFile, edit: Edit, maxPixel: number) {
           path: file?.path,
           edit,
           maxPixel,
+          ...(viewport ? { viewport } : {}),
         })
       ).cachePath,
     staleTime: Number.POSITIVE_INFINITY,
@@ -138,15 +148,22 @@ export function useRender(file: RenderFile, edit: Edit) {
   });
 }
 
-export function useFullRender(
-  file: (RenderFile & { width: number; height: number }) | undefined,
+/// The zoomed loupe renders only the slice on screen, at 1:1. Asking for the
+/// whole frame at native size costs several times as much and then gets
+/// downscaled into the stage anyway.
+export function useViewportRender(
+  file: RenderFile,
   edit: Edit,
-  enabled: boolean,
+  request: ViewportRequest | null,
 ) {
-  const maxPixel = Math.max(file?.width ?? 0, file?.height ?? 0);
   return useQuery({
-    ...renderQueryOptions(file, edit, maxPixel),
-    enabled: file !== undefined && enabled && maxPixel > PREVIEW_MAX_PIXEL,
+    ...renderQueryOptions(
+      file,
+      edit,
+      request?.maxPixel ?? 0,
+      request?.viewport,
+    ),
+    enabled: file !== undefined && request !== null,
   });
 }
 

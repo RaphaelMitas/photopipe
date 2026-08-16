@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { centerOn, clampPan, visibleRect, zoomAt } from "./zoom";
+import {
+  centerOn,
+  clampPan,
+  viewportKey,
+  viewportRequest,
+  visibleRect,
+  visibleScreenRect,
+  zoomAt,
+} from "./zoom";
 
 // A 1000x500 viewport showing a 3:2 photo letterboxed to 750x500 at x=125.
 const view = { width: 1000, height: 500 };
@@ -62,5 +70,86 @@ describe("visibleRect and centerOn", () => {
     const visible = visibleRect(centered, photo, 1000, 500);
     expect(visible.x + visible.width / 2).toBeCloseTo(0.25);
     expect(visible.y + visible.height / 2).toBeCloseTo(0.5);
+  });
+});
+
+describe("viewportRequest", () => {
+  // The 750x500 box shows a 6000x4000 photo, so 100% is scale 8.
+  const pixels = { width: 6000, height: 4000 };
+  const request = (state: Parameters<typeof viewportRequest>[0]) =>
+    viewportRequest(
+      state,
+      photo,
+      view.width,
+      view.height,
+      pixels.width,
+      pixels.height,
+      2,
+    );
+
+  it("asks for nothing while the photo fits", () => {
+    expect(request(null)).toBeNull();
+    expect(request({ scale: 1, tx: 0, ty: 0 })).toBeNull();
+  });
+
+  it("asks only for the slice on screen", () => {
+    const zoomed = zoomAt(null, { x: 500, y: 250 }, 8, 8, photo, 1000, 500);
+    expect(zoomed).not.toBeNull();
+    if (!zoomed) return;
+    const got = request(centerOn(zoomed, { x: 0.5, y: 0.5 }, photo, 1000, 500));
+    expect(got).not.toBeNull();
+    if (!got) return;
+
+    const width = got.viewport.right - got.viewport.left;
+    expect(width).toBeLessThan(0.3);
+    expect(got.viewport.left).toBeGreaterThan(0.3);
+    expect(got.viewport.right).toBeLessThan(0.7);
+    // Only what the region truly holds: 6000 * ~0.17 is far under a full frame.
+    expect(got.maxPixel).toBeLessThan(pixels.width);
+    expect(got.maxPixel).toBeGreaterThan(0);
+  });
+
+  it("never asks for more pixels than the region has", () => {
+    const zoomed = zoomAt(null, { x: 500, y: 250 }, 64, 64, photo, 1000, 500);
+    expect(zoomed).not.toBeNull();
+    if (!zoomed) return;
+    const deep = request(zoomed);
+    expect(deep).not.toBeNull();
+    if (!deep) return;
+    const regionPixels =
+      (deep.viewport.right - deep.viewport.left) * pixels.width;
+    expect(deep.maxPixel).toBeLessThanOrEqual(Math.round(regionPixels) + 1);
+  });
+
+  it("marks a moved view as no longer matching what was rendered", () => {
+    const zoomed = zoomAt(null, { x: 500, y: 250 }, 8, 8, photo, 1000, 500);
+    expect(zoomed).not.toBeNull();
+    if (!zoomed) return;
+    const held = request(zoomed);
+    expect(viewportKey(held)).toBe(viewportKey(request(zoomed)));
+    expect(viewportKey(held)).not.toBe(
+      viewportKey(request({ ...zoomed, tx: zoomed.tx - 40 })),
+    );
+    expect(viewportKey(null)).toBe("");
+  });
+
+  it("covers the stage where the photo covers it", () => {
+    const zoomed = zoomAt(null, { x: 500, y: 250 }, 4, 8, photo, 1000, 500);
+    expect(zoomed).not.toBeNull();
+    if (!zoomed) return;
+
+    const rect = visibleScreenRect(zoomed, photo, view.width, view.height);
+    expect(rect.left).toBeCloseTo(0);
+    expect(rect.top).toBeCloseTo(0);
+    expect(rect.width).toBeCloseTo(view.width);
+    expect(rect.height).toBeCloseTo(view.height);
+  });
+
+  it("stops at the photo edge when it does not fill the stage", () => {
+    // scale 1.2 leaves the 750-wide photo at 900, short of the 1000 viewport.
+    const state = clampPan({ scale: 1.2, tx: 0, ty: 0 }, photo, 1000, 500);
+    const rect = visibleScreenRect(state, photo, view.width, view.height);
+    expect(rect.width).toBeCloseTo(900);
+    expect(rect.left).toBeCloseTo((1000 - 900) / 2);
   });
 });

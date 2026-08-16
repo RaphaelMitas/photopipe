@@ -24,6 +24,23 @@ public struct CropRect: Codable, Equatable, Sendable {
         self.right = right
         self.bottom = bottom
     }
+
+    public static let full = CropRect(left: 0, top: 0, right: 1, bottom: 1)
+
+    /// These arrive from sidecars and IPC. nil is geometry Core Image cannot
+    /// take. A straightened photo's corners overhang, so values legitimately
+    /// run past [0, 1]; one frame beyond bounds anything hostile.
+    public func sanitized() -> CropRect? {
+        guard left.isFinite, top.isFinite, right.isFinite, bottom.isFinite,
+            right > left, bottom > top
+        else { return nil }
+        let sane: (Double) -> Double = { min(max($0, -1), 2) }
+        return CropRect(
+            left: sane(left), top: sane(top), right: sane(right), bottom: sane(bottom))
+    }
+
+    var width: Double { right - left }
+    var height: Double { bottom - top }
 }
 
 /// Every per-photo adjustment. Curve points live in the unit square, empty
