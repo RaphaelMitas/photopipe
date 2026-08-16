@@ -228,3 +228,46 @@ test("a look copied off one photo lands on a selection, and undo takes it back",
     page.locator("[data-path='DSC00832.ARW']").getByTestId("thumb-edited"),
   ).toHaveCount(0);
 });
+
+test("zooming renders the visible slice and drops it again on fit", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("thumb").first().click();
+  await expect(page.getByTestId("loupe")).toBeVisible();
+  await expect(page.getByTestId("loupe-region")).toHaveCount(0);
+
+  const photo = await page.getByTestId("loupe-image").boundingBox();
+  if (!photo) throw new Error("no photo on the stage");
+  const centre = {
+    x: photo.x + photo.width / 2,
+    y: photo.y + photo.height / 2,
+  };
+  await page.mouse.dblclick(centre.x, centre.y);
+  await expect(page.getByTestId("zoom-level")).toContainText("100%");
+
+  // The point of the slice is that it is not a scaled-up copy of the fitted
+  // render: it sits outside the zoom transform, laid out at its own on-screen
+  // size, and it covers what you are looking at.
+  const region = page.getByTestId("loupe-region");
+  await expect(region).toHaveCount(1);
+  const geometry = await region.evaluate((img) => {
+    const parent = img.parentElement as HTMLElement;
+    const box = img.getBoundingClientRect();
+    const stage = parent.getBoundingClientRect();
+    return {
+      parentTransform: getComputedStyle(parent).transform,
+      coversCentre:
+        box.left <= stage.left + stage.width / 2 &&
+        box.right >= stage.left + stage.width / 2 &&
+        box.top <= stage.top + stage.height / 2 &&
+        box.bottom >= stage.top + stage.height / 2,
+    };
+  });
+  expect(geometry.parentTransform).toBe("none");
+  expect(geometry.coversCentre).toBe(true);
+
+  await page.mouse.dblclick(centre.x, centre.y);
+  await expect(page.getByTestId("zoom-level")).toHaveCount(0);
+  await expect(page.getByTestId("loupe-region")).toHaveCount(0);
+});

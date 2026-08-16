@@ -83,6 +83,77 @@ export function visibleRect(
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
+export type ViewportRequest = {
+  viewport: { left: number; top: number; right: number; bottom: number };
+  maxPixel: number;
+};
+
+/// What the core should render for the current zoom: the slice on screen at
+/// the resolution the screen can show, instead of the whole frame. Null when
+/// the photo fits, where the ordinary render already covers it.
+export function viewportRequest(
+  state: ZoomState | null,
+  photo: Box,
+  viewWidth: number,
+  viewHeight: number,
+  pixelWidth: number,
+  pixelHeight: number,
+  devicePixelRatio: number,
+): ViewportRequest | null {
+  if (!state || photo.width <= 0 || photo.height <= 0) return null;
+  const visible = visibleRect(state, photo, viewWidth, viewHeight);
+  if (visible.width <= 0 || visible.height <= 0) return null;
+  if (visible.width >= 1 && visible.height >= 1) return null;
+
+  const onScreen = visibleScreenRect(state, photo, viewWidth, viewHeight);
+  // Never more than the slice holds: upscaling would cost a bigger decode for
+  // pixels the sensor never recorded.
+  const maxPixel = Math.round(
+    Math.min(
+      Math.max(visible.width * pixelWidth, visible.height * pixelHeight),
+      Math.max(onScreen.width, onScreen.height) * devicePixelRatio,
+    ),
+  );
+  if (maxPixel <= 0) return null;
+  return {
+    viewport: {
+      left: visible.x,
+      top: visible.y,
+      right: visible.x + visible.width,
+      bottom: visible.y + visible.height,
+    },
+    maxPixel,
+  };
+}
+
+/// Identity of a request, so the loupe can tell whether the slice it holds
+/// still matches the view. Anything else is stale and must not be drawn.
+export function viewportKey(request: ViewportRequest | null): string {
+  if (!request) return "";
+  const { left, top, right, bottom } = request.viewport;
+  return `${left},${top},${right},${bottom}@${request.maxPixel}`;
+}
+
+/// The part of the stage the photo actually covers. A slice rendered for this
+/// state lands here exactly.
+export function visibleScreenRect(
+  state: ZoomState,
+  photo: Box,
+  viewWidth: number,
+  viewHeight: number,
+) {
+  const left = photo.x * state.scale + state.tx;
+  const top = photo.y * state.scale + state.ty;
+  const clampedLeft = Math.max(0, left);
+  const clampedTop = Math.max(0, top);
+  return {
+    left: clampedLeft,
+    top: clampedTop,
+    width: Math.min(viewWidth, left + photo.width * state.scale) - clampedLeft,
+    height: Math.min(viewHeight, top + photo.height * state.scale) - clampedTop,
+  };
+}
+
 /// Pan so the photo-normalized point sits at the viewport center.
 export function centerOn(
   state: ZoomState,

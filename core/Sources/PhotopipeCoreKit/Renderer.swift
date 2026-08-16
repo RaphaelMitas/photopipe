@@ -72,23 +72,29 @@ public final class Renderer {
             .appendingPathComponent("Photopipe/renders")
     }
 
-    public func cachePath(for file: ImageFile, edit: Edit, maxPixel: Int) -> URL {
+    public func cachePath(
+        for file: ImageFile, edit: Edit, maxPixel: Int, viewport: CropRect? = nil
+    ) -> URL {
+        let region = viewport.map { "|\($0.left),\($0.top),\($0.right),\($0.bottom)" } ?? ""
         let key =
-            "\(file.path)|\(file.mtime)|\(file.size)|\(edit.cacheKey)|\(maxPixel)|v\(Self.pipelineVersion)"
+            "\(file.path)|\(file.mtime)|\(file.size)|\(edit.cacheKey)|\(maxPixel)\(region)|v\(Self.pipelineVersion)"
         let digest = SHA256.hash(data: Data(key.utf8))
             .map { String(format: "%02x", $0) }.joined().prefix(32)
         return cacheDir.appendingPathComponent("\(digest).jpg")
     }
 
-    public func render(file: ImageFile, edit: Edit, maxPixel: Int) throws -> URL {
+    public func render(
+        file: ImageFile, edit: Edit, maxPixel: Int, viewport: CropRect? = nil
+    ) throws -> URL {
         guard maxPixel > 0 else { throw RenderError.encodeFailed }
-        let dest = cachePath(for: file, edit: edit, maxPixel: maxPixel)
+        let dest = cachePath(for: file, edit: edit, maxPixel: maxPixel, viewport: viewport)
         if FileManager.default.fileExists(atPath: dest.path) {
             return dest
         }
         try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
 
-        var image = try sourceImage(for: file, edit: edit, maxPixel: maxPixel)
+        var image = try sourceImage(
+            for: file, edit: edit, maxPixel: maxPixel, viewport: viewport)
         // raws already decoded close to this; embedded formats did not
         let longEdge = max(image.extent.width, image.extent.height)
         let scale = CGFloat(maxPixel) / longEdge
@@ -146,19 +152,22 @@ public final class Renderer {
         return try makeFilter(for: file).defaults
     }
 
-    /// nil renders the full sensor, for export.
-    private func sourceImage(for file: ImageFile, edit: Edit, maxPixel: Int?) throws -> CIImage {
+    /// A nil maxPixel renders the full sensor, for export.
+    private func sourceImage(
+        for file: ImageFile, edit: Edit, maxPixel: Int?, viewport: CropRect? = nil
+    ) throws -> CIImage {
         var image: CIImage
         if Self.rawExtensions.contains(file.ext.lowercased()) {
             let cached = try rawFilter(for: file, maxPixel: maxPixel)
             let filter = cached.filter
             lock.lock()
             let scale = Self.rawScaleFactor(
-                for: edit, orientedSize: cached.orientedSizeBeforeScaling, maxPixel: maxPixel)
-            // assigning drops the cached intermediates a slider re-render needs
-            if filter.scaleFactor != scale {
-                filter.scaleFactor = scale
-            }
+                for: edit, orientedSize: cached.orientedSizeBeforeScaling, maxPixel: maxPixel,
+                viewport: viewport)
+            // Unconditionally, even when unchanged: skipping the assignment
+            // when it already matched returned a decode a quarter of the size
+            // on the next read. Re-assigning does not cost the warm path.
+            filter.scaleFactor = scale
             filter.exposure = Float(edit.exposure)
             filter.neutralTemperature = Float(edit.temperature ?? cached.defaults.temperature)
             filter.neutralTint = Float(edit.tint ?? cached.defaults.tint)
@@ -225,37 +234,44 @@ public final class Renderer {
         if edit.hasCropComponent {
             image = Self.applyCrop(edit, to: image)
         }
+        if let viewport {
+            image = Self.applyViewport(viewport, to: image)
+        }
         return image
     }
 
-    /// Crop values reach here from sidecars and IPC.
     static func saneCrop(_ edit: Edit) -> CropRect? {
-        let crop = edit.crop ?? CropRect(left: 0, top: 0, right: 1, bottom: 1)
-        guard crop.left.isFinite, crop.top.isFinite, crop.right.isFinite,
-            crop.bottom.isFinite, crop.right > crop.left, crop.bottom > crop.top,
-            edit.cropAngle.isFinite
-        else { return nil }
-        // a straightened photo's corners overhang, so values run past [0, 1]
-        let sane: (Double) -> Double = { min(max($0, -1), 2) }
-        return CropRect(
-            left: sane(crop.left), top: sane(crop.top),
-            right: sane(crop.right), bottom: sane(crop.bottom))
+        guard edit.cropAngle.isFinite else { return nil }
+        return (edit.crop ?? .full).sanitized()
+    }
+
+    /// Normalized coordinates are top-left-origin; CI's are bottom-left.
+    /// Rounds inward, or a straightened crop gets a thin blank edge.
+    static func pixelRect(for crop: CropRect, in extent: CGRect) -> CGRect {
+        let raw = CGRect(
+            x: extent.minX + crop.left * extent.width,
+            y: extent.minY + (1 - crop.bottom) * extent.height,
+            width: crop.width * extent.width,
+            height: crop.height * extent.height)
+        return CGRect(
+            x: raw.minX.rounded(.up), y: raw.minY.rounded(.up),
+            width: max(raw.maxX.rounded(.down) - raw.minX.rounded(.up), 1),
+            height: max(raw.maxY.rounded(.down) - raw.minY.rounded(.up), 1))
+    }
+
+    /// The sub-rect of the edited frame the loupe is actually showing. Not an
+    /// edit: it never reaches a sidecar, and it composes on top of the crop.
+    static func applyViewport(_ viewport: CropRect, to image: CIImage) -> CIImage {
+        guard let sane = viewport.sanitized() else { return image }
+        let rect = pixelRect(for: sane, in: image.extent)
+        return image.cropped(to: rect)
+            .transformed(by: .init(translationX: -rect.minX, y: -rect.minY))
     }
 
     static func applyCrop(_ edit: Edit, to image: CIImage) -> CIImage {
         let extent = image.extent
         guard let crop = saneCrop(edit) else { return image }
-        // Normalized coordinates are top-left-origin; CI's are bottom-left.
-        let raw = CGRect(
-            x: extent.minX + crop.left * extent.width,
-            y: extent.minY + (1 - crop.bottom) * extent.height,
-            width: (crop.right - crop.left) * extent.width,
-            height: (crop.bottom - crop.top) * extent.height)
-        // round inward, or a straightened crop gets a thin blank edge
-        let rect = CGRect(
-            x: raw.minX.rounded(.up), y: raw.minY.rounded(.up),
-            width: max(raw.maxX.rounded(.down) - raw.minX.rounded(.up), 1),
-            height: max(raw.maxY.rounded(.down) - raw.minY.rounded(.up), 1))
+        let rect = pixelRect(for: crop, in: extent)
         var result = image
         if edit.cropAngle != 0 {
             // pivot on center, matching the UI where the photo stays put
@@ -273,7 +289,9 @@ public final class Renderer {
 
     /// A preview that decodes the full sensor first costs RAW 9 three times
     /// as much.
-    static func rawScaleFactor(for edit: Edit, orientedSize: CGSize, maxPixel: Int?) -> Float {
+    static func rawScaleFactor(
+        for edit: Edit, orientedSize: CGSize, maxPixel: Int?, viewport: CropRect? = nil
+    ) -> Float {
         guard let maxPixel, maxPixel > 0, let crop = saneCrop(edit) else { return 1 }
         var width = orientedSize.width
         var height = orientedSize.height
@@ -281,8 +299,9 @@ public final class Renderer {
         if edit.normalizedRotation == 90 || edit.normalizedRotation == 270 {
             swap(&width, &height)
         }
+        let region = viewport?.sanitized() ?? .full
         let longEdge = max(
-            width * (crop.right - crop.left), height * (crop.bottom - crop.top))
+            width * crop.width * region.width, height * crop.height * region.height)
         guard longEdge > 0 else { return 1 }
         return Float(min(CGFloat(maxPixel) / longEdge, 1))
     }

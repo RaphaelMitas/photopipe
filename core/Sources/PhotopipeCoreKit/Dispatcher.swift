@@ -68,6 +68,16 @@ public final class Dispatcher {
         return try JSONDecoder().decode(Edit.self, from: JSONEncoder().encode(value))
     }
 
+    /// Dropped rather than rejected when malformed: a bad viewport should cost
+    /// the caller a whole-frame render, not an error mid-gesture.
+    static func viewport(from value: JSONValue?) -> CropRect? {
+        guard let value,
+            let left = value["left"]?.doubleValue, let top = value["top"]?.doubleValue,
+            let right = value["right"]?.doubleValue, let bottom = value["bottom"]?.doubleValue
+        else { return nil }
+        return CropRect(left: left, top: top, right: right, bottom: bottom).sanitized()
+    }
+
     private func libraryResponse(_ request: Request) -> Response {
         do {
             switch request.method {
@@ -123,7 +133,9 @@ public final class Dispatcher {
                 }
                 let edit = try Self.edit(from: request.params?["edit"]) ?? .identity
                 let maxPixel = request.params?["maxPixel"]?.intValue ?? 2000
-                let cachePath = try library.render(path: path, edit: edit, maxPixel: maxPixel)
+                let cachePath = try library.render(
+                    path: path, edit: edit, maxPixel: maxPixel,
+                    viewport: Self.viewport(from: request.params?["viewport"]))
                 return .success(id: request.id, result: .object(["cachePath": .string(cachePath)]))
             case "setRating":
                 guard let shoot = request.params?["shoot"]?.stringValue,
