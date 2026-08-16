@@ -181,7 +181,8 @@ private func exportNow(
     #expect(
         try exportNow(
             service, shoot: shoot.lastPathComponent, paths: paths, destination: flatZip,
-            zip: true).done == 2)
+            zip: true
+        ).done == 2)
     let flatEntries = try FileActions.list(zip: flatZip).filter { !$0.hasSuffix("/") }
     #expect(
         flatEntries.sorted() == ["DSC00002-1.jpg", "DSC00002.jpg"],
@@ -191,7 +192,8 @@ private func exportNow(
     #expect(
         try exportNow(
             service, shoot: shoot.lastPathComponent, paths: paths, destination: mirroredZip,
-            zip: true, flatten: false).done == 2)
+            zip: true, flatten: false
+        ).done == 2)
     let mirroredEntries = try FileActions.list(zip: mirroredZip).filter { !$0.hasSuffix("/") }
     #expect(mirroredEntries.sorted() == ["Tag1/DSC00002.jpg", "Tag2/DSC00002.jpg"])
 }
