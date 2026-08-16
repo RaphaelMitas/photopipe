@@ -37,7 +37,9 @@ import { Filmstrip, type FilmstripMode } from "./Filmstrip";
 export const EXPOSURE_STEP = 0.25;
 export const EXPOSURE_RANGE = 3;
 
-// Nudges are counted in photo pixels, not screen pixels.
+// Photo pixels, not screen pixels: ten of them stay a fine adjustment on any
+// photo while still showing on screen at a fitted view.
+const NUDGE_PIXELS = 10;
 const NUDGE: Record<string, { x: number; y: number }> = {
   ArrowLeft: { x: -1, y: 0 },
   ArrowRight: { x: 1, y: 0 },
@@ -197,13 +199,12 @@ export function Loupe({
         const nudge = NUDGE[event.key];
         if (nudge) {
           event.preventDefault();
-          const step = event.shiftKey ? 10 : 1;
           const nudged = {
             ...draft,
             crop: moveCrop(
               draft.crop,
-              (nudge.x * step) / displayWidth,
-              (nudge.y * step) / displayHeight,
+              (nudge.x * NUDGE_PIXELS) / displayWidth,
+              (nudge.y * NUDGE_PIXELS) / displayHeight,
               draft.angle,
               displayWidth,
               displayHeight,

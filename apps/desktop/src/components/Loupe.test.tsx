@@ -159,14 +159,14 @@ describe("Loupe crop mode", () => {
     expect(onCropDraft).not.toHaveBeenCalled();
   });
 
-  it("arrow keys nudge the crop by a pixel, ten with shift", () => {
+  it("arrow keys nudge the crop ten photo pixels, shift or not", () => {
     const inset = {
       ...draft(),
       crop: { left: 0.2, top: 0.2, right: 0.8, bottom: 0.8 },
     };
     const { onCropDraft } = renderLoupe(0, 0, inset);
     fireEvent.keyDown(window, { key: "ArrowRight" });
-    expect(onCropDraft.mock.calls[0][0].crop.left).toBeCloseTo(0.2 + 1 / 3000);
+    expect(onCropDraft.mock.calls[0][0].crop.left).toBeCloseTo(0.2 + 10 / 3000);
     fireEvent.keyDown(window, { key: "ArrowUp", shiftKey: true });
     expect(onCropDraft.mock.calls[1][0].crop.top).toBeCloseTo(0.2 - 10 / 2000);
   });
