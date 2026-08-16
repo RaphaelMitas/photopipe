@@ -141,6 +141,7 @@ async function expectInView(
   const viewport = page.getByTestId(container);
   const cell = viewport.locator(`[data-path='${path}']`);
   await expect(cell).toBeVisible();
+  await expect(cell).toHaveAttribute("data-current", "true");
   const box = await cell.boundingBox();
   const bounds = await viewport.boundingBox();
   if (!box || !bounds) throw new Error(`${container} has no box`);

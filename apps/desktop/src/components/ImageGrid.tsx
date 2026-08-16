@@ -63,6 +63,7 @@ function Thumb({
   height,
   showInfo,
   selected,
+  current,
   selectMode,
   onOpen,
   onSelect,
@@ -72,6 +73,7 @@ function Thumb({
   height: number;
   showInfo?: boolean;
   selected?: boolean;
+  current?: boolean;
   selectMode?: boolean;
   onOpen?: () => void;
   onSelect?: (modifiers: { meta: boolean; shift: boolean }) => void;
@@ -101,6 +103,7 @@ function Thumb({
       data-testid="thumb"
       data-path={image.rel}
       data-selected={selected ? "true" : "false"}
+      data-current={current ? "true" : "false"}
       onPointerDown={() => {
         pressFired.current = false;
         cancelPress();
@@ -127,7 +130,11 @@ function Thumb({
         }
       }}
       className={`group relative shrink-0 overflow-hidden rounded-md bg-card transition-shadow focus-visible:ring-2 focus-visible:ring-ring hover:shadow-lg ${
-        selected ? "ring-2 ring-primary" : ""
+        selected
+          ? "ring-2 ring-primary"
+          : current
+            ? "ring-2 ring-foreground"
+            : ""
       }`}
       style={{ width, height }}
     >
@@ -289,6 +296,7 @@ export function ImageGrid({
                   height={row.height}
                   showInfo={showInfo}
                   selected={selected?.has(cell.image.path)}
+                  current={cell.image.path === focusPath}
                   selectMode={selectMode}
                   onOpen={onOpen && (() => onOpen(cell.index))}
                   onSelect={

@@ -99,6 +99,7 @@ export function ImageList({
           {virtualizer.getVirtualItems().map((item) => {
             const image = images[item.index];
             const isSelected = selected.has(image.path);
+            const isCurrent = image.path === focusPath;
             return (
               <button
                 key={item.key}
@@ -106,6 +107,7 @@ export function ImageList({
                 data-testid="image-row"
                 data-path={image.rel}
                 data-selected={isSelected}
+                data-current={isCurrent}
                 onClick={(event) => {
                   const meta = event.metaKey || event.ctrlKey;
                   if (onOpen && !meta && !event.shiftKey && !selectMode) {
@@ -120,6 +122,7 @@ export function ImageList({
                 className={cn(
                   "absolute top-0 left-0 flex w-full items-center gap-3 px-3 text-left",
                   isSelected ? "bg-secondary" : "hover:bg-accent",
+                  isCurrent && "ring-1 ring-foreground ring-inset",
                 )}
                 style={{
                   height: ROW_HEIGHT,
