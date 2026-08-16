@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
 // pictures can never drift from the app. Tagged @screenshots: `pnpm e2e`
 // greps these out, `pnpm screenshots` runs only these.
 //
-// The photos are stand-in gradients (see placeholderFor in lib/core.ts).
+// The photos are drawn landscapes (see placeholderFor in lib/placeholder.ts).
 // Nothing here is a real shoot, and nothing depends on the machine it runs
 // on, so the output is identical for anyone who regenerates it.
 

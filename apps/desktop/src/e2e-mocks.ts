@@ -159,9 +159,9 @@ export const E2E_HANDLERS: Record<
       ? `@${viewport.left},${viewport.top},${viewport.right},${viewport.bottom}`
       : "";
     return {
-      cachePath: `/fake/renders/${String(params.path)}@${editKey(
+      cachePath: `/fake/renders/${editKey(
         (params.edit as Edit | undefined) ?? identityEdit,
-      )}${region}.jpg`,
+      )}${region}/${String(params.path)}.jpg`,
     };
   },
   setRating: (params) => {
