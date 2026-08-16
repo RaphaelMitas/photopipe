@@ -296,6 +296,18 @@ public final class LibraryService: @unchecked Sendable {
         return settled
     }
 
+    /// One photo's XMP write, settled afterwards. What settling compares against
+    /// is restatted first rather than taken from the snapshot, which a second
+    /// write to the same photo leaves behind while it is in flight.
+    private func write(
+        shoot: String, path: String, _ apply: (ImageFile) throws -> Void
+    ) throws -> ImageFile {
+        let image = try settledImage(shoot: shoot, path: path)
+        let before = Self.restat(image)
+        try apply(image)
+        return settleAfterWrite(shoot: shoot, image: before)
+    }
+
     /// Re-reads a file we just wrote and records it everywhere the old value
     /// lived. Restatting matters as much as re-reading: the walk compares those
     /// stamps, so an entry left holding the pre-write ones is dropped back to a
@@ -303,6 +315,7 @@ public final class LibraryService: @unchecked Sendable {
     private func settleAfterWrite(shoot: String, image: ImageFile) -> ImageFile {
         let settled = enrich(Self.restat(image))
         updateSnapshot(shoot: shoot, path: image.path) { _ in settled }
+        scorer.restamp(image, to: settled)
         lock.lock()
         let index = self.index
         lock.unlock()
@@ -339,22 +352,18 @@ public final class LibraryService: @unchecked Sendable {
         rating: Int, generation: Int
     ) {
         guard (0...5).contains(rating) else { throw ServiceError.invalidRating(rating) }
-        let image = try settledImage(shoot: shootName, path: path)
-
-        try XMP.writeRating(rating, file: image, tool: .shared)
-
-        let settled = settleAfterWrite(shoot: shootName, image: image)
+        let settled = try write(shoot: shootName, path: path) { image in
+            try XMP.writeRating(rating, file: image, tool: .shared)
+        }
         return (settled.rating, status().generation)
     }
 
     public func setEdit(shoot shootName: String, path: String, edit: Edit) throws -> (
         edit: Edit, generation: Int
     ) {
-        let image = try settledImage(shoot: shootName, path: path)
-
-        try XMP.writeEdit(edit, file: image, tool: .shared)
-
-        let settled = settleAfterWrite(shoot: shootName, image: image)
+        let settled = try write(shoot: shootName, path: path) { image in
+            try XMP.writeEdit(edit, file: image, tool: .shared)
+        }
         return (settled.edit, status().generation)
     }
 

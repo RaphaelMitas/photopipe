@@ -501,9 +501,7 @@ func image(_ url: URL) throws -> ImageFile {
     let jpg = shoot.appendingPathComponent("DSC00010.JPG")
     try writeGrayJPEG(to: jpg)
 
-    let service = LibraryService(
-        thumbnailer: Thumbnailer(cacheDir: dir.appendingPathComponent("thumbs")),
-        renderer: Renderer(cacheDir: dir.appendingPathComponent("renders")))
+    let service = makeService(in: dir)
     let before = try service.setRoot(path: dir.path, indexPath: nil)
 
     let result = try service.setRating(shoot: "2026-01-01_xmptest", path: arw.path, rating: 4)
@@ -528,9 +526,7 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(try exiftoolTag("-XMP-crs:Exposure2012", of: jpg) == "1.25")
 
     // A fresh scan (new service, no snapshot) reads the same values back.
-    let fresh = LibraryService(
-        thumbnailer: Thumbnailer(cacheDir: dir.appendingPathComponent("thumbs")),
-        renderer: Renderer(cacheDir: dir.appendingPathComponent("renders")))
+    let fresh = makeService(in: dir)
     _ = try fresh.setRoot(path: dir.path, indexPath: nil)
     waitUntilIndexed(fresh)
     let rescanned = try fresh.listImages(shoot: "2026-01-01_xmptest")
@@ -548,4 +544,38 @@ func image(_ url: URL) throws -> ImageFile {
             shoot: "2026-01-01_xmptest", path: shoot.appendingPathComponent("NOPE.ARW").path,
             rating: 1)
     }
+}
+
+/// Writing to a JPEG changes its mtime and size, which is how the scorer spots
+/// a file that really changed. Our own metadata writes must not read that way,
+/// or every slider commit knocks the photo out of the sort by score.
+@Test func editingAPhotoKeepsItsScore() async throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let shoot = dir.appendingPathComponent("2026-01-01_instinct")
+    try FileManager.default.createDirectory(at: shoot, withIntermediateDirectories: true)
+    for name in ["a.JPG", "b.JPG", "c.JPG"] {
+        try writeGrayJPEG(to: shoot.appendingPathComponent(name))
+    }
+
+    let service = makeService(in: dir)
+    _ = try service.setRoot(path: dir.path, indexPath: nil)
+    waitUntilIndexed(service)
+
+    _ = try service.scoreShoot(shoot: "2026-01-01_instinct")
+    try await waitForPass { try service.scoreStatus(shoot: "2026-01-01_instinct") }
+    let before = try service.listImages(shoot: "2026-01-01_instinct")
+    let target = shoot.appendingPathComponent("b.JPG").path
+    let score = try #require(before.first { $0.path == target }?.score)
+
+    _ = try service.setEdit(
+        shoot: "2026-01-01_instinct", path: target, edit: Edit(exposure: 0.5))
+
+    let after = try service.listImages(shoot: "2026-01-01_instinct")
+    #expect(after.first { $0.path == target }?.score == score)
+    let progress = try service.scoreStatus(shoot: "2026-01-01_instinct")
+    #expect(progress.running == false)
+    #expect(progress.done == progress.total)
 }
