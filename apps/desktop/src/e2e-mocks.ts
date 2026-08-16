@@ -127,6 +127,23 @@ function scored(shoot: string) {
   };
 }
 
+/// Shell commands, which take their arguments flat rather than under `params`.
+/// Roots live only for the page's lifetime, so every spec starts at the picker.
+let roots: string[] = [];
+
+export const E2E_SHELL_HANDLERS: Record<
+  string,
+  (args: Record<string, unknown>) => unknown
+> = {
+  list_roots: () => roots,
+  open_root: () => null,
+  remember_root: (args) => {
+    const path = String(args.path);
+    roots = [path, ...roots.filter((root) => root !== path)];
+    return null;
+  },
+};
+
 export const E2E_HANDLERS: Record<
   string,
   (params: Record<string, unknown>) => unknown

@@ -35,7 +35,7 @@ import {
   type RatingOp,
   ratingCounts,
 } from "@/components/RatingFilter";
-import { RootPicker, rememberRoot } from "@/components/RootPicker";
+import { RootPicker } from "@/components/RootPicker";
 import { SelectionBar } from "@/components/SelectionBar";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import { ShootSettingsDialog } from "@/components/ShootSettingsDialog";
@@ -69,12 +69,12 @@ import {
   useShoots,
   useTrash,
 } from "@/lib/queries";
+import { listRoots, openRoot, rememberRoot } from "@/lib/roots";
 import { useSelection } from "@/lib/selection";
 import { type SortKey, sortImages } from "@/lib/sort";
 import { useDebouncedEdit } from "@/lib/useDebouncedEdit";
-import { useUpdater } from "@/lib/useUpdater";
+import { UPDATES_ENABLED, useUpdater } from "@/lib/useUpdater";
 
-const ROOT_KEY = "photopipe.root";
 const VIEW_KEY = "photopipe.view";
 const EDIT_PANEL_KEY = "photopipe.editPanel";
 const SORT_KEY = "photopipe.sort";
@@ -92,17 +92,16 @@ const isTyping = (target: EventTarget | null) =>
 const fileName = (path: string) => path.split("/").pop() ?? path;
 
 type RootState =
+  // Which root to reopen lives in the shell, so the first paint happens before
+  // the answer arrives; showing the picker then would flash it every launch.
+  | { kind: "loading" }
   | { kind: "picking"; error: string | null; busy: boolean }
   | { kind: "ready"; path: string; generation: number };
 
 const EDIT_COMMIT_MS = 400;
 
 export default function App() {
-  const [rootState, setRootState] = useState<RootState>({
-    kind: "picking",
-    error: null,
-    busy: false,
-  });
+  const [rootState, setRootState] = useState<RootState>({ kind: "loading" });
   const [openShoot, setOpenShoot] = useState<string | null>(null);
   const [newProject, setNewProject] = useState(false);
   const [shootSettings, setShootSettings] = useState<string | null>(null);
@@ -172,19 +171,23 @@ export default function App() {
   const connectRoot = useCallback(async (path: string) => {
     setRootState({ kind: "picking", error: null, busy: true });
     try {
+      await openRoot(path);
       const result = await coreRequest<SetRootResult>("setRoot", { path });
-      localStorage.setItem(ROOT_KEY, path);
-      rememberRoot(path);
       setRootState({ kind: "ready", path, generation: result.generation });
+      // Dropping out of the picker's recents is not worth failing a root the
+      // core has already opened.
+      rememberRoot(path).catch(() => {});
     } catch (error) {
-      localStorage.removeItem(ROOT_KEY);
       setRootState({ kind: "picking", error: String(error), busy: false });
     }
   }, []);
 
   useEffect(() => {
-    const stored = localStorage.getItem(ROOT_KEY);
-    if (stored) connectRoot(stored);
+    const pick = () =>
+      setRootState({ kind: "picking", error: null, busy: false });
+    listRoots()
+      .then(([last]) => (last ? connectRoot(last) : pick()))
+      .catch(pick);
   }, [connectRoot]);
 
   const ready = rootState.kind === "ready";
@@ -649,18 +652,20 @@ export default function App() {
       onOpenChange={setSettingsOpen}
       autoScore={autoScore}
       onAutoScore={changeAutoScore}
-      onCheckUpdates={checkForUpdates}
+      onCheckUpdates={UPDATES_ENABLED ? checkForUpdates : undefined}
     />
   );
 
   if (!ready) {
     return (
       <>
-        <RootPicker
-          error={rootState.error}
-          busy={rootState.busy}
-          onSubmit={connectRoot}
-        />
+        {rootState.kind === "picking" && (
+          <RootPicker
+            error={rootState.error}
+            busy={rootState.busy}
+            onSubmit={connectRoot}
+          />
+        )}
         {settingsDialog}
       </>
     );

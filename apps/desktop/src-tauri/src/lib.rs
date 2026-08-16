@@ -1,5 +1,7 @@
+mod roots;
 mod sidecar;
 
+use roots::Roots;
 use sidecar::Sidecar;
 use std::sync::Arc;
 use tauri::menu::{
@@ -24,18 +26,18 @@ async fn core_request(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init());
+    #[cfg(feature = "updater")]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    builder
         .manage(Arc::new(Sidecar::new(Sidecar::default_bin())))
+        .manage(Roots::default())
         .setup(|app| {
             let settings = MenuItemBuilder::new("Settings…")
                 .id("settings")
                 .accelerator("CmdOrCtrl+,")
-                .build(app)?;
-            let updates = MenuItemBuilder::new("Check for Updates…")
-                .id("check-updates")
                 .build(app)?;
             // Same sources the default menu reads, so the panel stays right
             // when the version moves and picks up copyright and publisher if
@@ -48,10 +50,18 @@ pub fn run() {
                 .copyright(bundle.copyright.clone())
                 .authors(bundle.publisher.clone().map(|p| vec![p]))
                 .build();
-            let app_menu = SubmenuBuilder::new(app, "Photopipe")
+            #[allow(unused_mut)]
+            let mut app_menu = SubmenuBuilder::new(app, "Photopipe")
                 .about(Some(about))
-                .separator()
-                .item(&updates)
+                .separator();
+            #[cfg(feature = "updater")]
+            {
+                let updates = MenuItemBuilder::new("Check for Updates…")
+                    .id("check-updates")
+                    .build(app)?;
+                app_menu = app_menu.item(&updates);
+            }
+            let app_menu = app_menu
                 .item(&settings)
                 .separator()
                 .services()
@@ -100,7 +110,12 @@ pub fn run() {
             }
             _ => {}
         })
-        .invoke_handler(tauri::generate_handler![core_request])
+        .invoke_handler(tauri::generate_handler![
+            core_request,
+            roots::list_roots,
+            roots::open_root,
+            roots::remember_root
+        ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "build": {
+    "beforeBuildCommand": "../../scripts/prepare-bundle.sh && VITE_MAS=1 pnpm build"
+  },
+  "plugins": {
+    "updater": null
+  },
+  "bundle": {
+    "targets": ["app"],
+    "macOS": {
+      "entitlements": "entitlements.mas.plist"
+    }
+  }
+}

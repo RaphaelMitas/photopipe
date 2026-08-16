@@ -1,16 +1,19 @@
+import AppKit
 import Foundation
 
 public enum FileActions {
     public enum ActionError: Error, Equatable {
         case noFiles
-        case openFailed(String)
         case zipFailed(String)
     }
 
+    /// The sanctioned call, where `/usr/bin/open -R` is a shell-out the App
+    /// Store would rather not see. It reports nothing back: the Finder either
+    /// comes forward or it does not.
     public static func reveal(paths: [String]) throws {
         guard !paths.isEmpty else { throw ActionError.noFiles }
-        let result = try run("/usr/bin/open", ["-R"] + paths)
-        guard result.status == 0 else { throw ActionError.openFailed(result.output) }
+        NSWorkspace.shared.activateFileViewerSelecting(
+            paths.map { URL(fileURLWithPath: $0) })
     }
 
     @discardableResult

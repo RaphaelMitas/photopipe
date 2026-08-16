@@ -6,9 +6,20 @@
 # the *bundle* works. This drives the core out of the built app with a
 # deliberately bare PATH and no env overrides, so anything it cannot find
 # inside itself is a failure.
+#
+# `--mas` checks the App Store flavour instead: no updater, and the sandbox
+# entitlements on every nested binary. It cannot drive the core, because a
+# sandboxed core started from a shell has no parent to inherit file access
+# from and would be denied its scratch folder.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+
+MAS=false
+if [ "${1:-}" = "--mas" ]; then
+  MAS=true
+  shift
+fi
 
 APP="${1:-apps/desktop/src-tauri/target/release/bundle/macos/Photopipe.app}"
 
@@ -19,6 +30,8 @@ fi
 
 echo "Smoke testing $APP"
 
+EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP/Contents/Info.plist")
+
 for required in "Contents/MacOS/photopipe-core" "Contents/Resources/exiftool/exiftool"; do
   if [ ! -f "$APP/$required" ]; then
     echo "::error::Bundle is missing $required" >&2
@@ -27,7 +40,18 @@ for required in "Contents/MacOS/photopipe-core" "Contents/Resources/exiftool/exi
 done
 echo "  contents: core and exiftool present"
 
-APP="$APP" exec /usr/bin/python3 - <<'PY'
+# codesign seals Contents/Resources as data but insists every last file under
+# Contents/MacOS is signed code in its own right, so a stray tree there — the
+# 250 Perl modules exiftool ships, say — makes the bundle unsignable.
+STRAYS=$(ls "$APP/Contents/MacOS" | grep -vx -e "$EXECUTABLE" -e "photopipe-core" || true)
+if [ -n "$STRAYS" ]; then
+  echo "::error::Contents/MacOS holds more than the two binaries: $STRAYS" >&2
+  exit 1
+fi
+echo "  layout:   nothing unsignable under MacOS"
+
+if [ "$MAS" = false ]; then
+  APP="$APP" exec /usr/bin/python3 - <<'PY'
 import json, os, shutil, subprocess, sys, tempfile
 
 app = os.path.abspath(os.environ["APP"])
@@ -88,3 +112,32 @@ finally:
 
 print("Bundle is self-contained.")
 PY
+fi
+
+# Only --mas gets this far. The updater feed is baked into the executable's
+# copy of tauri.conf.json, so finding its endpoint means the plugin came along
+# and Apple would reject the build.
+if grep -qa "download/latest.json" "$APP/Contents/MacOS/$EXECUTABLE"; then
+  echo "::error::The App Store build still carries the updater feed." >&2
+  exit 1
+fi
+echo "  updater:  compiled out"
+
+entitlements() {
+  codesign --display --entitlements - --xml "$1" 2>/dev/null || true
+}
+
+if ! entitlements "$APP" | grep -q "com.apple.security.app-sandbox"; then
+  echo "  sandbox:  skipped, this bundle is not signed for the App Store yet"
+  exit 0
+fi
+
+# Miss one of these and the app is rejected, or the core silently loses the
+# file access it inherits and every read fails at runtime.
+for key in com.apple.security.app-sandbox com.apple.security.inherit; do
+  if ! entitlements "$APP/Contents/MacOS/photopipe-core" | grep -q "$key"; then
+    echo "::error::photopipe-core is missing $key" >&2
+    exit 1
+  fi
+done
+echo "  sandbox:  app and core carry their entitlements"
