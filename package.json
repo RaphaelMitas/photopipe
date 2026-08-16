@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "license": "MIT",
-  "packageManager": "pnpm@11.20.0",
+  "packageManager": "pnpm@11.21.0",
   "scripts": {
     "dev": "./scripts/prepare-bundle.sh && pnpm --filter desktop tauri dev",
     "check": "biome check .",
@@ -13,6 +13,6 @@
     "screenshots": "pnpm --filter desktop screenshots"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.7"
+    "@biomejs/biome": "2.5.8"
   }
 }
