@@ -3,6 +3,7 @@ import { Check } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fileSrc, type ImageFile } from "@/lib/core";
 import { useThumbnail } from "@/lib/queries";
+import { useVirtualJump } from "@/lib/useVirtualJump";
 import { ExposureBadge, RatingBadge } from "./PhotoBadges";
 import { Skeleton } from "./ui/skeleton";
 
@@ -62,6 +63,7 @@ function Thumb({
   height,
   showInfo,
   selected,
+  current,
   selectMode,
   onOpen,
   onSelect,
@@ -71,6 +73,7 @@ function Thumb({
   height: number;
   showInfo?: boolean;
   selected?: boolean;
+  current?: boolean;
   selectMode?: boolean;
   onOpen?: () => void;
   onSelect?: (modifiers: { meta: boolean; shift: boolean }) => void;
@@ -100,6 +103,7 @@ function Thumb({
       data-testid="thumb"
       data-path={image.rel}
       data-selected={selected ? "true" : "false"}
+      data-current={current ? "true" : "false"}
       onPointerDown={() => {
         pressFired.current = false;
         cancelPress();
@@ -126,7 +130,7 @@ function Thumb({
         }
       }}
       className={`group relative shrink-0 overflow-hidden rounded-md bg-card transition-shadow focus-visible:ring-2 focus-visible:ring-ring hover:shadow-lg ${
-        selected ? "ring-2 ring-primary" : ""
+        selected || current ? "ring-2 ring-primary" : ""
       }`}
       style={{ width, height }}
     >
@@ -183,6 +187,7 @@ type Props = {
     path: string,
     modifiers: { meta: boolean; shift: boolean },
   ) => void;
+  focusPath?: string | null;
   initialRect?: { width: number; height: number };
 };
 
@@ -193,6 +198,7 @@ export function ImageGrid({
   selected,
   selectMode,
   onSelect,
+  focusPath,
   initialRect,
 }: Props) {
   const parentRef = useRef<HTMLDivElement>(null);
@@ -200,13 +206,17 @@ export function ImageGrid({
   const [containerWidth, setContainerWidth] = useState(
     () => (initialRect?.width ?? 800) - padding * 2,
   );
+  const [measured, setMeasured] = useState(initialRect != null);
 
   useEffect(() => {
     const element = parentRef.current;
     if (!element) return;
     const update = () => {
       const width = element.clientWidth - padding * 2;
-      if (width > 0) setContainerWidth(width);
+      if (width > 0) {
+        setContainerWidth(width);
+        setMeasured(true);
+      }
     };
     update();
     const observer = new ResizeObserver(update);
@@ -236,10 +246,22 @@ export function ImageGrid({
     }),
   });
 
+  const focusRow = useMemo(
+    () =>
+      focusPath
+        ? rows.findIndex((row) =>
+            row.cells.some((cell) => cell.image.path === focusPath),
+          )
+        : -1,
+    [rows, focusPath],
+  );
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: measure() on rows change is the point
   useEffect(() => {
     virtualizer.measure();
   }, [rows]);
+
+  useVirtualJump(virtualizer, focusRow, measured);
 
   return (
     <div
@@ -270,6 +292,7 @@ export function ImageGrid({
                   height={row.height}
                   showInfo={showInfo}
                   selected={selected?.has(cell.image.path)}
+                  current={cell.image.path === focusPath}
                   selectMode={selectMode}
                   onOpen={onOpen && (() => onOpen(cell.index))}
                   onSelect={
