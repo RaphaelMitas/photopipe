@@ -130,11 +130,7 @@ function Thumb({
         }
       }}
       className={`group relative shrink-0 overflow-hidden rounded-md bg-card transition-shadow focus-visible:ring-2 focus-visible:ring-ring hover:shadow-lg ${
-        selected
-          ? "ring-2 ring-primary"
-          : current
-            ? "ring-2 ring-foreground"
-            : ""
+        selected || current ? "ring-2 ring-primary" : ""
       }`}
       style={{ width, height }}
     >

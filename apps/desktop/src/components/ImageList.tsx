@@ -122,7 +122,7 @@ export function ImageList({
                 className={cn(
                   "absolute top-0 left-0 flex w-full items-center gap-3 px-3 text-left",
                   isSelected ? "bg-secondary" : "hover:bg-accent",
-                  isCurrent && "ring-1 ring-foreground ring-inset",
+                  isCurrent && "ring-2 ring-primary ring-inset",
                 )}
                 style={{
                   height: ROW_HEIGHT,
