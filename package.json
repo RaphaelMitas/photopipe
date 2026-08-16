@@ -2,6 +2,7 @@
   "name": "photopipe",
   "private": true,
   "version": "0.1.0",
+  "license": "MIT",
   "packageManager": "pnpm@11.20.0",
   "scripts": {
     "dev": "./scripts/prepare-bundle.sh && pnpm --filter desktop tauri dev",
