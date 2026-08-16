@@ -75,7 +75,7 @@ export function AppSidebar({
                   data-testid="back-to-shoots"
                   onClick={onBack}
                 >
-                  <ChevronLeft className="shrink-0" />
+                  <ChevronLeft />
                   <span>All shoots</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>

@@ -91,6 +91,12 @@ function SidebarProvider({
     return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open);
   }, [isMobile, setOpen, setOpenMobile]);
 
+  // The sheet's open state outlives the breakpoint it was set at, so without
+  // this a window dragged back under it re-opens the sidebar on its own.
+  React.useEffect(() => {
+    setOpenMobile(false);
+  }, [isMobile]);
+
   // Adds a keyboard shortcut to toggle the sidebar.
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -227,6 +233,9 @@ function Sidebar({
       <div
         data-slot="sidebar-container"
         data-side={side}
+        // Offcanvas only parks the sidebar off screen, so without this its
+        // controls stay tabbable and clickable while nothing of it is visible.
+        inert={collapsible === "offcanvas" && state === "collapsed"}
         className={cn(
           "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] md:flex",
           // Adjust the padding for floating and inset variants.

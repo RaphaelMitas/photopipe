@@ -206,7 +206,6 @@ test("the sidebar collapses in browse and loupe alike", async ({ page }) => {
   await openZell(page);
   await expect(headerTrigger(page)).toBeHidden();
 
-  // The sidebar slides out whole, so the header takes over its trigger.
   await sidebarTrigger(page).click();
   await expect(sidebar(page)).toHaveAttribute("data-state", "collapsed");
   await headerTrigger(page).click();
@@ -219,18 +218,46 @@ test("the sidebar collapses in browse and loupe alike", async ({ page }) => {
   await sidebarTrigger(page).click();
   await expect(sidebar(page)).toHaveAttribute("data-state", "collapsed");
   await headerTrigger(page).click();
+  await expect(sidebar(page)).toHaveAttribute("data-state", "expanded");
   await expect(page.getByTestId("back-to-grid")).toBeVisible();
 });
 
+test("a collapsed sidebar is out of reach, not just out of sight", async ({
+  page,
+}) => {
+  // Offcanvas parks it off screen rather than unmounting it, so nothing in it
+  // may answer to a tab or a click.
+  await openZell(page);
+  await sidebarTrigger(page).click();
+  await expect(sidebar(page)).toHaveAttribute("data-state", "collapsed");
+
+  const takesFocus = await page.getByTestId("back-to-shoots").evaluate((el) => {
+    el.focus();
+    return document.activeElement === el;
+  });
+  expect(takesFocus).toBe(false);
+});
+
 test("narrow windows keep a way back to the sidebar", async ({ page }) => {
-  // Below the mobile breakpoint the sidebar is a sheet: its own trigger goes
-  // with it, so the header carries the only way to open it again.
+  // 600 is under the breakpoint where the sidebar becomes a sheet.
   await page.setViewportSize({ width: 600, height: 800 });
   await openZell(page);
   await expect(page.getByTestId("back-to-shoots")).toBeHidden();
 
-  await page.locator("header [data-slot='sidebar-trigger']").click();
+  await headerTrigger(page).click();
   await expect(page.getByTestId("back-to-shoots")).toBeVisible();
+
+  // The sheet's state must not outlive the width that opened it: widen, hide
+  // the sidebar there, and coming back must respect that, not the stale sheet.
+  await page.setViewportSize({ width: 1100, height: 800 });
+  await expect(sidebar(page)).toHaveAttribute("data-state", "expanded");
+  await sidebarTrigger(page).click();
+  await expect(sidebar(page)).toHaveAttribute("data-state", "collapsed");
+
+  await page.setViewportSize({ width: 600, height: 800 });
+  // The sheet would animate in, so settle before reading it as absent.
+  await page.waitForTimeout(500);
+  await expect(page.getByTestId("back-to-shoots")).toBeHidden();
 });
 
 test("a new project is created from the library and opens empty", async ({

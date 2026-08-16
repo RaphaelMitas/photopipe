@@ -2,9 +2,11 @@ import { SidebarTrigger, useSidebar } from "@photopipe/ui/components/sidebar";
 
 // The sidebar slides out whole, taking its own trigger with it.
 export function ShowSidebarTrigger() {
-  const { isMobile, openMobile, state } = useSidebar();
+  const { isMobile, state } = useSidebar();
 
-  if (isMobile ? openMobile : state === "expanded") return null;
+  // On mobile it stays mounted under the sheet's overlay, so closing the sheet
+  // has somewhere to hand focus back to.
+  if (!isMobile && state === "expanded") return null;
 
   return (
     <SidebarTrigger

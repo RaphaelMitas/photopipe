@@ -69,7 +69,7 @@ export function LoupeSidebar({
                   onClick={onBackToGrid}
                   title="Back to grid (esc)"
                 >
-                  <ChevronLeft className="shrink-0" />
+                  <ChevronLeft />
                   <span>Back to grid</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
