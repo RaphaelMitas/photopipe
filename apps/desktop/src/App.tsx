@@ -571,17 +571,15 @@ export default function App() {
     const handler = (event: KeyboardEvent) => {
       if (isTyping(event.target)) return;
       if (event.metaKey || event.ctrlKey) {
-        if (event.shiftKey && !cropping) {
-          const key = event.key.toLowerCase();
-          if (key === "c" && copySource) {
-            event.preventDefault();
-            copySettings(copySource);
-          }
-          if (key === "v") {
-            event.preventDefault();
-            pasteSettings(pasteTargets);
-          }
-          return;
+        // Case-insensitive, so the Lightroom pair ⌘⇧C/⌘⇧V lands here too.
+        const key = event.key.toLowerCase();
+        if (key === "c" && copySource && !cropping) {
+          event.preventDefault();
+          copySettings(copySource);
+        }
+        if (key === "v" && !cropping) {
+          event.preventDefault();
+          pasteSettings(pasteTargets);
         }
         if (event.key === "a" && loupeIndex === -1) {
           event.preventDefault();

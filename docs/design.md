@@ -98,7 +98,7 @@ ever invisible.
 
 ## Pasted settings never carry the framing
 
-⌘⇧C copies the look off a photo, ⌘⇧V puts it on the loupe photo or on the
+⌘C copies the look off a photo, ⌘V puts it on the loupe photo or on the
 whole selection. It takes tone, colour and curves; crop, straighten and
 rotation stay with the photo they were made for, because a crop rect is
 normalized against its own turned frame and means something different on a

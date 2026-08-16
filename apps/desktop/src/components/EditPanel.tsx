@@ -300,7 +300,7 @@ export function EditSidebar({
           data-testid="edit-copy-settings"
           onClick={onCopySettings}
           disabled={cropping}
-          title="Copy settings (⌘⇧C)"
+          title="Copy settings (⌘C)"
           className="ml-auto size-6 text-muted-foreground"
         >
           <Copy className="size-3" />
@@ -313,7 +313,7 @@ export function EditSidebar({
           disabled={cropping || !canPaste}
           title={
             canPaste
-              ? "Paste settings (⌘⇧V)"
+              ? "Paste settings (⌘V)"
               : "Copy settings from a photo first"
           }
           className="size-6 text-muted-foreground"

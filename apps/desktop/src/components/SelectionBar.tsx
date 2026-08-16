@@ -62,7 +62,7 @@ export function SelectionBar({
             variant="ghost"
             data-testid="action-copy-settings"
             onClick={() => onCopySettings()}
-            title="Copy settings (⌘⇧C)"
+            title="Copy settings (⌘C)"
             className="h-7 text-xs text-muted-foreground"
           >
             <Copy />
@@ -75,7 +75,7 @@ export function SelectionBar({
             variant="ghost"
             data-testid="action-paste-settings"
             onClick={() => onPasteSettings()}
-            title="Paste settings (⌘⇧V)"
+            title="Paste settings (⌘V)"
             className="h-7 text-xs text-muted-foreground"
           >
             <ClipboardPaste />
