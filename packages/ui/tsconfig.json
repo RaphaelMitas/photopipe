@@ -1,7 +1,6 @@
 {
   "extends": "@photopipe/tsconfig/base.json",
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
       "@photopipe/ui/*": ["./src/*"]
     }
