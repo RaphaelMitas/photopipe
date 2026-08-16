@@ -117,7 +117,9 @@ export default function App() {
     setAutoScore(on);
     localStorage.setItem(AUTO_SCORE_KEY, on ? "on" : "off");
   };
-  const [loupePath, setLoupePath] = useState<string | null>(null);
+  // outlives the loupe, so closing it lands the browser on the same photo
+  const [currentPath, setCurrentPath] = useState<string | null>(null);
+  const [loupeOpen, setLoupeOpen] = useState(false);
   const [ratingOp, setRatingOp] = useState<RatingOp>("gte");
   const [ratingStars, setRatingStars] = useState(0);
   const [showInfo, setShowInfo] = useState(
@@ -387,12 +389,12 @@ export default function App() {
   };
 
   const loupeImages = useMemo(() => {
-    if (!loupePath) return filteredImages;
-    if (filteredImages.some((image) => image.path === loupePath)) {
+    if (!currentPath) return filteredImages;
+    if (filteredImages.some((image) => image.path === currentPath)) {
       return filteredImages;
     }
     const position = new Map(allImages.map((image, i) => [image.path, i]));
-    const pinnedAt = position.get(loupePath);
+    const pinnedAt = position.get(currentPath);
     if (pinnedAt === undefined) return filteredImages;
     const result = [...filteredImages];
     const insertAt = result.findIndex(
@@ -401,38 +403,47 @@ export default function App() {
     if (insertAt === -1) result.push(allImages[pinnedAt]);
     else result.splice(insertAt, 0, allImages[pinnedAt]);
     return result;
-  }, [filteredImages, allImages, loupePath]);
+  }, [filteredImages, allImages, currentPath]);
 
-  const loupeIndex = loupePath
-    ? loupeImages.findIndex((image) => image.path === loupePath)
+  const loupeIndex = currentPath
+    ? loupeImages.findIndex((image) => image.path === currentPath)
     : -1;
 
-  useEffect(() => {
-    if (loupePath && loupeIndex === -1) setLoupePath(null);
-  }, [loupePath, loupeIndex]);
+  // a filtered-out photo is not in the browser, so land on its neighbour
+  const focusPath = useMemo(() => {
+    const current = loupeImages[loupeIndex];
+    if (!current) return null;
+    if (filteredImages.includes(current)) return current.path;
+    return (
+      (loupeImages[loupeIndex + 1] ?? loupeImages[loupeIndex - 1])?.path ?? null
+    );
+  }, [loupeImages, loupeIndex, filteredImages]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: leave crop mode when the loupe photo changes
-  useEffect(() => setCropDraft(null), [loupePath]);
+  useEffect(() => {
+    if (currentPath && loupeIndex === -1) {
+      setCurrentPath(null);
+      setLoupeOpen(false);
+    }
+  }, [currentPath, loupeIndex]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: leave crop mode on any way out of this photo
+  useEffect(() => setCropDraft(null), [currentPath, loupeOpen]);
 
   const openExport = useCallback(() => {
-    const loupeImage = loupeIndex >= 0 ? loupeImages[loupeIndex] : null;
-    if (loupeImage) {
-      setLoupePath(null);
-      if (!filteredImages.some((image) => image.path === loupeImage.path)) {
-        setRatingStars(0);
-        setRatingOp((op) => (op === "unrated" ? "gte" : op));
-      }
-      selection.select([loupeImage.path]);
+    const image = loupeOpen ? loupeImages[loupeIndex] : null;
+    if (image) {
+      setLoupeOpen(false);
+      selection.select([image.path]);
       setDrawerOpen(true);
       return;
     }
     setDrawerOpen((open) => !open);
-  }, [loupeIndex, loupeImages, filteredImages, selection]);
+  }, [loupeOpen, loupeIndex, loupeImages, selection]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey) {
-        if (event.key === "a" && loupeIndex === -1) {
+        if (event.key === "a" && !loupeOpen) {
           event.preventDefault();
           selection.selectAll();
         }
@@ -442,16 +453,16 @@ export default function App() {
         }
         return;
       }
-      if (event.key === "Escape" && loupeIndex === -1 && !selection.isEmpty) {
+      if (event.key === "Escape" && !loupeOpen && !selection.isEmpty) {
         selection.clear();
       }
-      if (event.key === "e" && !event.altKey && loupeIndex >= 0 && !cropping) {
+      if (event.key === "e" && !event.altKey && loupeOpen && !cropping) {
         toggleEditPanel();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [selection, loupeIndex, openShoot, cropping, openExport, toggleEditPanel]);
+  }, [selection, loupeOpen, openShoot, cropping, openExport, toggleEditPanel]);
 
   const changeRatingStars = (stars: number) => {
     setRatingStars(stars);
@@ -461,7 +472,8 @@ export default function App() {
   const enterShoot = (shoot: string | null) => {
     flushEdit();
     setOpenShoot(shoot);
-    setLoupePath(null);
+    setCurrentPath(null);
+    setLoupeOpen(false);
     setRatingStars(0);
     selection.clear();
   };
@@ -492,7 +504,7 @@ export default function App() {
   }
 
   const loupeImage = loupeIndex >= 0 ? loupeImages[loupeIndex] : null;
-  const inLoupe = openShoot !== null && loupeImage !== null;
+  const inLoupe = openShoot !== null && loupeOpen && loupeImage !== null;
   const loupeEdit =
     loupeImage === null
       ? identityEdit
@@ -546,7 +558,7 @@ export default function App() {
             ratingStars={ratingStars}
             onRatingStars={changeRatingStars}
             onRate={(path, rating) => setRating.mutate({ path, rating })}
-            onBackToGrid={() => (cropping ? cancelCrop() : setLoupePath(null))}
+            onBackToGrid={() => (cropping ? cancelCrop() : setLoupeOpen(false))}
           />
         ) : (
           <AppSidebar
@@ -673,6 +685,7 @@ export default function App() {
                 onImport={runImport}
                 onShootSettings={setShootSettings}
                 filterActive={filterActive}
+                focusPath={focusPath}
                 inLoupe={inLoupe}
                 loupeImages={loupeImages}
                 loupeIndex={loupeIndex}
@@ -686,13 +699,14 @@ export default function App() {
                 selection={selection}
                 onEditChange={changeEdit}
                 onNavigate={(next) =>
-                  setLoupePath(loupeImages[next]?.path ?? null)
+                  setCurrentPath(loupeImages[next]?.path ?? null)
                 }
-                onCloseLoupe={() => setLoupePath(null)}
+                onCloseLoupe={() => setLoupeOpen(false)}
                 onRate={(path, rating) => setRating.mutate({ path, rating })}
-                onOpenLoupe={(index) =>
-                  setLoupePath(filteredImages[index]?.path ?? null)
-                }
+                onOpenLoupe={(index) => {
+                  setCurrentPath(filteredImages[index]?.path ?? null);
+                  setLoupeOpen(true);
+                }}
               />
             </div>
             {inLoupe && loupeImage && editOpen && (
@@ -754,6 +768,7 @@ type ContentProps = {
   onImport: () => void;
   onShootSettings: (shoot: string) => void;
   filterActive: boolean;
+  focusPath: string | null;
   inLoupe: boolean;
   loupeImages: ImageFile[];
   loupeIndex: number;
@@ -789,6 +804,7 @@ function Content({
   onImport,
   onShootSettings,
   filterActive,
+  focusPath,
   inLoupe,
   loupeImages,
   loupeIndex,
@@ -886,6 +902,7 @@ function Content({
               selected={selection.selected}
               selectMode={selectMode}
               onSelect={selection.click}
+              focusPath={focusPath}
             />
           ) : (
             <ImageList
@@ -895,6 +912,7 @@ function Content({
               onSelect={selection.click}
               onOpen={onOpenLoupe}
               emptyMessage={emptyMessage}
+              focusPath={focusPath}
             />
           )}
         </div>

@@ -1,7 +1,8 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { fileSrc, type ImageFile } from "@/lib/core";
 import { useThumbnail } from "@/lib/queries";
+import { useVirtualJump } from "@/lib/useVirtualJump";
 import { cn } from "@/lib/utils";
 import { ExposureBadge, RatingBadge } from "./PhotoBadges";
 import { Skeleton } from "./ui/skeleton";
@@ -31,6 +32,7 @@ type Props = {
   ) => void;
   onOpen?: (index: number) => void;
   emptyMessage: string;
+  focusPath?: string | null;
   initialRect?: { width: number; height: number };
 };
 
@@ -41,6 +43,7 @@ export function ImageList({
   onSelect,
   onOpen,
   emptyMessage,
+  focusPath,
   initialRect,
 }: Props) {
   const parentRef = useRef<HTMLDivElement>(null);
@@ -60,6 +63,14 @@ export function ImageList({
       },
     }),
   });
+
+  const focusIndex = useMemo(
+    () =>
+      focusPath ? images.findIndex((image) => image.path === focusPath) : -1,
+    [images, focusPath],
+  );
+
+  useVirtualJump(virtualizer, focusIndex);
 
   if (images.length === 0) {
     return (
@@ -88,6 +99,7 @@ export function ImageList({
           {virtualizer.getVirtualItems().map((item) => {
             const image = images[item.index];
             const isSelected = selected.has(image.path);
+            const isCurrent = image.path === focusPath;
             return (
               <button
                 key={item.key}
@@ -95,6 +107,7 @@ export function ImageList({
                 data-testid="image-row"
                 data-path={image.rel}
                 data-selected={isSelected}
+                data-current={isCurrent}
                 onClick={(event) => {
                   const meta = event.metaKey || event.ctrlKey;
                   if (onOpen && !meta && !event.shiftKey && !selectMode) {
@@ -109,6 +122,7 @@ export function ImageList({
                 className={cn(
                   "absolute top-0 left-0 flex w-full items-center gap-3 px-3 text-left",
                   isSelected ? "bg-secondary" : "hover:bg-accent",
+                  isCurrent && "ring-2 ring-primary ring-inset",
                 )}
                 style={{
                   height: ROW_HEIGHT,
