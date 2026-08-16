@@ -124,7 +124,7 @@ describe("Loupe keyboard culling", () => {
 });
 
 describe("Loupe crop mode", () => {
-  const draft = () => draftFromEdit(identityEdit);
+  const draft = () => draftFromEdit(identityEdit, 3000, 2000);
 
   it("shows the overlay and angle HUD and pauses culling keys", () => {
     const { onRate, onNavigate, onClose } = renderLoupe(0, 0, draft());
@@ -138,16 +138,37 @@ describe("Loupe crop mode", () => {
   });
 
   it("escape cancels, enter applies", () => {
-    const { onApplyCrop, onCancelCrop, onEditChange } = renderLoupe(
-      0,
-      0.25,
-      draft(),
-    );
+    const cancelled = renderLoupe(0, 0.25, draft());
     fireEvent.keyDown(window, { key: "Escape" });
-    expect(onCancelCrop).toHaveBeenCalled();
+    expect(cancelled.onCancelCrop).toHaveBeenCalled();
+    cleanup();
+
+    const applied = renderLoupe(0, 0.25, draft());
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(applied.onApplyCrop).toHaveBeenCalled();
+    expect(applied.onEditChange).not.toHaveBeenCalled();
+  });
+
+  it("a key after apply cannot reopen the crop that was just committed", () => {
+    const { onApplyCrop, onCropDraft } = renderLoupe(0, 0, draft());
     fireEvent.keyDown(window, { key: "Enter" });
     expect(onApplyCrop).toHaveBeenCalled();
-    expect(onEditChange).not.toHaveBeenCalled();
+    // The parent clears the draft on the next render; a nudge landing in that
+    // gap must not push the photo back into crop mode.
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(onCropDraft).not.toHaveBeenCalled();
+  });
+
+  it("arrow keys nudge the crop ten photo pixels, shift or not", () => {
+    const inset = {
+      ...draft(),
+      crop: { left: 0.2, top: 0.2, right: 0.8, bottom: 0.8 },
+    };
+    const { onCropDraft } = renderLoupe(0, 0, inset);
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(onCropDraft.mock.calls[0][0].crop.left).toBeCloseTo(0.2 + 10 / 3000);
+    fireEvent.keyDown(window, { key: "ArrowUp", shiftKey: true });
+    expect(onCropDraft.mock.calls[1][0].crop.top).toBeCloseTo(0.2 - 10 / 2000);
   });
 
   it("double-clicking the stage resets the angle only", () => {
@@ -304,7 +325,7 @@ describe("EditSidebar", () => {
   });
 
   it("shows the crop panel while cropping and wires apply and cancel", () => {
-    const draft = draftFromEdit(identityEdit);
+    const draft = draftFromEdit(identityEdit, 3000, 2000);
     const { onApplyCrop, onCancelCrop } = renderEditSidebar(
       identityEdit,
       draft,
@@ -320,7 +341,7 @@ describe("EditSidebar", () => {
   });
 
   it("picking a ratio applies a centered aspect crop", () => {
-    const draft = draftFromEdit(identityEdit);
+    const draft = draftFromEdit(identityEdit, 3000, 2000);
     const { onCropDraft } = renderEditSidebar(identityEdit, draft);
     fireEvent.change(screen.getByTestId("crop-aspect"), {
       target: { value: "1:1" },
@@ -334,9 +355,17 @@ describe("EditSidebar", () => {
     expect(next.crop.bottom).toBeCloseTo(1);
   });
 
+  it("picking a ratio hands the keyboard back to the crop frame", () => {
+    renderEditSidebar(identityEdit, draftFromEdit(identityEdit, 3000, 2000));
+    const select = screen.getByTestId("crop-aspect");
+    select.focus();
+    fireEvent.change(select, { target: { value: "1:1" } });
+    expect(document.activeElement).not.toBe(select);
+  });
+
   it("turn 90° rotates the draft and carries the crop along", () => {
     const draft = {
-      ...draftFromEdit(identityEdit),
+      ...draftFromEdit(identityEdit, 3000, 2000),
       crop: { left: 0, top: 0, right: 0.5, bottom: 1 },
     };
     const { onCropDraft } = renderEditSidebar(identityEdit, draft);
@@ -345,14 +374,14 @@ describe("EditSidebar", () => {
       ...draft,
       rotation: 90,
       // The left half of the frame becomes the top half after a clockwise
-      // turn. "free" has no ratio lock, so flipped stays put.
+      // turn. "original" follows the turned frame dims, so flipped stays put.
       crop: { left: 0, top: 0, right: 1, bottom: 0.5 },
     });
   });
 
   it("turn 90° flips the lock only for fixed ratio presets", () => {
     const preset = {
-      ...draftFromEdit(identityEdit),
+      ...draftFromEdit(identityEdit, 3000, 2000),
       aspect: "16:9",
       crop: { left: 0.2, top: 0.2, right: 0.8, bottom: 0.8 },
     };
@@ -371,7 +400,7 @@ describe("EditSidebar", () => {
   it("the flip button transposes the crop about its center", () => {
     // 3000x2000 image: a centered 1500x1000px crop transposes to 1000x1500px.
     const draft = {
-      ...draftFromEdit(identityEdit),
+      ...draftFromEdit(identityEdit, 3000, 2000),
       crop: { left: 0.25, top: 0.25, right: 0.75, bottom: 0.75 },
     };
     const { onCropDraft } = renderEditSidebar(identityEdit, draft);
