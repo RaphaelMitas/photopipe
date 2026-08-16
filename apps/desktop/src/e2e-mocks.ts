@@ -151,11 +151,19 @@ export const E2E_HANDLERS: Record<
   thumbnail: (params) => ({
     cachePath: `/fake/thumbs/${String(params.path)}.jpg`,
   }),
-  render: (params) => ({
-    cachePath: `/fake/renders/${String(params.path)}@${editKey(
-      (params.edit as Edit | undefined) ?? identityEdit,
-    )}.jpg`,
-  }),
+  render: (params) => {
+    const viewport = params.viewport as
+      | { left: number; top: number; right: number; bottom: number }
+      | undefined;
+    const region = viewport
+      ? `@${viewport.left},${viewport.top},${viewport.right},${viewport.bottom}`
+      : "";
+    return {
+      cachePath: `/fake/renders/${String(params.path)}@${editKey(
+        (params.edit as Edit | undefined) ?? identityEdit,
+      )}${region}.jpg`,
+    };
+  },
   setRating: (params) => {
     const all = [...zellImages, ...miscImages, ...bigImages];
     const target = all.find((entry) => entry.path === params.path);

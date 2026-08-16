@@ -10,15 +10,18 @@ import { type Edit, fileSrc, type ImageFile } from "@/lib/core";
 import { aspectRatioFor, type Box, fitRect, rotatedSize } from "@/lib/crop";
 import { capturePointer, cursorIn } from "@/lib/pointer";
 import {
-  useFullRender,
   usePrefetchRender,
   useRender,
   useThumbnail,
+  useViewportRender,
 } from "@/lib/queries";
 import {
   centerOn,
   clampPan,
+  viewportKey,
+  viewportRequest,
   visibleRect,
+  visibleScreenRect,
   type ZoomState,
   zoomAt,
 } from "@/lib/zoom";
@@ -27,6 +30,16 @@ import { Filmstrip, type FilmstripMode } from "./Filmstrip";
 
 export const EXPOSURE_STEP = 0.25;
 export const EXPOSURE_RANGE = 3;
+
+/// Holds a value back until it has stopped changing for `delayMs`.
+function useSettled<T>(value: T, delayMs: number): T {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSettled(value), delayMs);
+    return () => clearTimeout(timer);
+  }, [value, delayMs]);
+  return settled;
+}
 
 type Props = {
   images: ImageFile[];
@@ -115,7 +128,29 @@ export function Loupe({
     enabled: !cropping && !!image,
     resetKey: `${image?.path}|${cropping}`,
   });
-  const fullRender = useFullRender(image, previewEdit, zoom.state !== null);
+  const wanted = useMemo(
+    () =>
+      viewportRequest(
+        zoom.state,
+        photoBox,
+        stage.width,
+        stage.height,
+        pixelWidth,
+        pixelHeight,
+        window.devicePixelRatio,
+      ),
+    [zoom.state, photoBox, stage, pixelWidth, pixelHeight],
+  );
+  // Only ask once the gesture settles, or a pinch fires a render per frame.
+  const settled = useSettled(wanted, 180);
+  const regionRender = useViewportRender(image, previewEdit, settled);
+  // A slice rendered for a view you have already moved past would sit in the
+  // wrong place, so it is drawn only while it still matches.
+  const sharp =
+    viewportKey(wanted) === viewportKey(settled)
+      ? regionRender.data
+      : undefined;
+  const sharpening = wanted !== null && !sharp;
 
   useEffect(() => {
     if (!image) return;
@@ -199,8 +234,20 @@ export function Loupe({
   // the (uncropped) thumbnail until the full-frame render lands.
   const freshRender =
     cropping && render.isPlaceholderData ? undefined : render.data;
-  const src =
-    zoom.state !== null && fullRender.data ? fullRender.data : freshRender;
+  // The slice sits outside the zoom transform, laid out at its own on-screen
+  // size, so it is never a scaled-up copy of the fitted render.
+  const region =
+    sharp && zoom.state
+      ? {
+          src: sharp,
+          rect: visibleScreenRect(
+            zoom.state,
+            photoBox,
+            stage.width,
+            stage.height,
+          ),
+        }
+      : null;
   const ratio = cropDraft
     ? aspectRatioFor(
         cropDraft.aspect,
@@ -246,10 +293,10 @@ export function Loupe({
                 : undefined,
           }}
         >
-          {src ? (
+          {freshRender ? (
             <img
               data-testid="loupe-image"
-              src={fileSrc(src)}
+              src={fileSrc(freshRender)}
               alt={image.rel}
               draggable={false}
               className="h-full w-full object-contain select-none"
@@ -268,6 +315,21 @@ export function Loupe({
             </div>
           )}
         </div>
+        {region && (
+          <img
+            data-testid="loupe-region"
+            src={fileSrc(region.src)}
+            alt={image.rel}
+            draggable={false}
+            className="pointer-events-none absolute select-none"
+            style={{
+              left: `${region.rect.left}px`,
+              top: `${region.rect.top}px`,
+              width: `${region.rect.width}px`,
+              height: `${region.rect.height}px`,
+            }}
+          />
+        )}
         {cropDraft && photoBox.width > 0 && (
           <CropOverlay
             photoBox={photoBox}
@@ -292,7 +354,9 @@ export function Loupe({
               data-testid="zoom-level"
               className="absolute bottom-3 left-3 rounded-md border border-border bg-background/85 px-2.5 py-1 font-mono text-[11px] backdrop-blur-sm"
             >
-              {`${Math.round((zoom.state.scale / (zoom.scale100 || 1)) * 100)}% · double-click to fit`}
+              {`${Math.round((zoom.state.scale / (zoom.scale100 || 1)) * 100)}% · ${
+                sharpening ? "sharpening…" : "double-click to fit"
+              }`}
             </div>
             {render.data && (
               // The preview render has the crop and turn baked in, so it maps

@@ -238,9 +238,12 @@ public final class LibraryService: @unchecked Sendable {
         try thumbnailer.thumbnail(for: recordUnderRoot(path: path), maxPixel: maxPixel).path
     }
 
-    public func render(path: String, edit: Edit, maxPixel: Int) throws -> String {
+    public func render(
+        path: String, edit: Edit, maxPixel: Int, viewport: CropRect? = nil
+    ) throws -> String {
         try renderer.render(
-            file: recordUnderRoot(path: path), edit: edit, maxPixel: maxPixel
+            file: recordUnderRoot(path: path), edit: edit, maxPixel: maxPixel,
+            viewport: viewport
         ).path
     }
 

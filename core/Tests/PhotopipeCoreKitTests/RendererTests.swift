@@ -494,6 +494,104 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
     }
 }
 
+/// Two renders that want the same decode scale must both get it. A cached
+/// CIRAWFilter whose scaleFactor was left alone because it already matched
+/// handed back a quarter-size decode on the second read.
+@Test func aReusedFilterKeepsItsDecodeSize() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    let left = Edit(crop: CropRect(left: 0, top: 0, right: 0.25, bottom: 1))
+    let right = Edit(crop: CropRect(left: 0.75, top: 0, right: 1, bottom: 1))
+    let first = try #require(
+        CIImage(
+            contentsOf: renderer.render(
+                file: file, edit: left, maxPixel: 400)))
+    let second = try #require(
+        CIImage(
+            contentsOf: renderer.render(
+                file: file, edit: right, maxPixel: 400)))
+
+    #expect(
+        first.extent.size == second.extent.size,
+        "same shape and size asked twice, got \(first.extent.size) then \(second.extent.size)")
+    #expect(max(second.extent.width, second.extent.height) > 390)
+}
+
+/// The loupe zoomed to a quarter of the frame wants that quarter at 1:1, not
+/// the whole sensor. It must cost a fraction of the full-frame render and come
+/// back at the size it asked for.
+@Test func viewportRendersOnlyTheVisibleRegion() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+    let native = Int(max(CIRAWFilter(imageURL: fixture)?.nativeSize.width ?? 0, 1))
+    let quarter = CropRect(left: 0.375, top: 0.375, right: 0.625, bottom: 0.625)
+
+    let start = Date()
+    let url = try renderer.render(
+        file: file, edit: .identity, maxPixel: native / 4, viewport: quarter)
+    let regionMs = Date().timeIntervalSince(start) * 1000
+    let region = try #require(CIImage(contentsOf: url))
+    #expect(
+        abs(region.extent.width - Double(native / 4)) < 4,
+        "asked for \(native / 4)px of the frame, got \(region.extent.width)")
+
+    let wholeStart = Date()
+    _ = try renderer.render(file: file, edit: .identity, maxPixel: native)
+    let wholeMs = Date().timeIntervalSince(wholeStart) * 1000
+    print("viewport \(Int(regionMs))ms vs whole frame \(Int(wholeMs))ms")
+    #expect(
+        regionMs < wholeMs,
+        "a quarter-frame render (\(Int(regionMs))ms) must beat the whole frame (\(Int(wholeMs))ms)")
+}
+
+@Test func viewportComposesOnTopOfTheCrop() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    // The right half of the left half is the second quarter of the frame.
+    let leftHalf = Edit(crop: CropRect(left: 0, top: 0, right: 0.5, bottom: 1))
+    let rightOfIt = CropRect(left: 0.5, top: 0, right: 1, bottom: 1)
+    let composed = try meanChannels(
+        of: renderer.render(file: file, edit: leftHalf, maxPixel: 300, viewport: rightOfIt))
+    let direct = try meanChannels(
+        of: renderer.render(
+            file: file, edit: Edit(crop: CropRect(left: 0.25, top: 0, right: 0.5, bottom: 1)),
+            maxPixel: 300))
+    #expect(
+        abs(composed.red - direct.red) < 3 && abs(composed.blue - direct.blue) < 3,
+        "viewport must land inside the crop, got \(composed) vs \(direct)")
+}
+
+@Test func viewportIsNotAnEdit() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+    let region = CropRect(left: 0.1, top: 0.1, right: 0.4, bottom: 0.4)
+
+    #expect(
+        renderer.cachePath(for: file, edit: .identity, maxPixel: 800, viewport: region)
+            != renderer.cachePath(for: file, edit: .identity, maxPixel: 800),
+        "a viewport render must not overwrite the whole-frame entry")
+    #expect(
+        Dispatcher.viewport(from: nil) == nil,
+        "no viewport param means the whole frame")
+    #expect(
+        CropRect(left: 0.6, top: 0, right: 0.2, bottom: 1).sanitized() == nil,
+        "an inverted region is refused rather than rendered")
+}
+
 @Test func scaleFactorSurvivesACrop() throws {
     guard let fixture = fixtureARW() else { return }
     let cacheDir = tempCacheDir()
