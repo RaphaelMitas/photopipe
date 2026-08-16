@@ -11,7 +11,7 @@
       "!brand",
       "!**/src-tauri/gen",
       "!**/src-tauri/target",
-      "!**/src/components/ui"
+      "!packages/ui/src/components"
     ]
   },
   "formatter": {

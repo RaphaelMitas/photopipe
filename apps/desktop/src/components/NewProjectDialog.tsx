@@ -1,7 +1,4 @@
-import { Loader2 } from "lucide-react";
-import { useState } from "react";
-import { useCreateProject } from "@/lib/queries";
-import { Button } from "./ui/button";
+import { Button } from "@photopipe/ui/components/button";
 import {
   Dialog,
   DialogContent,
@@ -9,10 +6,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "./ui/dialog";
-import { Input } from "./ui/input";
-import { Label } from "./ui/label";
-import { Textarea } from "./ui/textarea";
+} from "@photopipe/ui/components/dialog";
+import { Input } from "@photopipe/ui/components/input";
+import { Label } from "@photopipe/ui/components/label";
+import { Textarea } from "@photopipe/ui/components/textarea";
+import { Loader2 } from "lucide-react";
+import { useState } from "react";
+import { useCreateProject } from "@/lib/queries";
 
 function today(): string {
   const now = new Date();
