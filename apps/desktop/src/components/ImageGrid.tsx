@@ -243,19 +243,21 @@ export function ImageGrid({
     }),
   });
 
-  const focusRow = focusPath
-    ? rows.findIndex((row) =>
-        row.cells.some((cell) => cell.image.path === focusPath),
-      )
-    : -1;
+  const focusRow = useMemo(
+    () =>
+      focusPath
+        ? rows.findIndex((row) =>
+            row.cells.some((cell) => cell.image.path === focusPath),
+          )
+        : -1,
+    [rows, focusPath],
+  );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: measure() on rows change is the point
   useEffect(() => {
     virtualizer.measure();
   }, [rows]);
 
-  // Rows packed against the guessed width would put the jump on the wrong row,
-  // so it waits for a real measurement.
   useVirtualJump(virtualizer, focusRow, measured);
 
   return (

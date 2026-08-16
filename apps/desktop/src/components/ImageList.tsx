@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
 import { fileSrc, type ImageFile } from "@/lib/core";
 import { useThumbnail } from "@/lib/queries";
 import { useVirtualJump } from "@/lib/useVirtualJump";
@@ -64,9 +64,11 @@ export function ImageList({
     }),
   });
 
-  const focusIndex = focusPath
-    ? images.findIndex((image) => image.path === focusPath)
-    : -1;
+  const focusIndex = useMemo(
+    () =>
+      focusPath ? images.findIndex((image) => image.path === focusPath) : -1,
+    [images, focusPath],
+  );
 
   useVirtualJump(virtualizer, focusIndex);
 

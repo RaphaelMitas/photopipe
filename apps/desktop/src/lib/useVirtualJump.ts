@@ -1,20 +1,21 @@
 import type { Virtualizer } from "@tanstack/react-virtual";
 import { useEffect, useRef } from "react";
 
-/// Centres a virtualized list on one item, once, when it mounts — how the
-/// browser lands back on the photo the loupe was showing. Pass ready=false
-/// while the sizes it would scroll against are still a guess.
 export function useVirtualJump(
   virtualizer: Virtualizer<HTMLDivElement, Element>,
   index: number,
   ready = true,
 ) {
   const jumped = useRef(false);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the jump belongs to the mount, not to every render
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only the mount jumps
   useEffect(() => {
-    if (jumped.current || !ready || index === -1) return;
-    // Attaching to the scroll element re-applies the virtualizer's own offset,
-    // which undoes a jump made in this effect. The next frame is past that.
+    if (jumped.current || !ready) return;
+    // a match arriving later must not yank the scroll out from under the user
+    if (index === -1) {
+      jumped.current = true;
+      return;
+    }
+    // the virtualizer re-applies its own offset on attach, undoing a jump here
     const frame = requestAnimationFrame(() => {
       jumped.current = true;
       virtualizer.scrollToIndex(index, { align: "center" });

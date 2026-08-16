@@ -1,12 +1,15 @@
 import { expect, test } from "@playwright/test";
 
-async function openZell(page: import("@playwright/test").Page) {
+async function openShoot(page: import("@playwright/test").Page, shoot: string) {
   await page.goto("/");
   await page.getByTestId("root-input").fill("/fake");
   await page.getByTestId("root-submit").click();
-  await page.getByTestId("shoot-2026-07-12_zell").click();
+  await page.getByTestId(`shoot-${shoot}`).click();
   await expect(page.getByTestId("grid")).toBeVisible();
 }
+
+const openZell = (page: import("@playwright/test").Page) =>
+  openShoot(page, "2026-07-12_zell");
 
 test("one surface: grid, shoot in the top bar, export at hand", async ({
   page,
@@ -122,30 +125,22 @@ test("delete moves the selection to the Trash and the grid follows", async ({
   await expect(page.getByTestId("selection-bar")).toHaveCount(0);
 });
 
-async function openDolomites(page: import("@playwright/test").Page) {
-  await page.goto("/");
-  await page.getByTestId("root-input").fill("/fake");
-  await page.getByTestId("root-submit").click();
-  await page.getByTestId("shoot-2026-08-01_dolomites").click();
-}
-
 async function walkTo40th(page: import("@playwright/test").Page) {
   await expect(page.getByTestId("loupe")).toBeVisible();
   for (let step = 0; step < 40; step++) {
     await page.keyboard.press("ArrowRight");
   }
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC01240.ARW");
-  await page.keyboard.press("Escape");
 }
 
 async function expectInView(
   page: import("@playwright/test").Page,
   container: string,
+  path: string,
 ) {
   const viewport = page.getByTestId(container);
-  const cell = viewport.locator("[data-path='DSC01240.ARW']");
+  const cell = viewport.locator(`[data-path='${path}']`);
   await expect(cell).toBeVisible();
-  // Rendered is not enough — the cell has to sit inside the scrolled viewport.
   const box = await cell.boundingBox();
   const bounds = await viewport.boundingBox();
   if (!box || !bounds) throw new Error(`${container} has no box`);
@@ -156,18 +151,34 @@ async function expectInView(
 test("leaving the loupe puts the grid back on the photo you were on", async ({
   page,
 }) => {
-  await openDolomites(page);
+  await openShoot(page, "2026-08-01_dolomites");
   await page.getByTestId("thumb").first().click();
   await walkTo40th(page);
-  await expectInView(page, "grid");
+  await page.keyboard.press("Escape");
+  await expectInView(page, "grid", "DSC01240.ARW");
 });
 
 test("the list comes back on the same photo too", async ({ page }) => {
-  await openDolomites(page);
+  await openShoot(page, "2026-08-01_dolomites");
   await page.getByTestId("view-list").click();
   await page.getByTestId("image-row").first().click();
   await walkTo40th(page);
-  await expectInView(page, "image-table");
+  await page.keyboard.press("Escape");
+  await expectInView(page, "image-table", "DSC01240.ARW");
+});
+
+test("a photo rated out of the filter leaves the grid on its neighbour", async ({
+  page,
+}) => {
+  await openShoot(page, "2026-08-01_dolomites");
+  await page.getByTestId("filter-op-unrated").click();
+  await page.getByTestId("thumb").first().click();
+  await walkTo40th(page);
+
+  await page.keyboard.press("3");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("[data-path='DSC01240.ARW']")).toHaveCount(0);
+  await expectInView(page, "grid", "DSC01241.ARW");
 });
 
 test("grid and list are two views of the same set", async ({ page }) => {

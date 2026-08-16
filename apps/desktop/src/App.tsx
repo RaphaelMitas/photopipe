@@ -117,8 +117,7 @@ export default function App() {
     setAutoScore(on);
     localStorage.setItem(AUTO_SCORE_KEY, on ? "on" : "off");
   };
-  // The photo the browser is centred on. It outlives the loupe so closing it
-  // lands the grid back on the photo you were looking at.
+  // outlives the loupe, so closing it lands the browser on the same photo
   const [currentPath, setCurrentPath] = useState<string | null>(null);
   const [loupeOpen, setLoupeOpen] = useState(false);
   const [ratingOp, setRatingOp] = useState<RatingOp>("gte");
@@ -410,12 +409,25 @@ export default function App() {
     ? loupeImages.findIndex((image) => image.path === currentPath)
     : -1;
 
+  // a filtered-out photo is not in the browser, so land on its neighbour
+  const focusPath = useMemo(() => {
+    const current = loupeImages[loupeIndex];
+    if (!current) return null;
+    if (filteredImages.includes(current)) return current.path;
+    return (
+      (loupeImages[loupeIndex + 1] ?? loupeImages[loupeIndex - 1])?.path ?? null
+    );
+  }, [loupeImages, loupeIndex, filteredImages]);
+
   useEffect(() => {
-    if (currentPath && loupeIndex === -1) setCurrentPath(null);
+    if (currentPath && loupeIndex === -1) {
+      setCurrentPath(null);
+      setLoupeOpen(false);
+    }
   }, [currentPath, loupeIndex]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: leave crop mode when the loupe photo changes
-  useEffect(() => setCropDraft(null), [currentPath]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: leave crop mode on any way out of this photo
+  useEffect(() => setCropDraft(null), [currentPath, loupeOpen]);
 
   const openExport = useCallback(() => {
     const image = loupeOpen ? loupeImages[loupeIndex] : null;
@@ -673,7 +685,7 @@ export default function App() {
                 onImport={runImport}
                 onShootSettings={setShootSettings}
                 filterActive={filterActive}
-                focusPath={currentPath}
+                focusPath={focusPath}
                 inLoupe={inLoupe}
                 loupeImages={loupeImages}
                 loupeIndex={loupeIndex}
