@@ -122,6 +122,54 @@ test("delete moves the selection to the Trash and the grid follows", async ({
   await expect(page.getByTestId("selection-bar")).toHaveCount(0);
 });
 
+async function openDolomites(page: import("@playwright/test").Page) {
+  await page.goto("/");
+  await page.getByTestId("root-input").fill("/fake");
+  await page.getByTestId("root-submit").click();
+  await page.getByTestId("shoot-2026-08-01_dolomites").click();
+}
+
+async function walkTo40th(page: import("@playwright/test").Page) {
+  await expect(page.getByTestId("loupe")).toBeVisible();
+  for (let step = 0; step < 40; step++) {
+    await page.keyboard.press("ArrowRight");
+  }
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC01240.ARW");
+  await page.keyboard.press("Escape");
+}
+
+async function expectInView(
+  page: import("@playwright/test").Page,
+  container: string,
+) {
+  const viewport = page.getByTestId(container);
+  const cell = viewport.locator("[data-path='DSC01240.ARW']");
+  await expect(cell).toBeVisible();
+  // Rendered is not enough — the cell has to sit inside the scrolled viewport.
+  const box = await cell.boundingBox();
+  const bounds = await viewport.boundingBox();
+  if (!box || !bounds) throw new Error(`${container} has no box`);
+  expect(box.y).toBeGreaterThanOrEqual(bounds.y);
+  expect(box.y + box.height).toBeLessThanOrEqual(bounds.y + bounds.height);
+}
+
+test("leaving the loupe puts the grid back on the photo you were on", async ({
+  page,
+}) => {
+  await openDolomites(page);
+  await page.getByTestId("thumb").first().click();
+  await walkTo40th(page);
+  await expectInView(page, "grid");
+});
+
+test("the list comes back on the same photo too", async ({ page }) => {
+  await openDolomites(page);
+  await page.getByTestId("view-list").click();
+  await page.getByTestId("image-row").first().click();
+  await walkTo40th(page);
+  await expectInView(page, "image-table");
+});
+
 test("grid and list are two views of the same set", async ({ page }) => {
   await openZell(page);
 

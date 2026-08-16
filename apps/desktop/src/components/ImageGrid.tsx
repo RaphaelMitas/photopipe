@@ -3,6 +3,7 @@ import { Check } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fileSrc, type ImageFile } from "@/lib/core";
 import { useThumbnail } from "@/lib/queries";
+import { useVirtualJump } from "@/lib/useVirtualJump";
 import { ExposureBadge, RatingBadge } from "./PhotoBadges";
 import { Skeleton } from "./ui/skeleton";
 
@@ -183,6 +184,7 @@ type Props = {
     path: string,
     modifiers: { meta: boolean; shift: boolean },
   ) => void;
+  focusPath?: string | null;
   initialRect?: { width: number; height: number };
 };
 
@@ -193,6 +195,7 @@ export function ImageGrid({
   selected,
   selectMode,
   onSelect,
+  focusPath,
   initialRect,
 }: Props) {
   const parentRef = useRef<HTMLDivElement>(null);
@@ -200,13 +203,17 @@ export function ImageGrid({
   const [containerWidth, setContainerWidth] = useState(
     () => (initialRect?.width ?? 800) - padding * 2,
   );
+  const [measured, setMeasured] = useState(initialRect != null);
 
   useEffect(() => {
     const element = parentRef.current;
     if (!element) return;
     const update = () => {
       const width = element.clientWidth - padding * 2;
-      if (width > 0) setContainerWidth(width);
+      if (width > 0) {
+        setContainerWidth(width);
+        setMeasured(true);
+      }
     };
     update();
     const observer = new ResizeObserver(update);
@@ -236,10 +243,20 @@ export function ImageGrid({
     }),
   });
 
+  const focusRow = focusPath
+    ? rows.findIndex((row) =>
+        row.cells.some((cell) => cell.image.path === focusPath),
+      )
+    : -1;
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: measure() on rows change is the point
   useEffect(() => {
     virtualizer.measure();
   }, [rows]);
+
+  // Rows packed against the guessed width would put the jump on the wrong row,
+  // so it waits for a real measurement.
+  useVirtualJump(virtualizer, focusRow, measured);
 
   return (
     <div

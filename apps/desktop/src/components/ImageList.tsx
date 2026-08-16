@@ -2,6 +2,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useRef } from "react";
 import { fileSrc, type ImageFile } from "@/lib/core";
 import { useThumbnail } from "@/lib/queries";
+import { useVirtualJump } from "@/lib/useVirtualJump";
 import { cn } from "@/lib/utils";
 import { ExposureBadge, RatingBadge } from "./PhotoBadges";
 import { Skeleton } from "./ui/skeleton";
@@ -31,6 +32,7 @@ type Props = {
   ) => void;
   onOpen?: (index: number) => void;
   emptyMessage: string;
+  focusPath?: string | null;
   initialRect?: { width: number; height: number };
 };
 
@@ -41,6 +43,7 @@ export function ImageList({
   onSelect,
   onOpen,
   emptyMessage,
+  focusPath,
   initialRect,
 }: Props) {
   const parentRef = useRef<HTMLDivElement>(null);
@@ -60,6 +63,12 @@ export function ImageList({
       },
     }),
   });
+
+  const focusIndex = focusPath
+    ? images.findIndex((image) => image.path === focusPath)
+    : -1;
+
+  useVirtualJump(virtualizer, focusIndex);
 
   if (images.length === 0) {
     return (
