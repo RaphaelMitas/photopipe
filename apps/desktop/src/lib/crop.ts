@@ -340,8 +340,9 @@ export function moveCrop(
 export type CropHandle = "tl" | "tr" | "bl" | "br" | "t" | "b" | "l" | "r";
 
 /// Drag a handle by (dx, dy), bounded only by the rotated photo's coverage
-/// and the minimum size. `ratio` locks the pixel aspect (width leads, the
-/// edge opposite the dragged corner anchors). When the full delta would
+/// and the minimum size. `ratio` locks the pixel aspect: on a corner the
+/// width leads and the opposite edge anchors, on an edge the dragged axis
+/// leads and the other opens about the center. When the full delta would
 /// leave the rotated photo, the largest feasible fraction applies, so a
 /// fast drag still lands flush on the border instead of freezing.
 export function resizeCrop(
@@ -369,9 +370,23 @@ export function resizeCrop(
     if (handle.includes("b"))
       bottom = Math.max(bottom + stepY, top + MIN_CROP_SIZE);
     if (ratio !== null) {
-      const height = ((right - left) * imageWidth) / ratio / imageHeight;
-      if (handle.includes("t")) top = bottom - height;
-      else bottom = top + height;
+      const heightFor = (width: number) =>
+        (width * imageWidth) / ratio / imageHeight;
+      if (handle === "t" || handle === "b") {
+        const width = ((bottom - top) * imageHeight * ratio) / imageWidth;
+        const centerX = (left + right) / 2;
+        left = centerX - width / 2;
+        right = centerX + width / 2;
+      } else if (handle === "l" || handle === "r") {
+        const height = heightFor(right - left);
+        const centerY = (top + bottom) / 2;
+        top = centerY - height / 2;
+        bottom = centerY + height / 2;
+      } else if (handle.includes("t")) {
+        top = bottom - heightFor(right - left);
+      } else {
+        bottom = top + heightFor(right - left);
+      }
     }
     return { left, top, right, bottom };
   };

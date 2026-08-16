@@ -31,17 +31,70 @@ export type CropDraft = {
 // wrap-safe accumulation.
 const STRAIGHTEN_RANGE = 180;
 
-export function draftFromEdit(edit: {
-  crop?: CropRect | null;
-  cropAngle?: number;
-  rotation?: number;
-}): CropDraft {
+const ASPECTS: [string, string][] = [
+  ["free", "Free"],
+  ["original", "Original"],
+  ["transposed", "Transposed"],
+  ["1:1", "1:1"],
+  ["4:5", "4:5"],
+  ["2:3", "2:3"],
+  ["3:4", "3:4"],
+  ["5:7", "5:7"],
+  ["16:9", "16:9"],
+  ["16:10", "16:10"],
+  ["21:9", "21:9"],
+];
+
+/// The dropdown entry a crop already sits at, so re-entering crop mode keeps
+/// a locked shape locked. Unflipped matches win, and an unrecognised shape
+/// falls back to Original without reshaping the rect.
+function matchAspect(
+  crop: CropRect,
+  displayWidth: number,
+  displayHeight: number,
+): { aspect: string; flipped: boolean } {
+  const ratio =
+    ((crop.right - crop.left) * displayWidth) /
+    ((crop.bottom - crop.top) * displayHeight);
+  for (const flipped of [false, true]) {
+    for (const [value] of ASPECTS) {
+      const candidate = aspectRatioFor(
+        value,
+        flipped,
+        displayWidth,
+        displayHeight,
+      );
+      // 0.5%: a crop that round-tripped through the sidecar's three decimals
+      // comes back a hair off its ratio.
+      if (candidate !== null && Math.abs(candidate - ratio) < ratio * 0.005) {
+        return { aspect: value, flipped };
+      }
+    }
+  }
+  return { aspect: "original", flipped: false };
+}
+
+export function draftFromEdit(
+  edit: {
+    crop?: CropRect | null;
+    cropAngle?: number;
+    rotation?: number;
+  },
+  imageWidth: number,
+  imageHeight: number,
+): CropDraft {
+  const crop = edit.crop ?? fullCrop;
+  const rotation = edit.rotation ?? 0;
+  const [displayWidth, displayHeight] = rotatedSize(
+    imageWidth,
+    imageHeight,
+    rotation,
+  );
   return {
-    crop: edit.crop ?? fullCrop,
+    crop,
     angle: edit.cropAngle ?? 0,
-    rotation: edit.rotation ?? 0,
-    aspect: "free",
-    flipped: false,
+    rotation,
+    ...matchAspect(crop, displayWidth, displayHeight),
   };
 }
 
@@ -81,20 +134,6 @@ export function draftWithAngle(
     crop: constrainCrop(draft.crop, clamped, imageWidth, imageHeight),
   };
 }
-
-const ASPECTS: [string, string][] = [
-  ["free", "Free"],
-  ["original", "Original"],
-  ["transposed", "Transposed"],
-  ["1:1", "1:1"],
-  ["4:5", "4:5"],
-  ["2:3", "2:3"],
-  ["3:4", "3:4"],
-  ["5:7", "5:7"],
-  ["16:9", "16:9"],
-  ["16:10", "16:10"],
-  ["21:9", "21:9"],
-];
 
 type PanelProps = {
   image: ImageFile;
@@ -153,7 +192,7 @@ export function CropPanel({
               crop: fullCrop,
               angle: 0,
               rotation: 0,
-              aspect: "free",
+              aspect: "original",
               flipped: false,
             })
           }
@@ -467,8 +506,11 @@ export function CropOverlay({
     height: percent(crop.bottom - crop.top),
   };
 
-  const corner = "absolute size-3.5 border-2 border-white";
-  const edge = "absolute bg-white";
+  // The drawn handles are thin; the pseudo-element gives each one a grab area
+  // 8px wider on every side without changing how it looks.
+  const hitArea = "before:absolute before:-inset-2 before:content-['']";
+  const corner = `absolute size-3.5 border-2 border-white ${hitArea}`;
+  const edge = `absolute bg-white ${hitArea}`;
   const handles: [Handle, string][] = [
     [
       "tl",
@@ -545,16 +587,14 @@ export function CropOverlay({
             onPointerDown={onRotateDown}
           />
         ))}
-        {(ratio === null ? handles : handles.slice(0, 4)).map(
-          ([handle, className]) => (
-            <div
-              key={handle}
-              data-testid={`crop-handle-${handle}`}
-              className={className}
-              onPointerDown={(event) => onPointerDown(event, handle)}
-            />
-          ),
-        )}
+        {handles.map(([handle, className]) => (
+          <div
+            key={handle}
+            data-testid={`crop-handle-${handle}`}
+            className={className}
+            onPointerDown={(event) => onPointerDown(event, handle)}
+          />
+        ))}
       </div>
       {alignLine && (
         <svg

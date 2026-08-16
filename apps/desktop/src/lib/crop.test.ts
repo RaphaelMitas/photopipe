@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { commitDraft, draftFromEdit } from "@/components/CropTool";
-import { editKey, identityEdit, isIdentityEdit } from "./core";
+import { type CropRect, editKey, identityEdit, isIdentityEdit } from "./core";
 import {
   aspectRatioFor,
   centeredAspectCrop,
@@ -157,6 +157,37 @@ describe("moveCrop and resizeCrop", () => {
     const heightPx = (locked.bottom - locked.top) * 2000;
     expect(widthPx / heightPx).toBeCloseTo(1);
   });
+
+  it("a locked edge drag leads its own axis and opens the other symmetrically", () => {
+    // 1:1 in pixels, dragging the top edge up: height leads, and the width
+    // grows the same amount left and right.
+    const tall = resizeCrop(centered, "t", 0, -0.1, 1, 0, 3000, 2000);
+    expect(tall.top).toBeCloseTo(0.2);
+    expect(tall.bottom).toBeCloseTo(0.7);
+    expect((tall.right - tall.left) * 3000).toBeCloseTo(
+      (tall.bottom - tall.top) * 2000,
+    );
+    expect(tall.left + tall.right).toBeCloseTo(1);
+
+    // Dragging the left edge out: width leads and the height opens about the
+    // same vertical center.
+    const wide = resizeCrop(centered, "l", -0.1, 0, 1, 0, 3000, 2000);
+    expect(wide.left).toBeCloseTo(0.2);
+    expect(wide.right).toBeCloseTo(0.7);
+    expect((wide.right - wide.left) * 3000).toBeCloseTo(
+      (wide.bottom - wide.top) * 2000,
+    );
+    expect(wide.top + wide.bottom).toBeCloseTo(1);
+  });
+
+  it("a locked edge drag stops at the photo instead of overflowing", () => {
+    const grown = resizeCrop(centered, "t", 0, -5, 1, 0, 3000, 2000);
+    expect(cropInsideImage(grown, 0, 3000, 2000)).toBe(true);
+    expect(grown.top).toBeCloseTo(0);
+    const widthPx = (grown.right - grown.left) * 3000;
+    const heightPx = (grown.bottom - grown.top) * 2000;
+    expect(widthPx / heightPx).toBeCloseTo(1);
+  });
 });
 
 describe("turn, transpose, and ratio helpers", () => {
@@ -216,9 +247,30 @@ describe("turn, transpose, and ratio helpers", () => {
     expect(aspectRatioFor("4:5", true, 3000, 2000)).toBeCloseTo(1.25);
   });
 
+  it("entering crop mode selects the ratio the crop already has", () => {
+    const enter = (crop: CropRect | null, rotation = 0) =>
+      draftFromEdit({ ...identityEdit, crop, rotation }, 3000, 2000);
+    expect(enter(null)).toMatchObject({ aspect: "original", flipped: false });
+    expect(enter(null, 90)).toMatchObject({
+      aspect: "original",
+      flipped: false,
+    });
+    // 2000x2000 px on the 3000x2000 frame.
+    expect(
+      enter({ left: 1 / 6, top: 0, right: 5 / 6, bottom: 1 }),
+    ).toMatchObject({ aspect: "1:1", flipped: false });
+    // 1125x2000 px: only the flipped 16:9 fits.
+    expect(
+      enter({ left: 0.3125, top: 0, right: 0.6875, bottom: 1 }),
+    ).toMatchObject({ aspect: "16:9", flipped: true });
+    // Nothing matches a free-form shape: Original shows, the rect stays.
+    const odd = { left: 0.1, top: 0.2, right: 0.7, bottom: 0.75 };
+    expect(enter(odd)).toMatchObject({ aspect: "original", crop: odd });
+  });
+
   it("commit snaps slivers but preserves the rotated overhang", () => {
     const draft = {
-      ...draftFromEdit(identityEdit),
+      ...draftFromEdit(identityEdit, 3000, 2000),
       angle: 12,
       crop: { left: -0.05, top: 0.00003, right: 1.02, bottom: 0.9994 },
     };
@@ -231,7 +283,7 @@ describe("turn, transpose, and ratio helpers", () => {
   });
 
   it("a turn-only draft commits rotation without a crop rect", () => {
-    const turned = { ...draftFromEdit(identityEdit), rotation: 90 };
+    const turned = { ...draftFromEdit(identityEdit, 3000, 2000), rotation: 90 };
     expect(commitDraft(turned)).toEqual({
       crop: null,
       cropAngle: 0,

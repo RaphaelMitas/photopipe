@@ -7,7 +7,13 @@ import {
   useState,
 } from "react";
 import { type Edit, fileSrc, type ImageFile } from "@/lib/core";
-import { aspectRatioFor, type Box, fitRect, rotatedSize } from "@/lib/crop";
+import {
+  aspectRatioFor,
+  type Box,
+  fitRect,
+  moveCrop,
+  rotatedSize,
+} from "@/lib/crop";
 import { capturePointer, cursorIn } from "@/lib/pointer";
 import {
   usePrefetchRender,
@@ -30,6 +36,14 @@ import { Filmstrip, type FilmstripMode } from "./Filmstrip";
 
 export const EXPOSURE_STEP = 0.25;
 export const EXPOSURE_RANGE = 3;
+
+// Arrow nudges are counted in photo pixels; shift takes the coarse step.
+const NUDGE: Record<string, { x: number; y: number }> = {
+  ArrowLeft: { x: -1, y: 0 },
+  ArrowRight: { x: 1, y: 0 },
+  ArrowUp: { x: 0, y: -1 },
+  ArrowDown: { x: 0, y: 1 },
+};
 
 /// Holds a value back until it has stopped changing for `delayMs`.
 function useSettled<T>(value: T, delayMs: number): T {
@@ -159,16 +173,32 @@ export function Loupe({
       const target = event.target as HTMLElement | null;
       if (
         event.key.startsWith("Arrow") &&
-        target?.closest?.("[data-slot='slider']")
+        target?.closest?.("[data-slot='slider'], select")
       ) {
         return;
       }
-      if (cropping) {
+      if (cropDraft) {
         if (event.key === "Escape") onCancelCrop();
         // A focused button (Cancel, Reset) or the aspect select acts on
         // Enter itself.
         if (event.key === "Enter" && !target?.closest?.("button, select")) {
           onApplyCrop();
+        }
+        const nudge = NUDGE[event.key];
+        if (nudge) {
+          event.preventDefault();
+          const step = event.shiftKey ? 10 : 1;
+          onCropDraft({
+            ...cropDraft,
+            crop: moveCrop(
+              cropDraft.crop,
+              (nudge.x * step) / displayWidth,
+              (nudge.y * step) / displayHeight,
+              cropDraft.angle,
+              displayWidth,
+              displayHeight,
+            ),
+          });
         }
         return;
       }
@@ -218,10 +248,13 @@ export function Loupe({
     images.length,
     index,
     edit,
-    cropping,
+    cropDraft,
+    displayWidth,
+    displayHeight,
     onApplyCrop,
     onCancelCrop,
     onClose,
+    onCropDraft,
     onEditChange,
     onNavigate,
     onRate,

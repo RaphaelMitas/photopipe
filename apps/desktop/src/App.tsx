@@ -875,7 +875,15 @@ export default function App() {
                 onChange={(edit) => changeEdit(loupeImage, edit)}
                 cropDraft={cropDraft}
                 onCropDraft={setCropDraft}
-                onEnterCrop={() => setCropDraft(draftFromEdit(loupeEdit))}
+                onEnterCrop={() =>
+                  setCropDraft(
+                    draftFromEdit(
+                      loupeEdit,
+                      loupeImage.width,
+                      loupeImage.height,
+                    ),
+                  )
+                }
                 onApplyCrop={applyCrop}
                 onCancelCrop={cancelCrop}
                 canPaste={clipboard !== null}
