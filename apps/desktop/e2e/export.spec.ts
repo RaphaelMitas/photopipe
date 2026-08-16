@@ -81,8 +81,6 @@ test("a running export reports how far it got, and finishes", async ({
   await page.getByTestId("select-all").click();
   await page.getByTestId("run-export").click();
 
-  // The request that starts the delivery returns at once: the row is there
-  // long before the files are, counting up as they land.
   const running = page.getByTestId("job-running");
   await expect(running).toBeVisible();
   await expect(running).toContainText("of 4");
@@ -108,7 +106,6 @@ test("a long export can be cancelled and says so", async ({ page }) => {
   await page.getByTestId("job-cancel").click();
   const stopped = page.getByTestId("job-cancelled");
   await expect(stopped).toContainText("Cancelled");
-  // What did land is still a delivery, so it stays revealable.
   await expect(stopped.getByTitle("Reveal in Finder")).toBeVisible();
 });
 

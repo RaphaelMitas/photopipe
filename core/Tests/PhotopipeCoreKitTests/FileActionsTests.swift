@@ -26,8 +26,7 @@ private func makeShoot(in root: URL, named name: String = "2026-06-06_actions") 
     return shoot
 }
 
-/// Exports run in the background; these assertions are about the files that
-/// arrive, so they wait for the job rather than reimplement it.
+/// Exports run in the background; these assertions are about the files.
 @discardableResult
 private func exportNow(
     _ service: LibraryService, shoot: String, paths: [String], destination: String,
@@ -87,7 +86,6 @@ private func exportNow(
     // A malformed request must never reach a file outside the library.
     // (Reveal is the exception: it shows export destinations the user chose
     // outside the root, and touches nothing.)
-    // Refused outright, not accepted as a job that fails later.
     #expect(throws: LibraryService.ServiceError.self) {
         try service.startExport(
             shoot: shoot.lastPathComponent, paths: ["/etc/hosts"],

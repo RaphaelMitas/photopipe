@@ -45,8 +45,7 @@ private func waitUntilIdle(
         try Data("photo".utf8).write(to: target)
     }
 
-    // The request that asks for an export must come back at once; blocking on
-    // the delivery is what used to trip the client's ten second read timeout.
+    // The client gives up on a request after ten seconds.
     #expect(Date().timeIntervalSince(began) < 1)
     #expect(job.running)
     #expect(job.total == 3)
@@ -72,8 +71,6 @@ private func waitUntilIdle(
     let finished = waitUntilIdle(exporter, job.id)
     #expect(finished.done == 3)
     #expect(finished.failed == 1)
-    // Three photos arrived, so the delivery happened; the one that did not is
-    // a count, not a reason to throw the others away.
     #expect(finished.error == nil)
     #expect(
         try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted() == [
@@ -109,7 +106,7 @@ private func waitUntilIdle(
         gate.wait()
         try Data("photo".utf8).write(to: target)
     }
-    #expect(exporter.cancel(id: job.id)?.cancelled == true)
+    #expect(exporter.cancel(id: job.id) != nil)
     for _ in 0..<6 { gate.signal() }
 
     let finished = waitUntilIdle(exporter, job.id)
@@ -118,6 +115,27 @@ private func waitUntilIdle(
     // finish and are kept; the queue behind them is dropped.
     #expect(finished.done == 4)
     #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).count == 4)
+}
+
+@Test func anArchiveThatCannotBeBuiltIsReportedAsFailedNotDelivered() throws {
+    let dir = scratchDir("exporter")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    // Staging is never created, so zip has nothing to archive and fails.
+    let staging = dir.appendingPathComponent("staging")
+    let archive = dir.appendingPathComponent("delivery.zip")
+    let exporter = Exporter()
+    let job = exporter.start(
+        plan: Exporter.Plan(
+            items: plan(2, in: archive, staging: staging).items,
+            destination: archive.path, staging: staging)
+    ) { _, _ in }
+
+    let finished = waitUntilIdle(exporter, job.id)
+    #expect(finished.done == 0, "the files went nowhere the user can reach")
+    #expect(finished.error != nil)
+    #expect(!FileManager.default.fileExists(atPath: archive.path))
 }
 
 @Test func cancellingAZipLeavesNoArchiveAndNoStagingDirectory() throws {
@@ -142,8 +160,11 @@ private func waitUntilIdle(
 
     let finished = waitUntilIdle(exporter, job.id)
     #expect(finished.cancelled)
+    // Staging is deleted with everything in it, so no count here describes a
+    // file anyone can open.
+    #expect(finished.done == 0)
+    #expect(finished.failed == 0)
     let fm = FileManager.default
     #expect(!fm.fileExists(atPath: archive.path), "a half-filled archive is worse than none")
-    // The SIGKILL that used to end a long export skipped this cleanup entirely.
     #expect(!fm.fileExists(atPath: staging.path))
 }

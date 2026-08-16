@@ -1,12 +1,8 @@
 import Foundation
 
-/// Runs a delivery in the background and reports how far it got.
-///
 /// An export of a few hundred raws takes minutes, far past the client's read
 /// timeout, so the request that asks for one only plans it: `start` returns an
 /// id straight away and the client polls `progress` until it stops running.
-/// A file that cannot be written is counted and skipped, because one unreadable
-/// photo losing the other hundred and fifty is not a trade anyone would take.
 public final class Exporter: @unchecked Sendable {
     public struct Progress: Equatable, Sendable {
         public let id: String
@@ -21,9 +17,8 @@ public final class Exporter: @unchecked Sendable {
         public var error: String?
     }
 
-    /// A delivery resolved down to "write this image to this url": names are
-    /// decided here, before the first write, so four writers cannot pick the
-    /// same one from a directory listing that keeps changing under them.
+    /// Names are decided here, before the first write, so four writers cannot
+    /// pick the same one from a listing that keeps changing under them.
     public struct Plan: Sendable {
         public struct Item: Sendable {
             public let image: ImageFile
@@ -80,16 +75,11 @@ public final class Exporter: @unchecked Sendable {
         lock.withLock { jobs[id] }
     }
 
-    /// Files already written stay where they are; a zip is not built at all.
-    /// A delivery that finished between the client's last poll and this call is
-    /// left alone rather than relabelled as cancelled.
+    /// Asks; it does not decide. `cancelled` is set by the job itself when it
+    /// stops, so a cancel that loses the race to the last write is reported as
+    /// the delivery it turned out to be rather than flipping the client twice.
     public func cancel(id: String) -> Progress? {
-        let task = lock.withLock { () -> Task<Void, Never>? in
-            guard jobs[id]?.running == true else { return nil }
-            jobs[id]?.cancelled = true
-            return tasks[id]
-        }
-        task?.cancel()
+        lock.withLock { tasks[id] }?.cancel()
         return progress(id: id)
     }
 
@@ -124,27 +114,33 @@ public final class Exporter: @unchecked Sendable {
         }
 
         let cancelled = Task.isCancelled
-        var written = lock.withLock { jobs[id]?.done ?? 0 }
+        var (written, failed) = lock.withLock {
+            (jobs[id]?.done ?? 0, jobs[id]?.failed ?? 0)
+        }
         var error: String?
         if let staging = plan.staging {
-            if !cancelled && written > 0 {
+            if cancelled {
+                // Staging is deleted below, so neither count describes anything
+                // that exists: a cancelled zip delivered nothing at all.
+                written = 0
+                failed = 0
+            } else if written > 0 {
                 do {
                     try FileActions.zipDirectory(at: staging, to: plan.destination)
                 } catch let zip {
-                    // The staged files are about to be deleted, so counting
-                    // them as delivered would name files nobody can open.
                     written = 0
                     error = "\(zip)"
                 }
             }
             try? FileManager.default.removeItem(at: staging)
         }
-        // Nothing arrived and something went wrong: the client needs to be told
-        // what, not handed an empty delivery reported as a success.
+        // An empty delivery reported as a success sends the user looking for
+        // files that are not there.
         if error == nil && !cancelled && written == 0 { error = firstFailure }
 
         lock.withLock {
             jobs[id]?.done = written
+            jobs[id]?.failed = failed
             jobs[id]?.running = false
             jobs[id]?.cancelled = cancelled
             jobs[id]?.error = error

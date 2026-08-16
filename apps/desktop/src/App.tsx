@@ -55,6 +55,7 @@ import { type EditClipboard, pasteEdit } from "@/lib/editClipboard";
 import { betterThan, scoreRanks } from "@/lib/instinct";
 import {
   type EditWrite,
+  jobStatus,
   type ScoreProgress,
   useExportJobs,
   useImages,
@@ -738,7 +739,7 @@ export default function App() {
                     <span className="size-2 animate-pulse rounded-full bg-primary" />
                     Exporting…
                   </>
-                ) : latestJob?.error ? (
+                ) : latestJob && jobStatus(latestJob) === "failed" ? (
                   <>
                     <AlertCircle className="text-destructive" />
                     Activity

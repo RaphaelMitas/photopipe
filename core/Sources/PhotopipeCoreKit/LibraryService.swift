@@ -502,10 +502,9 @@ public final class LibraryService: @unchecked Sendable {
         case jpeg
     }
 
-    /// Plans the delivery and hands it to the exporter, which writes the files
-    /// in the background. Everything that can be refused outright is refused
-    /// here, so a bad request still comes back as an error rather than as a job
-    /// that fails a minute later.
+    /// Everything that can be refused outright is refused here, so a bad
+    /// request comes back as an error rather than as a job that fails a
+    /// minute later.
     public func startExport(
         shoot shootName: String, paths: [String], destination: String,
         zip: Bool, flatten: Bool, format: ExportFormat, quality: Int

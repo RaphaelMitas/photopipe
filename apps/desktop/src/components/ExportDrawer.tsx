@@ -5,7 +5,7 @@ import { open as openDialog, save } from "@tauri-apps/plugin-dialog";
 import { AlertCircle, Check, FolderOpen, Upload, X } from "lucide-react";
 import { useState } from "react";
 import type { ExportFormat } from "@/lib/core";
-import type { ExportJob } from "@/lib/queries";
+import { type ExportJob, jobStatus } from "@/lib/queries";
 
 export type ExportOptions = {
   format: ExportFormat;
@@ -46,7 +46,10 @@ function timeLeft(job: ExportJob): string {
 
 function jobDetail(job: ExportJob): string {
   if (job.running) {
-    return `${job.done} of ${job.total}${timeLeft(job)}`;
+    // Settled, not delivered: a count that skipped the failures would sit
+    // still while the bar and the estimate kept moving.
+    const failed = job.failed > 0 ? ` · ${job.failed} failed` : "";
+    return `${job.done + job.failed} of ${job.total}${failed}${timeLeft(job)}`;
   }
   if (job.error) return job.error;
   const files = `${job.done} ${job.done === 1 ? "file" : "files"}`;
@@ -282,16 +285,10 @@ export function ExportDrawer({
         <Section label="Activity">
           <ul className="flex flex-col gap-2">
             {jobs.map((job) => {
-              const status = job.running
-                ? "running"
-                : job.error
-                  ? "failed"
-                  : job.cancelled
-                    ? "cancelled"
-                    : "done";
+              const status = jobStatus(job);
               return (
                 <li
-                  key={job.id}
+                  key={job.key}
                   data-testid={`job-${status}`}
                   className="flex flex-col gap-0.5 text-xs"
                 >
@@ -315,8 +312,7 @@ export function ExportDrawer({
                         variant="ghost"
                         data-testid="job-cancel"
                         title="Cancel export"
-                        disabled={job.cancelled}
-                        onClick={() => onCancel(job.id)}
+                        onClick={() => onCancel(job.key)}
                         className="size-5 shrink-0 text-muted-foreground"
                       >
                         <X />

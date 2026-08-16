@@ -523,12 +523,25 @@ export type ExportProgress = {
 };
 
 export type ExportJob = ExportProgress & {
+  /// The core numbers its jobs from one per process, so a sidecar restart
+  /// hands a fresh export the id of one still on this list. Rows are addressed
+  /// by this instead, and `id` only ever goes back to the core that issued it.
+  key: string;
   label: string;
   /// Only ever used to estimate what is left; the core does not keep clocks.
   startedAt: number;
 };
 
+export function jobStatus(
+  job: ExportJob,
+): "running" | "failed" | "cancelled" | "done" {
+  if (job.running) return "running";
+  if (job.error) return "failed";
+  return job.cancelled ? "cancelled" : "done";
+}
+
 const EXPORT_POLL_MS = 400;
+let nextJobKey = 1;
 
 /// A delivery of a few hundred raws takes minutes, so the core runs it as a job
 /// and `exportFiles` only hands back an id. Everything the drawer shows about a
@@ -550,19 +563,20 @@ export function useExportJobs() {
           .filter((job) => job.running)
           .map(async (job) => {
             try {
-              return await coreRequest<ExportProgress>("exportStatus", {
+              const next = await coreRequest<ExportProgress>("exportStatus", {
                 id: job.id,
               });
+              return { ...next, key: job.key };
             } catch (error) {
               // The core went away mid-export; this job is not coming back.
-              return { id: job.id, running: false, error: String(error) };
+              return { key: job.key, running: false, error: String(error) };
             }
           }),
       );
       if (stopped) return;
       setJobs((current) =>
         current.map((job) => {
-          const update = updates.find((next) => next.id === job.id);
+          const update = updates.find((next) => next.key === job.key);
           return update ? { ...job, ...update } : job;
         }),
       );
@@ -577,22 +591,40 @@ export function useExportJobs() {
   }, [running]);
 
   const start = useCallback(async (label: string, request: ExportRequest) => {
+    const key = String(nextJobKey++);
+    const row = { key, label, startedAt: Date.now() };
     try {
       const job = await coreRequest<ExportProgress>("exportFiles", request);
+      setJobs((current) => [{ ...job, ...row }, ...current]);
+    } catch (error) {
+      // A refusal the user can still read after the toast has gone.
       setJobs((current) => [
-        { ...job, label, startedAt: Date.now() },
+        {
+          ...row,
+          id: "",
+          done: 0,
+          failed: 0,
+          total: request.paths.length,
+          running: false,
+          cancelled: false,
+          destination: request.destination,
+          error: String(error),
+        },
         ...current,
       ]);
-    } catch (error) {
       toast.error("Could not start the export", { description: String(error) });
     }
   }, []);
 
-  const cancel = useCallback((id: string) => {
-    coreRequest<ExportProgress>("cancelExport", { id })
+  const cancel = useCallback((key: string) => {
+    const job = live.current.find((candidate) => candidate.key === key);
+    if (!job) return;
+    coreRequest<ExportProgress>("cancelExport", { id: job.id })
       .then((update) =>
         setJobs((current) =>
-          current.map((job) => (job.id === id ? { ...job, ...update } : job)),
+          current.map((candidate) =>
+            candidate.key === key ? { ...candidate, ...update } : candidate,
+          ),
         ),
       )
       .catch((error: unknown) => {
