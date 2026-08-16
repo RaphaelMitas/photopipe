@@ -9,12 +9,8 @@ export type CropRect = {
   bottom: number;
 };
 
-// Mirrors the core's Edit. The core omits null fields, so read with `?? null`.
-// temperature/tint: Kelvin and green–magenta for raws (null = as shot),
-// incremental -100..100 for embedded formats.
-// denoise: 0..100 for raws, null = whatever the decoder picked.
-// cropAngle: degrees, positive clockwise about the center.
-// rotation: whole-photo turn (0/90/180/270); the crop is against it.
+// Mirrors core Edit.swift, which documents the units. The core omits null
+// fields when encoding, so read them with `?? null`.
 export type Edit = {
   exposure: number;
   highlights: number;

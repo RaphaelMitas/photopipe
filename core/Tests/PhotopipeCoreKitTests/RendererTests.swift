@@ -428,7 +428,6 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
         warm.red - warm.blue > neutral.red - neutral.blue + 5,
         "raising the neutral temperature must warm the raw render")
 
-    // a later as-shot render must not inherit the mutated filter state
     let backToNeutral = try meanChannels(
         of: renderer.render(file: file, edit: Edit(exposure: 0.001), maxPixel: 400))
     #expect(
@@ -478,10 +477,29 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
     #expect(defaults.denoise > 0, "the decoder's own amount is what nil has to mean")
 
     // JPEG size stands in for retained grain: less smoothing compresses worse.
-    let off = try Data(contentsOf: renderer.render(file: file, edit: Edit(denoise: 0), maxPixel: 0))
+    // Native size, since a downscale is itself a denoise.
+    let native = Int(max(CIRAWFilter(imageURL: fixture)?.nativeSize.width ?? 0, 1))
+    let off = try Data(
+        contentsOf: renderer.render(file: file, edit: Edit(denoise: 0), maxPixel: native))
     let full = try Data(
-        contentsOf: renderer.render(file: file, edit: Edit(denoise: 100), maxPixel: 0))
+        contentsOf: renderer.render(file: file, edit: Edit(denoise: 100), maxPixel: native))
     #expect(off.count > full.count, "the denoise slider must reach the decoder")
+}
+
+/// maxPixel crosses IPC unvalidated, and 0 must not read as "full sensor":
+/// that would decode every pixel of a 33MP raw on request, eight at a time.
+@Test func nonPositiveMaxPixelIsRefused() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    for maxPixel in [0, -1, Int.min] {
+        #expect(throws: (any Error).self) {
+            try renderer.render(file: file, edit: .identity, maxPixel: maxPixel)
+        }
+    }
 }
 
 @Test func scaleFactorSurvivesACrop() throws {

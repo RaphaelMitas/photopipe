@@ -19,11 +19,10 @@ public final class Renderer {
     private let jpegColorSpace = CGColorSpace(name: CGColorSpace.displayP3)!
     private let curveColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
-    // bump when the pixels change for an unchanged key; RAW 9 is why it is 2
+    // bump when the pixels change for an unchanged key
     private static let pipelineVersion = 2
 
-    /// What the decoder starts a file from. None of these are zero, so a
-    /// slider left alone has to reach for them.
+    /// None of these are zero, so a slider left alone has to reach for them.
     public struct RawDefaults: Sendable {
         public let temperature: Double
         public let tint: Double
@@ -39,7 +38,6 @@ public final class Renderer {
     }
 
     private let lock = NSLock()
-    // a zoom render and the preview behind it need different scaleFactors
     private var filtersByPathAndSize: [String: CachedFilter] = [:]
     private var defaultsByPath: [String: (values: RawDefaults, mtime: Double)] = [:]
     // the loupe holds current, both neighbours and a zoom render at once
@@ -83,6 +81,7 @@ public final class Renderer {
     }
 
     public func render(file: ImageFile, edit: Edit, maxPixel: Int) throws -> URL {
+        guard maxPixel > 0 else { throw RenderError.encodeFailed }
         let dest = cachePath(for: file, edit: edit, maxPixel: maxPixel)
         if FileManager.default.fileExists(atPath: dest.path) {
             return dest
@@ -92,7 +91,7 @@ public final class Renderer {
         var image = try sourceImage(for: file, edit: edit, maxPixel: maxPixel)
         // raws already decoded close to this; embedded formats did not
         let longEdge = max(image.extent.width, image.extent.height)
-        let scale = maxPixel > 0 ? CGFloat(maxPixel) / longEdge : 1
+        let scale = CGFloat(maxPixel) / longEdge
         if scale < 1 {
             image = image.transformed(by: .init(scaleX: scale, y: scale))
         }
@@ -114,7 +113,7 @@ public final class Renderer {
     public func exportJPEG(
         file: ImageFile, edit: Edit, quality: Double, to destination: URL
     ) throws {
-        let image = try sourceImage(for: file, edit: edit, maxPixel: 0)
+        let image = try sourceImage(for: file, edit: edit, maxPixel: nil)
         guard
             let jpeg = exportContext.jpegRepresentation(
                 of: image, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
@@ -147,7 +146,8 @@ public final class Renderer {
         return try makeFilter(for: file).defaults
     }
 
-    private func sourceImage(for file: ImageFile, edit: Edit, maxPixel: Int) throws -> CIImage {
+    /// nil renders the full sensor, for export.
+    private func sourceImage(for file: ImageFile, edit: Edit, maxPixel: Int?) throws -> CIImage {
         var image: CIImage
         if Self.rawExtensions.contains(file.ext.lowercased()) {
             let cached = try rawFilter(for: file, maxPixel: maxPixel)
@@ -228,8 +228,7 @@ public final class Renderer {
         return image
     }
 
-    /// Crop values reach here from sidecars and IPC. nil means geometry Core
-    /// Image cannot take, and the frame is left alone.
+    /// Crop values reach here from sidecars and IPC.
     static func saneCrop(_ edit: Edit) -> CropRect? {
         let crop = edit.crop ?? CropRect(left: 0, top: 0, right: 1, bottom: 1)
         guard crop.left.isFinite, crop.top.isFinite, crop.right.isFinite,
@@ -272,10 +271,10 @@ public final class Renderer {
             .transformed(by: .init(translationX: -rect.minX, y: -rect.minY))
     }
 
-    /// How small the decoder itself may render. A preview that decodes the
-    /// full sensor first costs RAW 9 about three times as much.
-    static func rawScaleFactor(for edit: Edit, orientedSize: CGSize, maxPixel: Int) -> Float {
-        guard maxPixel > 0, let crop = saneCrop(edit) else { return 1 }
+    /// A preview that decodes the full sensor first costs RAW 9 three times
+    /// as much.
+    static func rawScaleFactor(for edit: Edit, orientedSize: CGSize, maxPixel: Int?) -> Float {
+        guard let maxPixel, maxPixel > 0, let crop = saneCrop(edit) else { return 1 }
         var width = orientedSize.width
         var height = orientedSize.height
         // the turn comes before the crop, so the fractions are against it
@@ -288,8 +287,8 @@ public final class Renderer {
         return Float(min(CGFloat(maxPixel) / longEdge, 1))
     }
 
-    private func rawFilter(for file: ImageFile, maxPixel: Int) throws -> CachedFilter {
-        let key = "\(file.path)|\(maxPixel)"
+    private func rawFilter(for file: ImageFile, maxPixel: Int?) throws -> CachedFilter {
+        let key = "\(file.path)|\(maxPixel.map(String.init) ?? "full")"
         lock.lock()
         if let cached = filtersByPathAndSize[key], cached.mtime == file.mtime {
             filtersByPathAndSize[key]?.lastUsed = Date()
@@ -313,8 +312,7 @@ public final class Renderer {
         guard let filter = CIRAWFilter(imageURL: URL(fileURLWithPath: file.path)) else {
             throw RenderError.unreadable(file.path)
         }
-        // RAW 9 is opt-in and the list is sorted oldest to newest. Reading it
-        // beats naming a version: older Macs still get their best, RAW 10 is free.
+        // RAW 9 is opt-in, and the list is sorted oldest to newest
         if let newest = filter.supportedDecoderVersions.last {
             filter.decoderVersion = newest
         }

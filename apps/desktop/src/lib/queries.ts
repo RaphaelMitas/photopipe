@@ -133,7 +133,6 @@ export function useRender(file: RenderFile, edit: Edit) {
   });
 }
 
-/// Only worth requesting once the photo outresolves the preview render.
 export function useFullRender(
   file: (RenderFile & { width: number; height: number }) | undefined,
   edit: Edit,
