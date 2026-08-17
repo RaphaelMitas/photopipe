@@ -225,8 +225,6 @@ test("the sidebar collapses in browse and loupe alike", async ({ page }) => {
 test("a collapsed sidebar is out of reach, not just out of sight", async ({
   page,
 }) => {
-  // Offcanvas parks it off screen rather than unmounting it, so nothing in it
-  // may answer to a tab or a click.
   await openZell(page);
   await sidebarTrigger(page).click();
   await expect(sidebar(page)).toHaveAttribute("data-state", "collapsed");
@@ -247,8 +245,7 @@ test("narrow windows keep a way back to the sidebar", async ({ page }) => {
   await headerTrigger(page).click();
   await expect(page.getByTestId("back-to-shoots")).toBeVisible();
 
-  // The sheet's state must not outlive the width that opened it: widen, hide
-  // the sidebar there, and coming back must respect that, not the stale sheet.
+  // The sheet's state must not outlive the width that opened it.
   await page.setViewportSize({ width: 1100, height: 800 });
   await expect(sidebar(page)).toHaveAttribute("data-state", "expanded");
   await sidebarTrigger(page).click();

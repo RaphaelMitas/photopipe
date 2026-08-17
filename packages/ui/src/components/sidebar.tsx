@@ -4,6 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { PanelLeftIcon } from "lucide-react";
 import { Slot } from "radix-ui";
 import * as React from "react";
+import { useEffect } from "react";
 import { Button } from "./button";
 import { Input } from "./input";
 import { Separator } from "./separator";
@@ -91,9 +92,8 @@ function SidebarProvider({
     return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open);
   }, [isMobile, setOpen, setOpenMobile]);
 
-  // The sheet's open state outlives the breakpoint it was set at, so without
-  // this a window dragged back under it re-opens the sidebar on its own.
-  React.useEffect(() => {
+  // A sheet opened before the last resize would otherwise re-open on its own.
+  useEffect(() => {
     setOpenMobile(false);
   }, [isMobile]);
 
@@ -233,8 +233,7 @@ function Sidebar({
       <div
         data-slot="sidebar-container"
         data-side={side}
-        // Offcanvas only parks the sidebar off screen, so without this its
-        // controls stay tabbable and clickable while nothing of it is visible.
+        // Offcanvas only shifts it off screen; without this it stays tabbable.
         inert={collapsible === "offcanvas" && state === "collapsed"}
         className={cn(
           "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] md:flex",
