@@ -193,15 +193,68 @@ test("grid and list are two views of the same set", async ({ page }) => {
   await expect(page.getByTestId("grid")).toBeVisible();
 });
 
+const sidebarTrigger = (page: import("@playwright/test").Page) =>
+  page.locator("[data-slot='sidebar'] [data-slot='sidebar-trigger']");
+
+const headerTrigger = (page: import("@playwright/test").Page) =>
+  page.locator("header [data-slot='sidebar-trigger']");
+
+const sidebar = (page: import("@playwright/test").Page) =>
+  page.locator("[data-slot='sidebar']");
+
 test("the sidebar collapses in browse and loupe alike", async ({ page }) => {
   await openZell(page);
-  await expect(page.locator("[data-slot='sidebar-trigger']")).toBeVisible();
+  await expect(headerTrigger(page)).toBeHidden();
+
+  await sidebarTrigger(page).click();
+  await expect(sidebar(page)).toHaveAttribute("data-state", "collapsed");
+  await headerTrigger(page).click();
+  await expect(sidebar(page)).toHaveAttribute("data-state", "expanded");
+  await expect(headerTrigger(page)).toBeHidden();
 
   // …and in the loupe, where the sidebar becomes the photo's options.
   await page.getByTestId("thumb").first().click();
   await expect(page.getByTestId("loupe")).toBeVisible();
-  await expect(page.locator("[data-slot='sidebar-trigger']")).toBeVisible();
+  await sidebarTrigger(page).click();
+  await expect(sidebar(page)).toHaveAttribute("data-state", "collapsed");
+  await headerTrigger(page).click();
+  await expect(sidebar(page)).toHaveAttribute("data-state", "expanded");
   await expect(page.getByTestId("back-to-grid")).toBeVisible();
+});
+
+test("a collapsed sidebar is out of reach, not just out of sight", async ({
+  page,
+}) => {
+  await openZell(page);
+  await sidebarTrigger(page).click();
+  await expect(sidebar(page)).toHaveAttribute("data-state", "collapsed");
+
+  const takesFocus = await page.getByTestId("back-to-shoots").evaluate((el) => {
+    el.focus();
+    return document.activeElement === el;
+  });
+  expect(takesFocus).toBe(false);
+});
+
+test("narrow windows keep a way back to the sidebar", async ({ page }) => {
+  // 600 is under the breakpoint where the sidebar becomes a sheet.
+  await page.setViewportSize({ width: 600, height: 800 });
+  await openZell(page);
+  await expect(page.getByTestId("back-to-shoots")).toBeHidden();
+
+  await headerTrigger(page).click();
+  await expect(page.getByTestId("back-to-shoots")).toBeVisible();
+
+  // The sheet's state must not outlive the width that opened it.
+  await page.setViewportSize({ width: 1100, height: 800 });
+  await expect(sidebar(page)).toHaveAttribute("data-state", "expanded");
+  await sidebarTrigger(page).click();
+  await expect(sidebar(page)).toHaveAttribute("data-state", "collapsed");
+
+  await page.setViewportSize({ width: 600, height: 800 });
+  // The sheet would animate in, so settle before reading it as absent.
+  await page.waitForTimeout(500);
+  await expect(page.getByTestId("back-to-shoots")).toBeHidden();
 });
 
 test("a new project is created from the library and opens empty", async ({

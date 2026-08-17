@@ -1,4 +1,3 @@
-import { Photopipe } from "@photopipe/ui/components/photopipe-mark";
 import { Segmented } from "@photopipe/ui/components/segmented";
 import {
   Sidebar,
@@ -7,12 +6,10 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
-  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarSeparator,
-  SidebarTrigger,
 } from "@photopipe/ui/components/sidebar";
 import { ChevronLeft } from "lucide-react";
 import type { ImageFile } from "@/lib/core";
@@ -23,6 +20,7 @@ import {
   RatingHistogram,
   type RatingOp,
 } from "./RatingFilter";
+import { SidebarBrandHeader } from "./SidebarBrandHeader";
 import { Stars } from "./Stars";
 
 type Props = {
@@ -59,16 +57,8 @@ export function LoupeSidebar({
   const instinct = image.score == null ? null : instinctScore(image.score);
 
   return (
-    <Sidebar collapsible="icon">
-      <SidebarHeader>
-        <div className="flex items-center gap-2 px-2 py-1">
-          <Photopipe className="h-6 w-6 shrink-0" />
-          <span className="font-heading font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
-            Photopipe
-          </span>
-          <SidebarTrigger className="ml-auto text-muted-foreground" />
-        </div>
-      </SidebarHeader>
+    <Sidebar>
+      <SidebarBrandHeader />
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupContent>
@@ -77,19 +67,17 @@ export function LoupeSidebar({
                 <SidebarMenuButton
                   data-testid="back-to-grid"
                   onClick={onBackToGrid}
-                  tooltip="Back to grid (esc)"
+                  title="Back to grid (esc)"
                 >
-                  <ChevronLeft className="shrink-0" />
-                  <span className="group-data-[collapsible=icon]:hidden">
-                    Back to grid
-                  </span>
+                  <ChevronLeft />
+                  <span>Back to grid</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+        <SidebarGroup>
           <SidebarGroupLabel className="justify-between">
             Rating
             <RatingFilterOps op={ratingOp} onOp={onRatingOp} />
@@ -105,9 +93,9 @@ export function LoupeSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarSeparator className="group-data-[collapsible=icon]:hidden" />
+        <SidebarSeparator />
 
-        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+        <SidebarGroup>
           <SidebarGroupLabel>Photo</SidebarGroupLabel>
           <SidebarGroupContent className="flex flex-col gap-1 px-2 py-1">
             <span
@@ -150,7 +138,7 @@ export function LoupeSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+        <SidebarGroup>
           <SidebarGroupLabel>View</SidebarGroupLabel>
           <SidebarGroupContent className="px-2 py-1">
             <div className="flex flex-col gap-1.5 text-xs text-muted-foreground">
@@ -169,7 +157,7 @@ export function LoupeSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter className="group-data-[collapsible=icon]:hidden">
+      <SidebarFooter>
         <p className="px-2 py-1 text-[10px] text-muted-foreground">
           ←→ navigate · 1–5 rate · 0 clear · ↑↓ exposure · pinch or double-click
           zoom · r reset · e edit · ⌘C/⌘V settings · esc

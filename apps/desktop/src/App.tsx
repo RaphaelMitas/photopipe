@@ -45,6 +45,7 @@ import { RootPicker, rememberRoot } from "@/components/RootPicker";
 import { SelectionBar } from "@/components/SelectionBar";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import { ShootSettingsDialog } from "@/components/ShootSettingsDialog";
+import { ShowSidebarTrigger } from "@/components/ShowSidebarTrigger";
 import {
   coreRequest,
   type Edit,
@@ -711,6 +712,7 @@ export default function App() {
         )}
         <SidebarInset className="flex h-screen min-w-0 flex-col bg-background text-foreground">
           <header className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
+            <ShowSidebarTrigger />
             {currentShoot ? (
               <>
                 <span className="truncate font-medium text-sm">
