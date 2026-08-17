@@ -19,9 +19,8 @@ public final class ExifTool: @unchecked Sendable {
     }
 
     /// The bundle first, and under the sandbox the bundle only: nothing outside
-    /// it is reachable there, and reaching for a Homebrew install would be a
-    /// review flag on top of being useless. The rest are dev paths — the Swift
-    /// suite and scripts/smoke-bundle.sh both run unsandboxed from a checkout.
+    /// it is reachable there, and reaching for Homebrew would be a review flag
+    /// on top of being useless. The rest are dev paths.
     public static func findBinary() -> String? {
         if let bundled = bundledBinary() {
             return bundled
@@ -49,9 +48,8 @@ public final class ExifTool: @unchecked Sendable {
         return nil
     }
 
-    /// Contents/Resources, not Contents/MacOS: codesign seals Resources as
-    /// data, and demands every last file under MacOS be signed code in its own
-    /// right — which a tree of 250 Perl modules cannot be.
+    /// Resources, not MacOS: codesign demands every file under MacOS be signed
+    /// code in its own right, which 250 Perl modules cannot be.
     static func bundledBinary() -> String? {
         guard let exe = Bundle.main.executableURL?.resolvingSymlinksInPath() else { return nil }
         let candidate =

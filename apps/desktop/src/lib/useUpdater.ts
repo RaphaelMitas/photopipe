@@ -19,8 +19,7 @@ export type Updater = {
 };
 
 /// Apple ships App Store updates itself and forbids an app that does its own,
-/// so that build compiles the plugin out. Everything that would offer an update
-/// has to go quiet with it, or it offers one the app cannot install.
+/// so that build compiles the plugin out and everything offering one goes quiet.
 export const UPDATES_ENABLED = import.meta.env.VITE_MAS !== "1";
 
 function updatable(): boolean {

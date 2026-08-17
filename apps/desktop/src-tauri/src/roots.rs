@@ -7,7 +7,7 @@
 //! already-running core inherits it without a respawn.
 //!
 //! The Developer ID build has no bookmarks entitlement, so minting fails there
-//! and every entry keeps a bare path. That build never needed one.
+//! and every entry keeps a bare path.
 
 use base64::prelude::*;
 use objc2::rc::Retained;
@@ -47,10 +47,8 @@ fn store_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("roots.json"))
 }
 
-/// Only a missing file reads as an empty store. Anything else has to fail
-/// loudly: treating an unreadable one as empty and then saving over it would
-/// destroy the bookmarks, and under the sandbox those are the only way back
-/// into a folder without the open panel.
+/// Only a missing file reads as empty: treating an unreadable one that way and
+/// then saving over it would destroy the bookmarks.
 fn load(app: &AppHandle) -> Result<Store, String> {
     let path = store_path(app)?;
     let bytes = match std::fs::read(&path) {
@@ -61,9 +59,8 @@ fn load(app: &AppHandle) -> Result<Store, String> {
     serde_json::from_slice(&bytes).map_err(|e| format!("{} is unreadable: {e}", path.display()))
 }
 
-/// Written beside the real file and renamed onto it, because the whole store
-/// is rewritten every time a root opens: a plain write truncates first, and
-/// losing power in that window would leave nothing to read back.
+/// Temp file and rename: a plain write truncates first, and the whole store is
+/// rewritten every time a root opens.
 fn save(app: &AppHandle, store: &Store) -> Result<(), String> {
     let path = store_path(app)?;
     let temp = path.with_extension("json.tmp");
@@ -83,7 +80,7 @@ fn mint(url: &NSURL) -> Result<String, String> {
     Ok(BASE64_STANDARD.encode(data.to_vec()))
 }
 
-/// The resolved URL, and whether macOS wants the bookmark re-minted.
+/// The bool is macOS asking for the bookmark to be re-minted.
 fn resolve(encoded: &str) -> Result<(Retained<NSURL>, bool), String> {
     let bytes = BASE64_STANDARD
         .decode(encoded)
@@ -102,8 +99,8 @@ fn resolve(encoded: &str) -> Result<(Retained<NSURL>, bool), String> {
     Ok((url, stale.as_bool()))
 }
 
-/// An unreadable store is an empty picker rather than an error page: the open
-/// panel still works, and it is the only way back from one.
+/// An unreadable store is an empty picker rather than an error page, and the
+/// open panel is the only way back from one.
 #[tauri::command]
 pub fn list_roots(app: AppHandle) -> Vec<String> {
     load(&app)
@@ -114,16 +111,11 @@ pub fn list_roots(app: AppHandle) -> Vec<String> {
         .collect()
 }
 
-/// Regain access to a remembered root before the core is asked to scan it.
-/// A root with no bookmark needs nothing: either this build is unsandboxed, or
-/// the open panel just granted the folder and the grant is still live.
+/// Call before the core is asked to scan the root. No bookmark needs no work:
+/// either this build is unsandboxed, or the panel's grant is still live.
 ///
-/// A bookmark that no longer works is dropped rather than reported. Failing
-/// here would be a dead end — the core never runs, so nothing re-mints, and
-/// picking the very same folder through the open panel would fail again on the
-/// stored bookmark for as long as it stayed there. Dropping it lets `setRoot`
-/// say whether the folder is actually reachable, and a `setRoot` that succeeds
-/// mints a fresh bookmark on the way out.
+/// A bookmark that no longer works is dropped rather than reported, or it is a
+/// dead end: the core never runs, so nothing ever re-mints it.
 #[tauri::command]
 pub fn open_root(app: AppHandle, roots: State<'_, Roots>, path: String) -> Result<(), String> {
     if roots.open_by_path.lock().unwrap().contains_key(&path) {
@@ -142,10 +134,8 @@ pub fn open_root(app: AppHandle, roots: State<'_, Roots>, path: String) -> Resul
     if !unsafe { url.startAccessingSecurityScopedResource() } {
         return forget_bookmark(&app, store, index);
     }
-    // From the resolved URL, not the stored path: stale means the folder moved,
-    // and Apple's rule is to re-create the bookmark from where it landed. Best
-    // effort — macOS has already granted the folder, and failing to write the
-    // fresh bookmark is not worth refusing a root that works.
+    // From the resolved URL, not the stored path: stale means the folder moved.
+    // Best effort, because macOS has already granted it.
     if stale {
         if let Ok(fresh) = mint(&url) {
             store.roots[index].bookmark = Some(fresh);

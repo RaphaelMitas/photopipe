@@ -7,11 +7,9 @@ public enum FileActions {
         case zipFailed(String)
     }
 
-    /// `NSWorkspace.activateFileViewerSelecting` is the sanctioned call and was
-    /// tried here, but it only works from the main thread, and this process
-    /// blocks its main thread reading stdin: off it, the Finder never comes
-    /// forward and the Void return reports success anyway. `open` also tells us
-    /// when the file is gone, which the sanctioned call cannot.
+    /// Not `NSWorkspace.activateFileViewerSelecting`, which was tried: it works
+    /// only from the main thread, and this process blocks that one on stdin, so
+    /// the Finder never came forward and its Void return said success anyway.
     public static func reveal(paths: [String]) throws {
         guard !paths.isEmpty else { throw ActionError.noFiles }
         let result = try run("/usr/bin/open", ["-R"] + paths)

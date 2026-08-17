@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Contents/MacOS/photopipe-core. Exactly two keys: anything else here and the
-  sidecar stops inheriting the parent's file access and starts asking for its
-  own, which it cannot get. exiftool needs no entitlements of its own — it is a
-  Perl script the core runs, and a grandchild inherits too.
+  Contents/MacOS/photopipe-core. Exactly two keys: anything else and the sidecar
+  stops inheriting the parent's file access and starts asking for its own, which
+  it cannot get. exiftool needs none of its own — a grandchild inherits too.
 -->
 <plist version="1.0">
 <dict>

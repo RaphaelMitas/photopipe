@@ -52,10 +52,8 @@ echo "  layout:   nothing unsignable under MacOS"
 
 if [ "$MAS" = true ]; then
   # Two strings, because they fail independently: the feed comes from the
-  # embedded tauri.conf.json, so it only proves mas.conf.json was merged, and
-  # the crate name comes from the plugin's own code, so it proves
-  # --no-default-features was passed. Drop either and a build that forgets the
-  # flag ships the updater to Apple looking clean.
+  # embedded config, so it only proves mas.conf.json was merged, and the crate
+  # name proves --no-default-features was passed.
   for forbidden in "download/latest.json" "tauri_plugin_updater"; do
     if grep -qa "$forbidden" "$APP/Contents/MacOS/$EXECUTABLE"; then
       echo "::error::The App Store build still carries the updater ($forbidden)." >&2

@@ -116,8 +116,7 @@ describe("App", () => {
     renderWithQueries(<App />);
     await screen.findByText("Library");
     await waitFor(() => expect(shellCalls()).toContain("remember_root"));
-    // The bookmark has to be resolved before the core touches the folder, and
-    // a root the core never accepted must not become the one we reopen.
+    // a root the core never accepted must not become the one we reopen
     const calls = shellCalls();
     expect(calls.slice(0, 2)).toEqual(["open_root", "setRoot"]);
     expect(calls.indexOf("remember_root")).toBeGreaterThan(

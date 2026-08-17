@@ -1,20 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  The App Store build. `user-selected.read-write` is the open panel's grant and
-  `bookmarks.app-scope` is what keeps it across launches; the core inherits both
-  through entitlements.mas.inherit.plist. No temporary-exception keys: the spike
-  proved none are needed, and each one is a question at review.
+  The App Store build. No temporary-exception keys: each one is a question at
+  review, and the spike proved none are needed.
 
-  `network.client` is not optional and not about the network. Without it a
-  sandboxed WKWebView never loads the page at all — not even tauri://localhost,
-  which is served from inside the app. Photopipe itself calls nothing out; the
-  updater, its only network code, is compiled out of this build.
+  The identifier keys are here because CI embeds a provisioning profile, and an
+  app carrying one must claim its own identity; Xcode injects them at signing,
+  raw codesign does not. On the core they would break sandbox inheritance.
 
-  The two identifier keys exist because CI embeds a provisioning profile, and
-  an app carrying one must claim its own identity. Xcode injects these when it
-  signs; raw codesign does not. They belong here and only here — on the core
-  they would break sandbox inheritance.
+  `network.client` is not about the network. Without it a sandboxed WKWebView
+  never loads the page at all, not even tauri://localhost.
 -->
 <plist version="1.0">
 <dict>
