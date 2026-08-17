@@ -3,36 +3,109 @@
   "extends": [
     "config:best-practices",
     ":semanticCommits",
-    ":dependencyDashboard"
+    ":dependencyDashboard",
+    ":separateMajorReleases",
+    ":combinePatchMinorReleases"
   ],
   "timezone": "Europe/Berlin",
   "schedule": ["before 7am on monday"],
   "minimumReleaseAge": "3 days",
   "prConcurrentLimit": 5,
+  "labels": ["dependencies"],
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "description": "One bundled PR for all security fixes. Renovate exempts vulnerability alerts from prConcurrentLimit, so this ships even when the PR budget is full; minimumReleaseAge and the weekly schedule are cleared so fixes are not held back",
+    "enabled": true,
+    "groupName": "security-fixes",
+    "groupSlug": "security-fixes",
+    "labels": ["dependencies", "security"],
+    "prCreation": "immediate",
+    "minimumReleaseAge": null,
+    "dependencyDashboardApproval": false,
+    "schedule": []
+  },
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": ["before 7am on the first day of the month"]
   },
   "packageRules": [
     {
-      "groupName": "non-major dependencies",
-      "groupSlug": "non-major",
+      "description": "Automerge non-major updates",
       "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "automerge": true
+    },
+    {
+      "description": "One PR per major, each waiting for manual approval from the dashboard",
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "tauri, @tauri-apps/*, tauri-build, tauri-plugin-* move in lockstep across npm and cargo, so their majors stay together",
+      "groupName": "tauri",
+      "matchPackageNames": ["/tauri/"]
+    },
+    {
+      "description": "Group React",
+      "groupName": "react",
+      "matchPackageNames": [
+        "react",
+        "react-dom",
+        "@types/react",
+        "@types/react-dom"
+      ]
+    },
+    {
+      "description": "Group Next.js",
+      "groupName": "nextjs",
+      "matchPackageNames": ["next", "/^@next//"]
+    },
+    {
+      "description": "Group Tailwind CSS",
+      "groupName": "tailwindcss",
+      "matchPackageNames": ["/^@tailwindcss//", "/^tailwindcss$/"]
+    },
+    {
+      "description": "Group Tanstack",
+      "groupName": "tanstack",
+      "matchPackageNames": ["/^@tanstack//"]
+    },
+    {
+      "description": "Group Vite and Vitest",
+      "groupName": "vite",
+      "matchPackageNames": [
+        "/^vite$/",
+        "/^vitest$/",
+        "/^@vitejs//",
+        "/^@vitest//"
+      ]
+    },
+    {
+      "description": "Group test tooling",
+      "groupName": "test-tooling",
+      "matchPackageNames": ["/^@testing-library//", "/^@playwright//", "jsdom"]
+    },
+    {
+      "description": "Group Biome",
+      "groupName": "biome",
+      "matchPackageNames": ["/^@biomejs//"]
+    },
+    {
+      "description": "Group Fontsource",
+      "groupName": "fontsource",
+      "matchPackageNames": ["/^@fontsource/"]
+    },
+    {
+      "description": "Group type definitions",
+      "groupName": "types",
+      "automerge": true,
+      "matchPackageNames": ["/^@types//"]
+    },
+    {
+      "description": "Bundle every minor/patch/pin/digest bump into a single PR. Must stay last so it overrides the per-library groups above, which then only apply to majors",
+      "groupName": "all non-major dependencies",
+      "groupSlug": "all-minor-patch",
       "matchPackageNames": ["*"],
-      "description": "Everything non-breaking lands in a single weekly PR"
-    },
-    {
-      "groupName": null,
-      "matchUpdateTypes": ["major"],
-      "dependencyDashboardApproval": true,
-      "description": "One PR per major, each waiting for manual approval from the dashboard"
-    },
-    {
-      "groupName": "Tauri major",
-      "matchUpdateTypes": ["major"],
-      "matchPackageNames": ["/tauri/"],
-      "dependencyDashboardApproval": true,
-      "description": "tauri, @tauri-apps/*, tauri-build, tauri-plugin-* move in lockstep across npm and cargo, so their majors stay together"
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"]
     }
   ]
 }
