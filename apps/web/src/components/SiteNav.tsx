@@ -1,5 +1,6 @@
 import { Button } from "@photopipe/ui/components/button";
 import { Photopipe } from "@photopipe/ui/components/photopipe-mark";
+import { PhotopipeWordmark } from "@photopipe/ui/components/photopipe-wordmark";
 import { REPO } from "@/lib/release";
 
 const LINKS = [
@@ -14,7 +15,7 @@ export function SiteNav({ href }: { href: string }) {
     <header className="sticky top-0 z-50 border-border/60 border-b bg-background/80 backdrop-blur-xl">
       <nav className="mx-auto flex h-16 w-full max-w-6xl items-center gap-3 px-6">
         <Photopipe aria-hidden className="size-7 text-foreground" />
-        <span className="font-heading font-semibold text-lg">Photopipe</span>
+        <PhotopipeWordmark className="font-heading font-semibold text-lg" />
         <div className="flex-1" />
         <div className="hidden items-center gap-1 md:flex">
           {LINKS.map((link) => (
