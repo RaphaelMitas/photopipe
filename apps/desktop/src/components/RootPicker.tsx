@@ -1,6 +1,7 @@
 import { Button } from "@photopipe/ui/components/button";
 import { Input } from "@photopipe/ui/components/input";
 import { Photopipe } from "@photopipe/ui/components/photopipe-mark";
+import { PhotopipeWordmark } from "@photopipe/ui/components/photopipe-wordmark";
 import {
   Tooltip,
   TooltipContent,
@@ -59,7 +60,7 @@ export function RootPicker({ error, busy, onSubmit }: Props) {
         <div className="flex flex-col items-center gap-3">
           <Photopipe className="h-16 w-16" />
           <h1 className="font-heading text-3xl font-semibold tracking-tight">
-            Photopipe
+            <PhotopipeWordmark />
           </h1>
           <p className="text-sm text-muted-foreground">
             Your shoots, from raw to export.
