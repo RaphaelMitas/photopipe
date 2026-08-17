@@ -1,4 +1,5 @@
 import { Button } from "@photopipe/ui/components/button";
+import { Photopipe } from "@photopipe/ui/components/photopipe-mark";
 import {
   Sidebar,
   SidebarContent,
@@ -21,7 +22,6 @@ import {
   Settings2,
 } from "lucide-react";
 import type { Shoot } from "@/lib/core";
-import { Photopipe } from "./Photopipe";
 import {
   RatingFilterOps,
   RatingHistogram,

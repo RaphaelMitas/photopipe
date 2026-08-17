@@ -26,8 +26,8 @@ import { Dashboard } from "@/components/Dashboard";
 import { EditSidebar } from "@/components/EditPanel";
 import {
   ExportDrawer,
-  type ExportJob,
   type ExportOptions,
+  exportLabel,
 } from "@/components/ExportDrawer";
 import type { FilmstripMode } from "@/components/Filmstrip";
 import { ImageGrid } from "@/components/ImageGrid";
@@ -59,8 +59,9 @@ import { type EditClipboard, pasteEdit } from "@/lib/editClipboard";
 import { betterThan, scoreRanks } from "@/lib/instinct";
 import {
   type EditWrite,
+  jobStatus,
   type ScoreProgress,
-  useExportFiles,
+  useExportJobs,
   useImages,
   useImportFiles,
   useLibrarySync,
@@ -168,8 +169,6 @@ export default function App() {
   const [cropDraft, setCropDraft] = useState<CropDraft | null>(null);
   const cropping = cropDraft !== null;
   const [clipboard, setClipboard] = useState<EditClipboard | null>(null);
-  const [jobs, setJobs] = useState<ExportJob[]>([]);
-  const nextJobId = useRef(1);
 
   const connectRoot = useCallback(async (path: string) => {
     setRootState({ kind: "picking", error: null, busy: true });
@@ -205,7 +204,7 @@ export default function App() {
   const pasteEdits = usePasteEdits(openShoot);
   const reveal = useReveal();
   const trash = useTrash(openShoot);
-  const exportFiles = useExportFiles();
+  const exports = useExportJobs();
   const importFiles = useImportFiles(openShoot);
   const scan = useLibrarySync(ready, ready ? rootState.generation : null);
 
@@ -274,7 +273,7 @@ export default function App() {
     scrubEdit(image.path, edit);
   };
 
-  const installBlocked = jobs.some((job) => job.status === "running")
+  const installBlocked = exports.running
     ? "Finish the running export first; installing restarts Photopipe."
     : null;
   const { install: installUpdate } = updater;
@@ -375,45 +374,15 @@ export default function App() {
 
   const runExport = (options: ExportOptions, destination: string) => {
     if (!openShoot) return;
-    const id = nextJobId.current++;
-    const label = `Export ${selectedImages.length} ${
-      options.format === "jpeg" ? "as JPEG" : "originals"
-    }`;
-    setJobs((current) => [
-      { id, label, destination, status: "running" as const },
-      ...current,
-    ]);
-    exportFiles.mutate(
-      {
-        shoot: openShoot,
-        paths: selectedImages.map((image) => image.path),
-        destination,
-        zip: options.zip,
-        flatten: options.flatten,
-        format: options.format,
-        quality: options.quality,
-      },
-      {
-        onSuccess: (result) => {
-          setJobs((current) =>
-            current.map((job) =>
-              job.id === id
-                ? { ...job, status: "done" as const, files: result.files }
-                : job,
-            ),
-          );
-        },
-        onError: (error) => {
-          setJobs((current) =>
-            current.map((job) =>
-              job.id === id
-                ? { ...job, status: "failed" as const, detail: String(error) }
-                : job,
-            ),
-          );
-        },
-      },
-    );
+    void exports.start(exportLabel(selectedImages.length, options.format), {
+      shoot: openShoot,
+      paths: selectedImages.map((image) => image.path),
+      destination,
+      zip: options.zip,
+      flatten: options.flatten,
+      format: options.format,
+      quality: options.quality,
+    });
   };
 
   const loupeImages = useMemo(() => {
@@ -677,8 +646,7 @@ export default function App() {
   const inLoupe = openShoot !== null && loupePhoto !== null;
 
   const currentShoot = shoots.data?.find((s) => s.name === openShoot);
-  const runningJobs = jobs.filter((job) => job.status === "running").length;
-  const latestJob = jobs[0];
+  const latestJob = exports.jobs[0];
 
   const applyCrop = () => {
     if (!cropDraft || !loupeImage) return;
@@ -762,7 +730,7 @@ export default function App() {
             )}
             <span className="flex-1" />
             <IndexingStatus progress={scan} />
-            {jobs.length > 0 && (
+            {exports.jobs.length > 0 && (
               <Button
                 size="sm"
                 variant="ghost"
@@ -770,12 +738,12 @@ export default function App() {
                 onClick={() => setDrawerOpen(true)}
                 className="h-7 text-xs text-muted-foreground"
               >
-                {runningJobs > 0 ? (
+                {exports.running ? (
                   <>
                     <span className="size-2 animate-pulse rounded-full bg-primary" />
                     Exporting…
                   </>
-                ) : latestJob?.status === "failed" ? (
+                ) : latestJob && jobStatus(latestJob) === "failed" ? (
                   <>
                     <AlertCircle className="text-destructive" />
                     Activity
@@ -820,7 +788,7 @@ export default function App() {
           </header>
           <SelectionBar
             count={selection.selected.size}
-            busy={exportFiles.isPending}
+            busy={exports.running}
             canPaste={clipboard !== null}
             onCopySettings={() => copySource && copySettings(copySource)}
             onPasteSettings={() => pasteSettings(pasteTargets)}
@@ -883,7 +851,15 @@ export default function App() {
                 onChange={(edit) => changeEdit(loupeImage, edit)}
                 cropDraft={cropDraft}
                 onCropDraft={setCropDraft}
-                onEnterCrop={() => setCropDraft(draftFromEdit(loupeEdit))}
+                onEnterCrop={() =>
+                  setCropDraft(
+                    draftFromEdit(
+                      loupeEdit,
+                      loupeImage.width,
+                      loupeImage.height,
+                    ),
+                  )
+                }
                 onApplyCrop={applyCrop}
                 onCancelCrop={cancelCrop}
                 canPaste={clipboard !== null}
@@ -900,8 +876,8 @@ export default function App() {
                 filteredCount={filteredImages.length}
                 totalCount={allImages.length}
                 filterActive={filterActive}
-                jobs={jobs}
-                busy={exportFiles.isPending}
+                jobs={exports.jobs}
+                busy={exports.running}
                 onSelectFiltered={() => selection.select(orderedPaths)}
                 onSelectAll={() => {
                   setRatingStars(0);
@@ -910,6 +886,7 @@ export default function App() {
                 }}
                 onClearSelection={selection.clear}
                 onExport={runExport}
+                onCancel={exports.cancel}
                 onReveal={(path) => reveal.mutate([path])}
                 onClose={() => setDrawerOpen(false)}
               />

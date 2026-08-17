@@ -7,7 +7,13 @@ import {
   useState,
 } from "react";
 import { type Edit, fileSrc, type ImageFile } from "@/lib/core";
-import { aspectRatioFor, type Box, fitRect, rotatedSize } from "@/lib/crop";
+import {
+  aspectRatioFor,
+  type Box,
+  fitRect,
+  moveCrop,
+  rotatedSize,
+} from "@/lib/crop";
 import { capturePointer, cursorIn } from "@/lib/pointer";
 import {
   usePrefetchRender,
@@ -30,6 +36,16 @@ import { Filmstrip, type FilmstripMode } from "./Filmstrip";
 
 export const EXPOSURE_STEP = 0.25;
 export const EXPOSURE_RANGE = 3;
+
+// Photo pixels, not screen pixels: ten of them stay a fine adjustment on any
+// photo while still showing on screen at a fitted view.
+const NUDGE_PIXELS = 10;
+const NUDGE: Record<string, { x: number; y: number }> = {
+  ArrowLeft: { x: -1, y: 0 },
+  ArrowRight: { x: 1, y: 0 },
+  ArrowUp: { x: 0, y: -1 },
+  ArrowDown: { x: 0, y: 1 },
+};
 
 /// Holds a value back until it has stopped changing for `delayMs`.
 function useSettled<T>(value: T, delayMs: number): T {
@@ -152,6 +168,11 @@ export function Loupe({
       : undefined;
   const sharpening = wanted !== null && !sharp;
 
+  // Key repeat outruns re-rendering, so a nudge composes on the ref instead of
+  // the draft this listener closed over.
+  const draftRef = useRef(cropDraft);
+  draftRef.current = cropDraft;
+
   useEffect(() => {
     if (!image) return;
     const handler = (event: KeyboardEvent) => {
@@ -159,16 +180,38 @@ export function Loupe({
       const target = event.target as HTMLElement | null;
       if (
         event.key.startsWith("Arrow") &&
-        target?.closest?.("[data-slot='slider']")
+        target?.closest?.("[data-slot='slider'], select")
       ) {
         return;
       }
-      if (cropping) {
-        if (event.key === "Escape") onCancelCrop();
+      const draft = draftRef.current;
+      if (draft) {
+        if (event.key === "Escape") {
+          draftRef.current = null;
+          onCancelCrop();
+        }
         // A focused button (Cancel, Reset) or the aspect select acts on
         // Enter itself.
         if (event.key === "Enter" && !target?.closest?.("button, select")) {
+          draftRef.current = null;
           onApplyCrop();
+        }
+        const nudge = NUDGE[event.key];
+        if (nudge) {
+          event.preventDefault();
+          const nudged = {
+            ...draft,
+            crop: moveCrop(
+              draft.crop,
+              (nudge.x * NUDGE_PIXELS) / displayWidth,
+              (nudge.y * NUDGE_PIXELS) / displayHeight,
+              draft.angle,
+              displayWidth,
+              displayHeight,
+            ),
+          };
+          draftRef.current = nudged;
+          onCropDraft(nudged);
         }
         return;
       }
@@ -218,10 +261,12 @@ export function Loupe({
     images.length,
     index,
     edit,
-    cropping,
+    displayWidth,
+    displayHeight,
     onApplyCrop,
     onCancelCrop,
     onClose,
+    onCropDraft,
     onEditChange,
     onNavigate,
     onRate,

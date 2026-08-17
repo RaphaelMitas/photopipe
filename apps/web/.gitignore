@@ -1,0 +1,12 @@
+.next/
+next-env.d.ts
+.vercel
+*.tsbuildinfo
+
+public/screenshots/
+public/favicon.ico
+public/favicon.svg
+public/apple-touch-icon.png
+public/icon-*.png
+public/site.webmanifest
+public/og-dark.png

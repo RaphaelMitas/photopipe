@@ -113,3 +113,7 @@ merging it builds, signs, notarizes and publishes. See
 
 - [docs/design.md](docs/design.md) — what the app is, and the decisions behind it
 - [docs/engineering.md](docs/engineering.md) — stack, testing, CI, releases
+
+## Licence
+
+[MIT](LICENSE). © 2026 Raphael Mitas.

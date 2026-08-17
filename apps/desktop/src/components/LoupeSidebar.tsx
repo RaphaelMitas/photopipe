@@ -1,3 +1,4 @@
+import { Photopipe } from "@photopipe/ui/components/photopipe-mark";
 import { Segmented } from "@photopipe/ui/components/segmented";
 import {
   Sidebar,
@@ -17,7 +18,6 @@ import { ChevronLeft } from "lucide-react";
 import type { ImageFile } from "@/lib/core";
 import { instinctScore } from "@/lib/instinct";
 import type { FilmstripMode } from "./Filmstrip";
-import { Photopipe } from "./Photopipe";
 import {
   RatingFilterOps,
   RatingHistogram,

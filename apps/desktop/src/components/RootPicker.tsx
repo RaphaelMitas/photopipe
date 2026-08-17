@@ -1,5 +1,6 @@
 import { Button } from "@photopipe/ui/components/button";
 import { Input } from "@photopipe/ui/components/input";
+import { Photopipe } from "@photopipe/ui/components/photopipe-mark";
 import {
   Tooltip,
   TooltipContent,
@@ -10,7 +11,6 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { FolderOpen, History } from "lucide-react";
 import { useEffect, useState } from "react";
 import { listRoots } from "@/lib/roots";
-import { Photopipe } from "./Photopipe";
 
 function folderName(path: string): string {
   return path.replace(/\/+$/, "").split("/").pop() || path;
