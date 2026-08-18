@@ -36,8 +36,7 @@
     },
     {
       "description": "One PR per major, each waiting for manual approval from the dashboard",
-      "matchUpdateTypes": ["major"],
-      "dependencyDashboardApproval": true
+      "matchUpdateTypes": ["major"]
     },
     {
       "description": "tauri, @tauri-apps/*, tauri-build, tauri-plugin-* move in lockstep across npm and cargo, so their majors stay together",
