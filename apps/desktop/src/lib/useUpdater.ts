@@ -18,8 +18,14 @@ export type Updater = {
   install: () => Promise<UpdateState>;
 };
 
+/// Apple ships App Store updates itself and forbids an app that does its own,
+/// so that build compiles the plugin out and everything offering one goes quiet.
+export const UPDATES_ENABLED = import.meta.env.VITE_MAS !== "1";
+
 function updatable(): boolean {
-  return import.meta.env.PROD && import.meta.env.VITE_E2E !== "1";
+  return (
+    UPDATES_ENABLED && import.meta.env.PROD && import.meta.env.VITE_E2E !== "1"
+  );
 }
 
 function message(error: unknown): string {

@@ -7,6 +7,9 @@ public enum FileActions {
         case zipFailed(String)
     }
 
+    /// Not `NSWorkspace.activateFileViewerSelecting`, which was tried: it works
+    /// only from the main thread, and this process blocks that one on stdin, so
+    /// the Finder never came forward and its Void return said success anyway.
     public static func reveal(paths: [String]) throws {
         guard !paths.isEmpty else { throw ActionError.noFiles }
         let result = try run("/usr/bin/open", ["-R"] + paths)

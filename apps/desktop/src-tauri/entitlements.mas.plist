@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The App Store build. No temporary-exception keys: each one is a question at
+  review, and the spike proved none are needed.
+
+  The identifier keys are here because CI embeds a provisioning profile, and an
+  app carrying one must claim its own identity; Xcode injects them at signing,
+  raw codesign does not. On the core they would break sandbox inheritance.
+
+  `network.client` is not about the network. Without it a sandboxed WKWebView
+  never loads the page at all, not even tauri://localhost.
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.application-identifier</key>
+	<string>52U823A4VX.net.photopipe.desktop</string>
+	<key>com.apple.developer.team-identifier</key>
+	<string>52U823A4VX</string>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+	<key>com.apple.security.files.bookmarks.app-scope</key>
+	<true/>
+</dict>
+</plist>

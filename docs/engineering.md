@@ -37,6 +37,16 @@ The Phase 0 spike measured it on a 33MP Sony ARW:
 Warm scrubbing is comfortably interactive, and the cold first render is why
 the loupe shows the thumbnail immediately and prefetches neighbours.
 
+A second spike asked whether the sidecar survives the App Store sandbox, and
+it does. Signed `app-sandbox` + `inherit`, the core reads, writes, thumbnails
+and shells out to exiftool, `/usr/bin/zip` and the Finder entirely on access
+the shell hands it. That access reaches a core that is **already running** —
+resolving a bookmark and starting its access turns a `setRoot` that failed
+with `permission denied` into one that succeeds, with no respawn. Bookmarks
+themselves cannot cross the seam: they are bound to the app that minted them,
+so an `inherit` child handed the bytes gets `NSCocoaErrorDomain 259`. They
+live in the Rust shell, and the core keeps taking plain paths.
+
 ### Protocol
 
 JSON over stdio, versioned envelope, concurrent: requests run on a bounded
@@ -53,6 +63,7 @@ respawn, and never auto-retries a mutating method.
 | React | Vitest | selection, browser views, stepper, keyboard |
 | App | Playwright | full flows against a mocked core |
 | Bundle | `scripts/smoke-bundle.sh` | a built `.app` is self-contained |
+| App Store bundle | `scripts/smoke-bundle.sh --mas` | no updater, nothing unsignable under `MacOS`, sandbox entitlements on every binary |
 
 `tauri-driver` does not support macOS — WKWebView exposes no WebDriver
 endpoint — so Playwright drives the React app in a browser with the IPC layer
@@ -149,6 +160,69 @@ installed app rejects in silence.
 
 The cask in `RaphaelMitas/homebrew-tap` needs `auto_updates true`, or
 `brew upgrade` will reinstall over an app that has already updated itself.
+
+### The App Store build
+
+Same tag, same version, second job. `mas` builds
+`tauri build --config src-tauri/mas.conf.json -- --no-default-features`, which
+is the same app minus everything Apple will not take: no updater plugin, no
+`updater:default` capability, no "Check for Updates…" item and no update
+offer in Settings. `--no-default-features` is not optional, and the two halves
+fail independently: the config merge alone removes the feed but still compiles
+the plugin in. `scripts/smoke-bundle.sh --mas` greps the executable for both
+`download/latest.json` (which only proves `mas.conf.json` was merged, since the
+feed comes from the config) and `tauri_plugin_updater` (which proves the flag
+was passed, since the crate name comes from the plugin's own code).
+
+Two entitlement files, and the split matters. The app gets the sandbox, the
+open panel's `user-selected.read-write`, `bookmarks.app-scope` so the folder
+survives a relaunch, and `network.client`. That last one is not about the
+network: without it a sandboxed WKWebView never loads the page at all, not
+even `tauri://localhost`, which is served from inside the app. The app also
+claims `com.apple.application-identifier` and
+`com.apple.developer.team-identifier`: an app carrying an embedded
+provisioning profile must state its own identity, and Xcode injects these at
+signing where raw `codesign` does not. The core gets `app-sandbox` and
+`inherit` and nothing else — any further key, including those two, and it
+stops inheriting the shell's file access and starts asking for its own, which
+it cannot have.
+
+Store-side plist duties are covered in config: `bundle.copyright` becomes
+`NSHumanReadableCopyright` (a submission requirement), and the `Info.plist`
+beside `tauri.conf.json` merges `ITSAppUsesNonExemptEncryption` so uploads do
+not stall in App Store Connect behind the export-compliance questionnaire.
+`smoke-bundle.sh --mas` asserts both, plus world-readable payload permissions,
+which App Store validation rejects when Tauri leaves files root-only
+(tauri#13118).
+
+exiftool stays in `Contents/Resources` despite the rule of thumb that says
+executables belong in `Contents/MacOS`. codesign seals Resources as data but
+demands every last file under `MacOS` be signed code in its own right, and a
+tree of 250 Perl modules cannot be: moving it there fails signing outright
+with *"code object is not signed at all"*. `smoke-bundle.sh` now asserts
+`Contents/MacOS` holds only the two binaries so nobody rediscovers this.
+
+Secrets, beside the eight above: `MAS_CERTIFICATE` (base64 .p12 holding both
+the Apple Distribution and 3rd Party Mac Developer Installer certificates),
+`MAS_CERTIFICATE_PASSWORD`, `MAS_PROVISION_PROFILE` (base64
+`embedded.provisionprofile`), and for App Store Connect
+`APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID` and
+`APP_STORE_CONNECT_PRIVATE_KEY` (base64 .p8). Every step that needs them is
+guarded, so until they exist the job still builds the bundle and smoke tests
+it — which is what catches the build breaking.
+
+Nothing is submitted on an ordinary release. The job signs, packages with
+`productbuild` and validates against App Store Connect; the upload runs only
+from `gh workflow run release.yml -f submit_to_app_store=true`. `CFBundleVersion`
+must be strictly higher than anything already uploaded, so resubmitting a
+rejected version needs a bump first — `pnpm release` does it per release, a
+retry of the same version does not.
+
+Still unproven: the open panel itself. A bookmark minted, resolved and
+started inside a real signed sandbox works, and so does everything the core
+does behind one, but nobody has yet clicked through **Choose your photos
+folder** in a sandboxed build and watched thumbnails come back through the
+asset protocol.
 
 ### Screenshots
 

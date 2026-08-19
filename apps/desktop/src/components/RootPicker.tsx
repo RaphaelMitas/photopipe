@@ -10,28 +10,11 @@ import {
 } from "@photopipe/ui/components/tooltip";
 import { open } from "@tauri-apps/plugin-dialog";
 import { FolderOpen, History } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { listRoots } from "@/lib/roots";
 
 function folderName(path: string): string {
   return path.replace(/\/+$/, "").split("/").pop() || path;
-}
-
-const RECENT_KEY = "photopipe.recentRoots";
-
-export function recentRoots(): string[] {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
-    return Array.isArray(parsed)
-      ? parsed.filter((r) => typeof r === "string")
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-export function rememberRoot(path: string) {
-  const next = [path, ...recentRoots().filter((r) => r !== path)].slice(0, 5);
-  localStorage.setItem(RECENT_KEY, JSON.stringify(next));
 }
 
 type Props = {
@@ -42,7 +25,13 @@ type Props = {
 
 export function RootPicker({ error, busy, onSubmit }: Props) {
   const [path, setPath] = useState("");
-  const recents = recentRoots();
+  const [recents, setRecents] = useState<string[]>([]);
+
+  useEffect(() => {
+    listRoots()
+      .then(setRecents)
+      .catch(() => {});
+  }, []);
 
   async function pickFolder() {
     try {

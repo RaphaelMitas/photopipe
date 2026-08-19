@@ -61,17 +61,33 @@ beforeEach(() => {
   menu.clear();
 });
 
+function mockShell(
+  remembered: string[],
+  core: (method: string, params: Record<string, unknown>) => unknown,
+) {
+  invoke.mockImplementation(async (cmd, args) => {
+    if (cmd === "list_roots") return remembered;
+    if (cmd === "open_root" || cmd === "remember_root") return null;
+    if (cmd !== "core_request") throw new Error(`unexpected command ${cmd}`);
+    const { method, params } = args as {
+      method: string;
+      params: Record<string, unknown>;
+    };
+    return core(method, params ?? {});
+  });
+}
+
 describe("App", () => {
-  it("asks for a root folder when none is stored", () => {
+  it("asks for a root folder when none is remembered", async () => {
+    mockShell([], (method) => {
+      throw new Error(`unexpected ${method}`);
+    });
     renderWithQueries(<App />);
-    expect(screen.getByTestId("root-input")).toBeInTheDocument();
-    expect(invoke).not.toHaveBeenCalled();
+    expect(await screen.findByTestId("root-input")).toBeInTheDocument();
   });
 
-  it("reconnects a stored root and shows the dashboard", async () => {
-    localStorage.setItem("photopipe.root", "/r");
-    invoke.mockImplementation(async (_cmd, args) => {
-      const { method } = args as { method: string };
+  it("reconnects a remembered root and shows the dashboard", async () => {
+    mockShell(["/r"], (method) => {
       if (method === "setRoot") return { shoots: 1, files: 4, generation: 1 };
       if (method === "listShoots") return { shoots: [SHOOT] };
       if (method === "status") return { generation: 1, root: "/r", shoots: 1 };
@@ -83,9 +99,37 @@ describe("App", () => {
     expect(within(entry).getByText("4 photos")).toBeInTheDocument();
   });
 
-  it("opens settings from the menu bar before a folder is picked", async () => {
+  it("regains access to the root before the core is asked to scan it", async () => {
+    mockShell(["/r"], (method) => {
+      if (method === "setRoot") return { shoots: 0, files: 0, generation: 1 };
+      if (method === "listShoots") return { shoots: [] };
+      if (method === "status") return { generation: 1, root: "/r", shoots: 0 };
+      throw new Error(`unexpected ${method}`);
+    });
+    const shellCalls = () =>
+      invoke.mock.calls
+        .map(([cmd, args]) =>
+          cmd === "core_request" ? (args as { method: string }).method : cmd,
+        )
+        .filter((call: string) => call !== "list_roots");
+
     renderWithQueries(<App />);
-    expect(screen.getByTestId("root-input")).toBeInTheDocument();
+    await screen.findByText("Library");
+    await waitFor(() => expect(shellCalls()).toContain("remember_root"));
+    // a root the core never accepted must not become the one we reopen
+    const calls = shellCalls();
+    expect(calls.slice(0, 2)).toEqual(["open_root", "setRoot"]);
+    expect(calls.indexOf("remember_root")).toBeGreaterThan(
+      calls.indexOf("setRoot"),
+    );
+  });
+
+  it("opens settings from the menu bar before a folder is picked", async () => {
+    mockShell([], (method) => {
+      throw new Error(`unexpected ${method}`);
+    });
+    renderWithQueries(<App />);
+    expect(await screen.findByTestId("root-input")).toBeInTheDocument();
 
     chooseMenuItem("menu:settings");
     expect(await screen.findByTestId("auto-score")).toBeInTheDocument();
@@ -102,13 +146,26 @@ describe("App", () => {
   });
 
   it("drops back to the picker with the error when setRoot fails", async () => {
-    localStorage.setItem("photopipe.root", "/gone");
-    invoke.mockRejectedValue("root_not_found: /gone");
+    mockShell(["/gone"], () => {
+      throw "root_not_found: /gone";
+    });
 
     renderWithQueries(<App />);
     expect(await screen.findByTestId("root-error")).toHaveTextContent(
       "root_not_found",
     );
-    expect(localStorage.getItem("photopipe.root")).toBeNull();
+  });
+
+  it("keeps a root the shell cannot open out of the core's way", async () => {
+    invoke.mockImplementation(async (cmd) => {
+      if (cmd === "list_roots") return ["/gone"];
+      if (cmd === "open_root") throw "roots.json is unreadable";
+      throw new Error(`unexpected command ${cmd}`);
+    });
+
+    renderWithQueries(<App />);
+    expect(await screen.findByTestId("root-error")).toHaveTextContent(
+      "unreadable",
+    );
   });
 });

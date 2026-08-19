@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "updater",
+  "description": "Self-updating, which the App Store build leaves out entirely: without the plugin compiled in there is no such permission to grant",
+  "windows": ["main"],
+  "permissions": ["updater:default"]
+}
