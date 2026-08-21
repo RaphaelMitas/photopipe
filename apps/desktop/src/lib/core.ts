@@ -119,15 +119,10 @@ export function normalizeImage(image: ImageFile): ImageFile {
   return image.score === undefined ? { ...image, score: null } : image;
 }
 
-const RAW_EXTENSIONS = ["arw", "dng", "cr2", "cr3", "nef", "raf", "orf", "rw2"];
-
 export function isRawFile(file: { ext: string }): boolean {
-  return RAW_EXTENSIONS.includes(file.ext.toLowerCase());
-}
-
-export function isRawPath(path: string): boolean {
-  const dot = path.lastIndexOf(".");
-  return dot >= 0 && RAW_EXTENSIONS.includes(path.slice(dot + 1).toLowerCase());
+  return ["arw", "dng", "cr2", "cr3", "nef", "raf", "orf", "rw2"].includes(
+    file.ext.toLowerCase(),
+  );
 }
 
 export type SetRatingResult = {

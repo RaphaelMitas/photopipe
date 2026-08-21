@@ -432,7 +432,7 @@ function DecoderStrip() {
       </span>
       <div className="ml-auto w-34">
         <Segmented
-          value={String(version) as "8" | "9"}
+          value={version === 8 ? "8" : "9"}
           options={[
             ["8", "RAW 8"],
             ["9", "RAW 9"],

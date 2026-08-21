@@ -228,7 +228,10 @@ describe("useRender and the RAW decoder", () => {
   afterEach(() => localStorage.clear());
 
   function RenderOne({ path }: { path: string }) {
-    useRender({ path, mtime: 1 }, identityEdit);
+    useRender(
+      { path, mtime: 1, ext: path.split(".").pop() ?? "" },
+      identityEdit,
+    );
     return null;
   }
 

@@ -15,7 +15,6 @@ import {
   editKey,
   type ImageFile,
   isRawFile,
-  isRawPath,
   normalizeImage,
   type RawDefaultsResult,
   type SetEditResult,
@@ -108,14 +107,13 @@ export function useThumbnail(
   });
 }
 
-type RenderFile = { path: string; mtime: number } | undefined;
+type RenderFile = Pick<ImageFile, "path" | "mtime" | "ext"> | undefined;
 
 const PREVIEW_MAX_PIXEL = 2560;
 
-/// The decoder version only reaches keys and requests for raw files, so
-/// flipping it never invalidates renders the decoder cannot change.
+/// non-raw keys stay stable: the decoder cannot change those renders
 function renderDecoderVersion(file: RenderFile, version: number) {
-  return file && isRawPath(file.path) ? version : undefined;
+  return file && isRawFile(file) ? version : undefined;
 }
 
 function renderQueryOptions(

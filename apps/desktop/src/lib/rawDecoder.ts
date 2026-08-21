@@ -1,7 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-/// One global value for the whole app: the decoder is a session mode, not a
-/// property of a photo, so it lives beside autoScore rather than in Edit.
+/// a session mode, not a per-photo property, so it stays out of Edit
 export type RawDecoderVersion = 8 | 9;
 
 const VERSION_KEY = "photopipe.rawDecoder";

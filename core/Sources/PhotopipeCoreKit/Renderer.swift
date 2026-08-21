@@ -347,8 +347,7 @@ public final class Renderer {
         return entry
     }
 
-    /// An unsupported request falls back to the newest, never to a nil image:
-    /// setting a version the file does not offer makes outputImage nil.
+    /// Setting a version the file does not offer makes outputImage nil.
     static func resolveDecoder(
         requested: Int?, supported: [CIRAWDecoderVersion]
     ) -> CIRAWDecoderVersion? {
