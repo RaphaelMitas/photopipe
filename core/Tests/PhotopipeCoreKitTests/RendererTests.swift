@@ -674,3 +674,33 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
     let width = try #require(props[kCGImagePropertyPixelWidth] as? Int)
     #expect(width > 2000, "export must be full resolution, got width \(width)")
 }
+
+@Test func raw9SupportMatchesWhatTheFilterReports() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    let filter = try renderer.makeFilter(for: file).filter
+    let expected = !Set(filter.supportedDecoderVersions)
+        .isDisjoint(with: [.version9, .version9DNG])
+    #expect(renderer.supportsRaw9(file: file) == expected)
+    // the second ask answers from the per-camera cache, same verdict
+    #expect(renderer.supportsRaw9(file: file) == expected)
+}
+
+@Test func embeddedFormatsNeverClaimRaw9() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let jpeg = ImageFile(
+        path: "/nowhere/DSC0001.JPG", rel: "DSC0001.JPG", ext: "JPG", size: 1, mtime: 1)
+    #expect(renderer.supportsRaw9(file: jpeg) == false)
+}
+
+@Test func fixtureCarriesACameraModelForTheProbeCache() throws {
+    guard let fixture = fixtureARW() else { return }
+    let model = Renderer.cameraModel(of: fixture)
+    #expect(model?.isEmpty == false, "header model read broke: every file would probe alone")
+}

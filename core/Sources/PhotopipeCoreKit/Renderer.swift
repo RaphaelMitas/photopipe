@@ -40,6 +40,7 @@ public final class Renderer {
     private let lock = NSLock()
     private var filtersByPathAndSize: [String: CachedFilter] = [:]
     private var defaultsByPath: [String: (values: RawDefaults, mtime: Double)] = [:]
+    private var supportsRaw9ByCamera: [String: Bool] = [:]
     // the loupe holds current, both neighbours and a zoom render at once
     private let filterCapacity = 6
 
@@ -345,6 +346,35 @@ public final class Renderer {
         }
         lock.unlock()
         return entry
+    }
+
+    /// Support is a property of camera model plus OS, so one probe answers for
+    /// every file from that camera; a file with no readable model probes alone.
+    public func supportsRaw9(file: ImageFile) -> Bool {
+        guard Self.rawExtensions.contains(file.ext.lowercased()) else { return false }
+        let url = URL(fileURLWithPath: file.path)
+        let model = Self.cameraModel(of: url)
+        let cacheKey = model ?? "path:\(file.path)"
+        lock.lock()
+        if let cached = supportsRaw9ByCamera[cacheKey] {
+            lock.unlock()
+            return cached
+        }
+        lock.unlock()
+        let versions = CIRAWFilter(imageURL: url)?.supportedDecoderVersions ?? []
+        let supported = !Set(versions).isDisjoint(with: [.version9, .version9DNG])
+        lock.lock()
+        supportsRaw9ByCamera[cacheKey] = supported
+        lock.unlock()
+        return supported
+    }
+
+    static func cameraModel(of url: URL) -> String? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+            let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+            let tiff = props[kCGImagePropertyTIFFDictionary] as? [CFString: Any]
+        else { return nil }
+        return tiff[kCGImagePropertyTIFFModel] as? String
     }
 
     /// Setting a version the file does not offer makes outputImage nil.

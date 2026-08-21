@@ -22,7 +22,7 @@ import {
   type Shoot,
   type StatusResult,
 } from "./core";
-import { rawDecoderVersion, useRawDecoderVersion } from "./rawDecoder";
+import { useRawDecoderVersion } from "./rawDecoder";
 import type { ViewportRequest } from "./zoom";
 
 export function useShoots(enabled: boolean) {
@@ -215,6 +215,19 @@ export function useRawDefaults(
         decoderVersion,
       }),
     enabled: file !== undefined && isRawFile(file),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+export type DecoderSupport = { raw9: number; rawTotal: number };
+
+/// Support is per camera model and OS, so the answer is stable for the
+/// session; the core caches its probes, this caches the counts per selection.
+export function useDecoderSupport(paths: string[], enabled: boolean) {
+  return useQuery({
+    queryKey: ["decoderSupport", paths],
+    queryFn: () => coreRequest<DecoderSupport>("decoderSupport", { paths }),
+    enabled: enabled && paths.length > 0,
     staleTime: Number.POSITIVE_INFINITY,
   });
 }
@@ -539,6 +552,7 @@ export type ExportRequest = {
   flatten: boolean;
   format: ExportFormat;
   quality: number;
+  decoderVersion: number;
 };
 
 export type ExportProgress = {
@@ -632,10 +646,7 @@ export function useExportJobs() {
       startedAt: Date.now(),
     };
     try {
-      const job = await coreRequest<ExportProgress>("exportFiles", {
-        ...request,
-        decoderVersion: rawDecoderVersion(),
-      });
+      const job = await coreRequest<ExportProgress>("exportFiles", request);
       setRows((current) => [{ ...row, id: job.id, initial: job }, ...current]);
     } catch (error) {
       // A refusal the user can still read after the toast has gone.

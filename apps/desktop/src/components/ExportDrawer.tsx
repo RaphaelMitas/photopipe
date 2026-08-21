@@ -4,16 +4,30 @@ import { Segmented } from "@photopipe/ui/components/segmented";
 import { Switch } from "@photopipe/ui/components/switch";
 import { cn } from "@photopipe/ui/lib/utils";
 import { open as openDialog, save } from "@tauri-apps/plugin-dialog";
-import { AlertCircle, Check, FolderOpen, Upload, X } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  FolderOpen,
+  TriangleAlert,
+  Upload,
+  X,
+} from "lucide-react";
 import { useState } from "react";
 import type { ExportFormat } from "@/lib/core";
-import { type ExportJob, type JobStatus, jobStatus } from "@/lib/queries";
+import {
+  type ExportJob,
+  type JobStatus,
+  jobStatus,
+  useDecoderSupport,
+} from "@/lib/queries";
+import { type RawDecoderVersion, rawDecoderVersion } from "@/lib/rawDecoder";
 
 export type ExportOptions = {
   format: ExportFormat;
   quality: number;
   zip: boolean;
   flatten: boolean;
+  decoderVersion: RawDecoderVersion;
 };
 
 export function exportLabel(count: number, format: ExportFormat): string {
@@ -22,6 +36,7 @@ export function exportLabel(count: number, format: ExportFormat): string {
 
 type Props = {
   shoot: string;
+  rawPaths: string[];
   selectedCount: number;
   editedCount: number;
   filteredCount: number;
@@ -100,16 +115,24 @@ function readOptions(): ExportOptions {
         quality: parsed.quality === 100 ? 100 : 90,
         zip: parsed.zip ?? false,
         flatten: parsed.flatten ?? true,
+        decoderVersion: rawDecoderVersion(),
       };
     }
   } catch {
     // Corrupt preferences never block an export.
   }
-  return { format: "jpeg", quality: 90, zip: false, flatten: true };
+  return {
+    format: "jpeg",
+    quality: 90,
+    zip: false,
+    flatten: true,
+    decoderVersion: rawDecoderVersion(),
+  };
 }
 
 export function ExportDrawer({
   shoot,
+  rawPaths,
   selectedCount,
   editedCount,
   filteredCount,
@@ -126,6 +149,31 @@ export function ExportDrawer({
   onClose,
 }: Props) {
   const [options, setOptions] = useState<ExportOptions>(readOptions);
+  const [keepRaw8, setKeepRaw8] = useState(false);
+  const support = useDecoderSupport(rawPaths, options.format === "jpeg").data;
+  // With nothing to apply RAW 9 to, the row shows the truth, not the wish.
+  const decoder: RawDecoderVersion =
+    support?.raw9 === 0 ? 8 : options.decoderVersion;
+  const someSupport =
+    support !== undefined &&
+    support.raw9 > 0 &&
+    support.raw9 < support.rawTotal;
+  const showDecoder = options.format === "jpeg" && rawPaths.length > 0;
+  const showBanner =
+    showDecoder && decoder === 8 && (support?.raw9 ?? 0) > 0 && !keepRaw8;
+
+  const decoderHelp = (): string => {
+    if (support?.raw9 === 0)
+      return "RAW 9 isn't available for these photos on this Mac.";
+    if (decoder === 8)
+      return someSupport && support
+        ? `RAW 9 resolves more detail, and applies to ${support.raw9} of ${support.rawTotal} photos.`
+        : "RAW 9 resolves more detail and denoises harder.";
+    return someSupport && support
+      ? `Best detail and denoising, on the ${support.raw9} of ${support.rawTotal} photos that support it.`
+      : "Best detail and strongest denoising. Slower to decode.";
+  };
+
   const patch = (next: Partial<ExportOptions>) => {
     setOptions((current) => {
       const merged = { ...current, ...next };
@@ -152,7 +200,8 @@ export function ExportDrawer({
 
   const runExport = async () => {
     const destination = await pickDestination();
-    if (destination) onExport(options, destination);
+    if (destination)
+      onExport({ ...options, decoderVersion: decoder }, destination);
   };
 
   return (
@@ -255,6 +304,34 @@ export function ExportDrawer({
             ? "Renders every photo full-resolution with its edits baked in."
             : "Copies the files untouched; edits are ignored."}
         </p>
+        {showDecoder && (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="flex-1 text-muted-foreground text-xs">
+                Decoder
+              </span>
+              <Segmented
+                value={String(decoder) as "8" | "9"}
+                options={[
+                  ["8", "RAW 8"],
+                  ["9", "RAW 9"],
+                ]}
+                testid="export-decoder"
+                disabled={support?.raw9 === 0 ? ["9"] : undefined}
+                onChange={(next) => {
+                  setKeepRaw8(false);
+                  patch({ decoderVersion: next === "8" ? 8 : 9 });
+                }}
+              />
+            </div>
+            <p
+              data-testid="export-decoder-help"
+              className="text-[10px] text-muted-foreground"
+            >
+              {decoderHelp()}
+            </p>
+          </>
+        )}
       </Section>
 
       <Section label="Destination">
@@ -276,6 +353,43 @@ export function ExportDrawer({
             onCheckedChange={(flatten) => patch({ flatten })}
           />
         </div>
+        {showBanner && (
+          <div
+            data-testid="decoder-banner"
+            className="flex gap-2 rounded-lg border border-amber-400/35 bg-amber-400/8 p-2"
+          >
+            <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-amber-400" />
+            <div className="flex flex-col gap-1 text-[11px]">
+              <span className="font-semibold text-amber-400">
+                Exporting with RAW 8
+              </span>
+              <span className="text-muted-foreground">
+                {someSupport && support
+                  ? `RAW 9 resolves more detail and denoises harder on ${support.raw9} of these photos, but they will look different from the previews you culled against.`
+                  : "RAW 9 resolves more detail and denoises harder, but the exported photos will look different from the previews you culled against."}
+              </span>
+              <span className="mt-1 flex items-center gap-2.5">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  data-testid="banner-use-raw9"
+                  onClick={() => patch({ decoderVersion: 9 })}
+                  className="h-5 border-amber-400/45 px-2 text-[10px] text-amber-400"
+                >
+                  Use RAW 9
+                </Button>
+                <button
+                  type="button"
+                  data-testid="banner-keep-raw8"
+                  onClick={() => setKeepRaw8(true)}
+                  className="text-[10px] text-muted-foreground underline underline-offset-2"
+                >
+                  Keep RAW 8
+                </button>
+              </span>
+            </div>
+          </div>
+        )}
         <Button
           size="sm"
           data-testid="run-export"

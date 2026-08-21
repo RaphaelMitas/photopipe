@@ -52,7 +52,7 @@ public final class Dispatcher {
             library.stopExports()
             return .shutdown(.success(id: request.id, result: .object(["bye": .bool(true)])))
         case "setRoot", "listShoots", "listImages", "thumbnail", "render", "setRating",
-            "setEdit", "rawDefaults", "status", "reveal", "trash", "exportFiles",
+            "setEdit", "rawDefaults", "status", "reveal", "trash", "decoderSupport", "exportFiles",
             "exportStatus", "cancelExport",
             "createProject", "importFiles", "updateProject", "renameProject",
             "scoreShoot", "scoreStatus":
@@ -219,6 +219,18 @@ public final class Dispatcher {
                     result: .object([
                         "files": .number(Double(result.files)),
                         "generation": .number(Double(result.generation)),
+                    ]))
+            case "decoderSupport":
+                guard let paths = request.params?["paths"]?.stringArrayValue else {
+                    return .failure(
+                        id: request.id, code: "invalid_params", message: "paths required")
+                }
+                let support = try library.decoderSupport(paths: paths)
+                return .success(
+                    id: request.id,
+                    result: .object([
+                        "raw9": .number(Double(support.raw9)),
+                        "rawTotal": .number(Double(support.rawTotal)),
                     ]))
             case "exportFiles":
                 guard let shoot = request.params?["shoot"]?.stringValue,
