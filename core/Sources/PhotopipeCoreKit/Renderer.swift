@@ -73,28 +73,34 @@ public final class Renderer {
     }
 
     public func cachePath(
-        for file: ImageFile, edit: Edit, maxPixel: Int, viewport: CropRect? = nil
+        for file: ImageFile, edit: Edit, maxPixel: Int, viewport: CropRect? = nil,
+        decoderVersion: Int? = nil
     ) -> URL {
         let region = viewport.map { "|\($0.left),\($0.top),\($0.right),\($0.bottom)" } ?? ""
+        let decoder = decoderVersion.map { "|d\($0)" } ?? ""
         let key =
-            "\(file.path)|\(file.mtime)|\(file.size)|\(edit.cacheKey)|\(maxPixel)\(region)|v\(Self.pipelineVersion)"
+            "\(file.path)|\(file.mtime)|\(file.size)|\(edit.cacheKey)|\(maxPixel)\(region)\(decoder)|v\(Self.pipelineVersion)"
         let digest = SHA256.hash(data: Data(key.utf8))
             .map { String(format: "%02x", $0) }.joined().prefix(32)
         return cacheDir.appendingPathComponent("\(digest).jpg")
     }
 
     public func render(
-        file: ImageFile, edit: Edit, maxPixel: Int, viewport: CropRect? = nil
+        file: ImageFile, edit: Edit, maxPixel: Int, viewport: CropRect? = nil,
+        decoderVersion: Int? = nil
     ) throws -> URL {
         guard maxPixel > 0 else { throw RenderError.encodeFailed }
-        let dest = cachePath(for: file, edit: edit, maxPixel: maxPixel, viewport: viewport)
+        let dest = cachePath(
+            for: file, edit: edit, maxPixel: maxPixel, viewport: viewport,
+            decoderVersion: decoderVersion)
         if FileManager.default.fileExists(atPath: dest.path) {
             return dest
         }
         try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
 
         var image = try sourceImage(
-            for: file, edit: edit, maxPixel: maxPixel, viewport: viewport)
+            for: file, edit: edit, maxPixel: maxPixel, viewport: viewport,
+            decoderVersion: decoderVersion)
         // raws already decoded close to this; embedded formats did not
         let longEdge = max(image.extent.width, image.extent.height)
         let scale = CGFloat(maxPixel) / longEdge
@@ -117,9 +123,11 @@ public final class Renderer {
     }
 
     public func exportJPEG(
-        file: ImageFile, edit: Edit, quality: Double, to destination: URL
+        file: ImageFile, edit: Edit, quality: Double, to destination: URL,
+        decoderVersion: Int? = nil
     ) throws {
-        let image = try sourceImage(for: file, edit: edit, maxPixel: nil)
+        let image = try sourceImage(
+            for: file, edit: edit, maxPixel: nil, decoderVersion: decoderVersion)
         // A full-resolution render holds on to surfaces the context will happily
         // keep for the next one. Nothing else reuses them, and about a hundred
         // in they stop being handed out at all: every render after that comes
@@ -145,25 +153,29 @@ public final class Renderer {
     }
 
     /// nil for embedded formats, which have no neutral to offset against.
-    public func rawDefaults(for file: ImageFile) throws -> RawDefaults? {
+    public func rawDefaults(for file: ImageFile, decoderVersion: Int? = nil) throws -> RawDefaults?
+    {
         guard Self.rawExtensions.contains(file.ext.lowercased()) else { return nil }
+        let key = Self.defaultsKey(path: file.path, decoderVersion: decoderVersion)
         lock.lock()
-        if let cached = defaultsByPath[file.path], cached.mtime == file.mtime {
+        if let cached = defaultsByPath[key], cached.mtime == file.mtime {
             lock.unlock()
             return cached.values
         }
         lock.unlock()
         // reading these decodes nothing, so the filter is cheap and discarded
-        return try makeFilter(for: file).defaults
+        return try makeFilter(for: file, decoderVersion: decoderVersion).defaults
     }
 
     /// A nil maxPixel renders the full sensor, for export.
     private func sourceImage(
-        for file: ImageFile, edit: Edit, maxPixel: Int?, viewport: CropRect? = nil
+        for file: ImageFile, edit: Edit, maxPixel: Int?, viewport: CropRect? = nil,
+        decoderVersion: Int? = nil
     ) throws -> CIImage {
         var image: CIImage
         if Self.rawExtensions.contains(file.ext.lowercased()) {
-            let cached = try rawFilter(for: file, maxPixel: maxPixel)
+            let cached = try rawFilter(
+                for: file, maxPixel: maxPixel, decoderVersion: decoderVersion)
             let filter = cached.filter
             lock.lock()
             let scale = Self.rawScaleFactor(
@@ -311,8 +323,11 @@ public final class Renderer {
         return Float(min(CGFloat(maxPixel) / longEdge, 1))
     }
 
-    private func rawFilter(for file: ImageFile, maxPixel: Int?) throws -> CachedFilter {
-        let key = "\(file.path)|\(maxPixel.map(String.init) ?? "full")"
+    private func rawFilter(
+        for file: ImageFile, maxPixel: Int?, decoderVersion: Int?
+    ) throws -> CachedFilter {
+        let key =
+            "\(file.path)|\(maxPixel.map(String.init) ?? "full")|d\(decoderVersion.map(String.init) ?? "")"
         lock.lock()
         if let cached = filtersByPathAndSize[key], cached.mtime == file.mtime {
             filtersByPathAndSize[key]?.lastUsed = Date()
@@ -321,7 +336,7 @@ public final class Renderer {
         }
         lock.unlock()
 
-        let entry = try makeFilter(for: file)
+        let entry = try makeFilter(for: file, decoderVersion: decoderVersion)
         lock.lock()
         filtersByPathAndSize[key] = entry
         if filtersByPathAndSize.count > filterCapacity {
@@ -332,13 +347,33 @@ public final class Renderer {
         return entry
     }
 
-    func makeFilter(for file: ImageFile) throws -> CachedFilter {
+    /// An unsupported request falls back to the newest, never to a nil image:
+    /// setting a version the file does not offer makes outputImage nil.
+    static func resolveDecoder(
+        requested: Int?, supported: [CIRAWDecoderVersion]
+    ) -> CIRAWDecoderVersion? {
+        let preferred: [CIRAWDecoderVersion]
+        switch requested {
+        case 9: preferred = [.version9, .version9DNG]
+        case 8: preferred = [.version8, .version8DNG]
+        default: preferred = []
+        }
+        // RAW 9 is opt-in, and the list is sorted oldest to newest
+        return preferred.first(where: supported.contains) ?? supported.last
+    }
+
+    private static func defaultsKey(path: String, decoderVersion: Int?) -> String {
+        "\(path)|d\(decoderVersion.map(String.init) ?? "")"
+    }
+
+    func makeFilter(for file: ImageFile, decoderVersion: Int? = nil) throws -> CachedFilter {
         guard let filter = CIRAWFilter(imageURL: URL(fileURLWithPath: file.path)) else {
             throw RenderError.unreadable(file.path)
         }
-        // RAW 9 is opt-in, and the list is sorted oldest to newest
-        if let newest = filter.supportedDecoderVersions.last {
-            filter.decoderVersion = newest
+        if let version = Self.resolveDecoder(
+            requested: decoderVersion, supported: filter.supportedDecoderVersions)
+        {
+            filter.decoderVersion = version
         }
         let entry = CachedFilter(
             filter: filter, mtime: file.mtime,
@@ -349,7 +384,9 @@ public final class Renderer {
                 denoise: Double(filter.luminanceNoiseReductionAmount)),
             lastUsed: Date())
         lock.lock()
-        defaultsByPath[file.path] = (entry.defaults, file.mtime)
+        defaultsByPath[Self.defaultsKey(path: file.path, decoderVersion: decoderVersion)] = (
+            entry.defaults, file.mtime
+        )
         lock.unlock()
         return entry
     }

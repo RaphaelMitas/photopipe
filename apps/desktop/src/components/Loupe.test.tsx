@@ -264,20 +264,22 @@ describe("EditSidebar", () => {
     });
     render(
       <QueryClientProvider client={client}>
-        <EditSidebar
-          image={makeImages()[1]}
-          edit={edit}
-          onChange={onChange}
-          cropDraft={cropDraft}
-          onCropDraft={onCropDraft}
-          onEnterCrop={onEnterCrop}
-          onApplyCrop={onApplyCrop}
-          onCancelCrop={onCancelCrop}
-          canPaste={false}
-          onCopySettings={vi.fn()}
-          onPasteSettings={vi.fn()}
-          onClose={onClose}
-        />
+        <TooltipProvider>
+          <EditSidebar
+            image={makeImages()[1]}
+            edit={edit}
+            onChange={onChange}
+            cropDraft={cropDraft}
+            onCropDraft={onCropDraft}
+            onEnterCrop={onEnterCrop}
+            onApplyCrop={onApplyCrop}
+            onCancelCrop={onCancelCrop}
+            canPaste={false}
+            onCopySettings={vi.fn()}
+            onPasteSettings={vi.fn()}
+            onClose={onClose}
+          />
+        </TooltipProvider>
       </QueryClientProvider>,
     );
     return {
@@ -289,6 +291,30 @@ describe("EditSidebar", () => {
       onCancelCrop,
     };
   }
+
+  afterEach(() => localStorage.clear());
+
+  it("folds a group away and brings its values along as a summary", () => {
+    renderEditSidebar(editWith(0.25));
+    expect(screen.getByTestId("exposure")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("edit-group-tone"));
+    expect(screen.queryByTestId("exposure")).not.toBeInTheDocument();
+    expect(screen.getByText("+0.25 ev")).toBeVisible();
+    fireEvent.click(screen.getByTestId("edit-group-tone"));
+    expect(screen.getByTestId("exposure")).toBeInTheDocument();
+  });
+
+  it("shows the decoder strip only behind the quick-switch setting", () => {
+    renderEditSidebar(identityEdit);
+    expect(screen.queryByTestId("decoder-strip")).not.toBeInTheDocument();
+
+    cleanup();
+    localStorage.setItem("photopipe.rawDecoderQuickSwitch", "on");
+    renderEditSidebar(identityEdit);
+    expect(screen.getByTestId("decoder-strip")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("decoder-quick-8"));
+    expect(localStorage.getItem("photopipe.rawDecoder")).toBe("8");
+  });
 
   it("shows the exposure value, resets it, and closes", () => {
     const { onChange, onClose } = renderEditSidebar(editWith(0.25));

@@ -458,6 +458,46 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
     }
 }
 
+@Test func requestedDecoderVersionIsApplied() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    let supported = try #require(CIRAWFilter(imageURL: fixture)).supportedDecoderVersions
+    guard supported.contains(.version8) else {
+        print("SKIP: fixture does not offer RAW 8")
+        return
+    }
+    let filter = try renderer.makeFilter(for: file, decoderVersion: 8).filter
+    #expect(filter.decoderVersion == .version8)
+    #expect(filter.outputImage != nil)
+}
+
+@Test func unsupportedDecoderRequestFallsBackToNewest() {
+    #expect(
+        Renderer.resolveDecoder(requested: 9, supported: [.version7, .version8]) == .version8)
+    #expect(
+        Renderer.resolveDecoder(requested: 8, supported: [.version8DNG, .version9DNG])
+            == .version8DNG)
+    #expect(Renderer.resolveDecoder(requested: nil, supported: [.version8, .version9]) == .version9)
+    #expect(Renderer.resolveDecoder(requested: 8, supported: []) == nil)
+}
+
+@Test func decoderVersionSeparatesTheRenderCache() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    let nine = renderer.cachePath(for: file, edit: .identity, maxPixel: 800, decoderVersion: 9)
+    let eight = renderer.cachePath(for: file, edit: .identity, maxPixel: 800, decoderVersion: 8)
+    #expect(nine != eight)
+    #expect(nine != renderer.cachePath(for: file, edit: .identity, maxPixel: 800))
+}
+
 @Test func denoiseOverridesTheDecoderDefault() throws {
     guard let fixture = fixtureARW() else { return }
     let cacheDir = tempCacheDir()

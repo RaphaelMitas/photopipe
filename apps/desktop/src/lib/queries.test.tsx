@@ -1,13 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type Edit, type ImageFile, identityEdit } from "./core";
 import {
   useLibrarySync,
   usePasteEdits,
+  useRender,
   useSetEdit,
   useSetRating,
 } from "./queries";
+import { setRawDecoderVersion } from "./rawDecoder";
 import { makeImage } from "./test-image";
 
 afterEach(cleanup);
@@ -215,6 +217,57 @@ describe("edit writes to one photo", () => {
 
     await waitFor(() => expect(paste.isSuccess).toBe(true));
     expect(events).toEqual(["start 1", "end 1", "start 2", "end 2"]);
+  });
+});
+
+describe("useRender and the RAW decoder", () => {
+  beforeEach(() => {
+    invoke.mockReset();
+    invoke.mockResolvedValue({ cachePath: "/cache/x.jpg" });
+  });
+  afterEach(() => localStorage.clear());
+
+  function RenderOne({ path }: { path: string }) {
+    useRender({ path, mtime: 1 }, identityEdit);
+    return null;
+  }
+
+  function renderHarness(paths: string[]) {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        {paths.map((path) => (
+          <RenderOne key={path} path={path} />
+        ))}
+      </QueryClientProvider>,
+    );
+  }
+
+  it("sends the decoder version for raws and never for embedded formats", async () => {
+    localStorage.setItem("photopipe.rawDecoder", "8");
+    renderHarness(["/r/shoot1/A.ARW", "/r/shoot1/B.JPG"]);
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
+    const params = invoke.mock.calls.map(
+      ([, args]) =>
+        (args as { params: { path: string; decoderVersion?: number } }).params,
+    );
+    expect(params.find((p) => p.path.endsWith(".ARW"))?.decoderVersion).toBe(8);
+    expect(
+      params.find((p) => p.path.endsWith(".JPG"))?.decoderVersion,
+    ).toBeUndefined();
+  });
+
+  it("flipping the global decoder requests a fresh raw render", async () => {
+    renderHarness(["/r/shoot1/A.ARW"]);
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
+    act(() => setRawDecoderVersion(8));
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
+    const last = invoke.mock.calls[1][1] as {
+      params: { decoderVersion?: number };
+    };
+    expect(last.params.decoderVersion).toBe(8);
   });
 });
 

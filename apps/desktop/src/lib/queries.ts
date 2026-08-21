@@ -15,6 +15,7 @@ import {
   editKey,
   type ImageFile,
   isRawFile,
+  isRawPath,
   normalizeImage,
   type RawDefaultsResult,
   type SetEditResult,
@@ -22,6 +23,7 @@ import {
   type Shoot,
   type StatusResult,
 } from "./core";
+import { rawDecoderVersion, useRawDecoderVersion } from "./rawDecoder";
 import type { ViewportRequest } from "./zoom";
 
 export function useShoots(enabled: boolean) {
@@ -110,11 +112,18 @@ type RenderFile = { path: string; mtime: number } | undefined;
 
 const PREVIEW_MAX_PIXEL = 2560;
 
+/// The decoder version only reaches keys and requests for raw files, so
+/// flipping it never invalidates renders the decoder cannot change.
+function renderDecoderVersion(file: RenderFile, version: number) {
+  return file && isRawPath(file.path) ? version : undefined;
+}
+
 function renderQueryOptions(
   file: RenderFile,
   edit: Edit,
   maxPixel: number,
   viewport?: ViewportRequest["viewport"],
+  decoderVersion?: number,
 ) {
   return {
     queryKey: [
@@ -126,6 +135,7 @@ function renderQueryOptions(
       viewport
         ? `${viewport.left},${viewport.top},${viewport.right},${viewport.bottom}`
         : "",
+      decoderVersion ?? "",
     ] as const,
     queryFn: async () =>
       (
@@ -134,6 +144,7 @@ function renderQueryOptions(
           edit,
           maxPixel,
           ...(viewport ? { viewport } : {}),
+          ...(decoderVersion ? { decoderVersion } : {}),
         })
       ).cachePath,
     staleTime: Number.POSITIVE_INFINITY,
@@ -141,8 +152,15 @@ function renderQueryOptions(
 }
 
 export function useRender(file: RenderFile, edit: Edit) {
+  const decoder = useRawDecoderVersion();
   return useQuery({
-    ...renderQueryOptions(file, edit, PREVIEW_MAX_PIXEL),
+    ...renderQueryOptions(
+      file,
+      edit,
+      PREVIEW_MAX_PIXEL,
+      undefined,
+      renderDecoderVersion(file, decoder),
+    ),
     enabled: file !== undefined,
     placeholderData: (previous: string | undefined, previousQuery) =>
       previousQuery?.queryKey[1] === file?.path ? previous : undefined,
@@ -157,12 +175,14 @@ export function useViewportRender(
   edit: Edit,
   request: ViewportRequest | null,
 ) {
+  const decoder = useRawDecoderVersion();
   return useQuery({
     ...renderQueryOptions(
       file,
       edit,
       request?.maxPixel ?? 0,
       request?.viewport,
+      renderDecoderVersion(file, decoder),
     ),
     enabled: file !== undefined && request !== null,
   });
@@ -170,21 +190,32 @@ export function useViewportRender(
 
 export function usePrefetchRender(file: RenderFile, edit: Edit | undefined) {
   const queryClient = useQueryClient();
+  const decoder = useRawDecoderVersion();
   useEffect(() => {
     if (!file || !edit) return;
     queryClient.prefetchQuery(
-      renderQueryOptions(file, edit, PREVIEW_MAX_PIXEL),
+      renderQueryOptions(
+        file,
+        edit,
+        PREVIEW_MAX_PIXEL,
+        undefined,
+        renderDecoderVersion(file, decoder),
+      ),
     );
-  }, [queryClient, file, edit]);
+  }, [queryClient, file, edit, decoder]);
 }
 
 export function useRawDefaults(
   file: { path: string; mtime: number; ext: string } | undefined,
 ) {
+  const decoderVersion = useRawDecoderVersion();
   return useQuery({
-    queryKey: ["rawDefaults", file?.path, file?.mtime],
+    queryKey: ["rawDefaults", file?.path, file?.mtime, decoderVersion],
     queryFn: async () =>
-      coreRequest<RawDefaultsResult>("rawDefaults", { path: file?.path }),
+      coreRequest<RawDefaultsResult>("rawDefaults", {
+        path: file?.path,
+        decoderVersion,
+      }),
     enabled: file !== undefined && isRawFile(file),
     staleTime: Number.POSITIVE_INFINITY,
   });
@@ -603,7 +634,10 @@ export function useExportJobs() {
       startedAt: Date.now(),
     };
     try {
-      const job = await coreRequest<ExportProgress>("exportFiles", request);
+      const job = await coreRequest<ExportProgress>("exportFiles", {
+        ...request,
+        decoderVersion: rawDecoderVersion(),
+      });
       setRows((current) => [{ ...row, id: job.id, initial: job }, ...current]);
     } catch (error) {
       // A refusal the user can still read after the toast has gone.
