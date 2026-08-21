@@ -26,7 +26,6 @@ type Props = {
   onCheckUpdates: () => void;
 };
 
-// the card inverts, so the dots take whichever text color they land on
 function MeterDots({ filled }: { filled: number }) {
   return (
     <span className="ml-auto flex gap-1">
@@ -35,7 +34,7 @@ function MeterDots({ filled }: { filled: number }) {
           key={dot}
           className={cn(
             "size-[7px] rounded-full",
-            dot <= filled ? "bg-current" : "bg-current/25",
+            dot <= filled ? "bg-primary" : "bg-input",
           )}
         />
       ))}
@@ -79,37 +78,25 @@ function DecoderCards() {
             className={cn(
               "flex flex-1 flex-col gap-2 rounded-lg border p-3 text-left",
               selected
-                ? "border-foreground bg-foreground text-background"
-                : "border-input hover:bg-muted",
+                ? "border-primary bg-primary/10"
+                : "border-input hover:bg-accent/50",
             )}
           >
             <span className="flex items-center gap-2.5">
               <span
                 className={cn(
                   "flex size-4 items-center justify-center rounded-full border-[1.5px]",
-                  selected ? "border-background" : "border-input",
+                  selected ? "border-primary" : "border-input",
                 )}
               >
                 {selected && (
-                  <span className="size-2 rounded-full bg-background" />
+                  <span className="size-2 rounded-full bg-primary" />
                 )}
               </span>
               <span className="font-medium text-sm">RAW {version}</span>
             </span>
-            <span
-              className={cn(
-                "text-xs",
-                selected ? "text-background/70" : "text-muted-foreground",
-              )}
-            >
-              {body}
-            </span>
-            <span
-              className={cn(
-                "flex flex-col gap-1 text-xs",
-                selected ? "text-background/70" : "text-muted-foreground",
-              )}
-            >
+            <span className="text-muted-foreground text-xs">{body}</span>
+            <span className="flex flex-col gap-1 text-muted-foreground text-xs">
               <span className="flex items-center">
                 Detail &amp; denoise <MeterDots filled={detail} />
               </span>
