@@ -1,5 +1,4 @@
 import { Button } from "@photopipe/ui/components/button";
-import { Segmented } from "@photopipe/ui/components/segmented";
 import { Separator } from "@photopipe/ui/components/separator";
 import { Slider } from "@photopipe/ui/components/slider";
 import {
@@ -34,6 +33,7 @@ import {
 } from "@/lib/rawDecoder";
 import { type CropDraft, CropPanel } from "./CropTool";
 import { CurveEditor } from "./CurveEditor";
+import { DecoderSegmented } from "./DecoderSegmented";
 import { EXPOSURE_RANGE } from "./Loupe";
 
 type CropProps = {
@@ -141,8 +141,7 @@ const colorSummary = (edit: Edit, raw: boolean): string | null => {
         : `temp ${signed(edit.temperature)}`,
     );
   }
-  if (edit.tint != null && edit.tint !== 0)
-    parts.push(`tint ${signed(edit.tint)}`);
+  if (edit.tint != null) parts.push(`tint ${signed(edit.tint)}`);
   if (edit.vibrance !== 0) parts.push(`vib ${signed(edit.vibrance)}`);
   if (edit.saturation !== 0) parts.push(`sat ${signed(edit.saturation)}`);
   return parts.length ? parts.join(" · ") : null;
@@ -414,7 +413,13 @@ function DecoderStrip() {
               type="button"
               aria-label="About the RAW decoder"
               data-testid="decoder-info"
-              onClick={() => setTipOpen((open) => !open)}
+              onPointerDown={(event) => {
+                // Radix closes the tooltip on pointerdown, so a plain click
+                // handler only ever reopens it; preventDefault drops their
+                // handler and leaves the toggle to us.
+                event.preventDefault();
+                setTipOpen((open) => !open);
+              }}
               className="hover:text-foreground"
             >
               <Info className="size-3" />
@@ -434,14 +439,10 @@ function DecoderStrip() {
         </Tooltip>
       </span>
       <div className="ml-auto w-34">
-        <Segmented
-          value={version === 8 ? "8" : "9"}
-          options={[
-            ["8", "RAW 8"],
-            ["9", "RAW 9"],
-          ]}
+        <DecoderSegmented
+          value={version}
           testid="decoder-quick"
-          onChange={(next) => setRawDecoderVersion(next === "8" ? 8 : 9)}
+          onChange={setRawDecoderVersion}
         />
       </div>
     </div>

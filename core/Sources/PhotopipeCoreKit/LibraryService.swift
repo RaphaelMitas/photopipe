@@ -256,18 +256,20 @@ public final class LibraryService: @unchecked Sendable {
         try renderer.rawDefaults(for: recordUnderRoot(path: path), decoderVersion: decoderVersion)
     }
 
-    /// How much of the selection RAW 9 can actually reach on this Mac.
     public func decoderSupport(paths: [String]) throws -> (raw9: Int, rawTotal: Int) {
-        var raw9 = 0
-        var rawTotal = 0
-        for path in try pathsUnderRoot(paths) {
-            guard let file = try? recordUnderRoot(path: path),
-                Renderer.rawExtensions.contains(file.ext.lowercased())
-            else { continue }
-            rawTotal += 1
-            if renderer.supportsRaw9(file: file) { raw9 += 1 }
+        let files = try pathsUnderRoot(paths)
+            .compactMap { try? recordUnderRoot(path: $0) }
+            .filter(\.isRaw)
+        guard !files.isEmpty else { return (0, 0) }
+        // a whole shoot serially outruns the caller's read timeout, and a
+        // timeout takes the sidecar down mid-export
+        var supported = [Bool](repeating: false, count: files.count)
+        supported.withUnsafeMutableBufferPointer { buffer in
+            DispatchQueue.concurrentPerform(iterations: files.count) { index in
+                buffer[index] = renderer.supportsRaw9(file: files[index])
+            }
         }
-        return (raw9, rawTotal)
+        return (supported.filter { $0 }.count, files.count)
     }
 
     private func recordUnderRoot(path: String) throws -> ImageFile {

@@ -180,16 +180,18 @@ test("the decoder row warns before a RAW 8 export and knows what RAW 9 can reach
   await page.getByTestId("open-export").click();
   await page.getByTestId("select-all").click();
 
-  // Culling default is RAW 9: no warning in sight.
   await expect(page.getByTestId("export-decoder-9")).toHaveAttribute(
     "aria-pressed",
     "true",
   );
   await expect(page.getByTestId("decoder-banner")).toHaveCount(0);
 
+  // culling on 9 and exporting 8 is the losing direction, not a quality nudge
   await page.getByTestId("export-decoder-8").click();
-  await expect(page.getByTestId("decoder-banner")).toBeVisible();
-  await page.getByTestId("banner-use-raw9").click();
+  await expect(page.getByTestId("decoder-banner")).toContainText(
+    "softer and noisier",
+  );
+  await page.getByTestId("banner-fix").click();
   await expect(page.getByTestId("decoder-banner")).toHaveCount(0);
   await expect(page.getByTestId("export-decoder-9")).toHaveAttribute(
     "aria-pressed",
@@ -197,12 +199,17 @@ test("the decoder row warns before a RAW 8 export and knows what RAW 9 can reach
   );
 
   await page.getByTestId("export-decoder-8").click();
-  await page.getByTestId("banner-keep-raw8").click();
+  await page.getByTestId("banner-keep").click();
   await expect(page.getByTestId("decoder-banner")).toHaveCount(0);
   await expect(page.getByTestId("export-decoder-8")).toHaveAttribute(
     "aria-pressed",
     "true",
   );
+
+  // A different selection is a different decision, so it asks again.
+  await page.getByTestId("drawer-clear").click();
+  await page.getByTestId("select-all").click();
+  await expect(page.getByTestId("decoder-banner")).toBeVisible();
 });
 
 test("a camera without RAW 9 disables the option instead of promising it", async ({

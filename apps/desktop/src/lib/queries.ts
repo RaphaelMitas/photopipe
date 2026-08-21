@@ -1,11 +1,12 @@
 import {
+  keepPreviousData,
   type QueryClient,
   useMutation,
   useQueries,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   type CreateProjectResult,
@@ -111,7 +112,6 @@ type RenderFile = Pick<ImageFile, "path" | "mtime" | "ext"> | undefined;
 
 const PREVIEW_MAX_PIXEL = 2560;
 
-/// non-raw keys stay stable: the decoder cannot change those renders
 function renderDecoderVersion(file: RenderFile, version: number) {
   return file && isRawFile(file) ? version : undefined;
 }
@@ -221,14 +221,19 @@ export function useRawDefaults(
 
 export type DecoderSupport = { raw9: number; rawTotal: number };
 
-/// Support is per camera model and OS, so the answer is stable for the
-/// session; the core caches its probes, this caches the counts per selection.
+// support is per camera model and OS, so it cannot change during the session
 export function useDecoderSupport(paths: string[], enabled: boolean) {
+  // Sorting makes the key the selection's contents rather than the grid's
+  // order, so re-sorting does not throw away an answer that cannot differ.
+  const sorted = useMemo(() => [...paths].sort(), [paths]);
   return useQuery({
-    queryKey: ["decoderSupport", paths],
-    queryFn: () => coreRequest<DecoderSupport>("decoderSupport", { paths }),
-    enabled: enabled && paths.length > 0,
+    queryKey: ["decoderSupport", sorted],
+    queryFn: () =>
+      coreRequest<DecoderSupport>("decoderSupport", { paths: sorted }),
+    enabled: enabled && sorted.length > 0,
     staleTime: Number.POSITIVE_INFINITY,
+    // an unanswered probe reads as "RAW 9 is fine", so hold the last verdict
+    placeholderData: keepPreviousData,
   });
 }
 

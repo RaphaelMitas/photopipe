@@ -10,8 +10,6 @@ public final class Renderer {
         case encodeFailed
     }
 
-    static let rawExtensions: Set<String> = ["arw", "dng", "cr2", "cr3", "nef", "raf", "orf", "rw2"]
-
     public let cacheDir: URL
     private let context = CIContext(options: [.cacheIntermediates: true])
     // an export renders each photo once, so there is nothing to reuse
@@ -41,6 +39,7 @@ public final class Renderer {
     private var filtersByPathAndSize: [String: CachedFilter] = [:]
     private var defaultsByPath: [String: (values: RawDefaults, mtime: Double)] = [:]
     private var supportsRaw9ByCamera: [String: Bool] = [:]
+    private var supportsRaw9ByPath: [String: Bool] = [:]
     // the loupe holds current, both neighbours and a zoom render at once
     private let filterCapacity = 6
 
@@ -156,7 +155,7 @@ public final class Renderer {
     /// nil for embedded formats, which have no neutral to offset against.
     public func rawDefaults(for file: ImageFile, decoderVersion: Int? = nil) throws -> RawDefaults?
     {
-        guard Self.rawExtensions.contains(file.ext.lowercased()) else { return nil }
+        guard file.isRaw else { return nil }
         let key = Self.defaultsKey(path: file.path, decoderVersion: decoderVersion)
         lock.lock()
         if let cached = defaultsByPath[key], cached.mtime == file.mtime {
@@ -174,7 +173,7 @@ public final class Renderer {
         decoderVersion: Int? = nil
     ) throws -> CIImage {
         var image: CIImage
-        if Self.rawExtensions.contains(file.ext.lowercased()) {
+        if file.isRaw {
             let cached = try rawFilter(
                 for: file, maxPixel: maxPixel, decoderVersion: decoderVersion)
             let filter = cached.filter
@@ -349,22 +348,38 @@ public final class Renderer {
     }
 
     /// Support is a property of camera model plus OS, so one probe answers for
-    /// every file from that camera; a file with no readable model probes alone.
+    /// every file from that camera.
     public func supportsRaw9(file: ImageFile) -> Bool {
-        guard Self.rawExtensions.contains(file.ext.lowercased()) else { return false }
-        let url = URL(fileURLWithPath: file.path)
-        let model = Self.cameraModel(of: url)
-        let cacheKey = model ?? "path:\(file.path)"
+        guard file.isRaw else { return false }
         lock.lock()
-        if let cached = supportsRaw9ByCamera[cacheKey] {
+        if let known = supportsRaw9ByPath[file.path] {
             lock.unlock()
-            return cached
+            return known
         }
         lock.unlock()
-        let versions = CIRAWFilter(imageURL: url)?.supportedDecoderVersions ?? []
-        let supported = !Set(versions).isDisjoint(with: [.version9, .version9DNG])
+
+        // reading the header costs more than the probe it saves, so a path
+        // answered once never reads again
+        let url = URL(fileURLWithPath: file.path)
+        // resolveDecoder distinguishes the DNG variants, so a body's ARWs and
+        // its DNG conversions cannot share one verdict
+        let ext = file.ext.lowercased()
+        let cacheKey = Self.cameraModel(of: url).map { "\($0)|\(ext)" }
+            ?? "path:\(file.path)"
+        lock.lock()
+        let cachedForCamera = supportsRaw9ByCamera[cacheKey]
+        lock.unlock()
+
+        let supported: Bool
+        if let cachedForCamera {
+            supported = cachedForCamera
+        } else {
+            let versions = CIRAWFilter(imageURL: url)?.supportedDecoderVersions ?? []
+            supported = !Set(versions).isDisjoint(with: Self.raw9Versions)
+        }
         lock.lock()
         supportsRaw9ByCamera[cacheKey] = supported
+        supportsRaw9ByPath[file.path] = supported
         lock.unlock()
         return supported
     }
@@ -378,13 +393,16 @@ public final class Renderer {
     }
 
     /// Setting a version the file does not offer makes outputImage nil.
+    static let raw9Versions: [CIRAWDecoderVersion] = [.version9, .version9DNG]
+    static let raw8Versions: [CIRAWDecoderVersion] = [.version8, .version8DNG]
+
     static func resolveDecoder(
         requested: Int?, supported: [CIRAWDecoderVersion]
     ) -> CIRAWDecoderVersion? {
         let preferred: [CIRAWDecoderVersion]
         switch requested {
-        case 9: preferred = [.version9, .version9DNG]
-        case 8: preferred = [.version8, .version8DNG]
+        case 9: preferred = raw9Versions
+        case 8: preferred = raw8Versions
         default: preferred = []
         }
         // RAW 9 is opt-in, and the list is sorted oldest to newest

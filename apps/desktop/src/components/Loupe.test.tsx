@@ -1,7 +1,13 @@
 import { SidebarProvider } from "@photopipe/ui/components/sidebar";
 import { TooltipProvider } from "@photopipe/ui/components/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type Edit, type ImageFile, identityEdit } from "@/lib/core";
 import { makeImage } from "@/lib/test-image";
@@ -316,13 +322,20 @@ describe("EditSidebar", () => {
     expect(screen.queryByTestId("decoder-strip")).not.toBeInTheDocument();
   });
 
-  it("opens the decoder tooltip on tap, not just hover", async () => {
+  it("opens the decoder tooltip on tap and closes it on the next tap", async () => {
     renderEditSidebar(identityEdit);
     expect(
       screen.queryByText(/Applies to every photo/),
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("decoder-info"));
+    const info = screen.getByTestId("decoder-info");
+    fireEvent.pointerDown(info);
     expect(await screen.findByText(/Applies to every photo/)).toBeVisible();
+    fireEvent.pointerDown(info);
+    await waitFor(() =>
+      expect(
+        screen.queryByText(/Applies to every photo/),
+      ).not.toBeInTheDocument(),
+    );
   });
 
   it("shows the exposure value, resets it, and closes", () => {

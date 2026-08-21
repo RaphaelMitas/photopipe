@@ -684,7 +684,7 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
 
     let filter = try renderer.makeFilter(for: file).filter
     let expected = !Set(filter.supportedDecoderVersions)
-        .isDisjoint(with: [.version9, .version9DNG])
+        .isDisjoint(with: Renderer.raw9Versions)
     #expect(renderer.supportsRaw9(file: file) == expected)
     // the second ask answers from the per-camera cache, same verdict
     #expect(renderer.supportsRaw9(file: file) == expected)
@@ -703,4 +703,24 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
     guard let fixture = fixtureARW() else { return }
     let model = Renderer.cameraModel(of: fixture)
     #expect(model?.isEmpty == false, "header model read broke: every file would probe alone")
+}
+
+@Test func repeatedSupportChecksStopReadingTheFile() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    let first = Date()
+    _ = renderer.supportsRaw9(file: file)
+    let cold = Date().timeIntervalSince(first)
+
+    let second = Date()
+    for _ in 0..<500 { _ = renderer.supportsRaw9(file: file) }
+    let warm = Date().timeIntervalSince(second)
+
+    // 500 cached answers must not cost one uncached one; a per-path miss here
+    // means a whole shoot re-reads every header on every selection change.
+    #expect(warm < cold, "warm: \(warm)s for 500, cold: \(cold)s for 1")
 }
