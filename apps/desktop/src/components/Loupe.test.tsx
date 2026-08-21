@@ -304,16 +304,25 @@ describe("EditSidebar", () => {
     expect(screen.getByTestId("exposure")).toBeInTheDocument();
   });
 
-  it("shows the decoder strip only behind the quick-switch setting", () => {
-    renderEditSidebar(identityEdit);
-    expect(screen.queryByTestId("decoder-strip")).not.toBeInTheDocument();
-
-    cleanup();
-    localStorage.setItem("photopipe.rawDecoderQuickSwitch", "on");
+  it("shows the decoder strip until the setting hides it", () => {
     renderEditSidebar(identityEdit);
     expect(screen.getByTestId("decoder-strip")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("decoder-quick-8"));
     expect(localStorage.getItem("photopipe.rawDecoder")).toBe("8");
+
+    cleanup();
+    localStorage.setItem("photopipe.rawDecoderQuickSwitch", "off");
+    renderEditSidebar(identityEdit);
+    expect(screen.queryByTestId("decoder-strip")).not.toBeInTheDocument();
+  });
+
+  it("opens the decoder tooltip on tap, not just hover", async () => {
+    renderEditSidebar(identityEdit);
+    expect(
+      screen.queryByText(/Applies to every photo/),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("decoder-info"));
+    expect(await screen.findByText(/Applies to every photo/)).toBeVisible();
   });
 
   it("shows the exposure value, resets it, and closes", () => {

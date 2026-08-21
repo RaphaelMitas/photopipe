@@ -399,6 +399,8 @@ export function EditPanel({
 
 function DecoderStrip() {
   const version = useRawDecoderVersion();
+  // Radix opens on hover only, and the icon is small enough to want a tap
+  const [tipOpen, setTipOpen] = useState(false);
   return (
     <div
       data-testid="decoder-strip"
@@ -406,12 +408,13 @@ function DecoderStrip() {
     >
       <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-input px-2.5 py-1 font-medium text-[10px] text-muted-foreground">
         RAW decoder
-        <Tooltip>
+        <Tooltip open={tipOpen} onOpenChange={setTipOpen}>
           <TooltipTrigger asChild>
             <button
               type="button"
               aria-label="About the RAW decoder"
               data-testid="decoder-info"
+              onClick={() => setTipOpen((open) => !open)}
               className="hover:text-foreground"
             >
               <Info className="size-3" />

@@ -33,7 +33,7 @@ export function useRawDecoderVersion(): RawDecoderVersion {
 }
 
 export function rawDecoderQuickSwitch(): boolean {
-  return localStorage.getItem(QUICK_SWITCH_KEY) === "on";
+  return localStorage.getItem(QUICK_SWITCH_KEY) !== "off";
 }
 
 export function setRawDecoderQuickSwitch(on: boolean) {
