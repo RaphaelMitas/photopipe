@@ -8,7 +8,5 @@ playwright-report/
 .DS_Store
 *.local
 
-# Vendored into the bundle by scripts/fetch-exiftool.sh (21MB)
-apps/desktop/src-tauri/resources/exiftool/
 # Staged by scripts/build-core.sh
 apps/desktop/src-tauri/binaries/

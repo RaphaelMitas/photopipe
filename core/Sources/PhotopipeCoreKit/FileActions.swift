@@ -7,11 +7,17 @@ public enum FileActions {
         case zipFailed(String)
     }
 
-    public static func reveal(paths: [String]) throws {
-        guard !paths.isEmpty else { throw ActionError.noFiles }
-        let result = try run("/usr/bin/open", ["-R"] + paths)
-        guard result.status == 0 else { throw ActionError.openFailed(result.output) }
-    }
+    #if os(macOS)
+        public static func reveal(paths: [String]) throws {
+            guard !paths.isEmpty else { throw ActionError.noFiles }
+            let result = try run("/usr/bin/open", ["-R"] + paths)
+            guard result.status == 0 else { throw ActionError.openFailed(result.output) }
+        }
+    #else
+        public static func reveal(paths: [String]) throws {
+            throw ActionError.openFailed("unavailable on this platform")
+        }
+    #endif
 
     @discardableResult
     public static func trash(paths: [String]) throws -> [String] {
@@ -42,26 +48,36 @@ public enum FileActions {
         return copied
     }
 
-    public static func zipDirectory(at dir: URL, to destination: String) throws {
-        let dest = URL(fileURLWithPath: destination)
-        let temp = dest.deletingLastPathComponent()
-            .appendingPathComponent(".photopipe-\(UUID().uuidString).zip")
-        defer { try? FileManager.default.removeItem(at: temp) }
-        let result = try run(
-            "/usr/bin/zip", ["-q", "-r", temp.path, "."], currentDirectory: dir)
-        guard result.status == 0 else { throw ActionError.zipFailed(result.output) }
-        if FileManager.default.fileExists(atPath: dest.path) {
-            _ = try FileManager.default.replaceItemAt(dest, withItemAt: temp)
-        } else {
-            try FileManager.default.moveItem(at: temp, to: dest)
+    #if os(macOS)
+        public static func zipDirectory(at dir: URL, to destination: String) throws {
+            let dest = URL(fileURLWithPath: destination)
+            let temp = dest.deletingLastPathComponent()
+                .appendingPathComponent(".photopipe-\(UUID().uuidString).zip")
+            defer { try? FileManager.default.removeItem(at: temp) }
+            let result = try run(
+                "/usr/bin/zip", ["-q", "-r", temp.path, "."], currentDirectory: dir)
+            guard result.status == 0 else { throw ActionError.zipFailed(result.output) }
+            if FileManager.default.fileExists(atPath: dest.path) {
+                _ = try FileManager.default.replaceItemAt(dest, withItemAt: temp)
+            } else {
+                try FileManager.default.moveItem(at: temp, to: dest)
+            }
         }
-    }
 
-    public static func list(zip path: String) throws -> [String] {
-        let result = try run("/usr/bin/unzip", ["-Z", "-1", path])
-        guard result.status == 0 else { throw ActionError.zipFailed(result.output) }
-        return result.output.split(separator: "\n").map(String.init)
-    }
+        public static func list(zip path: String) throws -> [String] {
+            let result = try run("/usr/bin/unzip", ["-Z", "-1", path])
+            guard result.status == 0 else { throw ActionError.zipFailed(result.output) }
+            return result.output.split(separator: "\n").map(String.init)
+        }
+    #else
+        public static func zipDirectory(at dir: URL, to destination: String) throws {
+            throw ActionError.zipFailed("unavailable on this platform")
+        }
+
+        public static func list(zip path: String) throws -> [String] {
+            throw ActionError.zipFailed("unavailable on this platform")
+        }
+    #endif
 
     static func uniqueName(_ name: String, isTaken: (String) -> Bool) -> String {
         guard isTaken(name) else { return name }
@@ -84,21 +100,23 @@ public enum FileActions {
         return dir.appendingPathComponent(name)
     }
 
-    private static func run(
-        _ tool: String, _ args: [String], currentDirectory: URL? = nil
-    ) throws -> (
-        status: Int32, output: String
-    ) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: tool)
-        process.arguments = args
-        if let currentDirectory { process.currentDirectoryURL = currentDirectory }
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        try process.run()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return (process.terminationStatus, String(decoding: data, as: UTF8.self))
-    }
+    #if os(macOS)
+        private static func run(
+            _ tool: String, _ args: [String], currentDirectory: URL? = nil
+        ) throws -> (
+            status: Int32, output: String
+        ) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: tool)
+            process.arguments = args
+            if let currentDirectory { process.currentDirectoryURL = currentDirectory }
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
+            try process.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            return (process.terminationStatus, String(decoding: data, as: UTF8.self))
+        }
+    #endif
 }

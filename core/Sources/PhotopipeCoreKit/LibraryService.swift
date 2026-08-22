@@ -381,7 +381,7 @@ public final class LibraryService: @unchecked Sendable {
     ) {
         guard (0...5).contains(rating) else { throw ServiceError.invalidRating(rating) }
         let settled = try write(shoot: shootName, path: path) { image in
-            try XMP.writeRating(rating, file: image, tool: .shared)
+            try XMP.writeRating(rating, file: image)
         }
         return (settled.rating, status().generation)
     }
@@ -390,7 +390,7 @@ public final class LibraryService: @unchecked Sendable {
         edit: Edit, generation: Int
     ) {
         let settled = try write(shoot: shootName, path: path) { image in
-            try XMP.writeEdit(edit, file: image, tool: .shared)
+            try XMP.writeEdit(edit, file: image)
         }
         return (settled.edit, status().generation)
     }
@@ -624,8 +624,7 @@ public final class LibraryService: @unchecked Sendable {
                 file: image, edit: image.edit,
                 quality: Double(quality) / 100, to: target)
             if image.rating > 0 {
-                try? ExifTool.shared.write(
-                    ["-overwrite_original", "-XMP:Rating=\(image.rating)", target.path])
+                try? XMP.writeExportedRating(image.rating, jpeg: target)
             }
         }
     }

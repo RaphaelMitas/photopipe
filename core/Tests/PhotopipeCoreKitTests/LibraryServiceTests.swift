@@ -195,8 +195,7 @@ private func tempIndexPath() -> String {
     // while Photopipe is not running.
     try XMP.writeRating(
         5,
-        file: ImageFile(path: target.path, rel: "DSC001.ARW", ext: "ARW", size: 1, mtime: 1),
-        tool: .shared)
+        file: ImageFile(path: target.path, rel: "DSC001.ARW", ext: "ARW", size: 1, mtime: 1))
 
     let second = makeService()
     _ = try second.setRoot(path: root.path, indexPath: indexPath)
@@ -255,7 +254,7 @@ private func tempIndexPath() -> String {
     let target = root.appendingPathComponent("2026-07-12_zell/DSC199.ARW")
     let onDisk = ImageFile(
         path: target.path, rel: "DSC199.ARW", ext: "ARW", size: 1, mtime: 1)
-    try XMP.writeRating(3, file: onDisk, tool: .shared)
+    try XMP.writeRating(3, file: onDisk)
 
     let service = makeService()
     _ = try service.setRoot(path: root.path, indexPath: tempIndexPath())

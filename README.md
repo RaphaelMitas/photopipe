@@ -91,9 +91,9 @@ pnpm dev
 ```
 
 `pnpm dev` builds the Swift core, stages it as the Tauri sidecar
-(`apps/desktop/src-tauri/binaries/`), vendors `exiftool` into
-`src-tauri/resources/`, and starts `tauri dev`. Running `tauri dev` directly
-fails until both are staged once: `./scripts/prepare-bundle.sh`.
+(`apps/desktop/src-tauri/binaries/`), and starts `tauri dev`. Running
+`tauri dev` directly fails until the core is staged once:
+`./scripts/prepare-bundle.sh`.
 
 You need Rust, Swift (Xcode command line tools) and Node 24.
 
