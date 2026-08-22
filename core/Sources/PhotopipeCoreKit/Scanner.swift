@@ -160,8 +160,7 @@ private func walkShootDirectory(_ dir: URL) -> [ImageFile] {
     return
         images
         .map { image in
-            guard image.usesSidecar,
-                let stamp = sidecarMtimes[XMP.sidecarURL(forImagePath: image.path).path]
+            guard let stamp = sidecarMtimes[XMP.sidecarURL(forImagePath: image.path).path]
             else { return image }
             return image.with(sidecarMtime: stamp)
         }

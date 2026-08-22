@@ -356,12 +356,8 @@ public final class Dispatcher {
             return .failure(id: request.id, code: "open_failed", message: output)
         } catch FileActions.ActionError.zipFailed(let output) {
             return .failure(id: request.id, code: "zip_failed", message: output)
-        } catch ExifTool.ExifToolError.notInstalled {
-            return .failure(
-                id: request.id, code: "exiftool_missing",
-                message: "exiftool not found — install it or set PHOTOPIPE_EXIFTOOL")
-        } catch ExifTool.ExifToolError.failed(let output) {
-            return .failure(id: request.id, code: "exiftool_failed", message: output)
+        } catch let error as XMPWriter.WriteError {
+            return .failure(id: request.id, code: "xmp_write_failed", message: "\(error)")
         } catch ScanError.rootNotFound(let path) {
             return .failure(id: request.id, code: "root_not_found", message: path)
         } catch {
