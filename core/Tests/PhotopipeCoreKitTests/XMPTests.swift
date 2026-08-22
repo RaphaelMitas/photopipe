@@ -614,3 +614,113 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(progress.running == false)
     #expect(progress.done == progress.total)
 }
+
+/// Regression: a rating write said nothing about orientation, so ImageIO's
+/// merge re-synced the XMP turn from the pinned EXIF base and the rotation
+/// was silently lost — permanently, since the base was then the only record.
+@Test func ratingAPhotoKeepsItsRotation() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let jpg = dir.appendingPathComponent("DSC00016.JPG")
+    try writeGrayJPEG(to: jpg)
+
+    try XMP.writeEdit(Edit(rotation: 90), file: try image(jpg))
+    try XMP.writeRating(3, file: try image(jpg))
+
+    #expect(XMP.readEdit(file: try image(jpg)).rotation == 90)
+    #expect(XMP.readRating(file: try image(jpg)) == 3)
+    #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: jpg) == "6")
+    #expect(try exiftoolTag("-IFD0:Orientation#", of: jpg) == "1")
+
+    // The turn also survives a rating that clears itself.
+    try XMP.writeRating(0, file: try image(jpg))
+    #expect(XMP.readEdit(file: try image(jpg)).rotation == 90)
+}
+
+/// Regression: dropping exiftool dropped the single lock that serialized
+/// every write, and both new paths are read-modify-write on the same bytes.
+/// A rating and an edit landing together used to lose one of the two.
+@Test func concurrentRatingAndEditBothSurvive() async throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    for (index, name) in ["DSC00017.JPG", "DSC00018.ARW"].enumerated() {
+        let photo = dir.appendingPathComponent(name)
+        if photo.pathExtension == "ARW" {
+            try Data("fake".utf8).write(to: photo)
+        } else {
+            try writeGrayJPEG(to: photo)
+        }
+        let file = try image(photo)
+        async let rating: Void = Task.detached { try XMP.writeRating(4, file: file) }.value
+        async let edit: Void = Task.detached {
+            try XMP.writeEdit(Edit(exposure: 1.5), file: file)
+        }.value
+        _ = try await (rating, edit)
+
+        #expect(XMP.readRating(file: try image(photo)) == 4, "\(name) lost the rating")
+        #expect(
+            XMP.readEdit(file: try image(photo)).exposure == 1.5, "\(name) lost the edit")
+        _ = index
+    }
+}
+
+/// A sidecar that exists but cannot be read is not the same as no sidecar;
+/// replacing it with one holding only our tags would destroy another tool's
+/// work just as surely as clobbering an unparseable one.
+@Test func unreadableSidecarIsRefusedRatherThanReplaced() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00019.ARW")
+    try Data("fake".utf8).write(to: arw)
+    let sidecar = XMP.sidecarURL(forImagePath: arw.path)
+    try Data("<x:xmpmeta/>".utf8).write(to: sidecar)
+    try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: sidecar.path)
+    defer {
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o644], ofItemAtPath: sidecar.path)
+    }
+
+    #expect(throws: XMPWriter.WriteError.self) {
+        try XMP.writeRating(3, file: try image(arw))
+    }
+}
+
+/// A zero-byte sidecar holds nothing to protect, so refusing to write only
+/// locked the photo out of ever being rated again.
+@Test func zeroByteSidecarIsTreatedAsAbsent() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00020.ARW")
+    try Data("fake".utf8).write(to: arw)
+    try Data().write(to: XMP.sidecarURL(forImagePath: arw.path))
+
+    try XMP.writeRating(3, file: try image(arw))
+    #expect(XMP.readRating(file: try image(arw)) == 3)
+}
+
+/// A failed write must not leave a full-size copy of the photo behind: the
+/// temp is hidden and the scanner skips hidden files, so it would accumulate
+/// invisibly, one per attempt.
+@Test func aFailedEmbeddedWriteLeavesNoTempBehind() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let jpg = dir.appendingPathComponent("DSC00021.JPG")
+    try writeGrayJPEG(to: jpg)
+    let file = try image(jpg)
+
+    // Read-only photo in a writable folder: the temp is created, the replace
+    // is refused. A read-only folder would block the temp itself and leak
+    // nothing, which is why it proves nothing.
+    try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: jpg.path)
+    defer {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: jpg.path)
+    }
+    #expect(throws: (any Error).self) { try XMP.writeRating(3, file: file) }
+
+    let leftovers = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+        .filter { $0.hasPrefix(".photopipe") }
+    #expect(leftovers.isEmpty, "leaked \(leftovers)")
+}

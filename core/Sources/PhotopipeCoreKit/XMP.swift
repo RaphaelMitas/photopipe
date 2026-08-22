@@ -337,6 +337,12 @@ public enum XMP {
         XMPTagOp(namespace: crsNamespace, prefix: "crs", name: name, value: value)
     }
 
+    private static func orientationOp(_ value: Int) -> XMPTagOp {
+        XMPTagOp(
+            namespace: tiffNamespace, prefix: "tiff", name: "Orientation",
+            value: .scalar("\(value)"))
+    }
+
     static func ratingOp(_ rating: Int) -> XMPTagOp {
         XMPTagOp(
             namespace: xmpNamespace, prefix: "xmp", name: "Rating",
@@ -344,7 +350,9 @@ public enum XMP {
     }
 
     public static func writeRating(_ rating: Int, file: ImageFile) throws {
-        try write([ratingOp(rating)], clearing: rating == 0, file: file)
+        try PathLock.withLock(file.path) {
+            try write([ratingOp(rating)], clearing: rating == 0, file: file)
+        }
     }
 
     /// A JPEG we exported ourselves carries the rating embedded, whatever the
@@ -354,6 +362,10 @@ public enum XMP {
     }
 
     public static func writeEdit(_ edit: Edit, file: ImageFile) throws {
+        try PathLock.withLock(file.path) { try applyEdit(edit, file: file) }
+    }
+
+    private static func applyEdit(_ edit: Edit, file: ImageFile) throws {
         var ops: [XMPTagOp] = []
         // Lightroom writes these as integers, and its reader is the target.
         func integerScalar(_ tag: String, _ value: Double) {
@@ -416,11 +428,6 @@ public enum XMP {
                 contentsOf: sidecarURL(forImagePath: file.path), encoding: .utf8))
                 .flatMap { parseOrientation(in: $0) }
             : embeddedXMPOrientation(at: fileURL)
-        func orientationOp(_ value: Int) -> XMPTagOp {
-            XMPTagOp(
-                namespace: tiffNamespace, prefix: "tiff", name: "Orientation",
-                value: .scalar("\(value)"))
-        }
         var pinnedEXIFOrientation: Int?
         if edit.normalizedRotation == 0 {
             // another tool's XMP value can be the only record of its turn, so
@@ -461,8 +468,22 @@ public enum XMP {
             if !FileManager.default.fileExists(atPath: sidecar.path) && clearing { return }
             try XMPWriter.applyToSidecar(ops, sidecar: sidecar)
         } else {
-            try XMPWriter.applyToEmbedded(
-                ops, url: URL(fileURLWithPath: file.path), exifOrientation: exifOrientation)
+            let url = URL(fileURLWithPath: file.path)
+            var ops = ops
+            var pin = exifOrientation
+            // A stored turn lives as an absolute XMP value against a pinned
+            // EXIF base. The metadata merge re-syncs XMP from EXIF, so a write
+            // that says nothing about orientation — a rating, say — would
+            // silently undo the turn. Carry the pair through untouched.
+            if pin == nil,
+                !ops.contains(where: { $0.prefix == "tiff" && $0.name == "Orientation" }),
+                let currentXMP = embeddedXMPOrientation(at: url),
+                let base = baseOrientation(at: url), currentXMP != base
+            {
+                ops.append(orientationOp(currentXMP))
+                pin = base
+            }
+            try XMPWriter.applyToEmbedded(ops, url: url, exifOrientation: pin)
         }
     }
 }

@@ -20,6 +20,22 @@ struct XMPTagOp {
     var path: CFString { "\(prefix):\(name)" as CFString }
 }
 
+/// Two edits to one photo are a read-modify-write over the same bytes, and
+/// the dispatcher answers eight requests at a time. The exiftool daemon used
+/// to serialize every write behind a single lock; without one, a rating and
+/// an edit landing together silently lose one of the two. Striped so the
+/// table cannot grow with the library.
+enum PathLock {
+    private static let stripes = (0..<64).map { _ in NSLock() }
+
+    static func withLock<T>(_ path: String, _ body: () throws -> T) rethrows -> T {
+        let stripe = stripes[Int(UInt(bitPattern: path.hashValue) % UInt(stripes.count))]
+        stripe.lock()
+        defer { stripe.unlock() }
+        return try body()
+    }
+}
+
 enum XMPWriter {
     public enum WriteError: Error {
         case sidecarUnparseable(String)
@@ -31,9 +47,20 @@ enum XMPWriter {
     /// Patch a sidecar in place: the whole packet is parsed, our tags are
     /// set or removed, and everything else survives the re-serialization.
     static func applyToSidecar(_ ops: [XMPTagOp], sidecar: URL) throws {
-        let existing = try? Data(contentsOf: sidecar)
+        let existing: Data?
+        if FileManager.default.fileExists(atPath: sidecar.path) {
+            // A sidecar that is there but unreadable must not be replaced by
+            // one holding only our tags.
+            guard let data = try? Data(contentsOf: sidecar) else {
+                throw WriteError.sidecarUnparseable(sidecar.path)
+            }
+            existing = data
+        } else {
+            existing = nil
+        }
         let metadata: CGMutableImageMetadata
-        if let existing {
+        // Zero bytes hold nothing to protect, so they count as absent.
+        if let existing, !existing.isEmpty {
             // Refusing beats clobbering: a sidecar we cannot parse may be
             // another tool's only record of its work.
             guard let parsed = parse(existing),
@@ -51,42 +78,60 @@ enum XMPWriter {
     }
 
     /// Rewrite an embedded image's metadata without touching the image data.
-    /// `exifOrientation` additionally pins the EXIF/TIFF orientation tags —
-    /// in a pass of its own, last, because ImageIO refuses to combine it
-    /// with kCGImageDestinationMetadata, and the metadata pass re-syncs
-    /// EXIF orientation from the merged XMP, undoing an earlier pin. The
-    /// pin pass leaves the XMP packet alone.
+    /// `exifOrientation` pins the EXIF orientation in a second pass, because
+    /// ImageIO refuses to combine it with kCGImageDestinationMetadata and the
+    /// metadata pass re-syncs EXIF from the merged XMP.
+    ///
+    /// Both passes land in temp files and the photo is replaced once, at the
+    /// end. Replacing after each pass would expose a state where EXIF and XMP
+    /// both hold the turned value, which reads back as no turn at all and
+    /// loses the original orientation for good.
     static func applyToEmbedded(_ ops: [XMPTagOp], url: URL, exifOrientation: Int? = nil) throws {
         let metadata = CGImageMetadataCreateMutable()
         try apply(ops, to: metadata, removal: .setNull)
-        try rewrite(
-            url: url,
-            options: [
-                kCGImageDestinationMetadata: metadata,
-                kCGImageDestinationMergeMetadata: true,
-            ])
+
+        var staged: [URL] = []
+        defer { for temp in staged { try? FileManager.default.removeItem(at: temp) } }
+
+        staged.append(
+            try rewrite(
+                source: url, besides: url,
+                options: [
+                    kCGImageDestinationMetadata: metadata,
+                    kCGImageDestinationMergeMetadata: true,
+                ]))
         if let exifOrientation {
-            try rewrite(url: url, options: [kCGImageDestinationOrientation: exifOrientation])
+            staged.append(
+                try rewrite(
+                    source: staged[0], besides: url,
+                    options: [kCGImageDestinationOrientation: exifOrientation]))
         }
+        _ = try FileManager.default.replaceItemAt(url, withItemAt: staged[staged.count - 1])
     }
 
-    private static func rewrite(url: URL, options: [CFString: Any]) throws {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-            let type = CGImageSourceGetType(source)
-        else { throw WriteError.imageUnreadable(url.path) }
-        let temp = url.deletingLastPathComponent()
+    /// Copies `source` through ImageIO into a fresh temp beside `original`,
+    /// which the caller owns and must remove.
+    private static func rewrite(
+        source: URL, besides original: URL, options: [CFString: Any]
+    ) throws -> URL {
+        guard let imageSource = CGImageSourceCreateWithURL(source as CFURL, nil),
+            let type = CGImageSourceGetType(imageSource)
+        else { throw WriteError.imageUnreadable(original.path) }
+        let temp = original.deletingLastPathComponent()
             .appendingPathComponent(".photopipe-xmp-\(UUID().uuidString)")
-            .appendingPathExtension(url.pathExtension)
+            .appendingPathExtension(original.pathExtension)
         guard let destination = CGImageDestinationCreateWithURL(temp as CFURL, type, 1, nil)
-        else { throw WriteError.writeFailed(url.path) }
+        else { throw WriteError.writeFailed(original.path) }
         var error: Unmanaged<CFError>?
-        guard CGImageDestinationCopyImageSource(destination, source, options as CFDictionary, &error)
+        guard
+            CGImageDestinationCopyImageSource(
+                destination, imageSource, options as CFDictionary, &error)
         else {
             try? FileManager.default.removeItem(at: temp)
-            let reason = (error?.takeRetainedValue()).map(String.init(describing:)) ?? url.path
+            let reason = (error?.takeRetainedValue()).map(String.init(describing:)) ?? original.path
             throw WriteError.writeFailed(reason)
         }
-        _ = try FileManager.default.replaceItemAt(url, withItemAt: temp)
+        return temp
     }
 
     /// ImageIO's XMP parser rejects single-quoted XML attributes, which is
