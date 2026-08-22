@@ -11,6 +11,13 @@ Stack, testing strategy, CI and releases.
   speaking line-delimited JSON over stdio. It owns everything that touches
   pixels or metadata: scanning, `CIRAWFilter` rendering, thumbnails, XMP,
   FSEvents, file actions.
+- **XMP sidecars for every format**, written through ImageIO. Originals are
+  never rewritten: ImageIO's metadata write rebuilds a container's tag
+  structures from its own property model and drops what it does not model,
+  MakerNotes included. A raw keeps the basename sidecar Lightroom expects,
+  everything else keeps its extension so a raw and its JPEG cannot collide.
+  A photo's own embedded metadata still reads, and moves into the sidecar on
+  the first write.
 
 ```
 photopipe/

@@ -74,10 +74,11 @@ Click a photo to open it full-bleed. Rate with `1`–`5`, clear with `0`,
 navigate with `←`/`→`, adjust exposure with `↑`/`↓`. The exposure is saved
 with the photo and baked into JPEG exports.
 
-Ratings and edits are written as XMP: a sidecar next to a raw, embedded in a
-DNG or JPEG, the exposure as Lightroom's own `crs:Exposure2012`. Lightroom,
+Ratings and edits are written as XMP sidecars next to your photos, never into
+them, with the exposure as Lightroom's own `crs:Exposure2012`. Lightroom,
 Capture One and Photo Mechanic read the same stars, so nothing you decide
-here is locked inside this app.
+here is locked inside this app, and your originals keep every byte the camera
+put in them.
 
 Hold, or ⌘-click, to start selecting. Then **Export…**, **Reveal in
 Finder**, or **Delete** — which means the Trash, sidecar included, never an

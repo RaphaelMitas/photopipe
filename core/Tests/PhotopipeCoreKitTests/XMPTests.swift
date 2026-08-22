@@ -224,17 +224,19 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(XMP.embeddedXMPOrientation(at: jpg) == 6)
 }
 
-/// A base orientation guessed from a failed read must never be written into
-/// an embedded file's real EXIF; the turn fails loudly instead.
-@Test func turningAnUnreadableEmbeddedFileThrows() throws {
+/// A guessed base used to be dangerous because it would land in the photo's
+/// real EXIF. Sidecars cannot damage the file, so the turn is simply recorded
+/// against upright.
+@Test func turningAnUnreadableFileRecordsTheTurnInASidecar() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
     let jpg = dir.appendingPathComponent("DSC00012.JPG")
-    try Data("not a jpeg".utf8).write(to: jpg)
+    let bytes = Data("not a jpeg".utf8)
+    try bytes.write(to: jpg)
 
-    #expect(throws: XMP.XMPError.self) {
-        try XMP.writeEdit(Edit(rotation: 90), file: try image(jpg))
-    }
+    try XMP.writeEdit(Edit(rotation: 90), file: try image(jpg))
+    #expect(XMP.readEdit(file: try image(jpg)).rotation == 90)
+    #expect(try Data(contentsOf: jpg) == bytes, "the file itself is never written")
 }
 
 @Test func tinyCropEdgeSurvivesTheSidecarRoundTrip() throws {
@@ -257,33 +259,30 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(XMP.parseDouble("CropLeft", in: #"crs:CropLeft="3e-05""#) == 3e-05)
 }
 
-/// Regression: for embedded formats ImageIO reports our own freshly written
-/// XMP orientation back as the file's orientation, so without a pinned EXIF
-/// base the turn cancelled itself on the next read ("applies briefly, then
-/// resets").
-@Test func embeddedRotationSurvivesWithoutExifOrientation() throws {
+/// A turn on an embedded format is recorded in its sidecar as an absolute
+/// orientation, exactly as it is for a raw, and the photo is never rewritten.
+@Test func turningAJPEGWritesASidecarAndLeavesThePhotoAlone() throws {
     guard requireExifTool() else { return }
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
 
     let jpg = dir.appendingPathComponent("DSC00009.JPG")
     try writeGrayJPEG(to: jpg)
+    let original = try Data(contentsOf: jpg)
+    let sidecar = XMP.sidecarURL(forImagePath: jpg.path)
+    #expect(sidecar.lastPathComponent == "DSC00009.JPG.xmp")
 
     try XMP.writeEdit(Edit(rotation: 90), file: try image(jpg))
     #expect(XMP.readEdit(file: try image(jpg)).rotation == 90)
-    #expect(
-        try exiftoolTag("-IFD0:Orientation#", of: jpg) == "1",
-        "the pre-edit base gets pinned as real EXIF")
+    #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: sidecar) == "6")
 
-    // A second write reads the pinned base, not our own XMP echo.
     try XMP.writeEdit(Edit(rotation: 180), file: try image(jpg))
     #expect(XMP.readEdit(file: try image(jpg)).rotation == 180)
-    #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: jpg) == "3")
+    #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: sidecar) == "3")
 
-    // Un-turning restores the pinned base instead of deleting the tag.
     try XMP.writeEdit(Edit(rotation: 0), file: try image(jpg))
     #expect(XMP.readEdit(file: try image(jpg)).rotation == 0)
-    #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: jpg) == "1")
+    #expect(try Data(contentsOf: jpg) == original, "the photo is untouched throughout")
 }
 
 /// Regression: any edit used to emit `-XMP-tiff:Orientation=` when the model
@@ -302,6 +301,7 @@ func image(_ url: URL) throws -> ImageFile {
 
     // The foreign turn reads as no model rotation (it is the display base).
     #expect(XMP.readEdit(file: try image(jpg)).rotation == 0)
+    let original = try Data(contentsOf: jpg)
 
     try XMP.writeEdit(Edit(exposure: 0.5), file: try image(jpg))
     #expect(
@@ -311,6 +311,7 @@ func image(_ url: URL) throws -> ImageFile {
 
     try XMP.writeEdit(.identity, file: try image(jpg))
     #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: jpg) == "6")
+    #expect(try Data(contentsOf: jpg) == original, "the photo is never rewritten")
 }
 
 @Test func rotationIsTheDifferenceAgainstTheBaseOrientation() {
@@ -414,24 +415,25 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(try exiftoolTag("-XMP:Title", of: sidecar) == "Keeper")
 }
 
-/// The rewrite path copies image data as-is; decoded pixels must be
-/// byte-identical after a metadata write, or "lossless" was a lie.
-@Test func embeddedWriteKeepsPixelDataIntact() throws {
+/// ImageIO's metadata write rebuilds a JPEG's tag structures and silently
+/// drops MakerNotes, so an original is never written at all: every byte of it
+/// must survive a rating and an edit.
+@Test func writingMetadataNeverTouchesTheOriginal() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
     let jpg = dir.appendingPathComponent("DSC00014.JPG")
     try writeGrayJPEG(to: jpg)
+    let before = try Data(contentsOf: jpg)
+    let stat = try FileManager.default.attributesOfItem(atPath: jpg.path)
 
-    func decodedBytes() throws -> Data {
-        let source = try #require(CGImageSourceCreateWithURL(jpg as CFURL, nil))
-        let image = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
-        let data = try #require(image.dataProvider?.data)
-        return data as Data
-    }
-    let before = try decodedBytes()
     try XMP.writeEdit(Edit(exposure: 0.7), file: try image(jpg))
     try XMP.writeRating(5, file: try image(jpg))
-    #expect(try decodedBytes() == before)
+
+    #expect(try Data(contentsOf: jpg) == before)
+    let after = try FileManager.default.attributesOfItem(atPath: jpg.path)
+    #expect(
+        (after[.modificationDate] as? Date) == (stat[.modificationDate] as? Date),
+        "an untouched photo must keep its mtime, or the scorer re-scores it")
 }
 
 @Test func attributeQuoteNormalizationLeavesTextContentAlone() {
@@ -482,17 +484,18 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(read.tint == -10)
     #expect(read.saturation == 15)
     #expect(read.curveRGB.count == 3)
-    #expect(try exiftoolTag("-XMP:Rating", of: jpg) == "3")
-    #expect(try exiftoolTag("-XMP-crs:Exposure2012", of: jpg) == "0.5")
-    // Embedded formats have no known as-shot neutral, so the incremental tags.
-    #expect(try exiftoolTag("-XMP-crs:IncrementalTemperature", of: jpg) == "30")
-    #expect(try exiftoolTag("-XMP-crs:IncrementalTint", of: jpg) == "-10")
-    // No sidecar for embedded formats, no backup litter.
+    let sidecar = XMP.sidecarURL(forImagePath: jpg.path)
+    #expect(try exiftoolTag("-XMP:Rating", of: sidecar) == "3")
+    #expect(try exiftoolTag("-XMP-crs:Exposure2012", of: sidecar) == "0.5")
+    // Non-raw formats have no known as-shot neutral, so the incremental tags.
+    #expect(try exiftoolTag("-XMP-crs:IncrementalTemperature", of: sidecar) == "30")
+    #expect(try exiftoolTag("-XMP-crs:IncrementalTint", of: sidecar) == "-10")
+    // The sidecar and the photo, no backup litter.
     let contents = try FileManager.default.contentsOfDirectory(atPath: dir.path)
-    #expect(contents == ["DSC00003.JPG"])
+    #expect(contents.sorted() == ["DSC00003.JPG", "DSC00003.JPG.xmp"])
 }
 
-@Test func ratingZeroClearsTheTag() throws {
+@Test func ratingZeroIsRecordedAsUnrated() throws {
     guard requireExifTool() else { return }
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
@@ -503,7 +506,7 @@ func image(_ url: URL) throws -> ImageFile {
     try XMP.writeRating(0, file: try image(jpg))
 
     #expect(XMP.readRating(file: try image(jpg)) == 0)
-    #expect(try exiftoolTag("-XMP:Rating", of: jpg).isEmpty)
+    #expect(try exiftoolTag("-XMP:Rating", of: XMP.sidecarURL(forImagePath: jpg.path)) == "0")
 }
 
 @Test func sameStemFilesAreIndependentPhotos() throws {
@@ -558,7 +561,9 @@ func image(_ url: URL) throws -> ImageFile {
     // through the independent exiftool read (the Lightroom proxy).
     let sidecar = shoot.appendingPathComponent("DSC00010.xmp")
     #expect(try exiftoolTag("-XMP:Rating", of: sidecar) == "4")
-    #expect(try exiftoolTag("-XMP-crs:Exposure2012", of: jpg) == "1.25")
+    #expect(
+        try exiftoolTag("-XMP-crs:Exposure2012", of: XMP.sidecarURL(forImagePath: jpg.path))
+            == "1.25")
 
     // A fresh scan (new service, no snapshot) reads the same values back.
     let fresh = makeService(in: dir)
@@ -631,8 +636,9 @@ func image(_ url: URL) throws -> ImageFile {
 
     #expect(XMP.readEdit(file: try image(jpg)).rotation == 90)
     #expect(XMP.readRating(file: try image(jpg)) == 3)
-    #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: jpg) == "6")
-    #expect(try exiftoolTag("-IFD0:Orientation#", of: jpg) == "1")
+    #expect(
+        try exiftoolTag("-XMP-tiff:Orientation#", of: XMP.sidecarURL(forImagePath: jpg.path))
+            == "6")
 
     // The turn also survives a rating that clears itself.
     try XMP.writeRating(0, file: try image(jpg))
@@ -704,12 +710,11 @@ func image(_ url: URL) throws -> ImageFile {
 /// A failed write must not leave a full-size copy of the photo behind: the
 /// temp is hidden and the scanner skips hidden files, so it would accumulate
 /// invisibly, one per attempt.
-@Test func aFailedEmbeddedWriteLeavesNoTempBehind() throws {
+@Test func aFailedExportRatingLeavesNoTempBehind() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
     let jpg = dir.appendingPathComponent("DSC00021.JPG")
     try writeGrayJPEG(to: jpg)
-    let file = try image(jpg)
 
     // Read-only photo in a writable folder: the temp is created, the replace
     // is refused. A read-only folder would block the temp itself and leak
@@ -718,9 +723,69 @@ func image(_ url: URL) throws -> ImageFile {
     defer {
         try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: jpg.path)
     }
-    #expect(throws: (any Error).self) { try XMP.writeRating(3, file: file) }
+    #expect(throws: (any Error).self) { try XMP.writeExportedRating(3, jpeg: jpg) }
 
     let leftovers = try FileManager.default.contentsOfDirectory(atPath: dir.path)
         .filter { $0.hasPrefix(".photopipe") }
     #expect(leftovers.isEmpty, "leaked \(leftovers)")
+}
+
+/// The sidecar becomes the only record Photopipe reads, so whatever the photo
+/// already carried has to move into it on the first write. Otherwise a rating
+/// set in Lightroom vanishes the moment you touch a slider here.
+@Test func embeddedMetadataMovesIntoTheSidecarOnFirstWrite() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let jpg = dir.appendingPathComponent("DSC00022.JPG")
+    try writeGrayJPEG(to: jpg)
+    try ExifToolVerifier.write([
+        "-overwrite_original", "-XMP:Rating=5", "-XMP-crs:Exposure2012=0.75",
+        "-XMP-crs:Vibrance=20", jpg.path,
+    ])
+    #expect(XMP.readRating(file: try image(jpg)) == 5, "read straight from the photo")
+
+    // An unrelated edit is the first write, so it is what creates the sidecar.
+    try XMP.writeEdit(Edit(exposure: 0.75, vibrance: 20, saturation: -10), file: try image(jpg))
+
+    #expect(XMP.readRating(file: try image(jpg)) == 5, "the rating came across")
+    let read = XMP.readEdit(file: try image(jpg))
+    #expect(read.exposure == 0.75)
+    #expect(read.vibrance == 20)
+    #expect(read.saturation == -10)
+}
+
+/// The mirror image of the migration: with the photo's own rating still
+/// readable, clearing has to stick rather than fall back to the old value.
+@Test func clearingARatingBeatsTheEmbeddedOne() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let jpg = dir.appendingPathComponent("DSC00023.JPG")
+    try writeGrayJPEG(to: jpg)
+    try ExifToolVerifier.write(["-overwrite_original", "-XMP:Rating=5", jpg.path])
+
+    try XMP.writeRating(0, file: try image(jpg))
+    #expect(XMP.readRating(file: try image(jpg)) == 0)
+}
+
+/// A raw keeps the basename sidecar Lightroom expects; a JPEG shot alongside
+/// it would otherwise claim the very same file.
+@Test func aRawAndItsJPEGDoNotShareASidecar() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00024.ARW")
+    try Data("fake".utf8).write(to: arw)
+    let jpg = dir.appendingPathComponent("DSC00024.JPG")
+    try writeGrayJPEG(to: jpg)
+
+    #expect(XMP.sidecarURL(forImagePath: arw.path).lastPathComponent == "DSC00024.xmp")
+    #expect(XMP.sidecarURL(forImagePath: jpg.path).lastPathComponent == "DSC00024.JPG.xmp")
+
+    try XMP.writeRating(4, file: try image(arw))
+    try XMP.writeRating(2, file: try image(jpg))
+    #expect(XMP.readRating(file: try image(arw)) == 4)
+    #expect(XMP.readRating(file: try image(jpg)) == 2)
 }

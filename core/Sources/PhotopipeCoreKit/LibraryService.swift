@@ -358,7 +358,7 @@ public final class LibraryService: @unchecked Sendable {
             path: file.path, rel: file.rel, ext: file.ext,
             size: (values?.fileSize).map(Int64.init) ?? file.size,
             mtime: values?.contentModificationDate?.timeIntervalSince1970 ?? file.mtime,
-            sidecarMtime: file.usesSidecar ? XMP.sidecarMtime(forImagePath: file.path) : 0)
+            sidecarMtime: XMP.sidecarMtime(forImagePath: file.path))
     }
 
     private func updateSnapshot(

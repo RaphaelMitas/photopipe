@@ -77,36 +77,25 @@ enum XMPWriter {
         try (data as Data).write(to: sidecar, options: .atomic)
     }
 
-    /// Rewrite an embedded image's metadata without touching the image data.
-    /// `exifOrientation` pins the EXIF orientation in a second pass, because
-    /// ImageIO refuses to combine it with kCGImageDestinationMetadata and the
-    /// metadata pass re-syncs EXIF from the merged XMP.
-    ///
-    /// Both passes land in temp files and the photo is replaced once, at the
-    /// end. Replacing after each pass would expose a state where EXIF and XMP
-    /// both hold the turned value, which reads back as no turn at all and
-    /// loses the original orientation for good.
-    static func applyToEmbedded(_ ops: [XMPTagOp], url: URL, exifOrientation: Int? = nil) throws {
+    /// Only for a file we just created ourselves, never a user's original:
+    /// ImageIO rebuilds the container's tag structures from its own property
+    /// model and drops everything it does not model, MakerNotes included.
+    /// That is why originals get a sidecar instead.
+    static func applyToEmbedded(_ ops: [XMPTagOp], url: URL) throws {
         let metadata = CGImageMetadataCreateMutable()
         try apply(ops, to: metadata, removal: .setNull)
-
-        var staged: [URL] = []
-        defer { for temp in staged { try? FileManager.default.removeItem(at: temp) } }
-
-        staged.append(
-            try rewrite(
-                source: url, besides: url,
-                options: [
-                    kCGImageDestinationMetadata: metadata,
-                    kCGImageDestinationMergeMetadata: true,
-                ]))
-        if let exifOrientation {
-            staged.append(
-                try rewrite(
-                    source: staged[0], besides: url,
-                    options: [kCGImageDestinationOrientation: exifOrientation]))
+        let temp = try rewrite(
+            source: url, besides: url,
+            options: [
+                kCGImageDestinationMetadata: metadata,
+                kCGImageDestinationMergeMetadata: true,
+            ])
+        do {
+            _ = try FileManager.default.replaceItemAt(url, withItemAt: temp)
+        } catch {
+            try? FileManager.default.removeItem(at: temp)
+            throw error
         }
-        _ = try FileManager.default.replaceItemAt(url, withItemAt: staged[staged.count - 1])
     }
 
     /// Copies `source` through ImageIO into a fresh temp beside `original`,

@@ -2,8 +2,20 @@ import Foundation
 import ImageIO
 
 public enum XMP {
+    /// Raw files get the basename sidecar Lightroom and Bridge look for. A
+    /// JPEG shot alongside a raw of the same name would land on that very
+    /// file, so everything else keeps its extension: DSC1.ARW -> DSC1.xmp,
+    /// DSC1.JPG -> DSC1.JPG.xmp.
     public static func sidecarURL(forImagePath path: String) -> URL {
-        URL(fileURLWithPath: path).deletingPathExtension().appendingPathExtension("xmp")
+        let url = URL(fileURLWithPath: path)
+        guard rawExtensions.contains(url.pathExtension.lowercased()) else {
+            return url.appendingPathExtension("xmp")
+        }
+        return url.deletingPathExtension().appendingPathExtension("xmp")
+    }
+
+    static func sidecarText(forImagePath path: String) -> String? {
+        try? String(contentsOf: sidecarURL(forImagePath: path), encoding: .utf8)
     }
 
     /// 0 when there is no sidecar, which is also what the walk records — the
@@ -158,10 +170,6 @@ public enum XMP {
 
     private static let crsNamespace = "http://ns.adobe.com/camera-raw-settings/1.0/"
 
-    public enum XMPError: Error {
-        case unreadableOrientation(String)
-    }
-
     /// The baseline the absolute tiff:Orientation is compared against.
     static func baseOrientation(at url: URL) -> Int? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
@@ -291,19 +299,17 @@ public enum XMP {
         }
     }
 
+    /// Once a sidecar exists it is the whole record, so a tag missing from it
+    /// means cleared. Before that the photo's own metadata still speaks.
     public static func readRating(file: ImageFile) -> Int {
-        if file.usesSidecar {
-            return readSidecarRating(at: sidecarURL(forImagePath: file.path)) ?? 0
+        if let text = sidecarText(forImagePath: file.path) {
+            return parseRating(text) ?? 0
         }
         return embeddedCached(for: file).rating ?? 0
     }
 
     public static func readEdit(file: ImageFile) -> Edit {
-        if file.usesSidecar {
-            guard
-                let text = try? String(
-                    contentsOf: sidecarURL(forImagePath: file.path), encoding: .utf8)
-            else { return .identity }
+        if let text = sidecarText(forImagePath: file.path) {
             return parseEdit(
                 text, isRaw: file.isRaw,
                 baseOrientation: baseOrientation(at: URL(fileURLWithPath: file.path)) ?? 1)
@@ -343,10 +349,14 @@ public enum XMP {
             value: .scalar("\(value)"))
     }
 
+    /// Explicit even at 0, which is Lightroom's own way of saying unrated. A
+    /// cleared rating has to be stated rather than removed: it may be the only
+    /// thing the sidecar says, and ImageIO cannot parse or write a packet with
+    /// no tags left in it.
     static func ratingOp(_ rating: Int) -> XMPTagOp {
         XMPTagOp(
             namespace: xmpNamespace, prefix: "xmp", name: "Rating",
-            value: rating == 0 ? .clear : .scalar("\(rating)"))
+            value: .scalar("\(rating)"))
     }
 
     public static func writeRating(_ rating: Int, file: ImageFile) throws {
@@ -362,10 +372,17 @@ public enum XMP {
     }
 
     public static func writeEdit(_ edit: Edit, file: ImageFile) throws {
-        try PathLock.withLock(file.path) { try applyEdit(edit, file: file) }
+        try PathLock.withLock(file.path) {
+            let current = sidecarText(forImagePath: file.path).flatMap { parseOrientation(in: $0) }
+            try write(
+                editOps(edit, file: file, currentXMPOrientation: current),
+                clearing: edit.isIdentity, file: file)
+        }
     }
 
-    private static func applyEdit(_ edit: Edit, file: ImageFile) throws {
+    private static func editOps(
+        _ edit: Edit, file: ImageFile, currentXMPOrientation: Int?
+    ) -> [XMPTagOp] {
         var ops: [XMPTagOp] = []
         // Lightroom writes these as integers, and its reader is the target.
         func integerScalar(_ tag: String, _ value: Double) {
@@ -416,74 +433,50 @@ public enum XMP {
                 "CropAngle",
                 edit.cropAngle == 0 ? .clear : .scalar(plainDecimal(edit.cropAngle))))
         ops.append(crs("HasCrop", edit.hasCropComponent ? .scalar("True") : .clear))
-        // Absolute, like Lightroom writes it. An unreadable base can default
-        // to 1 only for sidecars: guessing one for an embedded file would
-        // burn it into the photo's real EXIF.
-        let fileURL = URL(fileURLWithPath: file.path)
-        let base =
-            baseOrientation(at: fileURL) ?? (file.usesSidecar ? 1 : nil)
-        let currentXMP =
-            file.usesSidecar
-            ? (try? String(
-                contentsOf: sidecarURL(forImagePath: file.path), encoding: .utf8))
-                .flatMap { parseOrientation(in: $0) }
-            : embeddedXMPOrientation(at: fileURL)
-        var pinnedEXIFOrientation: Int?
+        // Absolute, like Lightroom writes it, measured against the photo's own
+        // orientation. An unreadable base can fall back to upright because the
+        // value only ever lands in a sidecar now, never in the photo's EXIF.
+        let base = baseOrientation(at: URL(fileURLWithPath: file.path)) ?? 1
         if edit.normalizedRotation == 0 {
             // another tool's XMP value can be the only record of its turn, so
             // only write the base back when clearing a turn of our own
-            if let currentXMP, let base, currentXMP != base {
+            if let currentXMPOrientation, currentXMPOrientation != base {
                 ops.append(orientationOp(base))
             }
         } else {
-            guard let base else {
-                throw XMPError.unreadableOrientation(file.path)
-            }
-            let absolute = absoluteOrientation(
-                rotation: edit.normalizedRotation, base: base)
-            ops.append(orientationOp(absolute))
-            if !file.usesSidecar {
-                // ImageIO folds this XMP value into the next read's merged
-                // orientation, reading the rotation back as zero. EXIF wins
-                // that merge, so pin the base there.
-                pinnedEXIFOrientation = base
-            }
+            ops.append(
+                orientationOp(
+                    absoluteOrientation(rotation: edit.normalizedRotation, base: base)))
         }
         curve("ToneCurvePV2012", edit.curveRGB)
         curve("ToneCurvePV2012Red", edit.curveRed)
         curve("ToneCurvePV2012Green", edit.curveGreen)
         curve("ToneCurvePV2012Blue", edit.curveBlue)
-        try write(
-            ops, clearing: edit.isIdentity, file: file,
-            exifOrientation: pinnedEXIFOrientation)
+        return ops
     }
 
-    private static func write(
-        _ ops: [XMPTagOp], clearing: Bool, file: ImageFile, exifOrientation: Int? = nil
-    ) throws {
-        if file.usesSidecar {
-            let sidecar = sidecarURL(forImagePath: file.path)
-            // Nothing to clear when there is no sidecar; don't create one
-            // just to hold an identity edit.
-            if !FileManager.default.fileExists(atPath: sidecar.path) && clearing { return }
+    private static func write(_ ops: [XMPTagOp], clearing: Bool, file: ImageFile) throws {
+        let sidecar = sidecarURL(forImagePath: file.path)
+        if FileManager.default.fileExists(atPath: sidecar.path) {
             try XMPWriter.applyToSidecar(ops, sidecar: sidecar)
-        } else {
-            let url = URL(fileURLWithPath: file.path)
-            var ops = ops
-            var pin = exifOrientation
-            // A stored turn lives as an absolute XMP value against a pinned
-            // EXIF base. The metadata merge re-syncs XMP from EXIF, so a write
-            // that says nothing about orientation — a rating, say — would
-            // silently undo the turn. Carry the pair through untouched.
-            if pin == nil,
-                !ops.contains(where: { $0.prefix == "tiff" && $0.name == "Orientation" }),
-                let currentXMP = embeddedXMPOrientation(at: url),
-                let base = baseOrientation(at: url), currentXMP != base
-            {
-                ops.append(orientationOp(currentXMP))
-                pin = base
-            }
-            try XMPWriter.applyToEmbedded(ops, url: url, exifOrientation: pin)
+            return
         }
+        // The photo's own metadata was the record until now, and the sidecar
+        // is about to take over as the only one we read. Carry what it held
+        // across, or a rating set in Lightroom disappears on the next
+        // keystroke here.
+        let carried = carriedOps(for: file)
+        // Nothing to carry and nothing to set: don't leave a sidecar behind
+        // just to say the photo is untouched.
+        if carried.isEmpty && clearing { return }
+        try XMPWriter.applyToSidecar(carried + ops, sidecar: sidecar)
+    }
+
+    private static func carriedOps(for file: ImageFile) -> [XMPTagOp] {
+        let embedded = embeddedCached(for: file)
+        let rating = embedded.rating ?? 0
+        guard rating != 0 || !embedded.edit.isIdentity else { return [] }
+        return [ratingOp(rating)]
+            + editOps(embedded.edit, file: file, currentXMPOrientation: nil)
     }
 }
