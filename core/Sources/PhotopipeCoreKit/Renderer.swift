@@ -375,7 +375,7 @@ public final class Renderer {
             supported = cachedForCamera
         } else {
             let versions = CIRAWFilter(imageURL: url)?.supportedDecoderVersions ?? []
-            supported = !Set(versions).isDisjoint(with: Self.raw9Versions)
+            supported = versions.contains { Self.isVersion($0, 9) }
         }
         lock.lock()
         supportsRaw9ByCamera[cacheKey] = supported
@@ -392,21 +392,22 @@ public final class Renderer {
         return tiff[kCGImagePropertyTIFFModel] as? String
     }
 
-    /// Setting a version the file does not offer makes outputImage nil.
-    static let raw9Versions: [CIRAWDecoderVersion] = [.version9, .version9DNG]
-    static let raw8Versions: [CIRAWDecoderVersion] = [.version8, .version8DNG]
+    /// `.version9` only exists in newer SDKs, but a build against an older one
+    /// still meets RAW 9 at runtime on a newer macOS. The constants are just
+    /// their version number ("9", "9.dng"), so match the value, not the symbol.
+    static func isVersion(_ version: CIRAWDecoderVersion, _ major: Int) -> Bool {
+        version.rawValue == "\(major)" || version.rawValue.hasPrefix("\(major).")
+    }
 
+    /// Setting a version the file does not offer makes outputImage nil.
     static func resolveDecoder(
         requested: Int?, supported: [CIRAWDecoderVersion]
     ) -> CIRAWDecoderVersion? {
-        let preferred: [CIRAWDecoderVersion]
-        switch requested {
-        case 9: preferred = raw9Versions
-        case 8: preferred = raw8Versions
-        default: preferred = []
-        }
-        // RAW 9 is opt-in, and the list is sorted oldest to newest
-        return preferred.first(where: supported.contains) ?? supported.last
+        guard let requested else { return supported.last }
+        // the plain variant before the DNG one, then oldest-to-newest fallback
+        return supported.first { $0.rawValue == "\(requested)" }
+            ?? supported.first { isVersion($0, requested) }
+            ?? supported.last
     }
 
     private static func defaultsKey(path: String, decoderVersion: Int?) -> String {

@@ -23,6 +23,11 @@ private func fixtureARW() -> URL? {
     return fixture
 }
 
+/// Built from the raw value so the tests compile on SDKs without `.version9`.
+private func decoder(_ raw: String) -> CIRAWDecoderVersion {
+    CIRAWDecoderVersion(rawValue: raw)
+}
+
 private func imageFile(for url: URL) throws -> ImageFile {
     let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
     return ImageFile(
@@ -466,22 +471,29 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
     let file = try imageFile(for: fixture)
 
     let supported = try #require(CIRAWFilter(imageURL: fixture)).supportedDecoderVersions
-    guard supported.contains(.version8) else {
+    guard supported.contains(decoder("8")) else {
         print("SKIP: fixture does not offer RAW 8")
         return
     }
     let filter = try renderer.makeFilter(for: file, decoderVersion: 8).filter
-    #expect(filter.decoderVersion == .version8)
+    #expect(filter.decoderVersion == decoder("8"))
     #expect(filter.outputImage != nil)
 }
 
 @Test func unsupportedDecoderRequestFallsBackToNewest() {
     #expect(
-        Renderer.resolveDecoder(requested: 9, supported: [.version7, .version8]) == .version8)
+        Renderer.resolveDecoder(requested: 9, supported: [decoder("7"), decoder("8")])
+            == decoder("8"))
     #expect(
-        Renderer.resolveDecoder(requested: 8, supported: [.version8DNG, .version9DNG])
-            == .version8DNG)
-    #expect(Renderer.resolveDecoder(requested: nil, supported: [.version8, .version9]) == .version9)
+        Renderer.resolveDecoder(requested: 8, supported: [decoder("8.dng"), decoder("9.dng")])
+            == decoder("8.dng"))
+    #expect(
+        Renderer.resolveDecoder(requested: nil, supported: [decoder("8"), decoder("9")])
+            == decoder("9"))
+    // a DNG-only file still answers a plain RAW 9 request
+    #expect(
+        Renderer.resolveDecoder(requested: 9, supported: [decoder("8.dng"), decoder("9.dng")])
+            == decoder("9.dng"))
     #expect(Renderer.resolveDecoder(requested: 8, supported: []) == nil)
 }
 
@@ -683,8 +695,9 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
     let file = try imageFile(for: fixture)
 
     let filter = try renderer.makeFilter(for: file).filter
-    let expected = !Set(filter.supportedDecoderVersions)
-        .isDisjoint(with: Renderer.raw9Versions)
+    let expected = filter.supportedDecoderVersions.contains {
+        Renderer.isVersion($0, 9)
+    }
     #expect(renderer.supportsRaw9(file: file) == expected)
     // the second ask answers from the per-camera cache, same verdict
     #expect(renderer.supportsRaw9(file: file) == expected)
