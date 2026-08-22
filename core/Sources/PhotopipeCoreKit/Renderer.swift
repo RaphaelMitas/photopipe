@@ -153,8 +153,7 @@ public final class Renderer {
     }
 
     /// nil for embedded formats, which have no neutral to offset against.
-    public func rawDefaults(for file: ImageFile, decoderVersion: Int? = nil) throws -> RawDefaults?
-    {
+    public func rawDefaults(for file: ImageFile, decoderVersion: Int? = nil) throws -> RawDefaults? {
         guard file.isRaw else { return nil }
         let key = Self.defaultsKey(path: file.path, decoderVersion: decoderVersion)
         lock.lock()
@@ -364,7 +363,8 @@ public final class Renderer {
         // resolveDecoder distinguishes the DNG variants, so a body's ARWs and
         // its DNG conversions cannot share one verdict
         let ext = file.ext.lowercased()
-        let cacheKey = Self.cameraModel(of: url).map { "\($0)|\(ext)" }
+        let cacheKey =
+            Self.cameraModel(of: url).map { "\($0)|\(ext)" }
             ?? "path:\(file.path)"
         lock.lock()
         let cachedForCamera = supportsRaw9ByCamera[cacheKey]
