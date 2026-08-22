@@ -23,6 +23,11 @@ private func fixtureARW() -> URL? {
     return fixture
 }
 
+/// Built from the raw value so the tests compile on SDKs without `.version9`.
+private func decoder(_ raw: String) -> CIRAWDecoderVersion {
+    CIRAWDecoderVersion(rawValue: raw)
+}
+
 private func imageFile(for url: URL) throws -> ImageFile {
     let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
     return ImageFile(
@@ -458,6 +463,53 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
     }
 }
 
+@Test func requestedDecoderVersionIsApplied() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    let supported = try #require(CIRAWFilter(imageURL: fixture)).supportedDecoderVersions
+    guard supported.contains(decoder("8")) else {
+        print("SKIP: fixture does not offer RAW 8")
+        return
+    }
+    let filter = try renderer.makeFilter(for: file, decoderVersion: 8).filter
+    #expect(filter.decoderVersion == decoder("8"))
+    #expect(filter.outputImage != nil)
+}
+
+@Test func unsupportedDecoderRequestFallsBackToNewest() {
+    #expect(
+        Renderer.resolveDecoder(requested: 9, supported: [decoder("7"), decoder("8")])
+            == decoder("8"))
+    #expect(
+        Renderer.resolveDecoder(requested: 8, supported: [decoder("8.dng"), decoder("9.dng")])
+            == decoder("8.dng"))
+    #expect(
+        Renderer.resolveDecoder(requested: nil, supported: [decoder("8"), decoder("9")])
+            == decoder("9"))
+    // a DNG-only file still answers a plain RAW 9 request
+    #expect(
+        Renderer.resolveDecoder(requested: 9, supported: [decoder("8.dng"), decoder("9.dng")])
+            == decoder("9.dng"))
+    #expect(Renderer.resolveDecoder(requested: 8, supported: []) == nil)
+}
+
+@Test func decoderVersionSeparatesTheRenderCache() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    let nine = renderer.cachePath(for: file, edit: .identity, maxPixel: 800, decoderVersion: 9)
+    let eight = renderer.cachePath(for: file, edit: .identity, maxPixel: 800, decoderVersion: 8)
+    #expect(nine != eight)
+    #expect(nine != renderer.cachePath(for: file, edit: .identity, maxPixel: 800))
+}
+
 @Test func denoiseOverridesTheDecoderDefault() throws {
     guard let fixture = fixtureARW() else { return }
     let cacheDir = tempCacheDir()
@@ -633,4 +685,55 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
         CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
     let width = try #require(props[kCGImagePropertyPixelWidth] as? Int)
     #expect(width > 2000, "export must be full resolution, got width \(width)")
+}
+
+@Test func raw9SupportMatchesWhatTheFilterReports() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    let filter = try renderer.makeFilter(for: file).filter
+    let expected = filter.supportedDecoderVersions.contains {
+        Renderer.isVersion($0, 9)
+    }
+    #expect(renderer.supportsRaw9(file: file) == expected)
+    // the second ask answers from the per-camera cache, same verdict
+    #expect(renderer.supportsRaw9(file: file) == expected)
+}
+
+@Test func embeddedFormatsNeverClaimRaw9() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let jpeg = ImageFile(
+        path: "/nowhere/DSC0001.JPG", rel: "DSC0001.JPG", ext: "JPG", size: 1, mtime: 1)
+    #expect(renderer.supportsRaw9(file: jpeg) == false)
+}
+
+@Test func fixtureCarriesACameraModelForTheProbeCache() throws {
+    guard let fixture = fixtureARW() else { return }
+    let model = Renderer.cameraModel(of: fixture)
+    #expect(model?.isEmpty == false, "header model read broke: every file would probe alone")
+}
+
+@Test func repeatedSupportChecksStopReadingTheFile() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    let first = Date()
+    _ = renderer.supportsRaw9(file: file)
+    let cold = Date().timeIntervalSince(first)
+
+    let second = Date()
+    for _ in 0..<500 { _ = renderer.supportsRaw9(file: file) }
+    let warm = Date().timeIntervalSince(second)
+
+    // 500 cached answers must not cost one uncached one; a per-path miss here
+    // means a whole shoot re-reads every header on every selection change.
+    #expect(warm < cold, "warm: \(warm)s for 500, cold: \(cold)s for 1")
 }

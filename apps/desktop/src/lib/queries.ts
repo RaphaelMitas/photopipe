@@ -1,11 +1,12 @@
 import {
+  keepPreviousData,
   type QueryClient,
   useMutation,
   useQueries,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   type CreateProjectResult,
@@ -22,6 +23,7 @@ import {
   type Shoot,
   type StatusResult,
 } from "./core";
+import { useRawDecoderVersion } from "./rawDecoder";
 import type { ViewportRequest } from "./zoom";
 
 export function useShoots(enabled: boolean) {
@@ -106,15 +108,20 @@ export function useThumbnail(
   });
 }
 
-type RenderFile = { path: string; mtime: number } | undefined;
+type RenderFile = Pick<ImageFile, "path" | "mtime" | "ext"> | undefined;
 
 const PREVIEW_MAX_PIXEL = 2560;
+
+function renderDecoderVersion(file: RenderFile, version: number) {
+  return file && isRawFile(file) ? version : undefined;
+}
 
 function renderQueryOptions(
   file: RenderFile,
   edit: Edit,
   maxPixel: number,
   viewport?: ViewportRequest["viewport"],
+  decoderVersion?: number,
 ) {
   return {
     queryKey: [
@@ -126,6 +133,7 @@ function renderQueryOptions(
       viewport
         ? `${viewport.left},${viewport.top},${viewport.right},${viewport.bottom}`
         : "",
+      decoderVersion ?? "",
     ] as const,
     queryFn: async () =>
       (
@@ -134,6 +142,7 @@ function renderQueryOptions(
           edit,
           maxPixel,
           ...(viewport ? { viewport } : {}),
+          ...(decoderVersion ? { decoderVersion } : {}),
         })
       ).cachePath,
     staleTime: Number.POSITIVE_INFINITY,
@@ -141,8 +150,15 @@ function renderQueryOptions(
 }
 
 export function useRender(file: RenderFile, edit: Edit) {
+  const decoder = useRawDecoderVersion();
   return useQuery({
-    ...renderQueryOptions(file, edit, PREVIEW_MAX_PIXEL),
+    ...renderQueryOptions(
+      file,
+      edit,
+      PREVIEW_MAX_PIXEL,
+      undefined,
+      renderDecoderVersion(file, decoder),
+    ),
     enabled: file !== undefined,
     placeholderData: (previous: string | undefined, previousQuery) =>
       previousQuery?.queryKey[1] === file?.path ? previous : undefined,
@@ -157,12 +173,14 @@ export function useViewportRender(
   edit: Edit,
   request: ViewportRequest | null,
 ) {
+  const decoder = useRawDecoderVersion();
   return useQuery({
     ...renderQueryOptions(
       file,
       edit,
       request?.maxPixel ?? 0,
       request?.viewport,
+      renderDecoderVersion(file, decoder),
     ),
     enabled: file !== undefined && request !== null,
   });
@@ -170,23 +188,52 @@ export function useViewportRender(
 
 export function usePrefetchRender(file: RenderFile, edit: Edit | undefined) {
   const queryClient = useQueryClient();
+  const decoder = useRawDecoderVersion();
   useEffect(() => {
     if (!file || !edit) return;
     queryClient.prefetchQuery(
-      renderQueryOptions(file, edit, PREVIEW_MAX_PIXEL),
+      renderQueryOptions(
+        file,
+        edit,
+        PREVIEW_MAX_PIXEL,
+        undefined,
+        renderDecoderVersion(file, decoder),
+      ),
     );
-  }, [queryClient, file, edit]);
+  }, [queryClient, file, edit, decoder]);
 }
 
 export function useRawDefaults(
   file: { path: string; mtime: number; ext: string } | undefined,
 ) {
+  const decoderVersion = useRawDecoderVersion();
   return useQuery({
-    queryKey: ["rawDefaults", file?.path, file?.mtime],
+    queryKey: ["rawDefaults", file?.path, file?.mtime, decoderVersion],
     queryFn: async () =>
-      coreRequest<RawDefaultsResult>("rawDefaults", { path: file?.path }),
+      coreRequest<RawDefaultsResult>("rawDefaults", {
+        path: file?.path,
+        decoderVersion,
+      }),
     enabled: file !== undefined && isRawFile(file),
     staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+export type DecoderSupport = { raw9: number; rawTotal: number };
+
+// support is per camera model and OS, so it cannot change during the session
+export function useDecoderSupport(paths: string[], enabled: boolean) {
+  // Sorting makes the key the selection's contents rather than the grid's
+  // order, so re-sorting does not throw away an answer that cannot differ.
+  const sorted = useMemo(() => [...paths].sort(), [paths]);
+  return useQuery({
+    queryKey: ["decoderSupport", sorted],
+    queryFn: () =>
+      coreRequest<DecoderSupport>("decoderSupport", { paths: sorted }),
+    enabled: enabled && sorted.length > 0,
+    staleTime: Number.POSITIVE_INFINITY,
+    // an unanswered probe reads as "RAW 9 is fine", so hold the last verdict
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -510,6 +557,7 @@ export type ExportRequest = {
   flatten: boolean;
   format: ExportFormat;
   quality: number;
+  decoderVersion: number;
 };
 
 export type ExportProgress = {

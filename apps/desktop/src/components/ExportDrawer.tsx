@@ -1,19 +1,43 @@
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@photopipe/ui/components/alert";
 import { Button } from "@photopipe/ui/components/button";
 import { Progress } from "@photopipe/ui/components/progress";
 import { Segmented } from "@photopipe/ui/components/segmented";
 import { Switch } from "@photopipe/ui/components/switch";
 import { cn } from "@photopipe/ui/lib/utils";
 import { open as openDialog, save } from "@tauri-apps/plugin-dialog";
-import { AlertCircle, Check, FolderOpen, Upload, X } from "lucide-react";
-import { useState } from "react";
+import {
+  AlertCircle,
+  Check,
+  FolderOpen,
+  TriangleAlert,
+  Upload,
+  X,
+} from "lucide-react";
+import { useEffect, useState } from "react";
 import type { ExportFormat } from "@/lib/core";
-import { type ExportJob, type JobStatus, jobStatus } from "@/lib/queries";
+import {
+  type ExportJob,
+  type JobStatus,
+  jobStatus,
+  useDecoderSupport,
+} from "@/lib/queries";
+import {
+  type RawDecoderVersion,
+  rawDecoderVersion,
+  useRawDecoderVersion,
+} from "@/lib/rawDecoder";
+import { DecoderSegmented } from "./DecoderSegmented";
 
 export type ExportOptions = {
   format: ExportFormat;
   quality: number;
   zip: boolean;
   flatten: boolean;
+  decoderVersion: RawDecoderVersion;
 };
 
 export function exportLabel(count: number, format: ExportFormat): string {
@@ -22,6 +46,7 @@ export function exportLabel(count: number, format: ExportFormat): string {
 
 type Props = {
   shoot: string;
+  rawPaths: string[];
   selectedCount: number;
   editedCount: number;
   filteredCount: number;
@@ -94,22 +119,32 @@ function readOptions(): ExportOptions {
   try {
     const stored = localStorage.getItem(OPTIONS_KEY);
     if (stored) {
-      const parsed = JSON.parse(stored) as Partial<ExportOptions>;
+      const parsed = JSON.parse(stored) as Partial<
+        Omit<ExportOptions, "decoderVersion">
+      >;
       return {
         format: parsed.format === "jpeg" ? "jpeg" : "original",
         quality: parsed.quality === 100 ? 100 : 90,
         zip: parsed.zip ?? false,
         flatten: parsed.flatten ?? true,
+        decoderVersion: rawDecoderVersion(),
       };
     }
   } catch {
     // Corrupt preferences never block an export.
   }
-  return { format: "jpeg", quality: 90, zip: false, flatten: true };
+  return {
+    format: "jpeg",
+    quality: 90,
+    zip: false,
+    flatten: true,
+    decoderVersion: rawDecoderVersion(),
+  };
 }
 
 export function ExportDrawer({
   shoot,
+  rawPaths,
   selectedCount,
   editedCount,
   filteredCount,
@@ -126,10 +161,70 @@ export function ExportDrawer({
   onClose,
 }: Props) {
   const [options, setOptions] = useState<ExportOptions>(readOptions);
+  const [dismissedFor, setDismissedFor] = useState<RawDecoderVersion | null>(
+    null,
+  );
+  const culling = useRawDecoderVersion();
+  // Dismissal answers "ship these photos with this decoder", so a new
+  // selection or a round-trip through Original has to ask again.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: rawPaths identity is the selection
+  useEffect(() => setDismissedFor(null), [rawPaths, options.format]);
+  const support = useDecoderSupport(rawPaths, options.format === "jpeg").data;
+  const effectiveDecoder: RawDecoderVersion =
+    support?.raw9 === 0 ? 8 : options.decoderVersion;
+  const partial =
+    support && support.raw9 > 0 && support.raw9 < support.rawTotal
+      ? support
+      : undefined;
+  const showDecoder = options.format === "jpeg" && rawPaths.length > 0;
+
+  const decoderHelp = (): string => {
+    if (support?.raw9 === 0)
+      return "RAW 9 isn't available for these photos on this Mac.";
+    if (effectiveDecoder === 8)
+      return partial
+        ? `RAW 9 resolves more detail, and applies to ${partial.raw9} of ${partial.rawTotal} photos.`
+        : "RAW 9 resolves more detail and denoises harder.";
+    return partial
+      ? `Best detail and denoising, on the ${partial.raw9} of ${partial.rawTotal} photos that support it.`
+      : "Best detail and strongest denoising. Slower to decode.";
+  };
+
+  /// Which way culling and export disagree changes what the user is about to
+  /// be surprised by, so the copy follows the pairing.
+  const warning = ():
+    | { body: string; fixTo: RawDecoderVersion; keep: string }
+    | undefined => {
+    if (!showDecoder || dismissedFor === effectiveDecoder) return undefined;
+    const reach = partial ? ` on ${partial.raw9} of them` : "";
+    if (effectiveDecoder === 8 && (support?.raw9 ?? 0) > 0) {
+      return {
+        body:
+          culling === 9
+            ? `These exports will look softer and noisier${reach} than the RAW 9 previews you culled against.`
+            : `RAW 9 resolves more detail and denoises harder${reach}, but its output will look different from the previews you culled against.`,
+        fixTo: 9,
+        keep: "Keep RAW 8",
+      };
+    }
+    if (effectiveDecoder === 9 && culling === 8) {
+      return {
+        body: `These exports will look different${reach} from the RAW 8 previews you culled against.`,
+        fixTo: 8,
+        keep: "Keep RAW 9",
+      };
+    }
+    return undefined;
+  };
+  const banner = warning();
+
   const patch = (next: Partial<ExportOptions>) => {
     setOptions((current) => {
       const merged = { ...current, ...next };
-      localStorage.setItem(OPTIONS_KEY, JSON.stringify(merged));
+      // the decoder is seeded from culling on every open, so persisting it
+      // would write a value readOptions always throws away
+      const { decoderVersion: _, ...persisted } = merged;
+      localStorage.setItem(OPTIONS_KEY, JSON.stringify(persisted));
       return merged;
     });
   };
@@ -152,7 +247,8 @@ export function ExportDrawer({
 
   const runExport = async () => {
     const destination = await pickDestination();
-    if (destination) onExport(options, destination);
+    if (destination)
+      onExport({ ...options, decoderVersion: effectiveDecoder }, destination);
   };
 
   return (
@@ -255,6 +351,27 @@ export function ExportDrawer({
             ? "Renders every photo full-resolution with its edits baked in."
             : "Copies the files untouched; edits are ignored."}
         </p>
+        {showDecoder && (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="flex-1 text-muted-foreground text-xs">
+                Decoder
+              </span>
+              <DecoderSegmented
+                value={effectiveDecoder}
+                testid="export-decoder"
+                raw9Disabled={support?.raw9 === 0}
+                onChange={(decoderVersion) => patch({ decoderVersion })}
+              />
+            </div>
+            <p
+              data-testid="export-decoder-help"
+              className="text-[10px] text-muted-foreground"
+            >
+              {decoderHelp()}
+            </p>
+          </>
+        )}
       </Section>
 
       <Section label="Destination">
@@ -276,6 +393,36 @@ export function ExportDrawer({
             onCheckedChange={(flatten) => patch({ flatten })}
           />
         </div>
+        {banner && (
+          <Alert data-testid="decoder-banner" className="gap-1 px-3 py-2.5">
+            <TriangleAlert className="text-amber-400" />
+            <AlertTitle className="text-[11px] text-amber-400">
+              Exporting with RAW {effectiveDecoder}
+            </AlertTitle>
+            <AlertDescription className="text-[11px]">
+              {banner.body}
+              <span className="mt-1 flex items-center gap-2.5">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  data-testid="banner-fix"
+                  onClick={() => patch({ decoderVersion: banner.fixTo })}
+                  className="h-5 border-amber-400/45 px-2 text-[10px] text-amber-400"
+                >
+                  Use RAW {banner.fixTo}
+                </Button>
+                <button
+                  type="button"
+                  data-testid="banner-keep"
+                  onClick={() => setDismissedFor(effectiveDecoder)}
+                  className="text-[10px] text-muted-foreground underline underline-offset-2"
+                >
+                  {banner.keep}
+                </button>
+              </span>
+            </AlertDescription>
+          </Alert>
+        )}
         <Button
           size="sm"
           data-testid="run-export"

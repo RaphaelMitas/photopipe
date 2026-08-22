@@ -241,16 +241,35 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     public func render(
-        path: String, edit: Edit, maxPixel: Int, viewport: CropRect? = nil
+        path: String, edit: Edit, maxPixel: Int, viewport: CropRect? = nil,
+        decoderVersion: Int? = nil
     ) throws -> String {
         try renderer.render(
             file: recordUnderRoot(path: path), edit: edit, maxPixel: maxPixel,
-            viewport: viewport
+            viewport: viewport, decoderVersion: decoderVersion
         ).path
     }
 
-    public func rawDefaults(path: String) throws -> Renderer.RawDefaults? {
-        try renderer.rawDefaults(for: recordUnderRoot(path: path))
+    public func rawDefaults(path: String, decoderVersion: Int? = nil) throws
+        -> Renderer.RawDefaults?
+    {
+        try renderer.rawDefaults(for: recordUnderRoot(path: path), decoderVersion: decoderVersion)
+    }
+
+    public func decoderSupport(paths: [String]) throws -> (raw9: Int, rawTotal: Int) {
+        let files = try pathsUnderRoot(paths)
+            .compactMap { try? recordUnderRoot(path: $0) }
+            .filter(\.isRaw)
+        guard !files.isEmpty else { return (0, 0) }
+        // a whole shoot serially outruns the caller's read timeout, and a
+        // timeout takes the sidecar down mid-export
+        var supported = [Bool](repeating: false, count: files.count)
+        supported.withUnsafeMutableBufferPointer { buffer in
+            DispatchQueue.concurrentPerform(iterations: files.count) { index in
+                buffer[index] = renderer.supportsRaw9(file: files[index])
+            }
+        }
+        return (supported.filter { $0 }.count, files.count)
     }
 
     private func recordUnderRoot(path: String) throws -> ImageFile {
@@ -530,7 +549,8 @@ public final class LibraryService: @unchecked Sendable {
     /// minute later.
     public func startExport(
         shoot shootName: String, paths: [String], destination: String,
-        zip: Bool, flatten: Bool, format: ExportFormat, quality: Int
+        zip: Bool, flatten: Bool, format: ExportFormat, quality: Int,
+        decoderVersion: Int? = nil
     ) throws -> Exporter.Progress {
         let images = try images(inShoot: shootName, paths: pathsUnderRoot(paths))
         guard !images.isEmpty else { throw FileActions.ActionError.noFiles }
@@ -569,7 +589,8 @@ public final class LibraryService: @unchecked Sendable {
             // has not reached yet. Reading them opens the file, so it happens
             // here, four wide, rather than in the request that plans the job.
             try self.write(
-                enrich(image), format: format, quality: quality, to: target, staging: zip)
+                enrich(image), format: format, quality: quality, to: target, staging: zip,
+                decoderVersion: decoderVersion)
         }
     }
 
@@ -588,7 +609,8 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     private func write(
-        _ image: ImageFile, format: ExportFormat, quality: Int, to planned: URL, staging: Bool
+        _ image: ImageFile, format: ExportFormat, quality: Int, to planned: URL, staging: Bool,
+        decoderVersion: Int?
     ) throws {
         let fm = FileManager.default
         try fm.createDirectory(
@@ -622,7 +644,8 @@ public final class LibraryService: @unchecked Sendable {
         case .jpeg:
             try renderer.exportJPEG(
                 file: image, edit: image.edit,
-                quality: Double(quality) / 100, to: target)
+                quality: Double(quality) / 100, to: target,
+                decoderVersion: decoderVersion)
             if image.rating > 0 {
                 try? ExifTool.shared.write(
                     ["-overwrite_original", "-XMP:Rating=\(image.rating)", target.path])

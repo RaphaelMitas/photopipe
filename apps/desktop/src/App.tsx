@@ -244,6 +244,10 @@ export default function App() {
     () => selectedImages.filter((image) => !isIdentityEdit(image.edit)).length,
     [selectedImages],
   );
+  const selectedRawPaths = useMemo(
+    () => selectedImages.filter(isRawFile).map((image) => image.path),
+    [selectedImages],
+  );
 
   const {
     draft: editDraft,
@@ -380,6 +384,7 @@ export default function App() {
       flatten: options.flatten,
       format: options.format,
       quality: options.quality,
+      decoderVersion: options.decoderVersion,
     });
   };
 
@@ -868,6 +873,7 @@ export default function App() {
             {drawerOpen && openShoot && !inLoupe && (
               <ExportDrawer
                 shoot={openShoot}
+                rawPaths={selectedRawPaths}
                 selectedCount={selection.selected.size}
                 editedCount={editedCount}
                 filteredCount={filteredImages.length}

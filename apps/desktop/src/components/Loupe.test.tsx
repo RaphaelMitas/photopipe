@@ -1,7 +1,13 @@
 import { SidebarProvider } from "@photopipe/ui/components/sidebar";
 import { TooltipProvider } from "@photopipe/ui/components/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type Edit, type ImageFile, identityEdit } from "@/lib/core";
 import { makeImage } from "@/lib/test-image";
@@ -264,20 +270,22 @@ describe("EditSidebar", () => {
     });
     render(
       <QueryClientProvider client={client}>
-        <EditSidebar
-          image={makeImages()[1]}
-          edit={edit}
-          onChange={onChange}
-          cropDraft={cropDraft}
-          onCropDraft={onCropDraft}
-          onEnterCrop={onEnterCrop}
-          onApplyCrop={onApplyCrop}
-          onCancelCrop={onCancelCrop}
-          canPaste={false}
-          onCopySettings={vi.fn()}
-          onPasteSettings={vi.fn()}
-          onClose={onClose}
-        />
+        <TooltipProvider>
+          <EditSidebar
+            image={makeImages()[1]}
+            edit={edit}
+            onChange={onChange}
+            cropDraft={cropDraft}
+            onCropDraft={onCropDraft}
+            onEnterCrop={onEnterCrop}
+            onApplyCrop={onApplyCrop}
+            onCancelCrop={onCancelCrop}
+            canPaste={false}
+            onCopySettings={vi.fn()}
+            onPasteSettings={vi.fn()}
+            onClose={onClose}
+          />
+        </TooltipProvider>
       </QueryClientProvider>,
     );
     return {
@@ -289,6 +297,46 @@ describe("EditSidebar", () => {
       onCancelCrop,
     };
   }
+
+  afterEach(() => localStorage.clear());
+
+  it("folds a group away and brings its values along as a summary", () => {
+    renderEditSidebar(editWith(0.25));
+    expect(screen.getByTestId("exposure")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("edit-group-tone"));
+    expect(screen.queryByTestId("exposure")).not.toBeInTheDocument();
+    expect(screen.getByText("+0.25 ev")).toBeVisible();
+    fireEvent.click(screen.getByTestId("edit-group-tone"));
+    expect(screen.getByTestId("exposure")).toBeInTheDocument();
+  });
+
+  it("shows the decoder strip until the setting hides it", () => {
+    renderEditSidebar(identityEdit);
+    expect(screen.getByTestId("decoder-strip")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("decoder-quick-8"));
+    expect(localStorage.getItem("photopipe.rawDecoder")).toBe("8");
+
+    cleanup();
+    localStorage.setItem("photopipe.rawDecoderQuickSwitch", "off");
+    renderEditSidebar(identityEdit);
+    expect(screen.queryByTestId("decoder-strip")).not.toBeInTheDocument();
+  });
+
+  it("opens the decoder tooltip on tap and closes it on the next tap", async () => {
+    renderEditSidebar(identityEdit);
+    expect(
+      screen.queryByText(/Applies to every photo/),
+    ).not.toBeInTheDocument();
+    const info = screen.getByTestId("decoder-info");
+    fireEvent.pointerDown(info);
+    expect(await screen.findByText(/Applies to every photo/)).toBeVisible();
+    fireEvent.pointerDown(info);
+    await waitFor(() =>
+      expect(
+        screen.queryByText(/Applies to every photo/),
+      ).not.toBeInTheDocument(),
+    );
+  });
 
   it("shows the exposure value, resets it, and closes", () => {
     const { onChange, onClose } = renderEditSidebar(editWith(0.25));

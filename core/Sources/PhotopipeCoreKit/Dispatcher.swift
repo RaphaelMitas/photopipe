@@ -52,7 +52,7 @@ public final class Dispatcher {
             library.stopExports()
             return .shutdown(.success(id: request.id, result: .object(["bye": .bool(true)])))
         case "setRoot", "listShoots", "listImages", "thumbnail", "render", "setRating",
-            "setEdit", "rawDefaults", "status", "reveal", "trash", "exportFiles",
+            "setEdit", "rawDefaults", "status", "reveal", "trash", "decoderSupport", "exportFiles",
             "exportStatus", "cancelExport",
             "createProject", "importFiles", "updateProject", "renameProject",
             "scoreShoot", "scoreStatus":
@@ -151,7 +151,8 @@ public final class Dispatcher {
                 let maxPixel = request.params?["maxPixel"]?.intValue ?? 2000
                 let cachePath = try library.render(
                     path: path, edit: edit, maxPixel: maxPixel,
-                    viewport: Self.viewport(from: request.params?["viewport"]))
+                    viewport: Self.viewport(from: request.params?["viewport"]),
+                    decoderVersion: request.params?["decoderVersion"]?.intValue)
                 return .success(id: request.id, result: .object(["cachePath": .string(cachePath)]))
             case "setRating":
                 guard let shoot = request.params?["shoot"]?.stringValue,
@@ -189,7 +190,8 @@ public final class Dispatcher {
                 guard let path = request.params?["path"]?.stringValue else {
                     return .failure(id: request.id, code: "invalid_params", message: "path required")
                 }
-                let asShot = try library.rawDefaults(path: path)
+                let asShot = try library.rawDefaults(
+                    path: path, decoderVersion: request.params?["decoderVersion"]?.intValue)
                 return .success(
                     id: request.id,
                     result: .object([
@@ -218,6 +220,18 @@ public final class Dispatcher {
                         "files": .number(Double(result.files)),
                         "generation": .number(Double(result.generation)),
                     ]))
+            case "decoderSupport":
+                guard let paths = request.params?["paths"]?.stringArrayValue else {
+                    return .failure(
+                        id: request.id, code: "invalid_params", message: "paths required")
+                }
+                let support = try library.decoderSupport(paths: paths)
+                return .success(
+                    id: request.id,
+                    result: .object([
+                        "raw9": .number(Double(support.raw9)),
+                        "rawTotal": .number(Double(support.rawTotal)),
+                    ]))
             case "exportFiles":
                 guard let shoot = request.params?["shoot"]?.stringValue,
                     let paths = request.params?["paths"]?.stringArrayValue,
@@ -236,7 +250,8 @@ public final class Dispatcher {
                     zip: request.params?["zip"]?.boolValue ?? false,
                     flatten: request.params?["flatten"]?.boolValue ?? true,
                     format: format,
-                    quality: request.params?["quality"]?.intValue ?? 90)
+                    quality: request.params?["quality"]?.intValue ?? 90,
+                    decoderVersion: request.params?["decoderVersion"]?.intValue)
                 return .success(id: request.id, result: Self.exportProgress(job))
             case "exportStatus", "cancelExport":
                 guard let id = request.params?["id"]?.stringValue else {
