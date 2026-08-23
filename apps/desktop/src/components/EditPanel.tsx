@@ -397,8 +397,9 @@ export function EditPanel({
 }
 
 function DecoderStrip() {
-  const version = useRawDecoderVersion();
+  const stored = useRawDecoderVersion();
   const raw9Missing = useRaw9Availability(true).data === false;
+  const version = raw9Missing ? 8 : stored;
   // Radix opens on hover only, and the icon is small enough to want a tap
   const [tipOpen, setTipOpen] = useState(false);
   const wasOpenRef = useRef(false);
@@ -445,10 +446,12 @@ function DecoderStrip() {
       </span>
       <div className="ml-auto w-34">
         <DecoderSegmented
-          value={raw9Missing ? 8 : version}
+          value={version}
           testid="decoder-quick"
           raw9Disabled={raw9Missing}
-          onChange={setRawDecoderVersion}
+          onChange={(next) => {
+            if (next !== version) setRawDecoderVersion(next);
+          }}
         />
       </div>
     </div>

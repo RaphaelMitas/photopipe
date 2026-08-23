@@ -237,13 +237,16 @@ export function useDecoderSupport(paths: string[], enabled: boolean) {
   });
 }
 
-/// null when the library has no raw to probe, so callers can stay quiet
-/// rather than claim RAW 9 is missing.
+export const DECODER_AVAILABILITY_KEY = ["decoderAvailability"];
+
+/// null when nothing in the library could answer, so callers stay quiet
+/// instead of claiming RAW 9 is missing.
 export function useRaw9Availability(enabled: boolean) {
   return useQuery({
-    queryKey: ["decoderAvailability"],
+    queryKey: DECODER_AVAILABILITY_KEY,
     queryFn: async () =>
-      (await coreRequest<{ raw9: boolean | null }>("decoderAvailability")).raw9,
+      (await coreRequest<{ raw9: boolean | null }>("decoderAvailability"))
+        .raw9 ?? null,
     enabled,
     staleTime: Number.POSITIVE_INFINITY,
   });
@@ -488,6 +491,7 @@ export function useTrash(shoot: string | null) {
       );
       queryClient.invalidateQueries({ queryKey: ["images", shoot] });
       queryClient.invalidateQueries({ queryKey: ["shoots"] });
+      queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
     },
     onError: (error) => {
       toast.error("Could not delete", { description: String(error) });
@@ -506,6 +510,7 @@ export function useUpdateProject() {
     }) => coreRequest<{ generation: number }>("updateProject", vars),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["shoots"] });
+      queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
     },
     onError: (error) => {
       toast.error("Could not save the project", { description: String(error) });
@@ -522,6 +527,7 @@ export function useRenameProject() {
     onSuccess: (result) => {
       toast.success(`Renamed to ${result.shoot}`);
       queryClient.invalidateQueries({ queryKey: ["shoots"] });
+      queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
       queryClient.invalidateQueries({ queryKey: ["images"] });
     },
     onError: (error) => {
@@ -554,6 +560,7 @@ export function useImportFiles(shoot: string | null) {
       queryClient.invalidateQueries({ queryKey: ["images", shoot] });
       queryClient.invalidateQueries({ queryKey: ["scoring", shoot] });
       queryClient.invalidateQueries({ queryKey: ["shoots"] });
+      queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
     },
     onError: (error) => {
       toast.error("Import failed", { description: String(error) });
@@ -702,6 +709,7 @@ export function useCreateProject() {
     onSuccess: (result) => {
       toast.success(`Created ${result.shoot}`);
       queryClient.invalidateQueries({ queryKey: ["shoots"] });
+      queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
     },
     onError: (error) => {
       toast.error("Could not create the project", {
@@ -760,6 +768,7 @@ export function useLibrarySync(
           xmpWritesInFlight(queryClient) === 0
         ) {
           queryClient.invalidateQueries({ queryKey: ["shoots"] });
+          queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
           for (const shoot of status.changedShoots ?? []) {
             queryClient.invalidateQueries({ queryKey: ["images", shoot] });
             // newly arrived photos need rating, and only scoreShoot picks them up

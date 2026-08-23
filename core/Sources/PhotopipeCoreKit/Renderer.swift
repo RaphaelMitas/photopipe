@@ -349,6 +349,11 @@ public final class Renderer {
     /// Support is a property of camera model plus OS, so one probe answers for
     /// every file from that camera.
     public func supports(file: ImageFile, major: Int) -> Bool {
+        known(file: file, major: major) ?? false
+    }
+
+    /// nil when the file cannot be read yet, which is not the same answer as no.
+    public func known(file: ImageFile, major: Int) -> Bool? {
         guard file.isRaw else { return false }
         // reading the header costs more than the probe it saves, so a path
         // answered once never reads again
@@ -384,11 +389,10 @@ public final class Renderer {
         // but reports ["None"] here. That is "cannot read yet", not a verdict,
         // and caching it under the camera would answer for every sibling.
         let readable = versions.contains { $0.rawValue != "None" }
+        guard readable else { return nil }
         lock.lock()
-        if readable {
-            supportsByCamera[cacheKey] = supported
-            supportsByPath[pathKey] = (supported, file.mtime)
-        }
+        supportsByCamera[cacheKey] = supported
+        supportsByPath[pathKey] = (supported, file.mtime)
         lock.unlock()
         return supported
     }

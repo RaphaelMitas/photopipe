@@ -797,3 +797,26 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
         #expect(asked == plain, "a fallback must not be cached as RAW 9")
     }
 }
+
+@Test func aFileStillCopyingAnswersNothingNotNo() throws {
+    guard let fixture = fixtureARW() else { return }
+    let dir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("half-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let partial = dir.appendingPathComponent("IMG_0001.arw")
+    let bytes = try Data(contentsOf: fixture).prefix(512 * 1024)
+    try bytes.write(to: partial)
+
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = ImageFile(
+        path: partial.path, rel: "IMG_0001.arw", ext: "arw",
+        size: Int64(bytes.count), mtime: 1)
+
+    // "cannot read yet" must stay distinguishable: the library-wide answer
+    // caches for the session, so a no here would stick after the copy lands.
+    #expect(renderer.known(file: file, major: 9) == nil)
+    #expect(renderer.supports(file: file, major: 9) == false)
+}

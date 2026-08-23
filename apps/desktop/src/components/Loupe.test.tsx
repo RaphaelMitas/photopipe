@@ -18,10 +18,16 @@ import { LoupeSidebar } from "./LoupeSidebar";
 
 afterEach(cleanup);
 
+const invoke = vi.hoisted(() =>
+  vi.fn(async () => ({ cachePath: "/fake/render.jpg" })),
+);
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(async () => ({ cachePath: "/fake/render.jpg" })),
+  invoke,
   convertFileSrc: (path: string) => `asset://${path}`,
 }));
+afterEach(() =>
+  invoke.mockImplementation(async () => ({ cachePath: "/fake/render.jpg" })),
+);
 
 const editWith = (exposure: number): Edit => ({ ...identityEdit, exposure });
 
@@ -327,6 +333,31 @@ describe("EditSidebar", () => {
     localStorage.setItem("photopipe.rawDecoderQuickSwitch", "off");
     renderEditSidebar(identityEdit);
     expect(screen.queryByTestId("decoder-strip")).not.toBeInTheDocument();
+  });
+
+  it("keeps a stored RAW 9 when this Mac can only give RAW 8", async () => {
+    localStorage.setItem("photopipe.rawDecoder", "9");
+    invoke.mockImplementation((async (
+      _cmd: string,
+      args: { method?: string },
+    ) =>
+      args?.method === "decoderAvailability"
+        ? { raw9: false }
+        : { cachePath: "/fake/render.jpg" }) as unknown as () => Promise<{
+      cachePath: string;
+    }>);
+    renderEditSidebar(identityEdit);
+    await waitFor(() =>
+      expect(screen.getByTestId("decoder-quick-9")).toBeDisabled(),
+    );
+    expect(screen.getByTestId("decoder-quick-8")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    // clicking the one already shown must not overwrite a preference the
+    // disabled button cannot hand back
+    fireEvent.click(screen.getByTestId("decoder-quick-8"));
+    expect(localStorage.getItem("photopipe.rawDecoder")).toBe("9");
   });
 
   it("opens the decoder tooltip on tap and closes it on the next tap", async () => {

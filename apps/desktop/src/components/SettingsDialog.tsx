@@ -80,7 +80,11 @@ function DecoderCards({ raw9Missing }: { raw9Missing: boolean }) {
             aria-pressed={selected}
             disabled={unavailable}
             data-testid={`decoder-${version}`}
-            onClick={() => setRawDecoderVersion(version)}
+            onClick={() => {
+              // shown as selected while stored says 9: writing here would
+              // destroy a preference the disabled card cannot restore
+              if (version !== active) setRawDecoderVersion(version);
+            }}
             className={cn(
               "flex flex-1 flex-col gap-2 rounded-lg border p-3 text-left",
               unavailable && "opacity-50",

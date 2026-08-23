@@ -268,7 +268,11 @@ public final class LibraryService: @unchecked Sendable {
         // probe caches per camera, so this stays a handful of header reads
         let samples = shoots.values.compactMap { $0.first(where: \.isRaw) }
         guard !samples.isEmpty else { return nil }
-        return samples.contains { renderer.supports(file: $0, major: 9) }
+        // A file still copying answers nothing, not no. Condemning the library
+        // on it would stick, because the client caches this for the session.
+        let verdicts = samples.compactMap { renderer.known(file: $0, major: 9) }
+        guard !verdicts.isEmpty else { return nil }
+        return verdicts.contains(true)
     }
 
     public func decoderSupport(paths: [String]) throws -> (raw9: Int, rawTotal: Int) {
