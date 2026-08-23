@@ -25,7 +25,7 @@ import {
   isRawFile,
 } from "@/lib/core";
 import { isIdentityCurve } from "@/lib/curve";
-import { useRawDefaults, useRender } from "@/lib/queries";
+import { useRaw9Availability, useRawDefaults, useRender } from "@/lib/queries";
 import {
   setRawDecoderVersion,
   useRawDecoderQuickSwitch,
@@ -398,6 +398,7 @@ export function EditPanel({
 
 function DecoderStrip() {
   const version = useRawDecoderVersion();
+  const raw9Missing = useRaw9Availability(true).data === false;
   // Radix opens on hover only, and the icon is small enough to want a tap
   const [tipOpen, setTipOpen] = useState(false);
   const wasOpenRef = useRef(false);
@@ -444,8 +445,9 @@ function DecoderStrip() {
       </span>
       <div className="ml-auto w-34">
         <DecoderSegmented
-          value={version}
+          value={raw9Missing ? 8 : version}
           testid="decoder-quick"
+          raw9Disabled={raw9Missing}
           onChange={setRawDecoderVersion}
         />
       </div>

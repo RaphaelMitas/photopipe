@@ -698,9 +698,9 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
     let expected = filter.supportedDecoderVersions.contains {
         Renderer.isVersion($0, 9)
     }
-    #expect(renderer.supportsRaw9(file: file) == expected)
+    #expect(renderer.supports(file: file, major: 9) == expected)
     // the second ask answers from the per-camera cache, same verdict
-    #expect(renderer.supportsRaw9(file: file) == expected)
+    #expect(renderer.supports(file: file, major: 9) == expected)
 }
 
 @Test func embeddedFormatsNeverClaimRaw9() throws {
@@ -709,7 +709,7 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
     let renderer = Renderer(cacheDir: cacheDir)
     let jpeg = ImageFile(
         path: "/nowhere/DSC0001.JPG", rel: "DSC0001.JPG", ext: "JPG", size: 1, mtime: 1)
-    #expect(renderer.supportsRaw9(file: jpeg) == false)
+    #expect(renderer.supports(file: jpeg, major: 9) == false)
 }
 
 @Test func fixtureCarriesACameraModelForTheProbeCache() throws {
@@ -726,11 +726,11 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
     let file = try imageFile(for: fixture)
 
     let first = Date()
-    _ = renderer.supportsRaw9(file: file)
+    _ = renderer.supports(file: file, major: 9)
     let cold = Date().timeIntervalSince(first)
 
     let second = Date()
-    for _ in 0..<500 { _ = renderer.supportsRaw9(file: file) }
+    for _ in 0..<500 { _ = renderer.supports(file: file, major: 9) }
     let warm = Date().timeIntervalSince(second)
 
     // a per-path miss means a whole shoot re-reads every header on every
@@ -749,7 +749,7 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
 
     let renderer = Renderer(cacheDir: cacheDir)
     let whole = try imageFile(for: fixture)
-    guard renderer.supportsRaw9(file: whole) else {
+    guard renderer.supports(file: whole, major: 9) else {
         print("SKIP: this Mac has no decoder newer than 8")
         return
     }
@@ -761,8 +761,28 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
     let truncated = try imageFile(for: partial)
 
     let fresh = Renderer(cacheDir: cacheDir)
-    _ = fresh.supportsRaw9(file: truncated)
+    _ = fresh.supports(file: truncated, major: 9)
     #expect(
-        fresh.supportsRaw9(file: whole),
+        fresh.supports(file: whole, major: 9),
         "an unreadable file poisoned the camera verdict for every sibling")
+}
+
+@Test func aDecoderTheFileCannotHonourSharesTheDefaultCacheKey() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    let plain = renderer.cachePath(for: file, edit: .identity, maxPixel: 800)
+    let asked = renderer.cachePath(
+        for: file, edit: .identity, maxPixel: 800, decoderVersion: 9)
+
+    if renderer.supports(file: file, major: 9) {
+        #expect(asked != plain, "a decoder that ran must not share the default key")
+    } else {
+        // The request fell back, so these are the same pixels. Were the key to
+        // record the wish, a macOS that later gains RAW 9 would serve them.
+        #expect(asked == plain, "a fallback must not be cached as RAW 9")
+    }
 }

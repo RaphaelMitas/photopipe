@@ -256,6 +256,21 @@ public final class LibraryService: @unchecked Sendable {
         try renderer.rawDefaults(for: recordUnderRoot(path: path), decoderVersion: decoderVersion)
     }
 
+    /// Whether RAW 9 is reachable at all here. Per-file support folds the
+    /// camera and this Mac's macOS together, so one body that lacks it proves
+    /// nothing; only a library-wide "no" is worth telling the user about.
+    /// nil when there is no raw to ask.
+    public func raw9Availability() -> Bool? {
+        lock.lock()
+        let shoots = snapshot.imagesByShoot
+        lock.unlock()
+        // one raw per shoot: cameras rarely differ within a shoot, and the
+        // probe caches per camera, so this stays a handful of header reads
+        let samples = shoots.values.compactMap { $0.first(where: \.isRaw) }
+        guard !samples.isEmpty else { return nil }
+        return samples.contains { renderer.supports(file: $0, major: 9) }
+    }
+
     public func decoderSupport(paths: [String]) throws -> (raw9: Int, rawTotal: Int) {
         let files = try pathsUnderRoot(paths)
             .compactMap { try? recordUnderRoot(path: $0) }
@@ -264,10 +279,10 @@ public final class LibraryService: @unchecked Sendable {
         // a whole shoot serially outruns the caller's read timeout, and a
         // timeout takes the sidecar down mid-export
         DispatchQueue.concurrentPerform(iterations: files.count) { index in
-            _ = renderer.supportsRaw9(file: files[index])
+            _ = renderer.supports(file: files[index], major: 9)
         }
         // every answer is cached now, so this pass never touches a file
-        return (files.count { renderer.supportsRaw9(file: $0) }, files.count)
+        return (files.count { renderer.supports(file: $0, major: 9) }, files.count)
     }
 
     private func recordUnderRoot(path: String) throws -> ImageFile {

@@ -52,7 +52,8 @@ public final class Dispatcher {
             library.stopExports()
             return .shutdown(.success(id: request.id, result: .object(["bye": .bool(true)])))
         case "setRoot", "listShoots", "listImages", "thumbnail", "render", "setRating",
-            "setEdit", "rawDefaults", "status", "reveal", "trash", "decoderSupport", "exportFiles",
+            "setEdit", "rawDefaults", "status", "reveal", "trash", "decoderSupport",
+            "decoderAvailability", "exportFiles",
             "exportStatus", "cancelExport",
             "createProject", "importFiles", "updateProject", "renameProject",
             "scoreShoot", "scoreStatus":
@@ -220,6 +221,11 @@ public final class Dispatcher {
                         "files": .number(Double(result.files)),
                         "generation": .number(Double(result.generation)),
                     ]))
+            case "decoderAvailability":
+                let raw9 = library.raw9Availability()
+                return .success(
+                    id: request.id,
+                    result: .object(["raw9": raw9.map(JSONValue.bool) ?? .null]))
             case "decoderSupport":
                 guard let paths = request.params?["paths"]?.stringArrayValue else {
                     return .failure(

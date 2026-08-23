@@ -10,6 +10,7 @@ import {
 import { Label } from "@photopipe/ui/components/label";
 import { Switch } from "@photopipe/ui/components/switch";
 import { cn } from "@photopipe/ui/lib/utils";
+import { useRaw9Availability } from "@/lib/queries";
 import {
   type RawDecoderVersion,
   setRawDecoderQuickSwitch,
@@ -62,21 +63,27 @@ const DECODERS: {
   },
 ];
 
-function DecoderCards() {
-  const active = useRawDecoderVersion();
+function DecoderCards({ raw9Missing }: { raw9Missing: boolean }) {
+  const stored = useRawDecoderVersion();
+  // the preference survives so it lights up on a Mac that has RAW 9; only
+  // what the cards claim is happening changes
+  const active = raw9Missing ? 8 : stored;
   return (
     <div className="flex gap-2">
       {DECODERS.map(({ version, body, detail, speed }) => {
         const selected = version === active;
+        const unavailable = raw9Missing && version === 9;
         return (
           <button
             key={version}
             type="button"
             aria-pressed={selected}
+            disabled={unavailable}
             data-testid={`decoder-${version}`}
             onClick={() => setRawDecoderVersion(version)}
             className={cn(
               "flex flex-1 flex-col gap-2 rounded-lg border p-3 text-left",
+              unavailable && "opacity-50",
               selected
                 ? "border-primary bg-primary/10"
                 : "border-input hover:bg-accent/50",
@@ -119,6 +126,7 @@ export function SettingsDialog({
   onCheckUpdates,
 }: Props) {
   const quickSwitch = useRawDecoderQuickSwitch();
+  const raw9Missing = useRaw9Availability(open).data === false;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -146,10 +154,11 @@ export function SettingsDialog({
         </div>
         <div className="flex flex-col gap-2">
           <Label>RAW decoder</Label>
-          <DecoderCards />
+          <DecoderCards raw9Missing={raw9Missing} />
           <p className="text-muted-foreground/75 text-xs">
-            Cameras that don't support RAW 9 always use the best decoder they
-            offer.
+            {raw9Missing
+              ? "RAW 9 isn't available for this library on this Mac. Your choice is kept for when it is."
+              : "Cameras that don't support RAW 9 always use the best decoder they offer."}
           </p>
         </div>
         <div className="flex items-start justify-between gap-6">

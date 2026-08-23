@@ -38,8 +38,8 @@ public final class Renderer {
     private let lock = NSLock()
     private var filtersByPathAndSize: [String: CachedFilter] = [:]
     private var defaultsByPath: [String: (values: RawDefaults, mtime: Double)] = [:]
-    private var supportsRaw9ByCamera: [String: Bool] = [:]
-    private var supportsRaw9ByPath: [String: (supported: Bool, mtime: Double)] = [:]
+    private var supportsByCamera: [String: Bool] = [:]
+    private var supportsByPath: [String: (supported: Bool, mtime: Double)] = [:]
     // the loupe holds current, both neighbours and a zoom render at once
     private let filterCapacity = 6
 
@@ -77,7 +77,7 @@ public final class Renderer {
         decoderVersion: Int? = nil
     ) -> URL {
         let region = viewport.map { "|\($0.left),\($0.top),\($0.right),\($0.bottom)" } ?? ""
-        let decoder = decoderVersion.map { "|d\($0)" } ?? ""
+        let decoder = resolvedTag(for: file, requested: decoderVersion)
         let key =
             "\(file.path)|\(file.mtime)|\(file.size)|\(edit.cacheKey)|\(maxPixel)\(region)\(decoder)|v\(Self.pipelineVersion)"
         let digest = SHA256.hash(data: Data(key.utf8))
@@ -348,12 +348,13 @@ public final class Renderer {
 
     /// Support is a property of camera model plus OS, so one probe answers for
     /// every file from that camera.
-    public func supportsRaw9(file: ImageFile) -> Bool {
+    public func supports(file: ImageFile, major: Int) -> Bool {
         guard file.isRaw else { return false }
         // reading the header costs more than the probe it saves, so a path
         // answered once never reads again
+        let pathKey = "\(file.path)|v\(major)"
         lock.lock()
-        if let known = supportsRaw9ByPath[file.path], known.mtime == file.mtime {
+        if let known = supportsByPath[pathKey], known.mtime == file.mtime {
             lock.unlock()
             return known.supported
         }
@@ -364,29 +365,29 @@ public final class Renderer {
         // its DNG conversions cannot share one verdict
         let ext = file.ext.lowercased()
         let cacheKey =
-            Self.cameraModel(of: url).map { "\($0)|\(ext)" }
-            ?? "path:\(file.path)"
+            Self.cameraModel(of: url).map { "\($0)|\(ext)|v\(major)" }
+            ?? "path:\(file.path)|v\(major)"
         lock.lock()
-        let cachedForCamera = supportsRaw9ByCamera[cacheKey]
+        let cachedForCamera = supportsByCamera[cacheKey]
         lock.unlock()
 
         if let cachedForCamera {
             lock.lock()
-            supportsRaw9ByPath[file.path] = (cachedForCamera, file.mtime)
+            supportsByPath[pathKey] = (cachedForCamera, file.mtime)
             lock.unlock()
             return cachedForCamera
         }
 
         let versions = CIRAWFilter(imageURL: url)?.supportedDecoderVersions ?? []
-        let supported = versions.contains { Self.isVersion($0, 9) }
+        let supported = versions.contains { Self.isVersion($0, major) }
         // A file still being copied off a card names its camera in the header
         // but reports ["None"] here. That is "cannot read yet", not a verdict,
         // and caching it under the camera would answer for every sibling.
         let readable = versions.contains { $0.rawValue != "None" }
         lock.lock()
         if readable {
-            supportsRaw9ByCamera[cacheKey] = supported
-            supportsRaw9ByPath[file.path] = (supported, file.mtime)
+            supportsByCamera[cacheKey] = supported
+            supportsByPath[pathKey] = (supported, file.mtime)
         }
         lock.unlock()
         return supported
@@ -416,6 +417,14 @@ public final class Renderer {
         return supported.first { $0.rawValue == "\(requested)" }
             ?? supported.first { isVersion($0, requested) }
             ?? supported.last
+    }
+
+    /// A request the file cannot honour renders exactly what no request would,
+    /// so it shares that key rather than naming a decoder that never ran. Keeps
+    /// a Mac that later gains RAW 9 from serving the RAW 8 pixels it cached.
+    private func resolvedTag(for file: ImageFile, requested: Int?) -> String {
+        guard let requested, supports(file: file, major: requested) else { return "" }
+        return "|d\(requested)"
     }
 
     private static func decoderTag(_ version: Int?) -> String {

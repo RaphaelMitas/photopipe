@@ -237,6 +237,18 @@ export function useDecoderSupport(paths: string[], enabled: boolean) {
   });
 }
 
+/// null when the library has no raw to probe, so callers can stay quiet
+/// rather than claim RAW 9 is missing.
+export function useRaw9Availability(enabled: boolean) {
+  return useQuery({
+    queryKey: ["decoderAvailability"],
+    queryFn: async () =>
+      (await coreRequest<{ raw9: boolean | null }>("decoderAvailability")).raw9,
+    enabled,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
 export const SET_RATING_KEY = ["setRating"];
 export const SET_EDIT_KEY = ["setEdit"];
 

@@ -208,6 +208,7 @@ export const E2E_HANDLERS: Record<
     String(params.path).toLowerCase().endsWith(".arw")
       ? { temperature: 5250, tint: 8, denoise: 38 }
       : { temperature: null, tint: null, denoise: null },
+  decoderAvailability: () => ({ raw9: true }),
   // misc stands in for the older body that tops out at RAW 8
   decoderSupport: (params) => {
     const raws = (params.paths as string[]).filter((path) =>
