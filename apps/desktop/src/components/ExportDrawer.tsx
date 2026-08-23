@@ -17,7 +17,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { ExportFormat } from "@/lib/core";
 import {
   type ExportJob,
@@ -157,19 +157,16 @@ export function ExportDrawer({
   const [options, setOptions] = useState<StoredOptions>(readOptions);
   const [decoderVersion, setDecoderVersion] =
     useState<RawDecoderVersion>(rawDecoderVersion);
-  const [dismissedFor, setDismissedFor] = useState<RawDecoderVersion | null>(
-    null,
-  );
+  const [dismissed, setDismissed] = useState<string | null>(null);
   const culling = useRawDecoderVersion();
-  // Dismissal answers "ship these photos with this decoder", so a new
-  // selection or a round-trip through Original has to ask again. Keyed on
-  // contents, not array identity: the images cache hands back a fresh array
-  // on any rating or enrich tick, which would revoke the answer unprompted.
+  // Dismissal answers "ship these photos with this decoder", so it is stored
+  // as the answer's subject rather than reset by an effect. Contents, not
+  // array identity: the images cache hands back a fresh array on any rating
+  // or enrich tick, which would revoke the answer unprompted.
   const selectionKey = useMemo(
     () => [...rawPaths].sort().join("\n"),
     [rawPaths],
   );
-  useEffect(() => setDismissedFor(null), [selectionKey, options.format]);
   const supportQuery = useDecoderSupport(rawPaths, options.format === "jpeg");
   const support = supportQuery.data;
   const noRaw9 = support?.raw9 === 0;
@@ -182,6 +179,7 @@ export function ExportDrawer({
       ? support
       : undefined;
   const showDecoder = options.format === "jpeg" && rawPaths.length > 0;
+  const dismissKey = `${selectionKey}|${options.format}|${effectiveDecoder}`;
 
   const decoderHelp = (): string => {
     if (noRaw9) return "RAW 9 isn't available for these photos on this Mac.";
@@ -201,7 +199,7 @@ export function ExportDrawer({
     | { body: string; fixTo: RawDecoderVersion; keep: string }
     | undefined => {
     if (!showDecoder || culling === effectiveDecoder) return undefined;
-    if (dismissedFor === effectiveDecoder) return undefined;
+    if (dismissed === dismissKey) return undefined;
     // with no RAW 9 anywhere the previews fell back to 8 too, so the decoders
     // only look different: nothing to warn about
     if ((support?.raw9 ?? 0) === 0) return undefined;
@@ -413,7 +411,7 @@ export function ExportDrawer({
                 <button
                   type="button"
                   data-testid="banner-keep"
-                  onClick={() => setDismissedFor(effectiveDecoder)}
+                  onClick={() => setDismissed(dismissKey)}
                   className="text-[10px] text-muted-foreground underline underline-offset-2"
                 >
                   {banner.keep}

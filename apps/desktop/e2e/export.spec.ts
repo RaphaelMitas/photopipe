@@ -205,8 +205,15 @@ test("the decoder row warns before a RAW 8 export and knows what RAW 9 can reach
     "true",
   );
 
+  // the same photos are the same decision, so it stays dismissed; dropping one
+  // makes it a different set and the question is worth asking again
   await page.getByTestId("drawer-clear").click();
   await page.getByTestId("select-all").click();
+  await expect(page.getByTestId("decoder-banner")).toHaveCount(0);
+  await page
+    .getByTestId("thumb")
+    .first()
+    .click({ modifiers: ["ControlOrMeta"] });
   await expect(page.getByTestId("decoder-banner")).toBeVisible();
 });
 
