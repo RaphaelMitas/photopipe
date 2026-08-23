@@ -221,14 +221,30 @@ export function useRawDefaults(
 
 export type DecoderSupport = { raw9: number; rawTotal: number };
 
+/// The core reads one file header per photo before its per-camera cache can
+/// help. A whole shoot off an SD card would outrun the sidecar's read timeout
+/// and take the process down, so ask in batches it can always answer in time.
+const SUPPORT_BATCH = 400;
+
+async function decoderSupport(paths: string[]): Promise<DecoderSupport> {
+  const total = { raw9: 0, rawTotal: 0 };
+  for (let start = 0; start < paths.length; start += SUPPORT_BATCH) {
+    const batch = await coreRequest<DecoderSupport>("decoderSupport", {
+      paths: paths.slice(start, start + SUPPORT_BATCH),
+    });
+    total.raw9 += batch.raw9;
+    total.rawTotal += batch.rawTotal;
+  }
+  return total;
+}
+
 // support is per camera model and OS, so it cannot change during the session
 export function useDecoderSupport(paths: string[], enabled: boolean) {
   // sorted so the key is the selection's contents, not the grid's order
   const sorted = useMemo(() => [...paths].sort(), [paths]);
   return useQuery({
     queryKey: ["decoderSupport", sorted],
-    queryFn: () =>
-      coreRequest<DecoderSupport>("decoderSupport", { paths: sorted }),
+    queryFn: () => decoderSupport(sorted),
     enabled: enabled && sorted.length > 0,
     staleTime: Number.POSITIVE_INFINITY,
     // an unanswered probe reads as "RAW 9 is fine", so hold the last verdict;

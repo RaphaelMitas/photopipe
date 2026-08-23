@@ -195,6 +195,31 @@ describe("export decoder row", () => {
     expect(await screen.findByTestId("decoder-banner")).toBeInTheDocument();
   });
 
+  it("asks in batches a slow disk can answer, and sums them", async () => {
+    const paths = Array.from({ length: 900 }, (_, i) => `/r/s/${i}.ARW`);
+    const sizes: number[] = [];
+    invoke.mockImplementation(
+      async (
+        _cmd,
+        args: { method?: string; params?: { paths?: string[] } },
+      ) => {
+        if (args.method !== "decoderSupport") throw "unexpected";
+        const count = args.params?.paths?.length ?? 0;
+        sizes.push(count);
+        return { raw9: count, rawTotal: count };
+      },
+    );
+    renderDrawer(paths);
+    await waitFor(() =>
+      expect(screen.getByTestId("export-decoder-help").textContent).toContain(
+        "detail",
+      ),
+    );
+    // one 900-path request is what outran the sidecar timeout
+    expect(sizes.every((size) => size <= 400)).toBe(true);
+    expect(sizes.reduce((sum, size) => sum + size, 0)).toBe(900);
+  });
+
   it("hides the row entirely for a selection with no raws", () => {
     const calls = invoke.mock.calls.length;
     renderDrawer([]);
