@@ -186,7 +186,6 @@ test("the decoder row warns before a RAW 8 export and knows what RAW 9 can reach
   );
   await expect(page.getByTestId("decoder-banner")).toHaveCount(0);
 
-  // culling on 9 and exporting 8 is the losing direction, not a quality nudge
   await page.getByTestId("export-decoder-8").click();
   await expect(page.getByTestId("decoder-banner")).toContainText(
     "softer and noisier",
@@ -206,7 +205,6 @@ test("the decoder row warns before a RAW 8 export and knows what RAW 9 can reach
     "true",
   );
 
-  // A different selection is a different decision, so it asks again.
   await page.getByTestId("drawer-clear").click();
   await page.getByTestId("select-all").click();
   await expect(page.getByTestId("decoder-banner")).toBeVisible();

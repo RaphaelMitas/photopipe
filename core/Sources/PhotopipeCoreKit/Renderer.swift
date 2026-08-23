@@ -39,7 +39,7 @@ public final class Renderer {
     private var filtersByPathAndSize: [String: CachedFilter] = [:]
     private var defaultsByPath: [String: (values: RawDefaults, mtime: Double)] = [:]
     private var supportsRaw9ByCamera: [String: Bool] = [:]
-    private var supportsRaw9ByPath: [String: Bool] = [:]
+    private var supportsRaw9ByPath: [String: (supported: Bool, mtime: Double)] = [:]
     // the loupe holds current, both neighbours and a zoom render at once
     private let filterCapacity = 6
 
@@ -326,7 +326,7 @@ public final class Renderer {
         for file: ImageFile, maxPixel: Int?, decoderVersion: Int?
     ) throws -> CachedFilter {
         let key =
-            "\(file.path)|\(maxPixel.map(String.init) ?? "full")|d\(decoderVersion.map(String.init) ?? "")"
+            "\(file.path)|\(maxPixel.map(String.init) ?? "full")\(Self.decoderTag(decoderVersion))"
         lock.lock()
         if let cached = filtersByPathAndSize[key], cached.mtime == file.mtime {
             filtersByPathAndSize[key]?.lastUsed = Date()
@@ -350,15 +350,15 @@ public final class Renderer {
     /// every file from that camera.
     public func supportsRaw9(file: ImageFile) -> Bool {
         guard file.isRaw else { return false }
+        // reading the header costs more than the probe it saves, so a path
+        // answered once never reads again
         lock.lock()
-        if let known = supportsRaw9ByPath[file.path] {
+        if let known = supportsRaw9ByPath[file.path], known.mtime == file.mtime {
             lock.unlock()
-            return known
+            return known.supported
         }
         lock.unlock()
 
-        // reading the header costs more than the probe it saves, so a path
-        // answered once never reads again
         let url = URL(fileURLWithPath: file.path)
         // resolveDecoder distinguishes the DNG variants, so a body's ARWs and
         // its DNG conversions cannot share one verdict
@@ -370,16 +370,24 @@ public final class Renderer {
         let cachedForCamera = supportsRaw9ByCamera[cacheKey]
         lock.unlock()
 
-        let supported: Bool
         if let cachedForCamera {
-            supported = cachedForCamera
-        } else {
-            let versions = CIRAWFilter(imageURL: url)?.supportedDecoderVersions ?? []
-            supported = versions.contains { Self.isVersion($0, 9) }
+            lock.lock()
+            supportsRaw9ByPath[file.path] = (cachedForCamera, file.mtime)
+            lock.unlock()
+            return cachedForCamera
         }
+
+        let versions = CIRAWFilter(imageURL: url)?.supportedDecoderVersions ?? []
+        let supported = versions.contains { Self.isVersion($0, 9) }
+        // A file still being copied off a card names its camera in the header
+        // but reports ["None"] here. That is "cannot read yet", not a verdict,
+        // and caching it under the camera would answer for every sibling.
+        let readable = versions.contains { $0.rawValue != "None" }
         lock.lock()
-        supportsRaw9ByCamera[cacheKey] = supported
-        supportsRaw9ByPath[file.path] = supported
+        if readable {
+            supportsRaw9ByCamera[cacheKey] = supported
+            supportsRaw9ByPath[file.path] = (supported, file.mtime)
+        }
         lock.unlock()
         return supported
     }
@@ -403,15 +411,19 @@ public final class Renderer {
     static func resolveDecoder(
         requested: Int?, supported: [CIRAWDecoderVersion]
     ) -> CIRAWDecoderVersion? {
+        // supportedDecoderVersions is sorted oldest to newest
         guard let requested else { return supported.last }
-        // the plain variant before the DNG one, then oldest-to-newest fallback
         return supported.first { $0.rawValue == "\(requested)" }
             ?? supported.first { isVersion($0, requested) }
             ?? supported.last
     }
 
+    private static func decoderTag(_ version: Int?) -> String {
+        "|d\(version.map(String.init) ?? "")"
+    }
+
     private static func defaultsKey(path: String, decoderVersion: Int?) -> String {
-        "\(path)|d\(decoderVersion.map(String.init) ?? "")"
+        "\(path)\(decoderTag(decoderVersion))"
     }
 
     func makeFilter(for file: ImageFile, decoderVersion: Int? = nil) throws -> CachedFilter {

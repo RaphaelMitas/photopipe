@@ -733,7 +733,36 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
     for _ in 0..<500 { _ = renderer.supportsRaw9(file: file) }
     let warm = Date().timeIntervalSince(second)
 
-    // 500 cached answers must not cost one uncached one; a per-path miss here
-    // means a whole shoot re-reads every header on every selection change.
+    // a per-path miss means a whole shoot re-reads every header on every
+    // selection change
     #expect(warm < cold, "warm: \(warm)s for 500, cold: \(cold)s for 1")
+}
+
+@Test func aHalfCopiedFileCannotAnswerForItsWholeCamera() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let dir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("poison-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let renderer = Renderer(cacheDir: cacheDir)
+    let whole = try imageFile(for: fixture)
+    guard renderer.supportsRaw9(file: whole) else {
+        print("SKIP: this Mac has no decoder newer than 8")
+        return
+    }
+
+    // a card still copying: the header names the camera, the body is missing
+    let partial = dir.appendingPathComponent("IMG_0001.arw")
+    let head = try Data(contentsOf: fixture).prefix(1_000_000)
+    try head.write(to: partial)
+    let truncated = try imageFile(for: partial)
+
+    let fresh = Renderer(cacheDir: cacheDir)
+    _ = fresh.supportsRaw9(file: truncated)
+    #expect(
+        fresh.supportsRaw9(file: whole),
+        "an unreadable file poisoned the camera verdict for every sibling")
 }

@@ -271,3 +271,24 @@ test("zooming renders the visible slice and drops it again on fit", async ({
   await expect(page.getByTestId("zoom-level")).toHaveCount(0);
   await expect(page.getByTestId("loupe-region")).toHaveCount(0);
 });
+
+test("the decoder tooltip opens and closes on a real click", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByTestId("root-input").fill("/fake");
+  await page.getByTestId("root-submit").click();
+  await page.getByTestId("shoot-2026-07-12_zell").click();
+  await page.getByTestId("thumb").first().click();
+  await expect(page.getByTestId("loupe")).toBeVisible();
+
+  // jsdom lets a pointerdown-only handler look like it works; a real click
+  // fires the whole sequence, which is where Radix's own close lives.
+  const info = page.getByTestId("decoder-info");
+  const tip = page.getByText("Applies to every photo");
+  await expect(tip).toHaveCount(0);
+  await info.click();
+  await expect(tip).toBeVisible();
+  await info.click();
+  await expect(tip).toHaveCount(0);
+});

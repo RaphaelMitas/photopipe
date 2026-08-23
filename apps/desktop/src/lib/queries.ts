@@ -223,8 +223,7 @@ export type DecoderSupport = { raw9: number; rawTotal: number };
 
 // support is per camera model and OS, so it cannot change during the session
 export function useDecoderSupport(paths: string[], enabled: boolean) {
-  // Sorting makes the key the selection's contents rather than the grid's
-  // order, so re-sorting does not throw away an answer that cannot differ.
+  // sorted so the key is the selection's contents, not the grid's order
   const sorted = useMemo(() => [...paths].sort(), [paths]);
   return useQuery({
     queryKey: ["decoderSupport", sorted],
@@ -232,7 +231,8 @@ export function useDecoderSupport(paths: string[], enabled: boolean) {
       coreRequest<DecoderSupport>("decoderSupport", { paths: sorted }),
     enabled: enabled && sorted.length > 0,
     staleTime: Number.POSITIVE_INFINITY,
-    // an unanswered probe reads as "RAW 9 is fine", so hold the last verdict
+    // an unanswered probe reads as "RAW 9 is fine", so hold the last verdict;
+    // it describes the previous selection, so callers check isPlaceholderData
     placeholderData: keepPreviousData,
   });
 }

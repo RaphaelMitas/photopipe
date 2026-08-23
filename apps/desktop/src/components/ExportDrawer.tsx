@@ -17,7 +17,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ExportFormat } from "@/lib/core";
 import {
   type ExportJob,
@@ -115,31 +115,25 @@ function Section({
 
 const OPTIONS_KEY = "photopipe.export";
 
-function readOptions(): ExportOptions {
+/// The decoder is seeded from culling on every open, so it never persists.
+type StoredOptions = Omit<ExportOptions, "decoderVersion">;
+
+function readOptions(): StoredOptions {
   try {
     const stored = localStorage.getItem(OPTIONS_KEY);
     if (stored) {
-      const parsed = JSON.parse(stored) as Partial<
-        Omit<ExportOptions, "decoderVersion">
-      >;
+      const parsed = JSON.parse(stored) as Partial<StoredOptions>;
       return {
         format: parsed.format === "jpeg" ? "jpeg" : "original",
         quality: parsed.quality === 100 ? 100 : 90,
         zip: parsed.zip ?? false,
         flatten: parsed.flatten ?? true,
-        decoderVersion: rawDecoderVersion(),
       };
     }
   } catch {
     // Corrupt preferences never block an export.
   }
-  return {
-    format: "jpeg",
-    quality: 90,
-    zip: false,
-    flatten: true,
-    decoderVersion: rawDecoderVersion(),
-  };
+  return { format: "jpeg", quality: 90, zip: false, flatten: true };
 }
 
 export function ExportDrawer({
@@ -160,18 +154,29 @@ export function ExportDrawer({
   onReveal,
   onClose,
 }: Props) {
-  const [options, setOptions] = useState<ExportOptions>(readOptions);
+  const [options, setOptions] = useState<StoredOptions>(readOptions);
+  const [decoderVersion, setDecoderVersion] =
+    useState<RawDecoderVersion>(rawDecoderVersion);
   const [dismissedFor, setDismissedFor] = useState<RawDecoderVersion | null>(
     null,
   );
   const culling = useRawDecoderVersion();
   // Dismissal answers "ship these photos with this decoder", so a new
-  // selection or a round-trip through Original has to ask again.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: rawPaths identity is the selection
-  useEffect(() => setDismissedFor(null), [rawPaths, options.format]);
-  const support = useDecoderSupport(rawPaths, options.format === "jpeg").data;
-  const effectiveDecoder: RawDecoderVersion =
-    support?.raw9 === 0 ? 8 : options.decoderVersion;
+  // selection or a round-trip through Original has to ask again. Keyed on
+  // contents, not array identity: the images cache hands back a fresh array
+  // on any rating or enrich tick, which would revoke the answer unprompted.
+  const selectionKey = useMemo(
+    () => [...rawPaths].sort().join("\n"),
+    [rawPaths],
+  );
+  useEffect(() => setDismissedFor(null), [selectionKey, options.format]);
+  const supportQuery = useDecoderSupport(rawPaths, options.format === "jpeg");
+  const support = supportQuery.data;
+  const noRaw9 = support?.raw9 === 0;
+  // a held-over verdict describes the previous selection, so exporting on it
+  // could ship a decoder this one never agreed to
+  const probing = supportQuery.isPlaceholderData;
+  const effectiveDecoder: RawDecoderVersion = noRaw9 ? 8 : decoderVersion;
   const partial =
     support && support.raw9 > 0 && support.raw9 < support.rawTotal
       ? support
@@ -179,8 +184,7 @@ export function ExportDrawer({
   const showDecoder = options.format === "jpeg" && rawPaths.length > 0;
 
   const decoderHelp = (): string => {
-    if (support?.raw9 === 0)
-      return "RAW 9 isn't available for these photos on this Mac.";
+    if (noRaw9) return "RAW 9 isn't available for these photos on this Mac.";
     if (effectiveDecoder === 8)
       return partial
         ? `RAW 9 resolves more detail, and applies to ${partial.raw9} of ${partial.rawTotal} photos.`
@@ -190,41 +194,36 @@ export function ExportDrawer({
       : "Best detail and strongest denoising. Slower to decode.";
   };
 
-  /// Which way culling and export disagree changes what the user is about to
-  /// be surprised by, so the copy follows the pairing.
+  /// Only a genuine disagreement earns a warning: matching decoders mean the
+  /// export looks like the previews, and warning there left no quiet state.
+  /// The pitch for the better decoder belongs in the row's help text.
   const warning = ():
     | { body: string; fixTo: RawDecoderVersion; keep: string }
     | undefined => {
-    if (!showDecoder || dismissedFor === effectiveDecoder) return undefined;
+    if (!showDecoder || culling === effectiveDecoder) return undefined;
+    if (dismissedFor === effectiveDecoder) return undefined;
+    // with no RAW 9 anywhere the previews fell back to 8 too, so the decoders
+    // only look different: nothing to warn about
+    if ((support?.raw9 ?? 0) === 0) return undefined;
     const reach = partial ? ` on ${partial.raw9} of them` : "";
-    if (effectiveDecoder === 8 && (support?.raw9 ?? 0) > 0) {
-      return {
-        body:
-          culling === 9
-            ? `These exports will look softer and noisier${reach} than the RAW 9 previews you culled against.`
-            : `RAW 9 resolves more detail and denoises harder${reach}, but its output will look different from the previews you culled against.`,
-        fixTo: 9,
-        keep: "Keep RAW 8",
-      };
-    }
-    if (effectiveDecoder === 9 && culling === 8) {
-      return {
-        body: `These exports will look different${reach} from the RAW 8 previews you culled against.`,
-        fixTo: 8,
-        keep: "Keep RAW 9",
-      };
-    }
-    return undefined;
+    return effectiveDecoder === 8
+      ? {
+          body: `These exports will look softer and noisier${reach} than the RAW 9 previews you culled against.`,
+          fixTo: 9,
+          keep: "Keep RAW 8",
+        }
+      : {
+          body: `These exports will look different${reach} from the RAW 8 previews you culled against.`,
+          fixTo: 8,
+          keep: "Keep RAW 9",
+        };
   };
   const banner = warning();
 
-  const patch = (next: Partial<ExportOptions>) => {
+  const patch = (next: Partial<StoredOptions>) => {
     setOptions((current) => {
       const merged = { ...current, ...next };
-      // the decoder is seeded from culling on every open, so persisting it
-      // would write a value readOptions always throws away
-      const { decoderVersion: _, ...persisted } = merged;
-      localStorage.setItem(OPTIONS_KEY, JSON.stringify(persisted));
+      localStorage.setItem(OPTIONS_KEY, JSON.stringify(merged));
       return merged;
     });
   };
@@ -360,8 +359,8 @@ export function ExportDrawer({
               <DecoderSegmented
                 value={effectiveDecoder}
                 testid="export-decoder"
-                raw9Disabled={support?.raw9 === 0}
-                onChange={(decoderVersion) => patch({ decoderVersion })}
+                raw9Disabled={noRaw9}
+                onChange={setDecoderVersion}
               />
             </div>
             <p
@@ -406,7 +405,7 @@ export function ExportDrawer({
                   size="sm"
                   variant="outline"
                   data-testid="banner-fix"
-                  onClick={() => patch({ decoderVersion: banner.fixTo })}
+                  onClick={() => setDecoderVersion(banner.fixTo)}
                   className="h-5 border-amber-400/45 px-2 text-[10px] text-amber-400"
                 >
                   Use RAW {banner.fixTo}
@@ -426,7 +425,7 @@ export function ExportDrawer({
         <Button
           size="sm"
           data-testid="run-export"
-          disabled={selectedCount === 0 || busy}
+          disabled={selectedCount === 0 || busy || probing}
           onClick={() => void runExport()}
           className="mt-1 w-full text-xs"
         >

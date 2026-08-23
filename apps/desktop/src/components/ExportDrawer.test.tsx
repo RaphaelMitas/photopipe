@@ -66,18 +66,21 @@ function mockSupport(raw9: number, rawTotal: number) {
 }
 
 describe("export decoder row", () => {
-  it("offers the quality gain when culling and exporting both use RAW 8", async () => {
+  it("stays quiet when culling and exporting agree on RAW 8", async () => {
     localStorage.setItem("photopipe.rawDecoder", "8");
     mockSupport(3, 3);
     renderDrawer();
-    const banner = await screen.findByTestId("decoder-banner");
-    expect(banner).toHaveTextContent(
-      "look different from the previews you culled against",
+    await waitFor(() =>
+      expect(screen.getByTestId("export-decoder-8")).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
     );
-    fireEvent.click(screen.getByTestId("banner-fix"));
-    expect(screen.getByTestId("export-decoder-9")).toHaveAttribute(
-      "aria-pressed",
-      "true",
+    // matching decoders mean the export looks like the previews; the case for
+    // RAW 9 belongs in the help text, not an amber warning with no way out
+    expect(screen.queryByTestId("decoder-banner")).not.toBeInTheDocument();
+    expect(screen.getByTestId("export-decoder-help").textContent).toContain(
+      "RAW 9 resolves more detail",
     );
   });
 
@@ -124,10 +127,14 @@ describe("export decoder row", () => {
   });
 
   it("dismissing holds for that choice and the export keeps it", async () => {
-    localStorage.setItem("photopipe.rawDecoder", "8");
+    localStorage.setItem("photopipe.rawDecoder", "9");
     mockSupport(3, 3);
     const { onExport } = renderDrawer();
-    fireEvent.click(await screen.findByTestId("banner-keep"));
+    await waitFor(() =>
+      expect(screen.getByTestId("export-decoder-8")).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByTestId("export-decoder-8"));
+    fireEvent.click(screen.getByTestId("banner-keep"));
     expect(screen.queryByTestId("decoder-banner")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("run-export"));
     await waitFor(() => expect(onExport).toHaveBeenCalled());
@@ -147,6 +154,8 @@ describe("export decoder row", () => {
   });
 
   it("disables RAW 9 and never warns when nothing supports it", async () => {
+    // culling sits at 9 here, but the previews fell back to 8 as well, so the
+    // export matches what was seen and there is nothing to flag
     mockSupport(0, 3);
     const { onExport } = renderDrawer();
     await waitFor(() =>
@@ -167,17 +176,19 @@ describe("export decoder row", () => {
     await waitFor(() =>
       expect(screen.getByTestId("export-decoder-9")).toBeDisabled(),
     );
-    // A reorder or a re-selection must not blink through a state that offers
-    // RAW 9 for a body that cannot do it.
     rerender([...RAWS].reverse());
     expect(screen.getByTestId("export-decoder-9")).toBeDisabled();
   });
 
   it("does not reuse a dismissal for a different selection", async () => {
-    localStorage.setItem("photopipe.rawDecoder", "8");
+    localStorage.setItem("photopipe.rawDecoder", "9");
     mockSupport(3, 3);
     const { rerender } = renderDrawer();
-    fireEvent.click(await screen.findByTestId("banner-keep"));
+    await waitFor(() =>
+      expect(screen.getByTestId("export-decoder-8")).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByTestId("export-decoder-8"));
+    fireEvent.click(screen.getByTestId("banner-keep"));
     expect(screen.queryByTestId("decoder-banner")).not.toBeInTheDocument();
 
     rerender(["/r/s/D.ARW", "/r/s/E.ARW"]);

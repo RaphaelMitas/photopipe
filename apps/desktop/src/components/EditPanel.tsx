@@ -16,7 +16,7 @@ import {
   RotateCcw,
   X,
 } from "lucide-react";
-import { type ReactNode, useDeferredValue, useState } from "react";
+import { type ReactNode, useDeferredValue, useRef, useState } from "react";
 import {
   type Edit,
   type ImageFile,
@@ -400,6 +400,7 @@ function DecoderStrip() {
   const version = useRawDecoderVersion();
   // Radix opens on hover only, and the icon is small enough to want a tap
   const [tipOpen, setTipOpen] = useState(false);
+  const wasOpenRef = useRef(false);
   return (
     <div
       data-testid="decoder-strip"
@@ -413,12 +414,15 @@ function DecoderStrip() {
               type="button"
               aria-label="About the RAW decoder"
               data-testid="decoder-info"
-              onPointerDown={(event) => {
-                // Radix closes the tooltip on pointerdown, so a plain click
-                // handler only ever reopens it; preventDefault drops their
-                // handler and leaves the toggle to us.
+              // Radix closes the tooltip on pointerdown and again on click,
+              // both before ours run, so a relative toggle only ever reopens.
+              // Snapshot first and set the absolute value instead.
+              onPointerDown={() => {
+                wasOpenRef.current = tipOpen;
+              }}
+              onClick={(event) => {
                 event.preventDefault();
-                setTipOpen((open) => !open);
+                setTipOpen(!wasOpenRef.current);
               }}
               className="hover:text-foreground"
             >

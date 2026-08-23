@@ -263,13 +263,11 @@ public final class LibraryService: @unchecked Sendable {
         guard !files.isEmpty else { return (0, 0) }
         // a whole shoot serially outruns the caller's read timeout, and a
         // timeout takes the sidecar down mid-export
-        var supported = [Bool](repeating: false, count: files.count)
-        supported.withUnsafeMutableBufferPointer { buffer in
-            DispatchQueue.concurrentPerform(iterations: files.count) { index in
-                buffer[index] = renderer.supportsRaw9(file: files[index])
-            }
+        DispatchQueue.concurrentPerform(iterations: files.count) { index in
+            _ = renderer.supportsRaw9(file: files[index])
         }
-        return (supported.filter { $0 }.count, files.count)
+        // every answer is cached now, so this pass never touches a file
+        return (files.count { renderer.supportsRaw9(file: $0) }, files.count)
     }
 
     private func recordUnderRoot(path: String) throws -> ImageFile {

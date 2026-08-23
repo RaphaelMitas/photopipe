@@ -25,6 +25,13 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 const editWith = (exposure: number): Edit => ({ ...identityEdit, exposure });
 
+/// A real tap is pointerdown then click, and Radix closes the tooltip on both.
+/// Firing only pointerdown passes against a trigger that a finger cannot open.
+function tap(element: Element) {
+  fireEvent.pointerDown(element);
+  fireEvent.click(element);
+}
+
 function makeImages(): ImageFile[] {
   return ["DSC00001", "DSC00002", "DSC00003"].map((stem) =>
     makeImage(`${stem}.ARW`),
@@ -328,9 +335,9 @@ describe("EditSidebar", () => {
       screen.queryByText(/Applies to every photo/),
     ).not.toBeInTheDocument();
     const info = screen.getByTestId("decoder-info");
-    fireEvent.pointerDown(info);
+    tap(info);
     expect(await screen.findByText(/Applies to every photo/)).toBeVisible();
-    fireEvent.pointerDown(info);
+    tap(info);
     await waitFor(() =>
       expect(
         screen.queryByText(/Applies to every photo/),
