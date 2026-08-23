@@ -1,19 +1,43 @@
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@photopipe/ui/components/alert";
 import { Button } from "@photopipe/ui/components/button";
 import { Progress } from "@photopipe/ui/components/progress";
 import { Segmented } from "@photopipe/ui/components/segmented";
 import { Switch } from "@photopipe/ui/components/switch";
 import { cn } from "@photopipe/ui/lib/utils";
 import { open as openDialog, save } from "@tauri-apps/plugin-dialog";
-import { AlertCircle, Check, FolderOpen, Upload, X } from "lucide-react";
-import { useState } from "react";
+import {
+  AlertCircle,
+  Check,
+  FolderOpen,
+  TriangleAlert,
+  Upload,
+  X,
+} from "lucide-react";
+import { useMemo, useState } from "react";
 import type { ExportFormat } from "@/lib/core";
-import { type ExportJob, type JobStatus, jobStatus } from "@/lib/queries";
+import {
+  type ExportJob,
+  type JobStatus,
+  jobStatus,
+  useDecoderSupport,
+} from "@/lib/queries";
+import {
+  type RawDecoderVersion,
+  rawDecoderVersion,
+  useRawDecoderVersion,
+} from "@/lib/rawDecoder";
+import { DecoderSegmented } from "./DecoderSegmented";
 
 export type ExportOptions = {
   format: ExportFormat;
   quality: number;
   zip: boolean;
   flatten: boolean;
+  decoderVersion: RawDecoderVersion;
 };
 
 export function exportLabel(count: number, format: ExportFormat): string {
@@ -22,6 +46,7 @@ export function exportLabel(count: number, format: ExportFormat): string {
 
 type Props = {
   shoot: string;
+  rawPaths: string[];
   selectedCount: number;
   editedCount: number;
   filteredCount: number;
@@ -90,11 +115,14 @@ function Section({
 
 const OPTIONS_KEY = "photopipe.export";
 
-function readOptions(): ExportOptions {
+/// The decoder is seeded from culling on every open, so it never persists.
+type StoredOptions = Omit<ExportOptions, "decoderVersion">;
+
+function readOptions(): StoredOptions {
   try {
     const stored = localStorage.getItem(OPTIONS_KEY);
     if (stored) {
-      const parsed = JSON.parse(stored) as Partial<ExportOptions>;
+      const parsed = JSON.parse(stored) as Partial<StoredOptions>;
       return {
         format: parsed.format === "jpeg" ? "jpeg" : "original",
         quality: parsed.quality === 100 ? 100 : 90,
@@ -110,6 +138,7 @@ function readOptions(): ExportOptions {
 
 export function ExportDrawer({
   shoot,
+  rawPaths,
   selectedCount,
   editedCount,
   filteredCount,
@@ -125,8 +154,71 @@ export function ExportDrawer({
   onReveal,
   onClose,
 }: Props) {
-  const [options, setOptions] = useState<ExportOptions>(readOptions);
-  const patch = (next: Partial<ExportOptions>) => {
+  const [options, setOptions] = useState<StoredOptions>(readOptions);
+  const [decoderVersion, setDecoderVersion] =
+    useState<RawDecoderVersion>(rawDecoderVersion);
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  const culling = useRawDecoderVersion();
+  // Dismissal answers "ship these photos with this decoder", so it is stored
+  // as the answer's subject rather than reset by an effect. Contents, not
+  // array identity: the images cache hands back a fresh array on any rating
+  // or enrich tick, which would revoke the answer unprompted.
+  const selectionKey = useMemo(
+    () => [...rawPaths].sort().join("\n"),
+    [rawPaths],
+  );
+  const supportQuery = useDecoderSupport(rawPaths, options.format === "jpeg");
+  const support = supportQuery.data;
+  const noRaw9 = support?.raw9 === 0;
+  // a held-over verdict describes the previous selection, so exporting on it
+  // could ship a decoder this one never agreed to
+  const probing = supportQuery.isPlaceholderData;
+  const effectiveDecoder: RawDecoderVersion = noRaw9 ? 8 : decoderVersion;
+  const partial =
+    support && support.raw9 > 0 && support.raw9 < support.rawTotal
+      ? support
+      : undefined;
+  const showDecoder = options.format === "jpeg" && rawPaths.length > 0;
+  const dismissKey = `${selectionKey}|${options.format}|${effectiveDecoder}`;
+
+  const decoderHelp = (): string => {
+    if (noRaw9) return "RAW 9 isn't available for these photos on this Mac.";
+    if (effectiveDecoder === 8)
+      return partial
+        ? `RAW 9 resolves more detail, and applies to ${partial.raw9} of ${partial.rawTotal} photos.`
+        : "RAW 9 resolves more detail and denoises harder.";
+    return partial
+      ? `Best detail and denoising, on the ${partial.raw9} of ${partial.rawTotal} photos that support it.`
+      : "Best detail and strongest denoising. Slower to decode.";
+  };
+
+  /// Only a genuine disagreement earns a warning: matching decoders mean the
+  /// export looks like the previews, and warning there left no quiet state.
+  /// The pitch for the better decoder belongs in the row's help text.
+  const warning = ():
+    | { body: string; fixTo: RawDecoderVersion; keep: string }
+    | undefined => {
+    if (!showDecoder || culling === effectiveDecoder) return undefined;
+    if (dismissed === dismissKey) return undefined;
+    // with no RAW 9 anywhere the previews fell back to 8 too, so the decoders
+    // only look different: nothing to warn about
+    if ((support?.raw9 ?? 0) === 0) return undefined;
+    const reach = partial ? ` on ${partial.raw9} of them` : "";
+    return effectiveDecoder === 8
+      ? {
+          body: `These exports will look softer and noisier${reach} than the RAW 9 previews you culled against.`,
+          fixTo: 9,
+          keep: "Keep RAW 8",
+        }
+      : {
+          body: `These exports will look different${reach} from the RAW 8 previews you culled against.`,
+          fixTo: 8,
+          keep: "Keep RAW 9",
+        };
+  };
+  const banner = warning();
+
+  const patch = (next: Partial<StoredOptions>) => {
     setOptions((current) => {
       const merged = { ...current, ...next };
       localStorage.setItem(OPTIONS_KEY, JSON.stringify(merged));
@@ -152,7 +244,8 @@ export function ExportDrawer({
 
   const runExport = async () => {
     const destination = await pickDestination();
-    if (destination) onExport(options, destination);
+    if (destination)
+      onExport({ ...options, decoderVersion: effectiveDecoder }, destination);
   };
 
   return (
@@ -255,6 +348,27 @@ export function ExportDrawer({
             ? "Renders every photo full-resolution with its edits baked in."
             : "Copies the files untouched; edits are ignored."}
         </p>
+        {showDecoder && (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="flex-1 text-muted-foreground text-xs">
+                Decoder
+              </span>
+              <DecoderSegmented
+                value={effectiveDecoder}
+                testid="export-decoder"
+                raw9Disabled={noRaw9}
+                onChange={setDecoderVersion}
+              />
+            </div>
+            <p
+              data-testid="export-decoder-help"
+              className="text-[10px] text-muted-foreground"
+            >
+              {decoderHelp()}
+            </p>
+          </>
+        )}
       </Section>
 
       <Section label="Destination">
@@ -276,10 +390,40 @@ export function ExportDrawer({
             onCheckedChange={(flatten) => patch({ flatten })}
           />
         </div>
+        {banner && (
+          <Alert data-testid="decoder-banner" className="gap-1 px-3 py-2.5">
+            <TriangleAlert className="text-amber-400" />
+            <AlertTitle className="text-[11px] text-amber-400">
+              Exporting with RAW {effectiveDecoder}
+            </AlertTitle>
+            <AlertDescription className="text-[11px]">
+              {banner.body}
+              <span className="mt-1 flex items-center gap-2.5">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  data-testid="banner-fix"
+                  onClick={() => setDecoderVersion(banner.fixTo)}
+                  className="h-5 border-amber-400/45 px-2 text-[10px] text-amber-400"
+                >
+                  Use RAW {banner.fixTo}
+                </Button>
+                <button
+                  type="button"
+                  data-testid="banner-keep"
+                  onClick={() => setDismissed(dismissKey)}
+                  className="text-[10px] text-muted-foreground underline underline-offset-2"
+                >
+                  {banner.keep}
+                </button>
+              </span>
+            </AlertDescription>
+          </Alert>
+        )}
         <Button
           size="sm"
           data-testid="run-export"
-          disabled={selectedCount === 0 || busy}
+          disabled={selectedCount === 0 || busy || probing}
           onClick={() => void runExport()}
           className="mt-1 w-full text-xs"
         >

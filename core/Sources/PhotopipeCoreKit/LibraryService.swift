@@ -241,16 +241,52 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     public func render(
-        path: String, edit: Edit, maxPixel: Int, viewport: CropRect? = nil
+        path: String, edit: Edit, maxPixel: Int, viewport: CropRect? = nil,
+        decoderVersion: Int? = nil
     ) throws -> String {
         try renderer.render(
             file: recordUnderRoot(path: path), edit: edit, maxPixel: maxPixel,
-            viewport: viewport
+            viewport: viewport, decoderVersion: decoderVersion
         ).path
     }
 
-    public func rawDefaults(path: String) throws -> Renderer.RawDefaults? {
-        try renderer.rawDefaults(for: recordUnderRoot(path: path))
+    public func rawDefaults(path: String, decoderVersion: Int? = nil) throws
+        -> Renderer.RawDefaults?
+    {
+        try renderer.rawDefaults(for: recordUnderRoot(path: path), decoderVersion: decoderVersion)
+    }
+
+    /// Whether RAW 9 is reachable at all here. Per-file support folds the
+    /// camera and this Mac's macOS together, so one body that lacks it proves
+    /// nothing; only a library-wide "no" is worth telling the user about.
+    /// nil when there is no raw to ask.
+    public func raw9Availability() -> Bool? {
+        lock.lock()
+        let shoots = snapshot.imagesByShoot
+        lock.unlock()
+        // one raw per shoot: cameras rarely differ within a shoot, and the
+        // probe caches per camera, so this stays a handful of header reads
+        let samples = shoots.values.compactMap { $0.first(where: \.isRaw) }
+        guard !samples.isEmpty else { return nil }
+        // A file still copying answers nothing, not no. Condemning the library
+        // on it would stick, because the client caches this for the session.
+        let verdicts = samples.compactMap { renderer.known(file: $0, major: 9) }
+        guard !verdicts.isEmpty else { return nil }
+        return verdicts.contains(true)
+    }
+
+    public func decoderSupport(paths: [String]) throws -> (raw9: Int, rawTotal: Int) {
+        let files = try pathsUnderRoot(paths)
+            .compactMap { try? recordUnderRoot(path: $0) }
+            .filter(\.isRaw)
+        guard !files.isEmpty else { return (0, 0) }
+        // a whole shoot serially outruns the caller's read timeout, and a
+        // timeout takes the sidecar down mid-export
+        DispatchQueue.concurrentPerform(iterations: files.count) { index in
+            _ = renderer.supports(file: files[index], major: 9)
+        }
+        // every answer is cached now, so this pass never touches a file
+        return (files.count { renderer.supports(file: $0, major: 9) }, files.count)
     }
 
     private func recordUnderRoot(path: String) throws -> ImageFile {
@@ -530,7 +566,8 @@ public final class LibraryService: @unchecked Sendable {
     /// minute later.
     public func startExport(
         shoot shootName: String, paths: [String], destination: String,
-        zip: Bool, flatten: Bool, format: ExportFormat, quality: Int
+        zip: Bool, flatten: Bool, format: ExportFormat, quality: Int,
+        decoderVersion: Int? = nil
     ) throws -> Exporter.Progress {
         let images = try images(inShoot: shootName, paths: pathsUnderRoot(paths))
         guard !images.isEmpty else { throw FileActions.ActionError.noFiles }
@@ -569,7 +606,8 @@ public final class LibraryService: @unchecked Sendable {
             // has not reached yet. Reading them opens the file, so it happens
             // here, four wide, rather than in the request that plans the job.
             try self.write(
-                enrich(image), format: format, quality: quality, to: target, staging: zip)
+                enrich(image), format: format, quality: quality, to: target, staging: zip,
+                decoderVersion: decoderVersion)
         }
     }
 
@@ -588,7 +626,8 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     private func write(
-        _ image: ImageFile, format: ExportFormat, quality: Int, to planned: URL, staging: Bool
+        _ image: ImageFile, format: ExportFormat, quality: Int, to planned: URL, staging: Bool,
+        decoderVersion: Int?
     ) throws {
         let fm = FileManager.default
         try fm.createDirectory(
@@ -622,7 +661,8 @@ public final class LibraryService: @unchecked Sendable {
         case .jpeg:
             try renderer.exportJPEG(
                 file: image, edit: image.edit,
-                quality: Double(quality) / 100, to: target)
+                quality: Double(quality) / 100, to: target,
+                decoderVersion: decoderVersion)
             if image.rating > 0 {
                 try? ExifTool.shared.write(
                     ["-overwrite_original", "-XMP:Rating=\(image.rating)", target.path])

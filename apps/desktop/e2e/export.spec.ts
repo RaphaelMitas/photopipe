@@ -172,3 +172,65 @@ test("format choice shows JPEG quality and names the button", async ({
     "Export 4 originals",
   );
 });
+
+test("the decoder row warns before a RAW 8 export and knows what RAW 9 can reach", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("open-export").click();
+  await page.getByTestId("select-all").click();
+
+  await expect(page.getByTestId("export-decoder-9")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByTestId("decoder-banner")).toHaveCount(0);
+
+  await page.getByTestId("export-decoder-8").click();
+  await expect(page.getByTestId("decoder-banner")).toContainText(
+    "softer and noisier",
+  );
+  await page.getByTestId("banner-fix").click();
+  await expect(page.getByTestId("decoder-banner")).toHaveCount(0);
+  await expect(page.getByTestId("export-decoder-9")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  await page.getByTestId("export-decoder-8").click();
+  await page.getByTestId("banner-keep").click();
+  await expect(page.getByTestId("decoder-banner")).toHaveCount(0);
+  await expect(page.getByTestId("export-decoder-8")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  // the same photos are the same decision, so it stays dismissed; dropping one
+  // makes it a different set and the question is worth asking again
+  await page.getByTestId("drawer-clear").click();
+  await page.getByTestId("select-all").click();
+  await expect(page.getByTestId("decoder-banner")).toHaveCount(0);
+  await page
+    .getByTestId("thumb")
+    .first()
+    .click({ modifiers: ["ControlOrMeta"] });
+  await expect(page.getByTestId("decoder-banner")).toBeVisible();
+});
+
+test("a camera without RAW 9 disables the option instead of promising it", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByTestId("root-input").fill("/fake");
+  await page.getByTestId("root-submit").click();
+  await page.getByTestId("shoot-misc").click();
+  await expect(page.getByTestId("grid")).toBeVisible();
+
+  await page.getByTestId("open-export").click();
+  await page.getByTestId("select-all").click();
+  await expect(page.getByTestId("export-decoder-9")).toBeDisabled();
+  await expect(page.getByTestId("export-decoder-help")).toContainText(
+    "isn't available for these photos on this Mac",
+  );
+  await expect(page.getByTestId("decoder-banner")).toHaveCount(0);
+});

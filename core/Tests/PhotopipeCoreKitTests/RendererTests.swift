@@ -23,6 +23,11 @@ private func fixtureARW() -> URL? {
     return fixture
 }
 
+/// Built from the raw value so the tests compile on SDKs without `.version9`.
+private func decoder(_ raw: String) -> CIRAWDecoderVersion {
+    CIRAWDecoderVersion(rawValue: raw)
+}
+
 private func imageFile(for url: URL) throws -> ImageFile {
     let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
     return ImageFile(
@@ -458,6 +463,64 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
     }
 }
 
+@Test func requestedDecoderVersionIsApplied() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    let supported = try #require(CIRAWFilter(imageURL: fixture)).supportedDecoderVersions
+    guard supported.contains(decoder("8")) else {
+        print("SKIP: fixture does not offer RAW 8")
+        return
+    }
+    let filter = try renderer.makeFilter(for: file, decoderVersion: 8).filter
+    #expect(filter.decoderVersion == decoder("8"))
+    #expect(filter.outputImage != nil)
+}
+
+@Test func unsupportedDecoderRequestFallsBackToNewest() {
+    #expect(
+        Renderer.resolveDecoder(requested: 9, supported: [decoder("7"), decoder("8")])
+            == decoder("8"))
+    #expect(
+        Renderer.resolveDecoder(requested: 8, supported: [decoder("8.dng"), decoder("9.dng")])
+            == decoder("8.dng"))
+    #expect(
+        Renderer.resolveDecoder(requested: nil, supported: [decoder("8"), decoder("9")])
+            == decoder("9"))
+    // a DNG-only file still answers a plain RAW 9 request
+    #expect(
+        Renderer.resolveDecoder(requested: 9, supported: [decoder("8.dng"), decoder("9.dng")])
+            == decoder("9.dng"))
+    #expect(Renderer.resolveDecoder(requested: 8, supported: []) == nil)
+}
+
+@Test func decoderVersionSeparatesTheRenderCache() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    let nine = renderer.cachePath(for: file, edit: .identity, maxPixel: 800, decoderVersion: 9)
+    let eight = renderer.cachePath(for: file, edit: .identity, maxPixel: 800, decoderVersion: 8)
+    let plain = renderer.cachePath(for: file, edit: .identity, maxPixel: 800)
+    // Only a decoder this Mac can actually run earns its own key; a request
+    // that falls back renders the default, so it shares the default entry.
+    // CI runs an older macOS with no RAW 9, which is the whole point.
+    if renderer.supports(file: file, major: 9) {
+        #expect(nine != plain)
+        #expect(nine != eight)
+    } else {
+        #expect(nine == plain)
+    }
+    if renderer.supports(file: file, major: 8) {
+        #expect(eight != plain)
+    }
+}
+
 @Test func denoiseOverridesTheDecoderDefault() throws {
     guard let fixture = fixtureARW() else { return }
     let cacheDir = tempCacheDir()
@@ -633,4 +696,133 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
         CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
     let width = try #require(props[kCGImagePropertyPixelWidth] as? Int)
     #expect(width > 2000, "export must be full resolution, got width \(width)")
+}
+
+@Test func raw9SupportMatchesWhatTheFilterReports() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    let filter = try renderer.makeFilter(for: file).filter
+    let expected = filter.supportedDecoderVersions.contains {
+        Renderer.isVersion($0, 9)
+    }
+    #expect(renderer.supports(file: file, major: 9) == expected)
+    // the second ask answers from the per-camera cache, same verdict
+    #expect(renderer.supports(file: file, major: 9) == expected)
+}
+
+@Test func embeddedFormatsNeverClaimRaw9() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let jpeg = ImageFile(
+        path: "/nowhere/DSC0001.JPG", rel: "DSC0001.JPG", ext: "JPG", size: 1, mtime: 1)
+    #expect(renderer.supports(file: jpeg, major: 9) == false)
+}
+
+@Test func fixtureCarriesACameraModelForTheProbeCache() throws {
+    guard let fixture = fixtureARW() else { return }
+    let model = Renderer.cameraModel(of: fixture)
+    #expect(model?.isEmpty == false, "header model read broke: every file would probe alone")
+}
+
+@Test func repeatedSupportChecksStopReadingTheFile() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    let first = Date()
+    _ = renderer.supports(file: file, major: 9)
+    let cold = Date().timeIntervalSince(first)
+
+    let second = Date()
+    for _ in 0..<500 { _ = renderer.supports(file: file, major: 9) }
+    let warm = Date().timeIntervalSince(second)
+
+    // a per-path miss means a whole shoot re-reads every header on every
+    // selection change
+    // per call, not in total: a sibling test that already warmed CoreImage's
+    // codec shrinks `cold`, and a bare warm < cold would start failing
+    #expect(
+        warm / 500 < cold / 10,
+        "warm: \(warm)s for 500, cold: \(cold)s for 1")
+}
+
+@Test func aHalfCopiedFileCannotAnswerForItsWholeCamera() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let dir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("poison-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+
+    let renderer = Renderer(cacheDir: cacheDir)
+    let whole = try imageFile(for: fixture)
+    // Probing 8 rather than 9: CI runs a macOS with no RAW 9, where a poisoned
+    // "no" and an honest "no" look alike and the regression goes untested.
+    guard renderer.supports(file: whole, major: 8) else {
+        print("SKIP: fixture does not offer RAW 8")
+        return
+    }
+
+    // a card still copying: the header names the camera, the body is missing
+    let partial = dir.appendingPathComponent("IMG_0001.arw")
+    let head = try Data(contentsOf: fixture).prefix(1_000_000)
+    try head.write(to: partial)
+    let truncated = try imageFile(for: partial)
+
+    let fresh = Renderer(cacheDir: cacheDir)
+    _ = fresh.supports(file: truncated, major: 8)
+    #expect(
+        fresh.supports(file: whole, major: 8),
+        "an unreadable file poisoned the camera verdict for every sibling")
+}
+
+@Test func aDecoderTheFileCannotHonourSharesTheDefaultCacheKey() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    let plain = renderer.cachePath(for: file, edit: .identity, maxPixel: 800)
+    let asked = renderer.cachePath(
+        for: file, edit: .identity, maxPixel: 800, decoderVersion: 9)
+
+    if renderer.supports(file: file, major: 9) {
+        #expect(asked != plain, "a decoder that ran must not share the default key")
+    } else {
+        // The request fell back, so these are the same pixels. Were the key to
+        // record the wish, a macOS that later gains RAW 9 would serve them.
+        #expect(asked == plain, "a fallback must not be cached as RAW 9")
+    }
+}
+
+@Test func aFileStillCopyingAnswersNothingNotNo() throws {
+    guard let fixture = fixtureARW() else { return }
+    let dir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("half-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let partial = dir.appendingPathComponent("IMG_0001.arw")
+    let bytes = try Data(contentsOf: fixture).prefix(512 * 1024)
+    try bytes.write(to: partial)
+
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = ImageFile(
+        path: partial.path, rel: "IMG_0001.arw", ext: "arw",
+        size: Int64(bytes.count), mtime: 1)
+
+    // "cannot read yet" must stay distinguishable: the library-wide answer
+    // caches for the session, so a no here would stick after the copy lands.
+    #expect(renderer.known(file: file, major: 9) == nil)
+    #expect(renderer.supports(file: file, major: 9) == false)
 }

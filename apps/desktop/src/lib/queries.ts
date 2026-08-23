@@ -1,11 +1,12 @@
 import {
+  keepPreviousData,
   type QueryClient,
   useMutation,
   useQueries,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   type CreateProjectResult,
@@ -22,6 +23,7 @@ import {
   type Shoot,
   type StatusResult,
 } from "./core";
+import { useRawDecoderVersion } from "./rawDecoder";
 import type { ViewportRequest } from "./zoom";
 
 export function useShoots(enabled: boolean) {
@@ -106,15 +108,20 @@ export function useThumbnail(
   });
 }
 
-type RenderFile = { path: string; mtime: number } | undefined;
+type RenderFile = Pick<ImageFile, "path" | "mtime" | "ext"> | undefined;
 
 const PREVIEW_MAX_PIXEL = 2560;
+
+function renderDecoderVersion(file: RenderFile, version: number) {
+  return file && isRawFile(file) ? version : undefined;
+}
 
 function renderQueryOptions(
   file: RenderFile,
   edit: Edit,
   maxPixel: number,
   viewport?: ViewportRequest["viewport"],
+  decoderVersion?: number,
 ) {
   return {
     queryKey: [
@@ -126,6 +133,7 @@ function renderQueryOptions(
       viewport
         ? `${viewport.left},${viewport.top},${viewport.right},${viewport.bottom}`
         : "",
+      decoderVersion ?? "",
     ] as const,
     queryFn: async () =>
       (
@@ -134,6 +142,7 @@ function renderQueryOptions(
           edit,
           maxPixel,
           ...(viewport ? { viewport } : {}),
+          ...(decoderVersion ? { decoderVersion } : {}),
         })
       ).cachePath,
     staleTime: Number.POSITIVE_INFINITY,
@@ -141,8 +150,15 @@ function renderQueryOptions(
 }
 
 export function useRender(file: RenderFile, edit: Edit) {
+  const decoder = useRawDecoderVersion();
   return useQuery({
-    ...renderQueryOptions(file, edit, PREVIEW_MAX_PIXEL),
+    ...renderQueryOptions(
+      file,
+      edit,
+      PREVIEW_MAX_PIXEL,
+      undefined,
+      renderDecoderVersion(file, decoder),
+    ),
     enabled: file !== undefined,
     placeholderData: (previous: string | undefined, previousQuery) =>
       previousQuery?.queryKey[1] === file?.path ? previous : undefined,
@@ -157,12 +173,14 @@ export function useViewportRender(
   edit: Edit,
   request: ViewportRequest | null,
 ) {
+  const decoder = useRawDecoderVersion();
   return useQuery({
     ...renderQueryOptions(
       file,
       edit,
       request?.maxPixel ?? 0,
       request?.viewport,
+      renderDecoderVersion(file, decoder),
     ),
     enabled: file !== undefined && request !== null,
   });
@@ -170,22 +188,82 @@ export function useViewportRender(
 
 export function usePrefetchRender(file: RenderFile, edit: Edit | undefined) {
   const queryClient = useQueryClient();
+  const decoder = useRawDecoderVersion();
   useEffect(() => {
     if (!file || !edit) return;
     queryClient.prefetchQuery(
-      renderQueryOptions(file, edit, PREVIEW_MAX_PIXEL),
+      renderQueryOptions(
+        file,
+        edit,
+        PREVIEW_MAX_PIXEL,
+        undefined,
+        renderDecoderVersion(file, decoder),
+      ),
     );
-  }, [queryClient, file, edit]);
+  }, [queryClient, file, edit, decoder]);
 }
 
 export function useRawDefaults(
   file: { path: string; mtime: number; ext: string } | undefined,
 ) {
+  const decoderVersion = useRawDecoderVersion();
   return useQuery({
-    queryKey: ["rawDefaults", file?.path, file?.mtime],
+    queryKey: ["rawDefaults", file?.path, file?.mtime, decoderVersion],
     queryFn: async () =>
-      coreRequest<RawDefaultsResult>("rawDefaults", { path: file?.path }),
+      coreRequest<RawDefaultsResult>("rawDefaults", {
+        path: file?.path,
+        decoderVersion,
+      }),
     enabled: file !== undefined && isRawFile(file),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+export type DecoderSupport = { raw9: number; rawTotal: number };
+
+/// The core reads one file header per photo before its per-camera cache can
+/// help. A whole shoot off an SD card would outrun the sidecar's read timeout
+/// and take the process down, so ask in batches it can always answer in time.
+const SUPPORT_BATCH = 400;
+
+async function decoderSupport(paths: string[]): Promise<DecoderSupport> {
+  const total = { raw9: 0, rawTotal: 0 };
+  for (let start = 0; start < paths.length; start += SUPPORT_BATCH) {
+    const batch = await coreRequest<DecoderSupport>("decoderSupport", {
+      paths: paths.slice(start, start + SUPPORT_BATCH),
+    });
+    total.raw9 += batch.raw9;
+    total.rawTotal += batch.rawTotal;
+  }
+  return total;
+}
+
+// support is per camera model and OS, so it cannot change during the session
+export function useDecoderSupport(paths: string[], enabled: boolean) {
+  // sorted so the key is the selection's contents, not the grid's order
+  const sorted = useMemo(() => [...paths].sort(), [paths]);
+  return useQuery({
+    queryKey: ["decoderSupport", sorted],
+    queryFn: () => decoderSupport(sorted),
+    enabled: enabled && sorted.length > 0,
+    staleTime: Number.POSITIVE_INFINITY,
+    // an unanswered probe reads as "RAW 9 is fine", so hold the last verdict;
+    // it describes the previous selection, so callers check isPlaceholderData
+    placeholderData: keepPreviousData,
+  });
+}
+
+export const DECODER_AVAILABILITY_KEY = ["decoderAvailability"];
+
+/// null when nothing in the library could answer, so callers stay quiet
+/// instead of claiming RAW 9 is missing.
+export function useRaw9Availability(enabled: boolean) {
+  return useQuery({
+    queryKey: DECODER_AVAILABILITY_KEY,
+    queryFn: async () =>
+      (await coreRequest<{ raw9: boolean | null }>("decoderAvailability"))
+        .raw9 ?? null,
+    enabled,
     staleTime: Number.POSITIVE_INFINITY,
   });
 }
@@ -429,6 +507,7 @@ export function useTrash(shoot: string | null) {
       );
       queryClient.invalidateQueries({ queryKey: ["images", shoot] });
       queryClient.invalidateQueries({ queryKey: ["shoots"] });
+      queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
     },
     onError: (error) => {
       toast.error("Could not delete", { description: String(error) });
@@ -447,6 +526,7 @@ export function useUpdateProject() {
     }) => coreRequest<{ generation: number }>("updateProject", vars),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["shoots"] });
+      queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
     },
     onError: (error) => {
       toast.error("Could not save the project", { description: String(error) });
@@ -463,6 +543,7 @@ export function useRenameProject() {
     onSuccess: (result) => {
       toast.success(`Renamed to ${result.shoot}`);
       queryClient.invalidateQueries({ queryKey: ["shoots"] });
+      queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
       queryClient.invalidateQueries({ queryKey: ["images"] });
     },
     onError: (error) => {
@@ -495,6 +576,7 @@ export function useImportFiles(shoot: string | null) {
       queryClient.invalidateQueries({ queryKey: ["images", shoot] });
       queryClient.invalidateQueries({ queryKey: ["scoring", shoot] });
       queryClient.invalidateQueries({ queryKey: ["shoots"] });
+      queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
     },
     onError: (error) => {
       toast.error("Import failed", { description: String(error) });
@@ -510,6 +592,7 @@ export type ExportRequest = {
   flatten: boolean;
   format: ExportFormat;
   quality: number;
+  decoderVersion: number;
 };
 
 export type ExportProgress = {
@@ -642,6 +725,7 @@ export function useCreateProject() {
     onSuccess: (result) => {
       toast.success(`Created ${result.shoot}`);
       queryClient.invalidateQueries({ queryKey: ["shoots"] });
+      queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
     },
     onError: (error) => {
       toast.error("Could not create the project", {
@@ -700,6 +784,7 @@ export function useLibrarySync(
           xmpWritesInFlight(queryClient) === 0
         ) {
           queryClient.invalidateQueries({ queryKey: ["shoots"] });
+          queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
           for (const shoot of status.changedShoots ?? []) {
             queryClient.invalidateQueries({ queryKey: ["images", shoot] });
             // newly arrived photos need rating, and only scoreShoot picks them up

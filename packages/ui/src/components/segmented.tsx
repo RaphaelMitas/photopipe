@@ -5,11 +5,13 @@ export function Segmented<T extends string>({
   value,
   options,
   testid,
+  disabled,
   onChange,
 }: {
   value: T;
   options: readonly [T, string][];
   testid: string;
+  disabled?: readonly T[];
   onChange: (value: T) => void;
 }) {
   return (
@@ -20,6 +22,7 @@ export function Segmented<T extends string>({
           size="sm"
           variant={value === option ? "secondary" : "outline"}
           aria-pressed={value === option}
+          disabled={disabled?.includes(option)}
           data-testid={`${testid}-${option}`}
           onClick={() => onChange(option)}
           className="flex-1 text-xs"
