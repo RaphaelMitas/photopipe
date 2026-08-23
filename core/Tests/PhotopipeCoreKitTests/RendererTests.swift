@@ -506,8 +506,19 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
 
     let nine = renderer.cachePath(for: file, edit: .identity, maxPixel: 800, decoderVersion: 9)
     let eight = renderer.cachePath(for: file, edit: .identity, maxPixel: 800, decoderVersion: 8)
-    #expect(nine != eight)
-    #expect(nine != renderer.cachePath(for: file, edit: .identity, maxPixel: 800))
+    let plain = renderer.cachePath(for: file, edit: .identity, maxPixel: 800)
+    // Only a decoder this Mac can actually run earns its own key; a request
+    // that falls back renders the default, so it shares the default entry.
+    // CI runs an older macOS with no RAW 9, which is the whole point.
+    if renderer.supports(file: file, major: 9) {
+        #expect(nine != plain)
+        #expect(nine != eight)
+    } else {
+        #expect(nine == plain)
+    }
+    if renderer.supports(file: file, major: 8) {
+        #expect(eight != plain)
+    }
 }
 
 @Test func denoiseOverridesTheDecoderDefault() throws {
