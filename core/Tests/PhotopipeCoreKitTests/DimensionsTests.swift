@@ -39,13 +39,13 @@ import Testing
     #expect(dims.width == 64 && dims.height == 32)
 
     // Same pixels with EXIF orientation 6 (90° CW): upright dims must swap.
-    guard ExifTool.shared.available else {
+    guard ExifToolVerifier.available else {
         print("SKIP: exiftool needed for the orientation case")
         return
     }
     let rotated = dir.appendingPathComponent("rotated.jpg")
     try FileManager.default.copyItem(at: plain, to: rotated)
-    try ExifTool.shared.write(["-overwrite_original", "-Orientation#=6", rotated.path])
+    try ExifToolVerifier.write(["-overwrite_original", "-Orientation#=6", rotated.path])
     let rotatedDims = try #require(Dimensions.read(at: rotated))
     #expect(rotatedDims.width == 32 && rotatedDims.height == 64, "got \(rotatedDims)")
 }

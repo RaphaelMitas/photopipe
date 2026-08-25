@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Prove a built .app is self-contained.
 #
-# The unit and e2e suites all run from a checkout, where the Swift core and
-# exiftool are findable through dev paths. None of them can tell you whether
-# the *bundle* works. This drives the core out of the built app with a
+# The unit and e2e suites all run from a checkout, where the Swift core is
+# findable through dev paths. None of them can tell you whether the *bundle*
+# works. This drives the core out of the built app with a
 # deliberately bare PATH and no env overrides, so anything it cannot find
 # inside itself is a failure.
 set -euo pipefail
@@ -19,13 +19,13 @@ fi
 
 echo "Smoke testing $APP"
 
-for required in "Contents/MacOS/photopipe-core" "Contents/Resources/exiftool/exiftool"; do
+for required in "Contents/MacOS/photopipe-core"; do
   if [ ! -f "$APP/$required" ]; then
     echo "::error::Bundle is missing $required" >&2
     exit 1
   fi
 done
-echo "  contents: core and exiftool present"
+echo "  contents: core present"
 
 APP="$APP" exec /usr/bin/python3 - <<'PY'
 import json, os, shutil, subprocess, sys, tempfile
@@ -69,15 +69,15 @@ try:
         sys.exit("::error::expected 1 shoot, saw %s" % scanned["shoots"])
     print("  scan:     %s shoot, %s file" % (scanned["shoots"], scanned["files"]))
 
-    # The real proof: writing a rating means the bundled exiftool ran.
+    # The real proof: a rating write lands as an XMP sidecar on disk.
     photo = os.path.join(root, shoot, "original", "SMOKE1.ARW")
     require(call("setRating", {"shoot": shoot, "path": photo, "rating": 4}, "3"), "setRating")
     sidecar = os.path.join(root, shoot, "original", "SMOKE1.xmp")
     if not os.path.exists(sidecar):
-        sys.exit("::error::no XMP sidecar written; bundled exiftool did not run")
+        sys.exit("::error::no XMP sidecar written")
     if "4" not in open(sidecar).read():
         sys.exit("::error::sidecar written but the rating is missing")
-    print("  exiftool: XMP sidecar written with the rating")
+    print("  xmp:      sidecar written with the rating")
 finally:
     try:
         proc.stdin.close()

@@ -32,4 +32,3 @@ while let line = readLine(strippingNewline: true) {
     work.addOperation { emit(dispatcher.dispatch(line: line)) }
 }
 work.waitUntilAllOperationsAreFinished()
-ExifTool.shared.shutdown()

@@ -99,11 +99,6 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: apps/desktop/src-tauri
-      - name: Cache vendored exiftool
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: apps/desktop/src-tauri/resources/exiftool
-          key: exiftool-${{ hashFiles('scripts/fetch-exiftool.sh') }}
 
       - run: pnpm install --frozen-lockfile
 
@@ -152,8 +147,6 @@ jobs:
       # Inside-out, deliberately. `--deep` is deprecated and does not sign
       # nested helpers reliably, and this bundle has one: the Swift core in
       # Contents/MacOS. Sign it first, then seal the app around it.
-      # exiftool needs no signature of its own: it is a Perl script, not a
-      # Mach-O, and the app's seal covers it as a resource.
       - name: Sign
         run: |
           codesign --force --options runtime --timestamp \

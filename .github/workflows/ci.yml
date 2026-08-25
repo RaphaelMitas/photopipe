@@ -49,11 +49,6 @@ jobs:
           path: core/.build
           key: swiftpm-${{ runner.os }}-${{ hashFiles('core/Package.swift') }}
           restore-keys: swiftpm-${{ runner.os }}-
-      - name: Cache vendored exiftool
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: apps/desktop/src-tauri/resources/exiftool
-          key: exiftool-${{ hashFiles('scripts/fetch-exiftool.sh') }}
       - name: Cache raw fixtures
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
@@ -61,6 +56,8 @@ jobs:
           key: fixtures-${{ hashFiles('fixtures/fetch.sh') }}
       - name: Fetch raw fixtures
         run: ./fixtures/fetch.sh
+      # Test-only independent verifier for the XMP round-trip tests; the
+      # app itself no longer bundles or uses exiftool.
       - name: Install exiftool (XMP round-trip tests)
         run: brew install exiftool
       - name: Swift format lint
@@ -71,9 +68,12 @@ jobs:
         run: |
           swift build
           swift test
-      # tauri-build resolves externalBin and bundle.resources at compile
-      # time, so a missing sidecar or exiftool fails every cargo command, not
-      # just the bundle. Both are staged before the Rust steps.
+      # No iOS app exists yet; this keeps the core portable so one can.
+      - name: Swift build for iOS
+        working-directory: core
+        run: xcodebuild build -scheme PhotopipeCore -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO
+      # tauri-build resolves externalBin at compile time, so a missing
+      # sidecar fails every cargo command, not just the bundle.
       - name: Prepare bundle inputs
         run: ./scripts/prepare-bundle.sh
       - run: pnpm install --frozen-lockfile
@@ -83,9 +83,9 @@ jobs:
       - name: Cargo tests (sidecar integration against real core)
         working-directory: apps/desktop/src-tauri
         run: cargo test
-      # A real bundle, not --no-bundle: packaging is where the sidecar and
-      # exiftool get staged, so a build that skips it cannot catch the
-      # breakage that makes a shipped app useless.
+      # A real bundle, not --no-bundle: packaging is where the sidecar gets
+      # staged, so a build that skips it cannot catch the breakage that makes
+      # a shipped app useless.
       - name: Build the app bundle
         run: pnpm --filter desktop tauri build --bundles app
       - name: Smoke test the bundle

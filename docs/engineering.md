@@ -11,7 +11,13 @@ Stack, testing strategy, CI and releases.
   speaking line-delimited JSON over stdio. It owns everything that touches
   pixels or metadata: scanning, `CIRAWFilter` rendering, thumbnails, XMP,
   FSEvents, file actions.
-- **exiftool** for XMP writes, bundled into the app.
+- **XMP sidecars for every format**, written through ImageIO. Originals are
+  never rewritten: ImageIO's metadata write rebuilds a container's tag
+  structures from its own property model and drops what it does not model,
+  MakerNotes included. A raw keeps the basename sidecar Lightroom expects,
+  everything else keeps its extension so a raw and its JPEG cannot collide.
+  A photo's own embedded metadata still reads, and moves into the sidecar on
+  the first write.
 
 ```
 photopipe/
@@ -48,7 +54,7 @@ respawn, and never auto-retries a mutating method.
 
 | Layer | Runner | Covers |
 |---|---|---|
-| Swift core | `swift test` | scanning, stage/lineage, XMP round-trips verified against a real exiftool, renderer, file actions, path containment |
+| Swift core | `swift test` | scanning, stage/lineage, XMP round-trips verified against a real exiftool (test-only verifier), renderer, file actions, path containment |
 | Rust shell | `cargo test` | sidecar lifecycle, framing, crash-restart, timeouts |
 | React | Vitest | selection, browser views, stepper, keyboard |
 | App | Playwright | full flows against a mocked core |
@@ -60,16 +66,16 @@ mocked, and the native half is covered by driving the sidecar binary directly.
 Together they cover the whole app, cut at the protocol seam.
 
 The bundle smoke test is the one that catches shipping failures: every other
-suite runs from a checkout, where the core and exiftool are findable through
-dev paths. It drives the core *out of a built bundle* with `PATH=/usr/bin:/bin`
-and no overrides, and a written XMP sidecar proves the bundled exiftool ran.
+suite runs from a checkout, where the core is findable through dev paths. It
+drives the core *out of a built bundle* with `PATH=/usr/bin:/bin` and no
+overrides, and a written XMP sidecar proves the write path works.
 
 ## CI
 
 Two jobs. `quick` on Ubuntu does lint, typecheck, Vitest and Playwright.
 `native` on macOS 15 does swift-format, `swift test`, clippy, `cargo test`,
 then builds a real `.app` and smoke tests it. Caches: pnpm, cargo, SwiftPM,
-raw fixtures, vendored exiftool.
+raw fixtures.
 
 Real ARW fixtures are fetched by `fixtures/fetch.sh` (CC0, from raw.pixls.us)
 rather than committed — they are 25–50 MB each.
@@ -82,9 +88,8 @@ equal; if the bundle allows an older OS than the core was built for, the app
 installs, opens, and then every request fails. `scripts/build-core.sh` builds
 the host triple only, so an Intel Mac would get a sidecar that cannot run.
 
-`tauri-build` resolves `externalBin` and `bundle.resources` at compile time,
-so a missing Swift core or missing exiftool fails `cargo clippy` and
-`cargo test`, not just the bundle. On a fresh clone run
+`tauri-build` resolves `externalBin` at compile time, so a missing Swift
+core fails `cargo clippy` and `cargo test`, not just the bundle. On a fresh clone run
 `./scripts/prepare-bundle.sh` once; the bundle build runs it automatically.
 
 ```bash
@@ -103,8 +108,7 @@ notices the version has no tag and:
 2. builds the app
 3. signs **inside-out** — the Swift core first, then the app. `--deep` is
    deprecated and unreliable for nested helpers, which is exactly what a
-   sidecar is. exiftool needs no signature: it is a Perl script, not a
-   Mach-O, and the app's seal covers it.
+   sidecar is.
 4. notarizes, staples, and builds the DMG *from the stapled app*
 5. signs and notarizes the DMG in its own right
 6. tars the stapled app, signs it with the minisign key and writes
@@ -164,5 +168,5 @@ machine-independent.
   explains itself.
 - **Perf and memory** against a synthetic 10,000-photo library, plus
   render-cache growth over a long session.
-- **Error surfacing** for the three failures a user can hit: dead sidecar,
-  missing exiftool, permission denied.
+- **Error surfacing** for the two failures a user can hit: dead sidecar,
+  permission denied.

@@ -395,7 +395,7 @@ export type PasteResult = {
   overtaken: number;
 };
 
-/// Enough to keep exiftool busy without starving renders and thumbnails.
+/// Enough to keep the XMP writer busy without starving renders and thumbnails.
 const PASTE_CONCURRENCY = 4;
 
 /// One mutation for the batch, under the single-edit key so the library poller

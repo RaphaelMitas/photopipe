@@ -4,8 +4,6 @@ public let imageExtensions: Set<String> = ["arw", "dng", "jpg", "jpeg", "png"]
 
 public let rawExtensions: Set<String> = ["arw", "dng", "cr2", "cr3", "nef", "raf", "orf", "rw2"]
 
-public let sidecarExtensions: Set<String> = ["arw"]
-
 public func isImagePath(_ path: String) -> Bool {
     imageExtensions.contains((path as NSString).pathExtension.lowercased())
 }
@@ -52,10 +50,6 @@ public struct ImageFile: Codable, Equatable, Sendable {
         self.score = score
         self.enriched = enriched
         self.sidecarMtime = sidecarMtime
-    }
-
-    public var usesSidecar: Bool {
-        sidecarExtensions.contains(ext.lowercased())
     }
 
     public var isRaw: Bool {
