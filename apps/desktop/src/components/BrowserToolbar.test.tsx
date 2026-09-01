@@ -34,6 +34,15 @@ describe("BrowserToolbar", () => {
     expect(onSort).toHaveBeenCalledWith("score");
   });
 
+  it("sorts by rating without waiting for a rating pass", () => {
+    const { onSort } = toolbar({ scoreReady: false });
+    fireEvent.keyDown(screen.getByTestId("sort"), { key: "Enter" });
+    const option = screen.getByTestId("sort-rating");
+    expect(option).not.toHaveAttribute("data-disabled");
+    fireEvent.click(option);
+    expect(onSort).toHaveBeenCalledWith("rating");
+  });
+
   it("names the rating pass and keeps Instinct out of reach while it runs", () => {
     const { onSort } = toolbar({
       scoreReady: false,

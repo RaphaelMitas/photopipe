@@ -10,6 +10,32 @@ describe("sortImages", () => {
     expect(sortImages(images, "name")).toBe(images);
   });
 
+  it("puts the most stars first and unrated last", () => {
+    const images = [
+      makeImage("two.arw", { rating: 2 }),
+      makeImage("none.arw", { rating: 0 }),
+      makeImage("five.arw", { rating: 5 }),
+    ];
+    expect(rels(sortImages(images, "rating"))).toEqual([
+      "five.arw",
+      "two.arw",
+      "none.arw",
+    ]);
+  });
+
+  it("leaves photos with the same stars in the order they came in", () => {
+    const images = [
+      makeImage("b.arw", { rating: 3 }),
+      makeImage("a.arw", { rating: 3 }),
+      makeImage("c.arw", { rating: 4 }),
+    ];
+    expect(rels(sortImages(images, "rating"))).toEqual([
+      "c.arw",
+      "b.arw",
+      "a.arw",
+    ]);
+  });
+
   it("puts the best score first", () => {
     const images = [
       makeImage("mid.arw", { score: 0.2 }),

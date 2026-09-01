@@ -122,7 +122,9 @@ export default function App() {
   };
   const [sort, setSort] = useState<SortKey>(() => {
     const stored = localStorage.getItem(SORT_KEY);
-    return stored === "date" || stored === "score" ? stored : "name";
+    return stored === "date" || stored === "rating" || stored === "score"
+      ? stored
+      : "name";
   });
   const changeSort = (next: SortKey) => {
     setSort(next);

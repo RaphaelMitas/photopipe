@@ -16,6 +16,7 @@ export type ViewMode = "grid" | "list";
 const SORT_LABELS: Record<SortKey, string> = {
   name: "Name",
   date: "Date",
+  rating: "Rating",
   score: "Instinct",
 };
 
@@ -85,6 +86,9 @@ export function BrowserToolbar({
             </DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="date">
               {SORT_LABELS.date}
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="rating" data-testid="sort-rating">
+              {SORT_LABELS.rating}
             </DropdownMenuRadioItem>
             <DropdownMenuRadioItem
               value="score"
