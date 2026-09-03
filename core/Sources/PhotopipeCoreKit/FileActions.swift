@@ -25,21 +25,19 @@ public enum FileActions {
         return trashed
     }
 
-    @discardableResult
-    public static func copy(paths: [String], toFolder folder: String) throws -> Int {
-        guard !paths.isEmpty else { throw ActionError.noFiles }
+    /// Copying straight to the target would leave a half-written file under
+    /// the real name if the process went away mid-copy.
+    public static func safeCopy(from source: URL, to target: URL) throws {
         let fm = FileManager.default
-        let destination = URL(fileURLWithPath: folder)
-        try fm.createDirectory(at: destination, withIntermediateDirectories: true)
-        var copied = 0
-        for path in paths {
-            let source = URL(fileURLWithPath: path)
-            let target = uniqueURL(
-                for: destination.appendingPathComponent(source.lastPathComponent))
-            try fm.copyItem(at: source, to: target)
-            copied += 1
+        let temp = target.deletingLastPathComponent()
+            .appendingPathComponent(".photopipe-\(UUID().uuidString)")
+        try fm.copyItem(at: source, to: temp)
+        do {
+            try fm.moveItem(at: temp, to: target)
+        } catch {
+            try? fm.removeItem(at: temp)
+            throw error
         }
-        return copied
     }
 
     public static func zipDirectory(at dir: URL, to destination: String) throws {

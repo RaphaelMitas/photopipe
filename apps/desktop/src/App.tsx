@@ -64,7 +64,6 @@ import {
   type ScoreProgress,
   useExportJobs,
   useImages,
-  useImportFiles,
   useLibrarySync,
   usePasteEdits,
   useReveal,
@@ -203,7 +202,6 @@ export default function App() {
   const reveal = useReveal();
   const trash = useTrash(openShoot);
   const exports = useExportJobs();
-  const importFiles = useImportFiles(openShoot);
   const scan = useLibrarySync(ready, ready ? rootState.generation : null);
 
   const allImages = images.data ?? [];
@@ -358,6 +356,7 @@ export default function App() {
   }, []);
 
   const runImport = async () => {
+    if (!openShoot) return;
     const chosen = await openDialog({
       title: "Import photos",
       multiple: true,
@@ -371,20 +370,36 @@ export default function App() {
         ? [chosen]
         : [];
     if (paths.length === 0) return;
-    importFiles.mutate(paths);
+    const job = await exports.start({
+      method: "importFiles",
+      label: `Import ${paths.length} ${paths.length === 1 ? "file" : "files"}`,
+      destination:
+        shoots.data?.find((s) => s.name === openShoot)?.path ?? openShoot,
+      request: { shoot: openShoot, paths },
+    });
+    // The plan drops what is already in the shoot and what is not a photo.
+    if (job && job.total < paths.length) {
+      toast.info(
+        `${paths.length - job.total} of ${paths.length} skipped — already imported or not photos`,
+      );
+    }
   };
 
   const runExport = (options: ExportOptions, destination: string) => {
     if (!openShoot) return;
-    void exports.start(exportLabel(selectedImages.length, options.format), {
-      shoot: openShoot,
-      paths: selectedImages.map((image) => image.path),
-      destination,
-      zip: options.zip,
-      flatten: options.flatten,
-      format: options.format,
-      quality: options.quality,
-      decoderVersion: options.decoderVersion,
+    void exports.start({
+      method: "exportFiles",
+      label: exportLabel(selectedImages.length, options.format),
+      request: {
+        shoot: openShoot,
+        paths: selectedImages.map((image) => image.path),
+        destination,
+        zip: options.zip,
+        flatten: options.flatten,
+        format: options.format,
+        quality: options.quality,
+        decoderVersion: options.decoderVersion,
+      },
     });
   };
 
@@ -743,7 +758,7 @@ export default function App() {
                 {exports.running ? (
                   <>
                     <span className="size-2 animate-pulse rounded-full bg-primary" />
-                    Exporting…
+                    Working…
                   </>
                 ) : latestJob && jobStatus(latestJob) === "failed" ? (
                   <>

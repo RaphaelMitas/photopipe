@@ -468,7 +468,7 @@ export function ExportDrawer({
                         size="icon"
                         variant="ghost"
                         data-testid="job-cancel"
-                        title="Cancel export"
+                        title="Cancel"
                         onClick={() => onCancel(job.key)}
                         className="size-5 shrink-0 text-muted-foreground"
                       >

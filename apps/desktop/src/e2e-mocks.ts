@@ -137,6 +137,23 @@ const exportFails = Number(
   new URLSearchParams(location.search).get("exportfails") ?? 0,
 );
 
+function startJob(total: number, zip: boolean): ExportProgress {
+  const job: ExportProgress = {
+    id: String(exportJobs.size + 1),
+    done: 0,
+    failed: 0,
+    total,
+    running: true,
+    cancelled: false,
+    archiving: false,
+    error: null,
+    failures: [],
+  };
+  exportJobs.set(job.id, job);
+  zipJobs.set(job.id, zip);
+  return { ...job };
+}
+
 function advanceExport(id: string): ExportProgress {
   const job = exportJobs.get(id);
   if (!job) throw `unknown_export: ${id}`;
@@ -233,23 +250,8 @@ export const E2E_HANDLERS: Record<
     }
     return { files, generation: 1 };
   },
-  exportFiles: (params) => {
-    const paths = params.paths as string[];
-    const job: ExportProgress = {
-      id: String(exportJobs.size + 1),
-      done: 0,
-      failed: 0,
-      total: paths.length,
-      running: true,
-      cancelled: false,
-      archiving: false,
-      error: null,
-      failures: [],
-    };
-    exportJobs.set(job.id, job);
-    zipJobs.set(job.id, params.zip === true);
-    return { ...job };
-  },
+  exportFiles: (params) =>
+    startJob((params.paths as string[]).length, params.zip === true),
   exportStatus: (params) => advanceExport(String(params.id)),
   cancelExport: (params) => {
     const job = advanceExport(String(params.id));
@@ -265,11 +267,7 @@ export const E2E_HANDLERS: Record<
     }
     return { ...job };
   },
-  importFiles: (params) => ({
-    imported: (params.paths as string[]).length,
-    skipped: 0,
-    generation: 1,
-  }),
+  importFiles: (params) => startJob((params.paths as string[]).length, false),
   createProject: (params) => {
     const shoot = `${String(params.day)}_${String(params.name)}`;
     if (shoots.some((existing) => existing.name === shoot)) {

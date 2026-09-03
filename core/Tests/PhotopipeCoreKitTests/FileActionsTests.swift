@@ -26,21 +26,29 @@ private func makeShoot(in root: URL, named name: String = "2026-06-06_actions") 
     return shoot
 }
 
-@discardableResult
-private func exportNow(
-    _ service: LibraryService, shoot: String, paths: [String], destination: String,
-    zip: Bool = false, flatten: Bool = true, format: LibraryService.ExportFormat = .original,
-    quality: Int = 90
-) throws -> Exporter.Progress {
-    var job = try service.startExport(
-        shoot: shoot, paths: paths, destination: destination,
-        zip: zip, flatten: flatten, format: format, quality: quality)
+private func settled(_ service: LibraryService, _ job: Exporter.Progress) throws
+    -> Exporter.Progress
+{
+    var job = job
     let deadline = Date().addingTimeInterval(60)
     while job.running && Date() < deadline {
         Thread.sleep(forTimeInterval: 0.01)
         job = try service.exportStatus(id: job.id)
     }
     return job
+}
+
+@discardableResult
+private func exportNow(
+    _ service: LibraryService, shoot: String, paths: [String], destination: String,
+    zip: Bool = false, flatten: Bool = true, format: LibraryService.ExportFormat = .original,
+    quality: Int = 90
+) throws -> Exporter.Progress {
+    try settled(
+        service,
+        try service.startExport(
+            shoot: shoot, paths: paths, destination: destination,
+            zip: zip, flatten: flatten, format: format, quality: quality))
 }
 
 @Test func trashRemovesTheFileAndItsSidecar() throws {
@@ -288,23 +296,46 @@ private func exportNow(
     let service = makeService(in: dir)
     _ = try service.setRoot(path: dir.path, indexPath: nil)
 
-    // The photo lands in the shoot folder; the text file is skipped, not copied.
-    let result = try service.importFiles(
-        shoot: "2026-08-11_import",
-        paths: [
-            source.appendingPathComponent("DSC00050.ARW").path,
-            source.appendingPathComponent("notes.txt").path,
-        ])
-    #expect(result.imported == 1)
-    #expect(result.skipped == 1)
+    // The photo lands in the shoot folder; the text file never makes the plan.
+    let job = try settled(
+        service,
+        service.startImport(
+            shoot: "2026-08-11_import",
+            paths: [
+                source.appendingPathComponent("DSC00050.ARW").path,
+                source.appendingPathComponent("notes.txt").path,
+            ]))
+    #expect(job.total == 1)
+    #expect(job.done == 1)
+    #expect(job.failed == 0)
     #expect(
         FileManager.default.fileExists(
             atPath: shoot.appendingPathComponent("DSC00050.ARW").path))
+    service.rescanNow()
     #expect(try service.listImages(shoot: "2026-08-11_import").map(\.rel) == ["DSC00050.ARW"])
 
-    // Importing the same name again never overwrites.
-    _ = try service.importFiles(
-        shoot: "2026-08-11_import", paths: [source.appendingPathComponent("DSC00050.ARW").path])
+    // Re-importing the same file is a no-op, not a suffixed duplicate.
+    let again = try settled(
+        service,
+        service.startImport(
+            shoot: "2026-08-11_import",
+            paths: [source.appendingPathComponent("DSC00050.ARW").path]))
+    #expect(again.total == 0)
+    #expect(
+        !FileManager.default.fileExists(
+            atPath: shoot.appendingPathComponent("DSC00050-1.ARW").path))
+
+    // A different file wearing the same name is kept under a suffix.
+    let elsewhere = try tempDir()
+    defer { try? FileManager.default.removeItem(at: elsewhere) }
+    try Data("a longer different photo".utf8)
+        .write(to: elsewhere.appendingPathComponent("DSC00050.ARW"))
+    let clash = try settled(
+        service,
+        service.startImport(
+            shoot: "2026-08-11_import",
+            paths: [elsewhere.appendingPathComponent("DSC00050.ARW").path]))
+    #expect(clash.done == 1)
     #expect(
         FileManager.default.fileExists(
             atPath: shoot.appendingPathComponent("DSC00050-1.ARW").path))
@@ -312,8 +343,12 @@ private func exportNow(
     // The source was only read.
     #expect(try FileManager.default.contentsOfDirectory(atPath: source.path).count == 2)
 
+    #expect(throws: FileActions.ActionError.noFiles) {
+        try service.startImport(
+            shoot: "2026-08-11_import", paths: [source.appendingPathComponent("notes.txt").path])
+    }
     #expect(throws: LibraryService.ServiceError.self) {
-        try service.importFiles(shoot: "NOPE", paths: ["/tmp/x.arw"])
+        try service.startImport(shoot: "NOPE", paths: ["/tmp/x.arw"])
     }
 }
 
@@ -322,7 +357,4 @@ private func exportNow(
     defer { try? FileManager.default.removeItem(at: dir) }
     #expect(throws: FileActions.ActionError.noFiles) { try FileActions.reveal(paths: []) }
     #expect(throws: FileActions.ActionError.noFiles) { try FileActions.trash(paths: []) }
-    #expect(throws: FileActions.ActionError.noFiles) {
-        try FileActions.copy(paths: [], toFolder: dir.appendingPathComponent("out").path)
-    }
 }

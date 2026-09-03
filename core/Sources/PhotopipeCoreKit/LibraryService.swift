@@ -517,19 +517,50 @@ public final class LibraryService: @unchecked Sendable {
         return (folder, path.path, status().generation)
     }
 
-    public func importFiles(shoot shootName: String, paths: [String]) throws -> (
-        imported: Int, skipped: Int, generation: Int
-    ) {
+    /// A card's worth of raws takes minutes to copy, far past the client's
+    /// read timeout, so imports are jobs like exports: plan instantly, copy in
+    /// the background, poll through `exportStatus`. The watcher picks up each
+    /// file as it lands, so the shoot fills in while the job runs.
+    public func startImport(shoot shootName: String, paths: [String]) throws
+        -> Exporter.Progress
+    {
         lock.lock()
-        let path = snapshot.shoots.first { $0.name == shootName }?.path
+        let shootPath = snapshot.shoots.first { $0.name == shootName }?.path
         lock.unlock()
-        guard let path else { throw ServiceError.unknownShoot(shootName) }
+        guard let shootPath else { throw ServiceError.unknownShoot(shootName) }
 
         let images = paths.filter(isImagePath)
         guard !images.isEmpty else { throw FileActions.ActionError.noFiles }
-        let copied = try FileActions.copy(paths: images, toFolder: path)
-        rescanNow()
-        return (copied, paths.count - images.count, status().generation)
+
+        let fm = FileManager.default
+        let destination = URL(fileURLWithPath: shootPath)
+        var used: Set<String> = []
+        var items: [Exporter.Plan.Item] = []
+        for path in images {
+            let source = URL(fileURLWithPath: path)
+            // Same name and size means this file already made it in — a
+            // re-import after a crash must not duplicate it under a suffix.
+            let existing = destination.appendingPathComponent(source.lastPathComponent)
+            if let sourceSize = Self.fileSize(source), Self.fileSize(existing) == sourceSize {
+                continue
+            }
+            let name = FileActions.uniqueName(source.lastPathComponent) { candidate in
+                used.contains(candidate.lowercased())
+                    || fm.fileExists(atPath: destination.appendingPathComponent(candidate).path)
+            }
+            used.insert(name.lowercased())
+            let target = destination.appendingPathComponent(name)
+            items.append(
+                Exporter.Plan.Item(label: source.lastPathComponent) {
+                    try FileActions.safeCopy(from: source, to: target)
+                })
+        }
+        return exporter.start(
+            plan: Exporter.Plan(items: items, destination: shootPath, staging: nil))
+    }
+
+    private static func fileSize(_ url: URL) -> Int64? {
+        (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? nil
     }
 
     public func reveal(paths: [String]) throws {
@@ -595,20 +626,21 @@ public final class LibraryService: @unchecked Sendable {
                         && fm.fileExists(atPath: base.appendingPathComponent(candidate).path))
             }
             used.insert(name.lowercased())
-            return Exporter.Plan.Item(image: image, target: base.appendingPathComponent(name))
+            let target = base.appendingPathComponent(name)
+            // An export carries the real edit and rating even where enrichment
+            // has not reached yet. Reading them opens the file, so it happens
+            // in the writers, four wide, rather than in the request that plans
+            // the job.
+            return Exporter.Plan.Item(label: image.rel) {
+                try self.write(
+                    enrich(image), format: format, quality: quality, to: target, staging: zip,
+                    decoderVersion: decoderVersion)
+            }
         }
 
         if let staging { try fm.createDirectory(at: staging, withIntermediateDirectories: true) }
         return exporter.start(
-            plan: Exporter.Plan(items: items, destination: destination, staging: staging)
-        ) { image, target in
-            // An export carries the real edit and rating even where enrichment
-            // has not reached yet. Reading them opens the file, so it happens
-            // here, four wide, rather than in the request that plans the job.
-            try self.write(
-                enrich(image), format: format, quality: quality, to: target, staging: zip,
-                decoderVersion: decoderVersion)
-        }
+            plan: Exporter.Plan(items: items, destination: destination, staging: staging))
     }
 
     public func stopExports() {
@@ -646,17 +678,7 @@ public final class LibraryService: @unchecked Sendable {
                     try fm.copyItem(at: source, to: target)
                 }
             } else {
-                // Copying straight to the target leaves a half-written file
-                // under the real name if the process goes away mid-copy.
-                let temp = target.deletingLastPathComponent()
-                    .appendingPathComponent(".photopipe-\(UUID().uuidString)")
-                try fm.copyItem(at: source, to: temp)
-                do {
-                    try fm.moveItem(at: temp, to: target)
-                } catch {
-                    try? fm.removeItem(at: temp)
-                    throw error
-                }
+                try FileActions.safeCopy(from: source, to: target)
             }
         case .jpeg:
             try renderer.exportJPEG(
