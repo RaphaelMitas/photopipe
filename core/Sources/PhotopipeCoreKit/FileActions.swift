@@ -29,25 +29,33 @@ public enum FileActions {
     /// scanner and out of Finder until something sweeps it.
     public static let tempPrefix = ".photopipe-"
 
-    /// Copying straight to the target would leave a half-written file under
-    /// the real name if the process went away mid-copy.
-    public static func safeCopy(from source: URL, to target: URL) throws {
+    /// Never overwrites: a name taken since the caller picked it earns a
+    /// suffix rather than costing the file. Staging under a hidden name keeps
+    /// a half-written copy from ever appearing under the real one.
+    @discardableResult
+    public static func copyWithoutOverwriting(from source: URL, to target: URL) throws -> URL {
         let fm = FileManager.default
         let temp = target.deletingLastPathComponent()
             .appendingPathComponent("\(tempPrefix)\(UUID().uuidString)")
         try fm.copyItem(at: source, to: temp)
-        do {
-            try fm.moveItem(at: temp, to: target)
-        } catch {
-            try? fm.removeItem(at: temp)
-            throw error
+        var landing = target
+        while true {
+            do {
+                try fm.moveItem(at: temp, to: landing)
+                return landing
+            } catch CocoaError.fileWriteFileExists {
+                landing = uniqueURL(for: landing)
+            } catch {
+                try? fm.removeItem(at: temp)
+                throw error
+            }
         }
     }
 
     public static func zipDirectory(at dir: URL, to destination: String) throws {
         let dest = URL(fileURLWithPath: destination)
         let temp = dest.deletingLastPathComponent()
-            .appendingPathComponent(".photopipe-\(UUID().uuidString).zip")
+            .appendingPathComponent("\(tempPrefix)\(UUID().uuidString).zip")
         defer { try? FileManager.default.removeItem(at: temp) }
         let result = try run(
             "/usr/bin/zip", ["-q", "-r", temp.path, "."], currentDirectory: dir)

@@ -540,7 +540,13 @@ mod tests {
         let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/wedged-sidecar.sh");
         let mut sidecar = Sidecar::new(script);
         sidecar.read_timeout = Duration::from_millis(200);
-        for method in MUTATING_METHODS {
+        // Spelled out rather than read from the constant: a loop over the very
+        // list it checks stays green when a method falls out of that list.
+        for method in ["setRating", "setEdit", "exportFiles", "importFiles"] {
+            assert!(
+                MUTATING_METHODS.contains(&method),
+                "{method} mutates the library and must never be re-sent"
+            );
             let start = Instant::now();
             let error = sidecar
                 .request(method, Some(json!({"path": "/r/DSC1.ARW", "rating": 3})))

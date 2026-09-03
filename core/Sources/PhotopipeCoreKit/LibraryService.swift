@@ -524,46 +524,57 @@ public final class LibraryService: @unchecked Sendable {
         let destination = URL(fileURLWithPath: shootPath)
         Self.sweepStaleTemps(in: destination)
 
-        var used: Set<String> = []
+        var plan = ImportPlan(destination: destination)
         var items: [Exporter.Plan.Item] = []
         for path in images {
             let source = URL(fileURLWithPath: path)
-            guard let target = Self.importTarget(for: source, in: destination, claiming: &used)
-            else { continue }
+            guard let target = plan.target(for: source) else { continue }
             items.append(
                 Exporter.Plan.Item(label: source.lastPathComponent) {
-                    // The name was picked before the first copy, and something
-                    // else can reach the folder in between. Suffixing beats
-                    // failing the file over a name.
-                    try FileActions.safeCopy(from: source, to: FileActions.uniqueURL(for: target))
+                    try FileActions.copyWithoutOverwriting(from: source, to: target)
                 })
         }
         return exporter.start(
             plan: Exporter.Plan(items: items, destination: shootPath, staging: nil))
     }
 
-    /// Where this file should land, or nil when a copy of it is already in the
-    /// shoot under any name. Size and mtime stand in for identity: a copy
-    /// carries both over, so a re-import recognises its own earlier work,
-    /// while two different frames that merely share a name both still get in.
-    private static func importTarget(
-        for source: URL, in destination: URL, claiming used: inout Set<String>
-    ) -> URL? {
-        let identity = Self.identity(source)
-        var imported = false
-        let name = FileActions.uniqueName(source.lastPathComponent) { candidate in
-            if used.contains(candidate.lowercased()) { return true }
-            guard let landed = Self.identity(destination.appendingPathComponent(candidate))
-            else { return false }
-            if let identity, landed == identity { imported = true }
-            return true
+    /// What one import has spoken for: names taken on disk or by an earlier
+    /// item, and the files those items came from, so the same photo picked
+    /// twice in one selection is copied once.
+    private struct ImportPlan {
+        let destination: URL
+        private var used: Set<String> = []
+        private var claimed: [FileIdentity: [URL]] = [:]
+
+        init(destination: URL) { self.destination = destination }
+
+        /// Where this file should land, or nil when the shoot already has it
+        /// under any name.
+        mutating func target(for source: URL) -> URL? {
+            let identity = LibraryService.identity(source)
+            if let identity,
+                claimed[identity, default: []].contains(where: { LibraryService.same($0, source) })
+            {
+                return nil
+            }
+            var imported = false
+            let name = FileActions.uniqueName(source.lastPathComponent) { candidate in
+                if used.contains(candidate.lowercased()) { return true }
+                let landed = destination.appendingPathComponent(candidate)
+                guard let landedIdentity = LibraryService.identity(landed) else { return false }
+                if landedIdentity == identity, LibraryService.same(source, landed) {
+                    imported = true
+                }
+                return true
+            }
+            guard !imported else { return nil }
+            used.insert(name.lowercased())
+            if let identity { claimed[identity, default: []].append(source) }
+            return destination.appendingPathComponent(name)
         }
-        guard !imported else { return nil }
-        used.insert(name.lowercased())
-        return destination.appendingPathComponent(name)
     }
 
-    private struct FileIdentity: Equatable {
+    private struct FileIdentity: Equatable, Hashable {
         let size: Int
         let modified: Date
     }
@@ -575,6 +586,22 @@ public final class LibraryService: @unchecked Sendable {
             ]), let size = values.fileSize, let modified = values.contentModificationDate
         else { return nil }
         return FileIdentity(size: size, modified: modified)
+    }
+
+    /// Whether these are the same photo. Size and mtime alone cannot say: a
+    /// card formatted FAT32 keeps mtime to the nearest two seconds, and an
+    /// uncompressed raw is a fixed byte count per body, so two frames from a
+    /// burst on two cards look identical. The head of the file carries the
+    /// EXIF and the preview, which do not.
+    private static func same(_ left: URL, _ right: URL) -> Bool {
+        guard let head = Self.head(left), head == Self.head(right) else { return false }
+        return true
+    }
+
+    private static func head(_ url: URL) -> Data? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        return try? handle.read(upToCount: 64 * 1024)
     }
 
     /// A killed copy leaves its staging file behind, hidden from Finder and
@@ -716,7 +743,7 @@ public final class LibraryService: @unchecked Sendable {
                     try fm.copyItem(at: source, to: target)
                 }
             } else {
-                try FileActions.safeCopy(from: source, to: target)
+                try FileActions.copyWithoutOverwriting(from: source, to: target)
             }
         case .jpeg:
             try renderer.exportJPEG(

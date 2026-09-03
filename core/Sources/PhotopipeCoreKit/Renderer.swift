@@ -142,7 +142,7 @@ public final class Renderer {
                 ])
         else { throw RenderError.encodeFailed }
         let temp = destination.deletingLastPathComponent()
-            .appendingPathComponent(".photopipe-\(UUID().uuidString).jpg")
+            .appendingPathComponent("\(FileActions.tempPrefix)\(UUID().uuidString).jpg")
         try jpeg.write(to: temp)
         do {
             try FileManager.default.moveItem(at: temp, to: destination)
