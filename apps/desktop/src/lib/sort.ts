@@ -23,3 +23,18 @@ export function sortImages(images: ImageFile[], sort: SortKey): ImageFile[] {
       });
   }
 }
+
+/// The browser's list: what the filter lets through, in the order the sort
+/// asks for. `keep` is exempt from the filter but still placed by the sort,
+/// which is how the loupe holds on to a photo you have just rated away.
+export function browserOrder(
+  images: ImageFile[],
+  matches: (image: ImageFile) => boolean,
+  sort: SortKey,
+  keep?: ImageFile,
+): ImageFile[] {
+  return sortImages(
+    images.filter((image) => image === keep || matches(image)),
+    sort,
+  );
+}

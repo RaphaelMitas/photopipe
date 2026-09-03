@@ -134,20 +134,16 @@ test("rating the open photo under Rating sort still advances to the next one", a
   await openZell(page);
   await sortByRating(page);
 
-  // Rating order leads with the one pre-rated photo, then the unrated three
-  // in name order.
   await page.getByTestId("thumb").nth(1).click();
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.ARW");
 
-  // Five stars re-sorts the browser behind the loupe, but the walk holds: the
-  // photo keeps its place and the next arrow reaches the one that was next.
+  // Five stars re-sorts the browser behind the loupe; the walk holds.
   await page.keyboard.press("5");
   await expect(page.locator("[data-rating='5']")).toBeVisible();
   await expect(page.getByTestId("loupe-position")).toHaveText("2/4");
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.jpg");
 
-  // and back again lands on the photo you rated, not past it.
   await page.keyboard.press("ArrowLeft");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.ARW");
 });
@@ -156,10 +152,13 @@ test("a filter change under the loupe leaves the photo where the sort puts it", 
   page,
 }) => {
   await openZell(page);
+  await rate(page, "DSC00832.jpg", "4");
+  await sortByRating(page);
 
-  // The second photo, so its place in the list is not the one a stale index
-  // would land on anyway.
-  await page.getByTestId("thumb").nth(1).click();
+  // Rating order is 4, 2, then the unrated pair. Open the four-star photo and
+  // filter to the two-star one: the sort, not a remembered index, decides
+  // where the photo you are on belongs.
+  await page.getByTestId("thumb").first().click();
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.jpg");
 
   await page.getByTestId("filter-op-eq").click();
@@ -185,19 +184,37 @@ test("the arrows stop at the ends instead of wrapping or sticking", async ({
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("loupe-position")).toHaveText("4/4");
 
-  // Rating the last photo must not strand the arrows: it keeps its place, so
-  // back still walks the shoot.
+  // Rating the last photo must not strand the arrows.
   await page.keyboard.press("5");
   await expect(page.getByTestId("loupe-position")).toHaveText("4/4");
   await page.keyboard.press("ArrowLeft");
   await expect(page.getByTestId("loupe-position")).toHaveText("3/4");
 
-  // Reopening walks the browser as it now stands, with the five-star photo
-  // leading, so the first photo is genuinely the first.
   await page.keyboard.press("Escape");
   await page.getByTestId("thumb").first().click();
   await expect(page.getByTestId("loupe-position")).toHaveText("1/4");
   await page.keyboard.press("ArrowLeft");
+  await expect(page.getByTestId("loupe-position")).toHaveText("1/4");
+});
+
+test("reopening the loupe walks the browser as it now stands", async ({
+  page,
+}) => {
+  await openZell(page);
+  await sortByRating(page);
+
+  // Five stars sends this photo to the front of the browser. The visit it is
+  // in holds its order, but the next visit must start from the new one.
+  await page.getByTestId("thumb").nth(3).click();
+  await page.keyboard.press("5");
+  await expect(page.locator("[data-rating='5']")).toBeVisible();
+  await expect(page.getByTestId("loupe-position")).toHaveText("4/4");
+  await page.keyboard.press("Escape");
+
+  await page.getByTestId("thumb").first().click();
+  await expect(page.getByTestId("loupe-name")).toHaveText(
+    "abends/DSC00943.ARW",
+  );
   await expect(page.getByTestId("loupe-position")).toHaveText("1/4");
 });
 

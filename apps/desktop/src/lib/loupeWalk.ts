@@ -1,38 +1,32 @@
 import type { ImageFile } from "./core";
-import { type SortKey, sortImages } from "./sort";
 
-/// Rating a photo re-sorts the browser under it, so the loupe walks the order
-/// it arrived with. The grid behind stays live and catches up when you leave.
+/// The browser re-sorts under a rating, so the loupe walks the order it
+/// arrived with. Photos it has never seen are slotted in beside the neighbour
+/// they arrived next to, so an import mid-visit stays where the sort put it.
 export function heldOrder(
   held: string[],
   live: ImageFile[],
   current: ImageFile,
 ): ImageFile[] {
   const byPath = new Map(live.map((image) => [image.path, image]));
-  const kept: ImageFile[] = [];
-  for (const path of held) {
-    if (path === current.path) kept.push(current);
-    else {
-      const image = byPath.get(path);
-      if (image) kept.push(image);
-    }
-  }
   const known = new Set(held);
-  return [...kept, ...live.filter((image) => !known.has(image.path))];
-}
+  const newcomers = new Map<string | null, ImageFile[]>();
+  let anchor: string | null = null;
+  for (const image of live) {
+    if (known.has(image.path)) {
+      anchor = image.path;
+      continue;
+    }
+    const beside = newcomers.get(anchor) ?? [];
+    beside.push(image);
+    newcomers.set(anchor, beside);
+  }
 
-/// Changing the sort or the filter is a request to re-order, so the held order
-/// is dropped. A photo the new filter rejects still belongs to the sort.
-export function freshOrder(
-  all: ImageFile[],
-  live: ImageFile[],
-  current: ImageFile,
-  matches: (image: ImageFile) => boolean,
-  sort: SortKey,
-): ImageFile[] {
-  if (live.some((image) => image.path === current.path)) return live;
-  return sortImages(
-    all.filter((image) => image.path === current.path || matches(image)),
-    sort,
-  );
+  const order = [...(newcomers.get(null) ?? [])];
+  for (const path of held) {
+    const image = path === current.path ? current : byPath.get(path);
+    if (image) order.push(image);
+    order.push(...(newcomers.get(path) ?? []));
+  }
+  return order;
 }

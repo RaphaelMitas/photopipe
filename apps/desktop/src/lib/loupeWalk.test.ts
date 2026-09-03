@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { freshOrder, heldOrder } from "./loupeWalk";
+import { heldOrder } from "./loupeWalk";
 import { makeImage } from "./test-image";
 
 const rels = (images: { rel: string }[]) => images.map((image) => image.rel);
+const held = ["/r/s/a.arw", "/r/s/b.arw", "/r/s/c.arw"];
 
 describe("heldOrder", () => {
-  const held = ["/r/s/a.arw", "/r/s/b.arw", "/r/s/c.arw"];
-
   it("keeps its order when the browser re-sorts underneath", () => {
     const b = makeImage("b.arw", { rating: 5 });
     const live = [b, makeImage("a.arw"), makeImage("c.arw")];
@@ -25,33 +24,52 @@ describe("heldOrder", () => {
     expect(rels(heldOrder(held, live, a))).toEqual(["a.arw", "c.arw"]);
   });
 
-  it("puts photos it has never seen at the end, so they stay reachable", () => {
+  it("slots a photo it has never seen beside the one it arrived after", () => {
     const a = makeImage("a.arw");
-    const live = [makeImage("new.arw"), a, makeImage("b.arw")];
+    const live = [
+      a,
+      makeImage("b.arw"),
+      makeImage("b2.arw"),
+      makeImage("c.arw"),
+    ];
     expect(rels(heldOrder(held, live, a))).toEqual([
       "a.arw",
       "b.arw",
-      "new.arw",
+      "b2.arw",
+      "c.arw",
     ]);
   });
-});
 
-describe("freshOrder", () => {
-  const rated = (rel: string, rating: number) => makeImage(rel, { rating });
-  const atLeastThree = (image: { rating: number }) => image.rating >= 3;
-
-  it("hands back the browser's list when the photo still matches", () => {
-    const live = [rated("a.arw", 5), rated("b.arw", 3)];
-    expect(freshOrder(live, live, live[1], atLeastThree, "rating")).toBe(live);
-  });
-
-  it("sorts a photo the new filter rejects back among the matches", () => {
-    const all = [rated("a.arw", 5), rated("b.arw", 0), rated("c.arw", 4)];
-    const live = [all[0], all[2]];
-    expect(rels(freshOrder(all, live, all[1], atLeastThree, "name"))).toEqual([
+  it("keeps several newcomers in the order the browser gave them", () => {
+    const a = makeImage("a.arw");
+    const live = [
+      makeImage("aa.arw"),
+      makeImage("ab.arw"),
+      a,
+      makeImage("b.arw"),
+      makeImage("c.arw"),
+    ];
+    expect(rels(heldOrder(held, live, a))).toEqual([
+      "aa.arw",
+      "ab.arw",
       "a.arw",
       "b.arw",
       "c.arw",
     ]);
+  });
+
+  it("takes an arrival and a departure in the same pass", () => {
+    const a = makeImage("a.arw");
+    const live = [a, makeImage("b2.arw"), makeImage("c.arw")];
+    expect(rels(heldOrder(held, live, a))).toEqual([
+      "a.arw",
+      "b2.arw",
+      "c.arw",
+    ]);
+  });
+
+  it("gives back just the open photo when the browser has emptied", () => {
+    const a = makeImage("a.arw");
+    expect(rels(heldOrder(held, [], a))).toEqual(["a.arw"]);
   });
 });

@@ -58,7 +58,7 @@ import {
 } from "@/lib/core";
 import { type EditClipboard, pasteEdit } from "@/lib/editClipboard";
 import { betterThan, scoreRanks } from "@/lib/instinct";
-import { freshOrder, heldOrder } from "@/lib/loupeWalk";
+import { heldOrder } from "@/lib/loupeWalk";
 import {
   type EditWrite,
   jobStatus,
@@ -76,7 +76,7 @@ import {
   useTrash,
 } from "@/lib/queries";
 import { useSelection } from "@/lib/selection";
-import { type SortKey, sortImages } from "@/lib/sort";
+import { browserOrder, type SortKey } from "@/lib/sort";
 import { useDebouncedEdit } from "@/lib/useDebouncedEdit";
 import { useUpdater } from "@/lib/useUpdater";
 
@@ -219,15 +219,14 @@ export default function App() {
   // Sorting a half-rated project would put photos in an order the scores do not
   // support, so until the pass is done the browser falls back to name.
   const activeSort = sort === "score" && !scoreReady ? "name" : sort;
+  const matchesFilter = useCallback(
+    (image: ImageFile) =>
+      matchesRatingFilter(image.rating, ratingOp, ratingStars),
+    [ratingOp, ratingStars],
+  );
   const filteredImages = useMemo(
-    () =>
-      sortImages(
-        allImages.filter((image) =>
-          matchesRatingFilter(image.rating, ratingOp, ratingStars),
-        ),
-        activeSort,
-      ),
-    [allImages, ratingOp, ratingStars, activeSort],
+    () => browserOrder(allImages, matchesFilter, activeSort),
+    [allImages, matchesFilter, activeSort],
   );
   const ranks = useMemo(() => scoreRanks(allImages), [allImages]);
   const counts = useMemo(() => ratingCounts(allImages), [allImages]);
@@ -391,35 +390,28 @@ export default function App() {
     });
   };
 
-  // Carried from render to render; dropped when the sort, the filter or the
-  // shoot changes, because those are a request to re-order.
+  // Keyed on the sort you chose, not the one in force: a scoring pass finishing
+  // must not re-order the loupe under you mid-visit.
   const held = useRef<{ key: string; paths: string[] }>({ key: "", paths: [] });
-  const heldKey = `${openShoot}|${activeSort}|${ratingOp}|${ratingStars}`;
-  const current = currentPath
+  const heldKey = `${openShoot}|${sort}|${ratingOp}|${ratingStars}`;
+  const openImage = currentPath
     ? allImages.find((image) => image.path === currentPath)
     : undefined;
-  const reorder =
-    held.current.key !== heldKey ||
-    (current !== undefined && !held.current.paths.includes(current.path));
+  const reorder = held.current.key !== heldKey;
 
   const loupeImages = useMemo(() => {
-    if (!current) return filteredImages;
-    return reorder
-      ? freshOrder(
-          allImages,
-          filteredImages,
-          current,
-          (image) => matchesRatingFilter(image.rating, ratingOp, ratingStars),
-          activeSort,
-        )
-      : heldOrder(held.current.paths, filteredImages, current);
+    if (!openImage) return filteredImages;
+    if (!reorder)
+      return heldOrder(held.current.paths, filteredImages, openImage);
+    return matchesFilter(openImage)
+      ? filteredImages
+      : browserOrder(allImages, matchesFilter, activeSort, openImage);
   }, [
     filteredImages,
     allImages,
-    current,
+    openImage,
     reorder,
-    ratingOp,
-    ratingStars,
+    matchesFilter,
     activeSort,
   ]);
 
@@ -428,9 +420,7 @@ export default function App() {
     paths: loupeImages.map((image) => image.path),
   };
 
-  const loupeIndex = currentPath
-    ? loupeImages.findIndex((image) => image.path === currentPath)
-    : -1;
+  const loupeIndex = openImage ? loupeImages.indexOf(openImage) : -1;
   const loupeImage = loupeIndex >= 0 ? loupeImages[loupeIndex] : null;
   const loupeEdit = loupeImage === null ? identityEdit : editOf(loupeImage);
   // The browser keeps the current photo after the loupe closes, so anything
