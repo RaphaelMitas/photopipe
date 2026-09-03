@@ -29,22 +29,32 @@ public enum FileActions {
     /// scanner and out of Finder until something sweeps it.
     public static let tempPrefix = ".photopipe-"
 
-    /// Never overwrites: a name taken since the caller picked it earns a
-    /// suffix rather than costing the file. Staging under a hidden name keeps
-    /// a half-written copy from ever appearing under the real one.
+    /// A name taken since the caller picked it earns a suffix rather than
+    /// costing the file. Staging under a hidden name keeps a half-written copy
+    /// from ever appearing under the real one.
     @discardableResult
     public static func copyWithoutOverwriting(from source: URL, to target: URL) throws -> URL {
         let fm = FileManager.default
-        let temp = target.deletingLastPathComponent()
-            .appendingPathComponent("\(tempPrefix)\(UUID().uuidString)")
+        let folder = target.deletingLastPathComponent()
+        let temp = folder.appendingPathComponent("\(tempPrefix)\(UUID().uuidString)")
         try fm.copyItem(at: source, to: temp)
+
+        // A dangling symlink is invisible to `fileExists` and still refuses a
+        // move, so a name the move rejected is never offered again — asking
+        // twice would be a loop with nothing to end it.
+        var refused: Set<String> = []
         var landing = target
         while true {
             do {
                 try fm.moveItem(at: temp, to: landing)
                 return landing
-            } catch CocoaError.fileWriteFileExists {
-                landing = uniqueURL(for: landing)
+            } catch CocoaError.fileWriteFileExists where refused.count < 64 {
+                refused.insert(landing.lastPathComponent.lowercased())
+                let name = uniqueName(target.lastPathComponent) { candidate in
+                    refused.contains(candidate.lowercased())
+                        || fm.fileExists(atPath: folder.appendingPathComponent(candidate).path)
+                }
+                landing = folder.appendingPathComponent(name)
             } catch {
                 try? fm.removeItem(at: temp)
                 throw error

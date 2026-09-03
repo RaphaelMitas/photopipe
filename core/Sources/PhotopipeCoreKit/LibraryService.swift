@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Reached from the dispatcher's worker pool, the watcher's queue and the
@@ -524,7 +525,7 @@ public final class LibraryService: @unchecked Sendable {
         let destination = URL(fileURLWithPath: shootPath)
         Self.sweepStaleTemps(in: destination)
 
-        var plan = ImportPlan(destination: destination)
+        let plan = ImportPlan(destination: destination)
         var items: [Exporter.Plan.Item] = []
         for path in images {
             let source = URL(fileURLWithPath: path)
@@ -541,19 +542,23 @@ public final class LibraryService: @unchecked Sendable {
     /// What one import has spoken for: names taken on disk or by an earlier
     /// item, and the files those items came from, so the same photo picked
     /// twice in one selection is copied once.
-    private struct ImportPlan {
-        let destination: URL
+    private final class ImportPlan {
+        private let destination: URL
         private var used: Set<String> = []
         private var claimed: [FileIdentity: [URL]] = [:]
+        /// A burst on a FAT32 card puts hundreds of frames in one bucket, and
+        /// comparing them pairwise re-reads the same heads over and over. Read
+        /// each file once and compare the digests.
+        private var digests: [URL: Data] = [:]
 
         init(destination: URL) { self.destination = destination }
 
         /// Where this file should land, or nil when the shoot already has it
         /// under any name.
-        mutating func target(for source: URL) -> URL? {
+        func target(for source: URL) -> URL? {
             let identity = LibraryService.identity(source)
-            if let identity,
-                claimed[identity, default: []].contains(where: { LibraryService.same($0, source) })
+            if let identity, let twins = claimed[identity],
+                twins.contains(where: { sameHead($0, source) })
             {
                 return nil
             }
@@ -562,7 +567,7 @@ public final class LibraryService: @unchecked Sendable {
                 if used.contains(candidate.lowercased()) { return true }
                 let landed = destination.appendingPathComponent(candidate)
                 guard let landedIdentity = LibraryService.identity(landed) else { return false }
-                if landedIdentity == identity, LibraryService.same(source, landed) {
+                if landedIdentity == identity, sameHead(source, landed) {
                     imported = true
                 }
                 return true
@@ -572,9 +577,27 @@ public final class LibraryService: @unchecked Sendable {
             if let identity { claimed[identity, default: []].append(source) }
             return destination.appendingPathComponent(name)
         }
+
+        /// Size and mtime alone cannot tell two photos apart: a card formatted
+        /// FAT32 keeps mtime to the nearest two seconds, and an uncompressed
+        /// raw is a fixed byte count per body, so two frames from a burst on
+        /// two cards agree on both. The head carries the EXIF and the preview,
+        /// which do not.
+        private func sameHead(_ left: URL, _ right: URL) -> Bool {
+            guard let left = digest(left) else { return false }
+            return left == digest(right)
+        }
+
+        private func digest(_ url: URL) -> Data? {
+            if let known = digests[url] { return known }
+            guard let head = LibraryService.head(url) else { return nil }
+            let digest = Data(SHA256.hash(data: head))
+            digests[url] = digest
+            return digest
+        }
     }
 
-    private struct FileIdentity: Equatable, Hashable {
+    private struct FileIdentity: Hashable {
         let size: Int
         let modified: Date
     }
@@ -586,16 +609,6 @@ public final class LibraryService: @unchecked Sendable {
             ]), let size = values.fileSize, let modified = values.contentModificationDate
         else { return nil }
         return FileIdentity(size: size, modified: modified)
-    }
-
-    /// Whether these are the same photo. Size and mtime alone cannot say: a
-    /// card formatted FAT32 keeps mtime to the nearest two seconds, and an
-    /// uncompressed raw is a fixed byte count per body, so two frames from a
-    /// burst on two cards look identical. The head of the file carries the
-    /// EXIF and the preview, which do not.
-    private static func same(_ left: URL, _ right: URL) -> Bool {
-        guard let head = Self.head(left), head == Self.head(right) else { return false }
-        return true
     }
 
     private static func head(_ url: URL) -> Data? {
@@ -729,23 +742,24 @@ public final class LibraryService: @unchecked Sendable {
         let fm = FileManager.default
         try fm.createDirectory(
             at: planned.deletingLastPathComponent(), withIntermediateDirectories: true)
-        // Names were picked before the first write, and on a long export
-        // something else can reach the folder in between. Suffixing beats
-        // failing the file over a name.
-        let target =
-            staging || !fm.fileExists(atPath: planned.path)
-            ? planned : FileActions.uniqueURL(for: planned)
         switch format {
         case .original:
             let source = URL(fileURLWithPath: image.path)
             if staging {
-                do { try fm.linkItem(at: source, to: target) } catch {
-                    try fm.copyItem(at: source, to: target)
+                do { try fm.linkItem(at: source, to: planned) } catch {
+                    try fm.copyItem(at: source, to: planned)
                 }
             } else {
-                try FileActions.copyWithoutOverwriting(from: source, to: target)
+                try FileActions.copyWithoutOverwriting(from: source, to: planned)
             }
         case .jpeg:
+            // Names were picked before the first write, and on a long export
+            // something else can reach the folder in between. Rendering has no
+            // second chance at the name the way a copy does, so it is resolved
+            // here and the gap that leaves is the render's length.
+            let target =
+                staging || !fm.fileExists(atPath: planned.path)
+                ? planned : FileActions.uniqueURL(for: planned)
             try renderer.exportJPEG(
                 file: image, edit: image.edit,
                 quality: Double(quality) / 100, to: target,

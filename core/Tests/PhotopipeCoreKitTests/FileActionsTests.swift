@@ -404,8 +404,6 @@ private func exportNow(
     try FileManager.default.createDirectory(at: shoot, withIntermediateDirectories: true)
     try ProjectFile().write(inShoot: shoot.path)
 
-    // FAT32 keeps mtime to the nearest two seconds and an uncompressed raw is
-    // a fixed byte count, so two frames off two cards can agree on both.
     let fm = FileManager.default
     let cardA = try tempDir()
     let cardB = try tempDir()
@@ -434,8 +432,6 @@ private func exportNow(
         try Data(contentsOf: shoot.appendingPathComponent("DSC00001-1.ARW"))
             == Data(repeating: 0xBB, count: 4096))
 
-    // Two photos can agree over the whole head the check reads, which is what
-    // the byte count is still there for.
     let head = Data(repeating: 0xCC, count: 64 * 1024)
     let cardC = try tempDir()
     let cardD = try tempDir()
@@ -455,12 +451,37 @@ private func exportNow(
     #expect(
         try settled(service, service.startImport(shoot: "2026-08-14_burst", paths: [fromD.path]))
             .done == 1, "same head and mtime, different length: a different photo")
+}
 
-    // And the real duplicate still imports once, however it is offered.
-    let repeated = try settled(
+@Test func aPhotoOfferedTwiceInOneSelectionIsCopiedOnce() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let shoot = dir.appendingPathComponent("2026-08-15_twice")
+    try FileManager.default.createDirectory(at: shoot, withIntermediateDirectories: true)
+    try ProjectFile().write(inShoot: shoot.path)
+
+    // Two backup folders of one card: not in the shoot yet, so only the plan's
+    // own memory of what it has claimed can catch the repeat.
+    let fm = FileManager.default
+    let first = try tempDir()
+    let second = try tempDir()
+    defer {
+        try? fm.removeItem(at: first)
+        try? fm.removeItem(at: second)
+    }
+    let left = first.appendingPathComponent("DSC00300.ARW")
+    let right = second.appendingPathComponent("DSC00300.ARW")
+    try Data(repeating: 0xEE, count: 2048).write(to: left)
+    try fm.copyItem(at: left, to: right)
+
+    let service = makeService(in: dir)
+    _ = try service.setRoot(path: dir.path, indexPath: nil)
+
+    let job = try settled(
         service,
-        service.startImport(shoot: "2026-08-14_burst", paths: [fromA.path, fromA.path]))
-    #expect(repeated.total == 0, "the same photo picked twice is still one photo")
+        service.startImport(shoot: "2026-08-15_twice", paths: [left.path, right.path]))
+    #expect(job.total == 1, "the same photo offered twice is still one photo")
+    #expect(!fm.fileExists(atPath: shoot.appendingPathComponent("DSC00300-1.ARW").path))
 }
 
 @Test func aCopyNeverOverwritesANameTakenSinceItWasChosen() throws {
@@ -480,10 +501,29 @@ private func exportNow(
     #expect(landed.lastPathComponent == "DSC00700-1.ARW")
     #expect(try String(contentsOf: taken, encoding: .utf8) == "already here")
     #expect(try String(contentsOf: landed, encoding: .utf8) == "the new photo")
-    // Nothing staged is left behind.
     #expect(
         try FileManager.default.contentsOfDirectory(atPath: taken.deletingLastPathComponent().path)
             .filter { $0.hasPrefix(FileActions.tempPrefix) }.isEmpty)
+}
+
+@Test func aCopyPastADanglingSymlinkFinishesInsteadOfSpinning() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let fm = FileManager.default
+    let source = dir.appendingPathComponent("DSC00800.ARW")
+    try Data("the photo".utf8).write(to: source)
+
+    // `fileExists` says no and `moveItem` says yes, so a resolver that trusts
+    // the first keeps handing back the name the second refuses.
+    let landing = dir.appendingPathComponent("landing")
+    try fm.createDirectory(at: landing, withIntermediateDirectories: true)
+    let target = landing.appendingPathComponent("DSC00800.ARW")
+    try fm.createSymbolicLink(at: target, withDestinationURL: landing.appendingPathComponent("gone"))
+    #expect(!fm.fileExists(atPath: target.path))
+
+    let landed = try FileActions.copyWithoutOverwriting(from: source, to: target)
+    #expect(landed.lastPathComponent == "DSC00800-1.ARW")
+    #expect(try String(contentsOf: landed, encoding: .utf8) == "the photo")
 }
 
 @Test func anImportClearsStagingFilesAKilledCopyLeftBehind() throws {
