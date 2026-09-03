@@ -137,7 +137,6 @@ test("rating the open photo under Rating sort still advances to the next one", a
   await page.getByTestId("thumb").nth(1).click();
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.ARW");
 
-  // Five stars re-sorts the browser behind the loupe; the walk holds.
   await page.keyboard.press("5");
   await expect(page.locator("[data-rating='5']")).toBeVisible();
   await expect(page.getByTestId("loupe-position")).toHaveText("2/4");
@@ -155,9 +154,7 @@ test("a filter change under the loupe leaves the photo where the sort puts it", 
   await rate(page, "DSC00832.jpg", "4");
   await sortByRating(page);
 
-  // Rating order is 4, 2, then the unrated pair. Open the four-star photo and
-  // filter to the two-star one: the sort, not a remembered index, decides
-  // where the photo you are on belongs.
+  // Rating order is 4, 2, then the unrated pair, so .first() is the jpg.
   await page.getByTestId("thumb").first().click();
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.jpg");
 
@@ -189,12 +186,6 @@ test("the arrows stop at the ends instead of wrapping or sticking", async ({
   await expect(page.getByTestId("loupe-position")).toHaveText("4/4");
   await page.keyboard.press("ArrowLeft");
   await expect(page.getByTestId("loupe-position")).toHaveText("3/4");
-
-  await page.keyboard.press("Escape");
-  await page.getByTestId("thumb").first().click();
-  await expect(page.getByTestId("loupe-position")).toHaveText("1/4");
-  await page.keyboard.press("ArrowLeft");
-  await expect(page.getByTestId("loupe-position")).toHaveText("1/4");
 });
 
 test("reopening the loupe walks the browser as it now stands", async ({
@@ -203,8 +194,7 @@ test("reopening the loupe walks the browser as it now stands", async ({
   await openZell(page);
   await sortByRating(page);
 
-  // Five stars sends this photo to the front of the browser. The visit it is
-  // in holds its order, but the next visit must start from the new one.
+  // Five stars sends this photo to the front of the browser.
   await page.getByTestId("thumb").nth(3).click();
   await page.keyboard.press("5");
   await expect(page.locator("[data-rating='5']")).toBeVisible();
@@ -216,6 +206,38 @@ test("reopening the loupe walks the browser as it now stands", async ({
     "abends/DSC00943.ARW",
   );
   await expect(page.getByTestId("loupe-position")).toHaveText("1/4");
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.getByTestId("loupe-position")).toHaveText("1/4");
+});
+
+test("a scoring pass finishing does not re-order the loupe under you", async ({
+  page,
+}) => {
+  // Instinct is the stored sort, but the browser falls back to name until the
+  // pass lands, so the loupe opens on a name-ordered walk.
+  await page.addInitScript(() =>
+    localStorage.setItem("photopipe.sort", "score"),
+  );
+  await page.goto("/?scoring");
+  await page.getByTestId("root-input").fill("/fake");
+  await page.getByTestId("root-submit").click();
+  await page.getByTestId("shoot-2026-07-12_zell").click();
+  await expect(page.getByTestId("grid")).toBeVisible();
+  await expect(page.getByTestId("rating-now")).toBeVisible();
+
+  await page.getByTestId("thumb").nth(1).click();
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.jpg");
+  await expect(page.getByTestId("loupe-position")).toHaveText("2/4");
+
+  // The pass completes and the browser re-sorts by score. Nothing you are
+  // looking at moves, and the arrows still walk the order you opened.
+  await expect(page.getByTestId("rating-now")).toBeHidden();
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.jpg");
+  await expect(page.getByTestId("loupe-position")).toHaveText("2/4");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByTestId("loupe-name")).toHaveText(
+    "abends/DSC00938.ARW",
+  );
 });
 
 test("a photo rated out of the filter under Rating sort holds its place", async ({

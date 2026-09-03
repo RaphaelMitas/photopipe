@@ -1,14 +1,15 @@
 import type { ImageFile } from "./core";
 
 /// The browser re-sorts under a rating, so the loupe walks the order it
-/// arrived with. Photos it has never seen are slotted in beside the neighbour
-/// they arrived next to, so an import mid-visit stays where the sort put it.
+/// arrived with. `current` has to be one of `held`; the caller rebuilds when
+/// it is not, because only the sort knows where an unknown photo belongs.
 export function heldOrder(
   held: string[],
   live: ImageFile[],
   current: ImageFile,
 ): ImageFile[] {
   const byPath = new Map(live.map((image) => [image.path, image]));
+  byPath.set(current.path, current); // the open photo outlives the filter
   const known = new Set(held);
   const newcomers = new Map<string | null, ImageFile[]>();
   let anchor: string | null = null;
@@ -24,7 +25,7 @@ export function heldOrder(
 
   const order = [...(newcomers.get(null) ?? [])];
   for (const path of held) {
-    const image = path === current.path ? current : byPath.get(path);
+    const image = byPath.get(path);
     if (image) order.push(image);
     order.push(...(newcomers.get(path) ?? []));
   }

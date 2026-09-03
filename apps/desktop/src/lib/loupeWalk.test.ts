@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { heldOrder } from "./loupeWalk";
-import { makeImage } from "./test-image";
+import { makeImage, rels } from "./test-image";
 
-const rels = (images: { rel: string }[]) => images.map((image) => image.rel);
 const held = ["/r/s/a.arw", "/r/s/b.arw", "/r/s/c.arw"];
 
 describe("heldOrder", () => {
@@ -54,6 +53,42 @@ describe("heldOrder", () => {
       "ab.arw",
       "a.arw",
       "b.arw",
+      "c.arw",
+    ]);
+  });
+
+  it("keeps each newcomer beside its own neighbour", () => {
+    const a = makeImage("a.arw");
+    const live = [
+      a,
+      makeImage("a2.arw"),
+      makeImage("b.arw"),
+      makeImage("c.arw"),
+      makeImage("c2.arw"),
+    ];
+    expect(rels(heldOrder(held, live, a))).toEqual([
+      "a.arw",
+      "a2.arw",
+      "b.arw",
+      "c.arw",
+      "c2.arw",
+    ]);
+  });
+
+  // A newcomer follows the photo it arrived after into the held order, not
+  // into the place the browser's own sort just gave it.
+  it("slots a newcomer by its neighbour even as the browser re-sorts", () => {
+    const b = makeImage("b.arw", { rating: 5 });
+    const live = [
+      b,
+      makeImage("x.arw"),
+      makeImage("a.arw"),
+      makeImage("c.arw"),
+    ];
+    expect(rels(heldOrder(held, live, b))).toEqual([
+      "a.arw",
+      "b.arw",
+      "x.arw",
       "c.arw",
     ]);
   });

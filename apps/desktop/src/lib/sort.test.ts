@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { sortImages } from "./sort";
-import { makeImage } from "./test-image";
-
-const rels = (images: { rel: string }[]) => images.map((image) => image.rel);
+import { browserOrder, sortImages } from "./sort";
+import { makeImage, rels } from "./test-image";
 
 describe("sortImages", () => {
   it("keeps the core's order for name", () => {
@@ -73,5 +71,36 @@ describe("sortImages", () => {
     ];
     sortImages(images, "score");
     expect(rels(images)).toEqual(["a.arw", "b.arw"]);
+  });
+});
+
+describe("browserOrder", () => {
+  const images = [
+    makeImage("a.arw", { rating: 1 }),
+    makeImage("c.arw", { rating: 4 }),
+    makeImage("b.arw", { rating: 5 }),
+  ];
+  const atLeastThree = (image: { rating: number }) => image.rating >= 3;
+
+  it("puts what the filter lets through in the sort's order", () => {
+    expect(rels(browserOrder(images, atLeastThree, "rating"))).toEqual([
+      "b.arw",
+      "c.arw",
+    ]);
+  });
+
+  it("places a photo the filter rejects by the sort, not at the end", () => {
+    expect(rels(browserOrder(images, atLeastThree, "name", images[0]))).toEqual(
+      ["a.arw", "c.arw", "b.arw"],
+    );
+  });
+
+  // The one case that fails if the kept photo is appended rather than sorted.
+  it("sorts the photo it keeps by its own stars", () => {
+    const atMostTwo = (image: { rating: number }) => image.rating <= 2;
+    expect(rels(browserOrder(images, atMostTwo, "rating", images[2]))).toEqual([
+      "b.arw",
+      "a.arw",
+    ]);
   });
 });

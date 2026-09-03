@@ -24,9 +24,8 @@ export function sortImages(images: ImageFile[], sort: SortKey): ImageFile[] {
   }
 }
 
-/// The browser's list: what the filter lets through, in the order the sort
-/// asks for. `keep` is exempt from the filter but still placed by the sort,
-/// which is how the loupe holds on to a photo you have just rated away.
+/// `keep`, which must be one of `images`, survives the filter so the loupe can
+/// hold on to a photo you have just rated out of it.
 export function browserOrder(
   images: ImageFile[],
   matches: (image: ImageFile) => boolean,

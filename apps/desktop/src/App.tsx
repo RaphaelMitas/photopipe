@@ -84,6 +84,7 @@ const ROOT_KEY = "photopipe.root";
 const VIEW_KEY = "photopipe.view";
 const EDIT_PANEL_KEY = "photopipe.editPanel";
 const SORT_KEY = "photopipe.sort";
+const NO_HELD = { key: "", paths: [] };
 const AUTO_SCORE_KEY = "photopipe.autoScore";
 /// One toast id for the whole update conversation, so a download replaces the
 /// offer rather than stacking under it.
@@ -397,15 +398,17 @@ export default function App() {
   const openImage = currentPath
     ? allImages.find((image) => image.path === currentPath)
     : undefined;
-  const reorder = held.current.key !== heldKey;
+  // The second clause catches a keypress that lands on a photo the walk has
+  // just dropped: rebuilding places it, where holding would lose it.
+  const reorder =
+    held.current.key !== heldKey ||
+    (openImage !== undefined && !held.current.paths.includes(openImage.path));
 
   const loupeImages = useMemo(() => {
     if (!openImage) return filteredImages;
     if (!reorder)
       return heldOrder(held.current.paths, filteredImages, openImage);
-    return matchesFilter(openImage)
-      ? filteredImages
-      : browserOrder(allImages, matchesFilter, activeSort, openImage);
+    return browserOrder(allImages, matchesFilter, activeSort, openImage);
   }, [
     filteredImages,
     allImages,
@@ -855,7 +858,7 @@ export default function App() {
                 onRate={(path, rating) => setRating.mutate({ path, rating })}
                 onOpenLoupe={(index) => {
                   // A new visit walks the browser's order as it stands now.
-                  held.current = { key: "", paths: [] };
+                  held.current = NO_HELD;
                   setCurrentPath(filteredImages[index]?.path ?? null);
                   setLoupeOpen(true);
                 }}
