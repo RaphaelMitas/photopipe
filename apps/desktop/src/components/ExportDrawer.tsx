@@ -90,6 +90,9 @@ function jobDetail(job: ExportJob, status: JobStatus, settled: number): string {
     case "cancelled":
       return `Cancelled · ${files}`;
     case "done":
+      // An import whose files were all in the shoot already delivered nothing,
+      // and "0 files" reads as a job that went wrong.
+      if (job.total === 0) return "Nothing new — already in the shoot";
       return `${files} · ${job.destination}`;
   }
 }

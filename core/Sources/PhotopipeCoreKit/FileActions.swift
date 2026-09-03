@@ -25,12 +25,16 @@ public enum FileActions {
         return trashed
     }
 
+    /// Hidden, so a staging file left by a killed copy stays out of the
+    /// scanner and out of Finder until something sweeps it.
+    public static let tempPrefix = ".photopipe-"
+
     /// Copying straight to the target would leave a half-written file under
     /// the real name if the process went away mid-copy.
     public static func safeCopy(from source: URL, to target: URL) throws {
         let fm = FileManager.default
         let temp = target.deletingLastPathComponent()
-            .appendingPathComponent(".photopipe-\(UUID().uuidString)")
+            .appendingPathComponent("\(tempPrefix)\(UUID().uuidString)")
         try fm.copyItem(at: source, to: temp)
         do {
             try fm.moveItem(at: temp, to: target)

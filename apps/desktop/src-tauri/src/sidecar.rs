@@ -540,17 +540,19 @@ mod tests {
         let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/wedged-sidecar.sh");
         let mut sidecar = Sidecar::new(script);
         sidecar.read_timeout = Duration::from_millis(200);
-        let start = Instant::now();
-        let error = sidecar
-            .request("setRating", Some(json!({"path": "/r/DSC1.ARW", "rating": 3})))
-            .expect_err("must fail");
-        // One attempt only — no silent re-send of a possibly-applied mutation.
-        assert!(error.contains("connection failed"), "got: {error}");
-        assert!(
-            start.elapsed() < Duration::from_millis(600),
-            "took {:?} — looks like it retried",
-            start.elapsed()
-        );
+        for method in MUTATING_METHODS {
+            let start = Instant::now();
+            let error = sidecar
+                .request(method, Some(json!({"path": "/r/DSC1.ARW", "rating": 3})))
+                .expect_err("must fail");
+            // One attempt only — no silent re-send of a possibly-applied mutation.
+            assert!(error.contains("connection failed"), "{method} got: {error}");
+            assert!(
+                start.elapsed() < Duration::from_millis(600),
+                "{method} took {:?} — looks like it retried",
+                start.elapsed()
+            );
+        }
         sidecar.shutdown();
     }
 }

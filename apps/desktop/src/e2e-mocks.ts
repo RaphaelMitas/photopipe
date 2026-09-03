@@ -267,7 +267,15 @@ export const E2E_HANDLERS: Record<
     }
     return { ...job };
   },
-  importFiles: (params) => startJob((params.paths as string[]).length, false),
+  // The core plans only real photos, so the skipped count the UI reports is
+  // the difference between what was picked and what the job took on.
+  importFiles: (params) =>
+    startJob(
+      (params.paths as string[]).filter((path) =>
+        /\.(arw|dng|jpe?g|png)$/i.test(path),
+      ).length,
+      false,
+    ),
   createProject: (params) => {
     const shoot = `${String(params.day)}_${String(params.name)}`;
     if (shoots.some((existing) => existing.name === shoot)) {

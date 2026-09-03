@@ -352,6 +352,81 @@ private func exportNow(
     }
 }
 
+@Test func twoCardsSharingFilenamesKeepBothPhotosAndNeitherDuplicates() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let shoot = dir.appendingPathComponent("2026-08-12_cards")
+    try FileManager.default.createDirectory(at: shoot, withIntermediateDirectories: true)
+    try ProjectFile().write(inShoot: shoot.path)
+
+    // Uncompressed raws are a fixed byte count per body, so two bodies both
+    // shooting DSC00001 produce same-name same-size files that are not the
+    // same photo. Distinct mtimes are what tells them apart.
+    let fm = FileManager.default
+    let cardA = try tempDir()
+    let cardB = try tempDir()
+    defer {
+        try? fm.removeItem(at: cardA)
+        try? fm.removeItem(at: cardB)
+    }
+    let fromA = cardA.appendingPathComponent("DSC00001.ARW")
+    let fromB = cardB.appendingPathComponent("DSC00001.ARW")
+    try Data("aaaaa".utf8).write(to: fromA)
+    try Data("bbbbb".utf8).write(to: fromB)
+    try fm.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_000)], ofItemAtPath: fromA.path)
+    try fm.setAttributes([.modificationDate: Date(timeIntervalSince1970: 2_000)], ofItemAtPath: fromB.path)
+
+    let service = makeService(in: dir)
+    _ = try service.setRoot(path: dir.path, indexPath: nil)
+
+    #expect(
+        try settled(service, service.startImport(shoot: "2026-08-12_cards", paths: [fromA.path])).done == 1)
+    let second = try settled(
+        service, service.startImport(shoot: "2026-08-12_cards", paths: [fromB.path]))
+    #expect(second.total == 1, "a different photo that merely shares a name must still be imported")
+    #expect(second.done == 1)
+
+    let landedA = shoot.appendingPathComponent("DSC00001.ARW")
+    let landedB = shoot.appendingPathComponent("DSC00001-1.ARW")
+    #expect(try Data(contentsOf: landedA) == Data("aaaaa".utf8))
+    #expect(try Data(contentsOf: landedB) == Data("bbbbb".utf8))
+
+    // Card B again: its copy is already in, under a suffix, so nothing is planned.
+    let third = try settled(
+        service, service.startImport(shoot: "2026-08-12_cards", paths: [fromB.path]))
+    #expect(third.total == 0, "a file that landed under a suffix must not import again")
+    #expect(!fm.fileExists(atPath: shoot.appendingPathComponent("DSC00001-2.ARW").path))
+}
+
+@Test func anImportClearsStagingFilesAKilledCopyLeftBehind() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let shoot = dir.appendingPathComponent("2026-08-13_temps")
+    try FileManager.default.createDirectory(at: shoot, withIntermediateDirectories: true)
+    try ProjectFile().write(inShoot: shoot.path)
+
+    let fm = FileManager.default
+    let stale = shoot.appendingPathComponent("\(FileActions.tempPrefix)DEAD-BEEF")
+    let live = shoot.appendingPathComponent("\(FileActions.tempPrefix)IN-FLIGHT")
+    try Data("half a raw".utf8).write(to: stale)
+    try Data("half a raw".utf8).write(to: live)
+    try fm.setAttributes(
+        [.modificationDate: Date(timeIntervalSinceNow: -7200)], ofItemAtPath: stale.path)
+
+    let source = try tempDir()
+    defer { try? fm.removeItem(at: source) }
+    let photo = source.appendingPathComponent("DSC00090.ARW")
+    try Data("photo".utf8).write(to: photo)
+
+    let service = makeService(in: dir)
+    _ = try service.setRoot(path: dir.path, indexPath: nil)
+    _ = try settled(service, service.startImport(shoot: "2026-08-13_temps", paths: [photo.path]))
+
+    #expect(!fm.fileExists(atPath: stale.path))
+    // A concurrent import's staging file is not this import's to delete.
+    #expect(fm.fileExists(atPath: live.path))
+}
+
 @Test func emptySelectionsAreRefusedRatherThanSilentlyDoingNothing() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }

@@ -11,8 +11,22 @@ async function prepare() {
     const { E2E_HANDLERS } = await import("./e2e-mocks");
     mockIPC((cmd, args) => {
       // The file pickers are OS windows with nothing to drive them from a
-      // browser, so e2e answers them with a destination and moves on.
-      if (cmd.startsWith("plugin:dialog|")) return "/fake/delivery";
+      // browser, so e2e answers them and moves on. Only the import picker
+      // asks for many files, and it wants photos, not a destination.
+      if (cmd.startsWith("plugin:dialog|")) {
+        const options = (
+          args as { options?: { multiple?: boolean } } | undefined
+        )?.options;
+        return options?.multiple
+          ? [
+              ...Array.from(
+                { length: 5 },
+                (_, i) => `/fake/card/DSC0900${i + 1}.ARW`,
+              ),
+              "/fake/card/notes.txt",
+            ]
+          : "/fake/delivery";
+      }
       const method = (args as { method?: string } | undefined)?.method;
       const params = (args as { params?: Record<string, unknown> } | undefined)
         ?.params;

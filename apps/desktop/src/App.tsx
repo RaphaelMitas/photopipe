@@ -274,7 +274,7 @@ export default function App() {
   };
 
   const installBlocked = exports.running
-    ? "Finish the running export first; installing restarts Photopipe."
+    ? "Finish the running job first; installing restarts Photopipe."
     : null;
   const { install: installUpdate } = updater;
   // Sonner dismisses the toast the moment Install is clicked, so anything that
@@ -355,6 +355,8 @@ export default function App() {
     };
   }, []);
 
+  const currentShoot = shoots.data?.find((s) => s.name === openShoot);
+
   const runImport = async () => {
     if (!openShoot) return;
     const chosen = await openDialog({
@@ -373,8 +375,7 @@ export default function App() {
     const job = await exports.start({
       method: "importFiles",
       label: `Import ${paths.length} ${paths.length === 1 ? "file" : "files"}`,
-      destination:
-        shoots.data?.find((s) => s.name === openShoot)?.path ?? openShoot,
+      destination: currentShoot?.path ?? openShoot,
       request: { shoot: openShoot, paths },
     });
     // The plan drops what is already in the shoot and what is not a photo.
@@ -661,7 +662,6 @@ export default function App() {
 
   const inLoupe = openShoot !== null && loupePhoto !== null;
 
-  const currentShoot = shoots.data?.find((s) => s.name === openShoot);
   const latestJob = exports.jobs[0];
 
   const applyCrop = () => {

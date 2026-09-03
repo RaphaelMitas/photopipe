@@ -458,11 +458,7 @@ public final class LibraryService: @unchecked Sendable {
     public func updateProject(shoot shootName: String, notes: String?, cover: String??) throws
         -> Int
     {
-        lock.lock()
-        let path = snapshot.shoots.first { $0.name == shootName }?.path
-        lock.unlock()
-        guard let path else { throw ServiceError.unknownShoot(shootName) }
-
+        let path = try shootPath(shootName)
         var file = ProjectFile.read(inShoot: path)
         if let notes { file.notes = notes }
         if let cover { file.cover = cover }
@@ -474,12 +470,11 @@ public final class LibraryService: @unchecked Sendable {
     public func renameProject(shoot shootName: String, day: String, name: String) throws -> (
         shoot: String, generation: Int
     ) {
+        let path = try shootPath(shootName)
         lock.lock()
         let currentRoot = root
-        let path = snapshot.shoots.first { $0.name == shootName }?.path
         lock.unlock()
         guard let currentRoot else { throw ServiceError.noRoot }
-        guard let path else { throw ServiceError.unknownShoot(shootName) }
 
         let (folder, destination) = try Self.projectURL(
             root: currentRoot, day: day, name: name)
@@ -517,50 +512,93 @@ public final class LibraryService: @unchecked Sendable {
         return (folder, path.path, status().generation)
     }
 
-    /// A card's worth of raws takes minutes to copy, far past the client's
-    /// read timeout, so imports are jobs like exports: plan instantly, copy in
-    /// the background, poll through `exportStatus`. The watcher picks up each
-    /// file as it lands, so the shoot fills in while the job runs.
+    /// The watcher picks up each file as it lands, so the shoot fills in while
+    /// the job runs.
     public func startImport(shoot shootName: String, paths: [String]) throws
         -> Exporter.Progress
     {
-        lock.lock()
-        let shootPath = snapshot.shoots.first { $0.name == shootName }?.path
-        lock.unlock()
-        guard let shootPath else { throw ServiceError.unknownShoot(shootName) }
-
+        let shootPath = try self.shootPath(shootName)
         let images = paths.filter(isImagePath)
         guard !images.isEmpty else { throw FileActions.ActionError.noFiles }
 
-        let fm = FileManager.default
         let destination = URL(fileURLWithPath: shootPath)
+        Self.sweepStaleTemps(in: destination)
+
         var used: Set<String> = []
         var items: [Exporter.Plan.Item] = []
         for path in images {
             let source = URL(fileURLWithPath: path)
-            // Same name and size means this file already made it in — a
-            // re-import after a crash must not duplicate it under a suffix.
-            let existing = destination.appendingPathComponent(source.lastPathComponent)
-            if let sourceSize = Self.fileSize(source), Self.fileSize(existing) == sourceSize {
-                continue
-            }
-            let name = FileActions.uniqueName(source.lastPathComponent) { candidate in
-                used.contains(candidate.lowercased())
-                    || fm.fileExists(atPath: destination.appendingPathComponent(candidate).path)
-            }
-            used.insert(name.lowercased())
-            let target = destination.appendingPathComponent(name)
+            guard let target = Self.importTarget(for: source, in: destination, claiming: &used)
+            else { continue }
             items.append(
                 Exporter.Plan.Item(label: source.lastPathComponent) {
-                    try FileActions.safeCopy(from: source, to: target)
+                    // The name was picked before the first copy, and something
+                    // else can reach the folder in between. Suffixing beats
+                    // failing the file over a name.
+                    try FileActions.safeCopy(from: source, to: FileActions.uniqueURL(for: target))
                 })
         }
         return exporter.start(
             plan: Exporter.Plan(items: items, destination: shootPath, staging: nil))
     }
 
-    private static func fileSize(_ url: URL) -> Int64? {
-        (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64) ?? nil
+    /// Where this file should land, or nil when a copy of it is already in the
+    /// shoot under any name. Size and mtime stand in for identity: a copy
+    /// carries both over, so a re-import recognises its own earlier work,
+    /// while two different frames that merely share a name both still get in.
+    private static func importTarget(
+        for source: URL, in destination: URL, claiming used: inout Set<String>
+    ) -> URL? {
+        let identity = Self.identity(source)
+        var imported = false
+        let name = FileActions.uniqueName(source.lastPathComponent) { candidate in
+            if used.contains(candidate.lowercased()) { return true }
+            guard let landed = Self.identity(destination.appendingPathComponent(candidate))
+            else { return false }
+            if let identity, landed == identity { imported = true }
+            return true
+        }
+        guard !imported else { return nil }
+        used.insert(name.lowercased())
+        return destination.appendingPathComponent(name)
+    }
+
+    private struct FileIdentity: Equatable {
+        let size: Int
+        let modified: Date
+    }
+
+    private static func identity(_ url: URL) -> FileIdentity? {
+        guard
+            let values = try? url.resourceValues(forKeys: [
+                .fileSizeKey, .contentModificationDateKey,
+            ]), let size = values.fileSize, let modified = values.contentModificationDate
+        else { return nil }
+        return FileIdentity(size: size, modified: modified)
+    }
+
+    /// A killed copy leaves its staging file behind, hidden from Finder and
+    /// from the scanner alike, so nothing else would ever clear it. The age
+    /// bound keeps the sweep off temps a running import still has open.
+    private static func sweepStaleTemps(in folder: URL) {
+        let fm = FileManager.default
+        let cutoff = Date().addingTimeInterval(-3600)
+        let names = (try? fm.contentsOfDirectory(atPath: folder.path)) ?? []
+        for name in names where name.hasPrefix(FileActions.tempPrefix) {
+            let stale = folder.appendingPathComponent(name)
+            guard let modified = Self.identity(stale)?.modified, modified < cutoff else {
+                continue
+            }
+            try? fm.removeItem(at: stale)
+        }
+    }
+
+    private func shootPath(_ shootName: String) throws -> String {
+        lock.lock()
+        let path = snapshot.shoots.first { $0.name == shootName }?.path
+        lock.unlock()
+        guard let path else { throw ServiceError.unknownShoot(shootName) }
+        return path
     }
 
     public func reveal(paths: [String]) throws {
