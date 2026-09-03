@@ -50,6 +50,7 @@ function renderLoupe(
   cropDraft: CropDraft | null = null,
 ) {
   const onNavigate = vi.fn();
+  const onStep = vi.fn();
   const onClose = vi.fn();
   const onRate = vi.fn();
   const onEditChange = vi.fn();
@@ -72,6 +73,7 @@ function renderLoupe(
         onCancelCrop={onCancelCrop}
         onEditChange={onEditChange}
         onNavigate={onNavigate}
+        onStep={onStep}
         onClose={onClose}
         onRate={onRate}
       />
@@ -79,6 +81,7 @@ function renderLoupe(
   );
   return {
     onNavigate,
+    onStep,
     onClose,
     onRate,
     onEditChange,
@@ -97,18 +100,14 @@ describe("Loupe keyboard culling", () => {
     expect(onRate).toHaveBeenCalledWith("/r/s/DSC00001.ARW", 0);
   });
 
-  it("navigates with arrows and clamps at the edges", () => {
-    const { onNavigate } = renderLoupe(0);
+  // Which photo a step lands on is the browser's call, not the loupe's: the
+  // list re-sorts under a rating, so the arrows ask for a direction.
+  it("steps forward and back with the arrows", () => {
+    const { onStep } = renderLoupe(0);
     fireEvent.keyDown(window, { key: "ArrowRight" });
-    expect(onNavigate).toHaveBeenCalledWith(1);
+    expect(onStep).toHaveBeenCalledWith(1);
     fireEvent.keyDown(window, { key: "ArrowLeft" });
-    expect(onNavigate).toHaveBeenCalledWith(0);
-  });
-
-  it("clamps forward navigation at the last image", () => {
-    const { onNavigate } = renderLoupe(2);
-    fireEvent.keyDown(window, { key: "ArrowRight" });
-    expect(onNavigate).toHaveBeenCalledWith(2);
+    expect(onStep).toHaveBeenCalledWith(-1);
   });
 
   it("scrubs exposure with up/down arrows, clamped, and resets with r", () => {
@@ -146,12 +145,12 @@ describe("Loupe crop mode", () => {
   const draft = () => draftFromEdit(identityEdit, 3000, 2000);
 
   it("shows the overlay and angle HUD and pauses culling keys", () => {
-    const { onRate, onNavigate, onClose } = renderLoupe(0, 0, draft());
+    const { onRate, onStep, onClose } = renderLoupe(0, 0, draft());
     expect(screen.getByTestId("crop-angle-hud")).toBeInTheDocument();
     fireEvent.keyDown(window, { key: "3" });
     fireEvent.keyDown(window, { key: "ArrowRight" });
     expect(onRate).not.toHaveBeenCalled();
-    expect(onNavigate).not.toHaveBeenCalled();
+    expect(onStep).not.toHaveBeenCalled();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onClose).not.toHaveBeenCalled();
   });

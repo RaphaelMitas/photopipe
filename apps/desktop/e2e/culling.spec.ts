@@ -8,6 +8,12 @@ async function openZell(page: import("@playwright/test").Page) {
   await expect(page.getByTestId("grid")).toBeVisible();
 }
 
+async function sortByRating(page: import("@playwright/test").Page) {
+  await page.getByTestId("sort").click();
+  await page.getByTestId("sort-rating").click();
+  await expect(page.getByTestId("sort")).toContainText("Rating");
+}
+
 test("clicking a thumb opens the loupe; keyboard rates and navigates", async ({
   page,
 }) => {
@@ -108,6 +114,65 @@ test("the filter is available inside the loupe and info toggle pins the grid ove
     "abends/DSC00938.ARW",
   );
   await expect(page.getByTestId("loupe-position")).toHaveText("1/1");
+});
+
+test("rating the open photo under Rating sort still advances to the next one", async ({
+  page,
+}) => {
+  await openZell(page);
+  await sortByRating(page);
+
+  // Rating order leads with the one pre-rated photo, then the unrated three
+  // in name order.
+  await page.getByTestId("thumb").nth(1).click();
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.ARW");
+
+  // Five stars moves this photo to the front of the sort under you.
+  await page.keyboard.press("5");
+  await expect(page.locator("[data-rating='5']")).toBeVisible();
+  await expect(page.getByTestId("loupe-position")).toHaveText("1/4");
+
+  // Advancing must still reach the photo that was next when you started
+  // walking, not one you already passed.
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.jpg");
+});
+
+test("a photo rated out of the filter under Rating sort holds its place", async ({
+  page,
+}) => {
+  await openZell(page);
+
+  // Spread some stars first: 5, 3, 2 (already), 4 in name order.
+  await page.getByTestId("thumb").first().click();
+  await page.keyboard.press("5");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("3");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByTestId("loupe-name")).toHaveText(
+    "abends/DSC00943.ARW",
+  );
+  await page.keyboard.press("4");
+  await page.keyboard.press("Escape");
+
+  await sortByRating(page);
+  await page.getByTestId("hist-3").click();
+  await expect(page.getByTestId("thumb")).toHaveCount(3);
+
+  await page.getByTestId("thumb").nth(1).click();
+  await expect(page.getByTestId("loupe-name")).toHaveText(
+    "abends/DSC00943.ARW",
+  );
+  await expect(page.getByTestId("loupe-position")).toHaveText("2/3");
+
+  // Clearing its stars drops it out of the filter. The loupe pins it where it
+  // stood, so ←→ keep walking the matches around it.
+  await page.keyboard.press("0");
+  await expect(page.locator("[data-rating='0']")).toBeVisible();
+  await expect(page.getByTestId("loupe-position")).toHaveText("2/3");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.jpg");
 });
 
 test("rating the current image below the filter keeps it in the loupe", async ({
