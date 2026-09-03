@@ -58,6 +58,7 @@ import {
 } from "@/lib/core";
 import { type EditClipboard, pasteEdit } from "@/lib/editClipboard";
 import { betterThan, scoreRanks } from "@/lib/instinct";
+import { freshOrder, heldOrder } from "@/lib/loupeWalk";
 import {
   type EditWrite,
   jobStatus,
@@ -390,54 +391,47 @@ export default function App() {
     });
   };
 
-  // Rating re-sorts the browser the instant you press a star, so the arrows and
-  // a filtered-out photo's slot go by the order the loupe had when you arrived.
-  // What is on screen stays live.
-  const walk = useRef<{ key: string; paths: string[] }>({ key: "", paths: [] });
-  const walkKey = `${openShoot}|${activeSort}|${ratingOp}|${ratingStars}|${currentPath}`;
-  const slot = currentPath ? walk.current.paths.indexOf(currentPath) : -1;
+  // Carried from render to render; dropped when the sort, the filter or the
+  // shoot changes, because those are a request to re-order.
+  const held = useRef<{ key: string; paths: string[] }>({ key: "", paths: [] });
+  const heldKey = `${openShoot}|${activeSort}|${ratingOp}|${ratingStars}`;
+  const current = currentPath
+    ? allImages.find((image) => image.path === currentPath)
+    : undefined;
+  const reorder =
+    held.current.key !== heldKey ||
+    (current !== undefined && !held.current.paths.includes(current.path));
 
   const loupeImages = useMemo(() => {
-    if (!currentPath) return filteredImages;
-    if (filteredImages.some((image) => image.path === currentPath)) {
-      return filteredImages;
-    }
-    const pinned = allImages.find((image) => image.path === currentPath);
-    if (!pinned || slot === -1) return filteredImages;
-    const result = [...filteredImages];
-    result.splice(Math.min(slot, result.length), 0, pinned);
-    return result;
-  }, [filteredImages, allImages, currentPath, slot]);
+    if (!current) return filteredImages;
+    return reorder
+      ? freshOrder(
+          allImages,
+          filteredImages,
+          current,
+          (image) => matchesRatingFilter(image.rating, ratingOp, ratingStars),
+          activeSort,
+        )
+      : heldOrder(held.current.paths, filteredImages, current);
+  }, [
+    filteredImages,
+    allImages,
+    current,
+    reorder,
+    ratingOp,
+    ratingStars,
+    activeSort,
+  ]);
 
-  if (walk.current.key !== walkKey) {
-    walk.current = { key: walkKey, paths: loupeImages.map((i) => i.path) };
-  }
+  held.current = {
+    key: heldKey,
+    paths: loupeImages.map((image) => image.path),
+  };
 
   const loupeIndex = currentPath
     ? loupeImages.findIndex((image) => image.path === currentPath)
     : -1;
   const loupeImage = loupeIndex >= 0 ? loupeImages[loupeIndex] : null;
-
-  // A photo you just rated has moved on screen, but "next" still means the one
-  // that was next when you got here. The fallback covers a neighbour that has
-  // since left the shoot.
-  const stepTo = (delta: number) => {
-    const order = walk.current.paths;
-    const at = currentPath ? order.indexOf(currentPath) : -1;
-    if (at !== -1) {
-      const next = order[at + delta];
-      if (!next) return;
-      if (loupeImages.some((image) => image.path === next)) {
-        setCurrentPath(next);
-        return;
-      }
-    }
-    const live = Math.min(
-      Math.max(loupeIndex + delta, 0),
-      loupeImages.length - 1,
-    );
-    setCurrentPath(loupeImages[live]?.path ?? null);
-  };
   const loupeEdit = loupeImage === null ? identityEdit : editOf(loupeImage);
   // The browser keeps the current photo after the loupe closes, so anything
   // acting on "the photo you are looking at" has to ask whether it is open.
@@ -867,10 +861,11 @@ export default function App() {
                 onNavigate={(next) =>
                   setCurrentPath(loupeImages[next]?.path ?? null)
                 }
-                onStep={stepTo}
                 onCloseLoupe={() => setLoupeOpen(false)}
                 onRate={(path, rating) => setRating.mutate({ path, rating })}
                 onOpenLoupe={(index) => {
+                  // A new visit walks the browser's order as it stands now.
+                  held.current = { key: "", paths: [] };
                   setCurrentPath(filteredImages[index]?.path ?? null);
                   setLoupeOpen(true);
                 }}
@@ -962,7 +957,6 @@ type ContentProps = {
   selection: ReturnType<typeof useSelection>;
   onEditChange: (image: ImageFile, edit: Edit) => void;
   onNavigate: (index: number) => void;
-  onStep: (delta: number) => void;
   onCloseLoupe: () => void;
   onRate: (path: string, rating: number) => void;
   onOpenLoupe: (index: number) => void;
@@ -999,7 +993,6 @@ function Content({
   selection,
   onEditChange,
   onNavigate,
-  onStep,
   onCloseLoupe,
   onRate,
   onOpenLoupe,
@@ -1037,7 +1030,6 @@ function Content({
         onCancelCrop={onCancelCrop}
         onEditChange={(edit) => onEditChange(image, edit)}
         onNavigate={onNavigate}
-        onStep={onStep}
         onClose={onCloseLoupe}
         onRate={onRate}
       />

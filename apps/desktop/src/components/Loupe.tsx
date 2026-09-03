@@ -68,7 +68,6 @@ type Props = {
   onCancelCrop: () => void;
   onEditChange: (edit: Edit) => void;
   onNavigate: (index: number) => void;
-  onStep: (delta: number) => void;
   onClose: () => void;
   onRate: (path: string, rating: number) => void;
 };
@@ -84,7 +83,6 @@ export function Loupe({
   onCancelCrop,
   onEditChange,
   onNavigate,
-  onStep,
   onClose,
   onRate,
 }: Props) {
@@ -223,11 +221,11 @@ export function Loupe({
           break;
         case "ArrowRight":
           event.preventDefault();
-          onStep(1);
+          onNavigate(Math.min(index + 1, images.length - 1));
           break;
         case "ArrowLeft":
           event.preventDefault();
-          onStep(-1);
+          onNavigate(Math.max(index - 1, 0));
           break;
         case "0":
         case "1":
@@ -260,6 +258,8 @@ export function Loupe({
     return () => window.removeEventListener("keydown", handler);
   }, [
     image,
+    images.length,
+    index,
     edit,
     displayWidth,
     displayHeight,
@@ -268,8 +268,8 @@ export function Loupe({
     onClose,
     onCropDraft,
     onEditChange,
+    onNavigate,
     onRate,
-    onStep,
   ]);
 
   if (!image) return null;
