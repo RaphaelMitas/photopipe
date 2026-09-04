@@ -20,3 +20,6 @@ export function makeImage(
     ...overrides,
   };
 }
+
+export const rels = (images: { rel: string }[]) =>
+  images.map((image) => image.rel);

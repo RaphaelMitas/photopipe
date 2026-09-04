@@ -193,6 +193,25 @@ test("grid and list are two views of the same set", async ({ page }) => {
   await expect(page.getByTestId("grid")).toBeVisible();
 });
 
+test("sorting by rating brings the starred photo to the front", async ({
+  page,
+}) => {
+  await openZell(page);
+  await expect(page.getByTestId("thumb").first()).toHaveAttribute(
+    "data-path",
+    "DSC00832.ARW",
+  );
+
+  await page.getByTestId("sort").click();
+  await page.getByTestId("sort-rating").click();
+
+  await expect(page.getByTestId("sort")).toContainText("Rating");
+  await expect(page.getByTestId("thumb").first()).toHaveAttribute(
+    "data-path",
+    "abends/DSC00938.ARW",
+  );
+});
+
 const sidebarTrigger = (page: import("@playwright/test").Page) =>
   page.locator("[data-slot='sidebar'] [data-slot='sidebar-trigger']");
 
