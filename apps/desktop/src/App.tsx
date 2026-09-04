@@ -381,7 +381,6 @@ export default function App() {
       destination: currentShoot?.path ?? openShoot,
       request: { shoot: openShoot, paths },
     });
-    // The plan drops what is already in the shoot and what is not a photo.
     if (job && job.total < paths.length) {
       toast.info(
         `${paths.length - job.total} of ${paths.length} skipped — already imported or not photos`,

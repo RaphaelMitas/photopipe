@@ -540,8 +540,7 @@ mod tests {
         let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/wedged-sidecar.sh");
         let mut sidecar = Sidecar::new(script);
         sidecar.read_timeout = Duration::from_millis(200);
-        // Spelled out rather than read from the constant: a loop over the very
-        // list it checks stays green when a method falls out of that list.
+        // Spelled out: a loop over the constant would stay green if a method left it.
         for method in ["setRating", "setEdit", "exportFiles", "importFiles"] {
             assert!(
                 MUTATING_METHODS.contains(&method),

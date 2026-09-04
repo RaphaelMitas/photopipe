@@ -513,8 +513,6 @@ public final class LibraryService: @unchecked Sendable {
         return (folder, path.path, status().generation)
     }
 
-    /// The watcher picks up each file as it lands, so the shoot fills in while
-    /// the job runs.
     public func startImport(shoot shootName: String, paths: [String]) throws
         -> Exporter.Progress
     {
@@ -539,18 +537,14 @@ public final class LibraryService: @unchecked Sendable {
             plan: Exporter.Plan(items: items, destination: shootPath, staging: nil))
     }
 
-    /// What one import has spoken for: names taken on disk or by an earlier
-    /// item, and the files those items came from, so the same photo picked
-    /// twice in one selection is copied once.
     private final class ImportPlan {
         private let destination: URL
         private var used: Set<String> = []
         private var claimed: [FileIdentity: Claim] = [:]
         private var digests: [URL: Data] = [:]
 
-        /// The first file of an identity is held whole rather than digested: a
-        /// selection where nothing collides then never opens a file at all. It
-        /// is digested only once a second file lands on the same identity.
+        /// The first file is kept whole rather than digested, so a selection
+        /// that collides nowhere never opens a file at all.
         private struct Claim {
             var first: URL?
             var digests: Set<Data> = []
@@ -558,8 +552,6 @@ public final class LibraryService: @unchecked Sendable {
 
         init(destination: URL) { self.destination = destination }
 
-        /// Where this file should land, or nil when the shoot already has it
-        /// under any name.
         func target(for source: URL) -> URL? {
             let identity = LibraryService.identity(source)
             if let identity, claimedAlready(identity, source) { return nil }
@@ -585,9 +577,6 @@ public final class LibraryService: @unchecked Sendable {
             return destination.appendingPathComponent(name)
         }
 
-        /// Whether an earlier item in this selection was this same photo. A
-        /// burst on a FAT32 card puts every frame in one identity, so this
-        /// answers from a set rather than by walking what is already claimed.
         private func claimedAlready(_ identity: FileIdentity, _ source: URL) -> Bool {
             guard var claim = claimed[identity] else { return false }
             if let first = claim.first {
@@ -599,11 +588,8 @@ public final class LibraryService: @unchecked Sendable {
             return claim.digests.contains(mine)
         }
 
-        /// Size and mtime alone cannot tell two photos apart: a card formatted
-        /// FAT32 keeps mtime to the nearest two seconds, and an uncompressed
-        /// raw is a fixed byte count per body, so two frames from a burst on
-        /// two cards agree on both. The head carries the EXIF and the preview,
-        /// which do not.
+        /// FAT32 rounds mtime to two seconds and an uncompressed raw is one size
+        /// per body, so two frames of a burst agree on both; their EXIF does not.
         private func sameHead(_ left: URL, _ right: URL) -> Bool {
             guard let left = digest(left) else { return false }
             return left == digest(right)
@@ -638,9 +624,8 @@ public final class LibraryService: @unchecked Sendable {
         return try? handle.read(upToCount: 64 * 1024)
     }
 
-    /// A killed copy leaves its staging file behind, hidden from Finder and
-    /// from the scanner alike, so nothing else would ever clear it. The age
-    /// bound keeps the sweep off temps a running import still has open.
+    /// Nothing else clears a staging file, since the prefix hides it from Finder
+    /// and the scanner alike. The age bound spares a running import's temps.
     private static func sweepStaleTemps(in folder: URL) {
         let fm = FileManager.default
         let cutoff = Date().addingTimeInterval(-3600)
@@ -727,9 +712,8 @@ public final class LibraryService: @unchecked Sendable {
             used.insert(name.lowercased())
             let target = base.appendingPathComponent(name)
             // An export carries the real edit and rating even where enrichment
-            // has not reached yet. Reading them opens the file, so it happens
-            // in the writers, four wide, rather than in the request that plans
-            // the job.
+            // has not reached yet. Reading them opens the file, so it happens in
+            // the writers, four wide, rather than in the request that plans it.
             return Exporter.Plan.Item(label: image.rel) {
                 try self.write(
                     enrich(image), format: format, quality: quality, to: target, staging: zip,
@@ -774,10 +758,8 @@ public final class LibraryService: @unchecked Sendable {
                 try FileActions.copyWithoutOverwriting(from: source, to: planned)
             }
         case .jpeg:
-            // Names were picked before the first write, and on a long export
-            // something else can reach the folder in between. Rendering has no
-            // second chance at the name the way a copy does, so it is resolved
-            // here and the gap that leaves is the render's length.
+            // A name picked before the first write can be taken by the time the
+            // render lands, and a render cannot retry one the way a copy does.
             let target =
                 staging || !fm.fileExists(atPath: planned.path)
                 ? planned : FileActions.uniqueURL(for: planned)

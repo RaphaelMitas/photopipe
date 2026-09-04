@@ -3,8 +3,6 @@ import Foundation
 /// An export of a few hundred raws takes minutes, far past the client's read
 /// timeout, so the request that asks for one only plans it: `start` returns an
 /// id straight away and the client polls `progress` until it stops running.
-/// Imports ride the same engine: an item is just a label and the work that
-/// delivers it, whatever that work is.
 public final class Exporter: @unchecked Sendable {
     public struct Progress: Equatable, Sendable {
         public let id: String

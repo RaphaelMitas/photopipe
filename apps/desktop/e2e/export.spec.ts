@@ -240,7 +240,6 @@ test("an import runs as a job and says what it skipped", async ({ page }) => {
   await page.getByTestId("open-export").click();
   await page.getByTestId("import-files").click();
 
-  // Six files picked, one of them not a photo.
   await expect(page.getByText(/1 of 6 skipped/)).toBeVisible();
 
   const running = page.getByTestId("job-running");

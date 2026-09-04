@@ -267,8 +267,6 @@ export const E2E_HANDLERS: Record<
     }
     return { ...job };
   },
-  // The core plans only real photos, so the skipped count the UI reports is
-  // the difference between what was picked and what the job took on.
   importFiles: (params) =>
     startJob(
       (params.paths as string[]).filter((path) =>

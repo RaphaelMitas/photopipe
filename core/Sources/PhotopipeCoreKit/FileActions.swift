@@ -25,13 +25,9 @@ public enum FileActions {
         return trashed
     }
 
-    /// Hidden, so a staging file left by a killed copy stays out of the
-    /// scanner and out of Finder until something sweeps it.
+    /// Hidden, so a half-written copy stays out of Finder and the scanner.
     public static let tempPrefix = ".photopipe-"
 
-    /// A name taken since the caller picked it earns a suffix rather than
-    /// costing the file. Staging under a hidden name keeps a half-written copy
-    /// from ever appearing under the real one.
     @discardableResult
     public static func copyWithoutOverwriting(from source: URL, to target: URL) throws -> URL {
         let fm = FileManager.default
@@ -39,9 +35,8 @@ public enum FileActions {
         let temp = folder.appendingPathComponent("\(tempPrefix)\(UUID().uuidString)")
         try fm.copyItem(at: source, to: temp)
 
-        // A dangling symlink is invisible to `fileExists` and still refuses a
-        // move, so a name the move rejected is never offered again — asking
-        // twice would be a loop with nothing to end it.
+        // A dangling symlink is invisible to `fileExists` and still refuses the
+        // move, so a name it rejected is never offered again.
         var refused: Set<String> = []
         var landing = target
         while true {

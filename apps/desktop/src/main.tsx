@@ -12,7 +12,7 @@ async function prepare() {
     mockIPC((cmd, args) => {
       // The file pickers are OS windows with nothing to drive them from a
       // browser, so e2e answers them and moves on. Only the import picker
-      // asks for many files, and it wants photos, not a destination.
+      // asks for many, and it wants photos rather than a destination.
       if (cmd.startsWith("plugin:dialog|")) {
         const options = (
           args as { options?: { multiple?: boolean } } | undefined

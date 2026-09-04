@@ -314,7 +314,6 @@ private func exportNow(
     service.rescanNow()
     #expect(try service.listImages(shoot: "2026-08-11_import").map(\.rel) == ["DSC00050.ARW"])
 
-    // Re-importing the same file is a no-op, not a suffixed duplicate.
     let again = try settled(
         service,
         service.startImport(
@@ -325,7 +324,6 @@ private func exportNow(
         !FileManager.default.fileExists(
             atPath: shoot.appendingPathComponent("DSC00050-1.ARW").path))
 
-    // A different file wearing the same name is kept under a suffix.
     let elsewhere = try tempDir()
     defer { try? FileManager.default.removeItem(at: elsewhere) }
     try Data("a longer different photo".utf8)
@@ -359,9 +357,8 @@ private func exportNow(
     try FileManager.default.createDirectory(at: shoot, withIntermediateDirectories: true)
     try ProjectFile().write(inShoot: shoot.path)
 
-    // Uncompressed raws are a fixed byte count per body, so two bodies both
-    // shooting DSC00001 produce same-name same-size files that are not the
-    // same photo. Distinct mtimes are what tells them apart.
+    // Two bodies both shooting DSC00001: uncompressed raws are one size per
+    // body, so only the mtimes tell these apart.
     let fm = FileManager.default
     let cardA = try tempDir()
     let cardB = try tempDir()
@@ -460,8 +457,8 @@ private func exportNow(
     try FileManager.default.createDirectory(at: shoot, withIntermediateDirectories: true)
     try ProjectFile().write(inShoot: shoot.path)
 
-    // Two backup folders of one card: not in the shoot yet, so only the plan's
-    // own memory of what it has claimed can catch the repeat.
+    // Two backup folders of one card: neither is in the shoot yet, so only the
+    // plan's own memory can catch the repeat.
     let fm = FileManager.default
     let first = try tempDir()
     let second = try tempDir()
@@ -490,8 +487,8 @@ private func exportNow(
     let source = dir.appendingPathComponent("DSC00700.ARW")
     try Data("the new photo".utf8).write(to: source)
 
-    // Stands in for a name that was free when the job planned it and taken by
-    // the time the writer got there.
+    // A name that was free when the job planned it, taken by the time the
+    // writer got there.
     let taken = dir.appendingPathComponent("landing/DSC00700.ARW")
     try FileManager.default.createDirectory(
         at: taken.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -513,8 +510,8 @@ private func exportNow(
     let source = dir.appendingPathComponent("DSC00800.ARW")
     try Data("the photo".utf8).write(to: source)
 
-    // `fileExists` says no and `moveItem` says yes, so a resolver that trusts
-    // the first keeps handing back the name the second refuses.
+    // `fileExists` says no and `moveItem` says yes, so a resolver trusting the
+    // first hands back the name the second refuses, forever.
     let landing = dir.appendingPathComponent("landing")
     try fm.createDirectory(at: landing, withIntermediateDirectories: true)
     let target = landing.appendingPathComponent("DSC00800.ARW")
