@@ -25,27 +25,42 @@ public enum FileActions {
         return trashed
     }
 
+    /// Hidden, so a half-written copy stays out of Finder and the scanner.
+    public static let tempPrefix = ".photopipe-"
+
     @discardableResult
-    public static func copy(paths: [String], toFolder folder: String) throws -> Int {
-        guard !paths.isEmpty else { throw ActionError.noFiles }
+    public static func copyWithoutOverwriting(from source: URL, to target: URL) throws -> URL {
         let fm = FileManager.default
-        let destination = URL(fileURLWithPath: folder)
-        try fm.createDirectory(at: destination, withIntermediateDirectories: true)
-        var copied = 0
-        for path in paths {
-            let source = URL(fileURLWithPath: path)
-            let target = uniqueURL(
-                for: destination.appendingPathComponent(source.lastPathComponent))
-            try fm.copyItem(at: source, to: target)
-            copied += 1
+        let folder = target.deletingLastPathComponent()
+        let temp = folder.appendingPathComponent("\(tempPrefix)\(UUID().uuidString)")
+        try fm.copyItem(at: source, to: temp)
+
+        // A dangling symlink is invisible to `fileExists` and still refuses the
+        // move, so a name it rejected is never offered again.
+        var refused: Set<String> = []
+        var landing = target
+        while true {
+            do {
+                try fm.moveItem(at: temp, to: landing)
+                return landing
+            } catch CocoaError.fileWriteFileExists where refused.count < 64 {
+                refused.insert(landing.lastPathComponent.lowercased())
+                let name = uniqueName(target.lastPathComponent) { candidate in
+                    refused.contains(candidate.lowercased())
+                        || fm.fileExists(atPath: folder.appendingPathComponent(candidate).path)
+                }
+                landing = folder.appendingPathComponent(name)
+            } catch {
+                try? fm.removeItem(at: temp)
+                throw error
+            }
         }
-        return copied
     }
 
     public static func zipDirectory(at dir: URL, to destination: String) throws {
         let dest = URL(fileURLWithPath: destination)
         let temp = dest.deletingLastPathComponent()
-            .appendingPathComponent(".photopipe-\(UUID().uuidString).zip")
+            .appendingPathComponent("\(tempPrefix)\(UUID().uuidString).zip")
         defer { try? FileManager.default.removeItem(at: temp) }
         let result = try run(
             "/usr/bin/zip", ["-q", "-r", temp.path, "."], currentDirectory: dir)

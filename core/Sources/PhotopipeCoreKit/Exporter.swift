@@ -25,8 +25,8 @@ public final class Exporter: @unchecked Sendable {
     /// pick the same one from a listing that keeps changing under them.
     public struct Plan: Sendable {
         public struct Item: Sendable {
-            public let image: ImageFile
-            public let target: URL
+            public let label: String
+            public let write: @Sendable () throws -> Void
         }
 
         public let items: [Item]
@@ -39,8 +39,6 @@ public final class Exporter: @unchecked Sendable {
     /// usable while the export runs.
     private static let concurrency = 4
 
-    public typealias Write = @Sendable (ImageFile, URL) throws -> Void
-
     private let lock = NSLock()
     private var jobs: [String: Progress] = [:]
     private var tasks: [String: Task<Void, Never>] = [:]
@@ -48,7 +46,7 @@ public final class Exporter: @unchecked Sendable {
 
     public init() {}
 
-    public func start(plan: Plan, write: @escaping Write) -> Progress {
+    public func start(plan: Plan) -> Progress {
         lock.lock()
         // A counter would restart at 1 with the process, and a client that
         // outlives a sidecar respawn would poll and cancel a stranger's job.
@@ -62,7 +60,7 @@ public final class Exporter: @unchecked Sendable {
             cancelled: false, archiving: false, error: nil, failures: [])
         jobs[id] = initial
         tasks[id] = Task.detached(priority: .utility) { [weak self] in
-            await self?.run(id: id, plan: plan, write: write)
+            await self?.run(id: id, plan: plan)
         }
         lock.unlock()
         return initial
@@ -80,7 +78,7 @@ public final class Exporter: @unchecked Sendable {
         return progress(id: id)
     }
 
-    private func run(id: String, plan: Plan, write: @escaping Write) async {
+    private func run(id: String, plan: Plan) async {
         var failures: [String] = []
         await withTaskGroup(of: String?.self) { group in
             var next = 0
@@ -90,10 +88,10 @@ public final class Exporter: @unchecked Sendable {
                 next += 1
                 group.addTask {
                     do {
-                        try write(item.image, item.target)
+                        try item.write()
                         return nil
                     } catch {
-                        return "\(item.image.rel): \(error)"
+                        return "\(item.label): \(error)"
                     }
                 }
             }
@@ -107,7 +105,7 @@ public final class Exporter: @unchecked Sendable {
                     failures.append(failure)
                     // the drawer is the only other place these show, and it
                     // goes away with the window
-                    FileHandle.standardError.write(Data("export failed: \(failure)\n".utf8))
+                    FileHandle.standardError.write(Data("job failed: \(failure)\n".utf8))
                 }
                 lock.withLock {
                     if failure == nil {

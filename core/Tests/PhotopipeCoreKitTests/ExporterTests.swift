@@ -3,14 +3,15 @@ import Testing
 
 @testable import PhotopipeCoreKit
 
-private func plan(_ count: Int, in dir: URL, staging: URL? = nil) -> Exporter.Plan {
+private func plan(
+    _ count: Int, in dir: URL, staging: URL? = nil,
+    write: @escaping @Sendable (String, URL) throws -> Void
+) -> Exporter.Plan {
     let base = staging ?? dir
     let items = (0..<count).map { index in
-        Exporter.Plan.Item(
-            image: ImageFile(
-                path: "/library/DSC0000\(index).jpg", rel: "DSC0000\(index).jpg", ext: "jpg",
-                size: 1, mtime: 1),
-            target: base.appendingPathComponent("DSC0000\(index).jpg"))
+        let label = "DSC0000\(index).jpg"
+        let target = base.appendingPathComponent(label)
+        return Exporter.Plan.Item(label: label) { try write(label, target) }
     }
     return Exporter.Plan(items: items, destination: dir.path, staging: staging)
 }
@@ -39,10 +40,11 @@ private func waitUntilIdle(
     let gate = DispatchSemaphore(value: 0)
     let exporter = Exporter()
     let began = Date()
-    let job = exporter.start(plan: plan(3, in: dir)) { _, target in
-        gate.wait()
-        try Data("photo".utf8).write(to: target)
-    }
+    let job = exporter.start(
+        plan: plan(3, in: dir) { _, target in
+            gate.wait()
+            try Data("photo".utf8).write(to: target)
+        })
 
     // The client gives up on a request after ten seconds.
     #expect(Date().timeIntervalSince(began) < 1)
@@ -62,10 +64,11 @@ private func waitUntilIdle(
     defer { try? FileManager.default.removeItem(at: dir) }
 
     let exporter = Exporter()
-    let job = exporter.start(plan: plan(4, in: dir)) { image, target in
-        guard image.rel != "DSC00002.jpg" else { throw Renderer.RenderError.unreadable(image.path) }
-        try Data("photo".utf8).write(to: target)
-    }
+    let job = exporter.start(
+        plan: plan(4, in: dir) { label, target in
+            guard label != "DSC00002.jpg" else { throw Renderer.RenderError.unreadable(label) }
+            try Data("photo".utf8).write(to: target)
+        })
 
     let finished = waitUntilIdle(exporter, job.id)
     #expect(finished.done == 3)
@@ -83,12 +86,13 @@ private func waitUntilIdle(
     defer { try? FileManager.default.removeItem(at: dir) }
 
     let exporter = Exporter()
-    let job = exporter.start(plan: plan(6, in: dir)) { image, target in
-        guard image.rel.hasSuffix("0.jpg") || image.rel.hasSuffix("3.jpg") else {
-            throw Renderer.RenderError.encodeFailed
-        }
-        try Data("photo".utf8).write(to: target)
-    }
+    let job = exporter.start(
+        plan: plan(6, in: dir) { label, target in
+            guard label.hasSuffix("0.jpg") || label.hasSuffix("3.jpg") else {
+                throw Renderer.RenderError.encodeFailed
+            }
+            try Data("photo".utf8).write(to: target)
+        })
 
     let finished = waitUntilIdle(exporter, job.id)
     #expect(finished.failed == 4)
@@ -107,12 +111,10 @@ private func waitUntilIdle(
 
     let first = Exporter()
     let second = Exporter()
-    let a = first.start(plan: plan(1, in: dir)) { _, target in
-        try Data("photo".utf8).write(to: target)
-    }
-    let b = second.start(plan: plan(1, in: dir)) { _, target in
-        try Data("photo".utf8).write(to: target)
-    }
+    let a = first.start(
+        plan: plan(1, in: dir) { _, target in try Data("photo".utf8).write(to: target) })
+    let b = second.start(
+        plan: plan(1, in: dir) { _, target in try Data("photo".utf8).write(to: target) })
 
     // A fresh process must not hand a new job the id a client is still polling
     // for one it started before the sidecar was replaced.
@@ -128,9 +130,8 @@ private func waitUntilIdle(
     defer { try? FileManager.default.removeItem(at: dir) }
 
     let exporter = Exporter()
-    let job = exporter.start(plan: plan(2, in: dir)) { image, _ in
-        throw Renderer.RenderError.unreadable(image.path)
-    }
+    let job = exporter.start(
+        plan: plan(2, in: dir) { label, _ in throw Renderer.RenderError.unreadable(label) })
 
     let finished = waitUntilIdle(exporter, job.id)
     #expect(finished.done == 0)
@@ -146,10 +147,11 @@ private func waitUntilIdle(
     // Six files, four writers: the last two are still queued when cancel lands.
     let gate = DispatchSemaphore(value: 0)
     let exporter = Exporter()
-    let job = exporter.start(plan: plan(6, in: dir)) { _, target in
-        gate.wait()
-        try Data("photo".utf8).write(to: target)
-    }
+    let job = exporter.start(
+        plan: plan(6, in: dir) { _, target in
+            gate.wait()
+            try Data("photo".utf8).write(to: target)
+        })
     #expect(exporter.cancel(id: job.id) != nil)
     for _ in 0..<6 { gate.signal() }
 
@@ -168,11 +170,7 @@ private func waitUntilIdle(
     let staging = dir.appendingPathComponent("staging")
     let archive = dir.appendingPathComponent("delivery.zip")
     let exporter = Exporter()
-    let job = exporter.start(
-        plan: Exporter.Plan(
-            items: plan(2, in: archive, staging: staging).items,
-            destination: archive.path, staging: staging)
-    ) { _, _ in }
+    let job = exporter.start(plan: plan(2, in: archive, staging: staging) { _, _ in })
 
     let finished = waitUntilIdle(exporter, job.id)
     #expect(finished.done == 0, "the files went nowhere the user can reach")
@@ -190,13 +188,10 @@ private func waitUntilIdle(
     let gate = DispatchSemaphore(value: 0)
     let exporter = Exporter()
     let job = exporter.start(
-        plan: Exporter.Plan(
-            items: plan(2, in: archive, staging: staging).items,
-            destination: archive.path, staging: staging)
-    ) { _, target in
-        gate.wait()
-        try Data("photo".utf8).write(to: target)
-    }
+        plan: plan(2, in: archive, staging: staging) { _, target in
+            gate.wait()
+            try Data("photo".utf8).write(to: target)
+        })
     _ = exporter.cancel(id: job.id)
     for _ in 0..<2 { gate.signal() }
 
