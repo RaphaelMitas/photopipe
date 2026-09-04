@@ -545,11 +545,16 @@ public final class LibraryService: @unchecked Sendable {
     private final class ImportPlan {
         private let destination: URL
         private var used: Set<String> = []
-        private var claimed: [FileIdentity: [URL]] = [:]
-        /// A burst on a FAT32 card puts hundreds of frames in one bucket, and
-        /// comparing them pairwise re-reads the same heads over and over. Read
-        /// each file once and compare the digests.
+        private var claimed: [FileIdentity: Claim] = [:]
         private var digests: [URL: Data] = [:]
+
+        /// The first file of an identity is held whole rather than digested: a
+        /// selection where nothing collides then never opens a file at all. It
+        /// is digested only once a second file lands on the same identity.
+        private struct Claim {
+            var first: URL?
+            var digests: Set<Data> = []
+        }
 
         init(destination: URL) { self.destination = destination }
 
@@ -557,11 +562,7 @@ public final class LibraryService: @unchecked Sendable {
         /// under any name.
         func target(for source: URL) -> URL? {
             let identity = LibraryService.identity(source)
-            if let identity, let twins = claimed[identity],
-                twins.contains(where: { sameHead($0, source) })
-            {
-                return nil
-            }
+            if let identity, claimedAlready(identity, source) { return nil }
             var imported = false
             let name = FileActions.uniqueName(source.lastPathComponent) { candidate in
                 if used.contains(candidate.lowercased()) { return true }
@@ -574,8 +575,28 @@ public final class LibraryService: @unchecked Sendable {
             }
             guard !imported else { return nil }
             used.insert(name.lowercased())
-            if let identity { claimed[identity, default: []].append(source) }
+            if let identity {
+                if claimed[identity] == nil {
+                    claimed[identity] = Claim(first: source)
+                } else if let digest = digest(source) {
+                    claimed[identity]?.digests.insert(digest)
+                }
+            }
             return destination.appendingPathComponent(name)
+        }
+
+        /// Whether an earlier item in this selection was this same photo. A
+        /// burst on a FAT32 card puts every frame in one identity, so this
+        /// answers from a set rather than by walking what is already claimed.
+        private func claimedAlready(_ identity: FileIdentity, _ source: URL) -> Bool {
+            guard var claim = claimed[identity] else { return false }
+            if let first = claim.first {
+                claim.first = nil
+                if let digest = digest(first) { claim.digests.insert(digest) }
+                claimed[identity] = claim
+            }
+            guard let mine = digest(source) else { return false }
+            return claim.digests.contains(mine)
         }
 
         /// Size and mtime alone cannot tell two photos apart: a card formatted
