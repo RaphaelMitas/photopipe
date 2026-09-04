@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { SortKey } from "@/lib/sort";
 import { BrowserToolbar } from "./BrowserToolbar";
 
 afterEach(cleanup);
@@ -22,9 +23,9 @@ function toolbar(props: Partial<Parameters<typeof BrowserToolbar>[0]> = {}) {
   return { onSort };
 }
 
-function openSortMenu() {
+function openSortMenu(key: SortKey = "score") {
   fireEvent.keyDown(screen.getByTestId("sort"), { key: "Enter" });
-  return screen.getByTestId("sort-score");
+  return screen.getByTestId(`sort-${key}`);
 }
 
 describe("BrowserToolbar", () => {
@@ -32,6 +33,14 @@ describe("BrowserToolbar", () => {
     const { onSort } = toolbar();
     fireEvent.click(openSortMenu());
     expect(onSort).toHaveBeenCalledWith("score");
+  });
+
+  it("sorts by rating without waiting for a rating pass", () => {
+    const { onSort } = toolbar({ scoreReady: false });
+    const option = openSortMenu("rating");
+    expect(option).not.toHaveAttribute("data-disabled");
+    fireEvent.click(option);
+    expect(onSort).toHaveBeenCalledWith("rating");
   });
 
   it("names the rating pass and keeps Instinct out of reach while it runs", () => {
