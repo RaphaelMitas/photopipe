@@ -1,15 +1,5 @@
 import { expect, test } from "@playwright/test";
-
-async function openShoot(page: import("@playwright/test").Page, shoot: string) {
-  await page.goto("/");
-  await page.getByTestId("root-input").fill("/fake");
-  await page.getByTestId("root-submit").click();
-  await page.getByTestId(`shoot-${shoot}`).click();
-  await expect(page.getByTestId("grid")).toBeVisible();
-}
-
-const openZell = (page: import("@playwright/test").Page) =>
-  openShoot(page, "2026-07-12_zell");
+import { openShoot, openZell } from "./open-shoot";
 
 test("one surface: grid, shoot in the top bar, export at hand", async ({
   page,

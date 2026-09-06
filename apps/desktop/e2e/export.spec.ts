@@ -1,12 +1,5 @@
 import { expect, test } from "@playwright/test";
-
-async function openZell(page: import("@playwright/test").Page) {
-  await page.goto("/");
-  await page.getByTestId("root-input").fill("/fake");
-  await page.getByTestId("root-submit").click();
-  await page.getByTestId("shoot-2026-07-12_zell").click();
-  await expect(page.getByTestId("grid")).toBeVisible();
-}
+import { openShoot, openZell } from "./open-shoot";
 
 test("the export drawer acts on the selection, with quick actions", async ({
   page,
@@ -116,10 +109,7 @@ test("an export that lost most of its files does not read as a success", async (
 });
 
 test("a cancelled zip offers no archive to reveal", async ({ page }) => {
-  await page.goto("/");
-  await page.getByTestId("root-input").fill("/fake");
-  await page.getByTestId("root-submit").click();
-  await page.getByTestId("shoot-2026-08-01_dolomites").click();
+  await openShoot(page, "2026-08-01_dolomites");
   await page.getByTestId("open-export").click();
   await page.getByTestId("select-all").click();
   await page.getByTestId("dest-zip").click();
@@ -134,11 +124,8 @@ test("a cancelled zip offers no archive to reveal", async ({ page }) => {
 });
 
 test("a long export can be cancelled and says so", async ({ page }) => {
-  await page.goto("/");
-  await page.getByTestId("root-input").fill("/fake");
-  await page.getByTestId("root-submit").click();
   // 200 photos, delivered one per poll: still running when cancel lands.
-  await page.getByTestId("shoot-2026-08-01_dolomites").click();
+  await openShoot(page, "2026-08-01_dolomites");
   await page.getByTestId("open-export").click();
   await page.getByTestId("select-all").click();
   await page.getByTestId("run-export").click();
@@ -220,11 +207,7 @@ test("the decoder row warns before a RAW 8 export and knows what RAW 9 can reach
 test("a camera without RAW 9 disables the option instead of promising it", async ({
   page,
 }) => {
-  await page.goto("/");
-  await page.getByTestId("root-input").fill("/fake");
-  await page.getByTestId("root-submit").click();
-  await page.getByTestId("shoot-misc").click();
-  await expect(page.getByTestId("grid")).toBeVisible();
+  await openShoot(page, "misc");
 
   await page.getByTestId("open-export").click();
   await page.getByTestId("select-all").click();
