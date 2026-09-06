@@ -402,7 +402,15 @@ function DecoderStrip() {
   const version = raw9Missing ? 8 : stored;
   // Radix opens on hover only, and the icon is small enough to want a tap
   const [tipOpen, setTipOpen] = useState(false);
-  const wasOpenRef = useRef(false);
+  // Mirrors tipOpen so pointerdown reads the live value, not a render
+  // closure; Radix fires open/close between our renders and a stale
+  // snapshot made the closing click reopen the tip (flaked in CI).
+  const openRef = useRef(false);
+  const intentRef = useRef<"open" | "close">("open");
+  const setOpen = (next: boolean) => {
+    openRef.current = next;
+    setTipOpen(next);
+  };
   return (
     <div
       data-testid="decoder-strip"
@@ -410,7 +418,7 @@ function DecoderStrip() {
     >
       <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-input px-2.5 py-1 font-medium text-[10px] text-muted-foreground">
         RAW decoder
-        <Tooltip open={tipOpen} onOpenChange={setTipOpen}>
+        <Tooltip open={tipOpen} onOpenChange={setOpen}>
           <TooltipTrigger asChild>
             <button
               type="button"
@@ -418,13 +426,13 @@ function DecoderStrip() {
               data-testid="decoder-info"
               // Radix closes the tooltip on pointerdown and again on click,
               // both before ours run, so a relative toggle only ever reopens.
-              // Snapshot first and set the absolute value instead.
+              // Decide the intent before Radix interferes, enforce it last.
               onPointerDown={() => {
-                wasOpenRef.current = tipOpen;
+                intentRef.current = openRef.current ? "close" : "open";
               }}
               onClick={(event) => {
                 event.preventDefault();
-                setTipOpen(!wasOpenRef.current);
+                setOpen(intentRef.current === "open");
               }}
               className="hover:text-foreground"
             >
