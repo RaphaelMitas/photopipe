@@ -554,36 +554,6 @@ export function useRenameProject() {
   });
 }
 
-export function useImportFiles(shoot: string | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationKey: ["write", "importFiles"],
-    mutationFn: (paths: string[]) =>
-      coreRequest<{ imported: number; skipped: number }>("importFiles", {
-        shoot,
-        paths,
-      }),
-    onSuccess: (result) => {
-      toast.success(
-        `Imported ${result.imported} ${result.imported === 1 ? "file" : "files"}`,
-        {
-          description:
-            result.skipped > 0
-              ? `${result.skipped} skipped (not photos)`
-              : undefined,
-        },
-      );
-      queryClient.invalidateQueries({ queryKey: ["images", shoot] });
-      queryClient.invalidateQueries({ queryKey: ["scoring", shoot] });
-      queryClient.invalidateQueries({ queryKey: ["shoots"] });
-      queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
-    },
-    onError: (error) => {
-      toast.error("Import failed", { description: String(error) });
-    },
-  });
-}
-
 export type ExportRequest = {
   shoot: string;
   paths: string[];
@@ -605,6 +575,11 @@ export type ExportProgress = {
   archiving: boolean;
   error: string | null;
   failures: string[];
+};
+
+export type ImportRequest = {
+  shoot: string;
+  paths: string[];
 };
 
 export type ExportJob = ExportProgress & {
@@ -666,37 +641,61 @@ export function useExportJobs() {
   });
   const running = jobs.some((job) => job.running);
 
-  const start = useCallback(async (label: string, request: ExportRequest) => {
-    const key = String(nextJobKey++);
-    const settled: ExportProgress = {
-      id: "",
-      done: 0,
-      failed: 0,
-      total: request.paths.length,
-      running: false,
-      cancelled: false,
-      archiving: false,
-      error: null,
-      failures: [],
-    };
-    const row = {
-      key,
-      label,
-      destination: request.destination,
-      startedAt: Date.now(),
-    };
-    try {
-      const job = await coreRequest<ExportProgress>("exportFiles", request);
-      setRows((current) => [{ ...row, id: job.id, initial: job }, ...current]);
-    } catch (error) {
-      // A refusal the user can still read after the toast has gone.
-      setRows((current) => [
-        { ...row, id: "", initial: { ...settled, error: String(error) } },
-        ...current,
-      ]);
-      toast.error("Could not start the export", { description: String(error) });
-    }
-  }, []);
+  const start = useCallback(
+    async (
+      job:
+        | { method: "exportFiles"; label: string; request: ExportRequest }
+        | {
+            method: "importFiles";
+            label: string;
+            destination: string;
+            request: ImportRequest;
+          },
+    ): Promise<ExportProgress | null> => {
+      const { method, label, request } = job;
+      const key = String(nextJobKey++);
+      const settled: ExportProgress = {
+        id: "",
+        done: 0,
+        failed: 0,
+        total: request.paths.length,
+        running: false,
+        cancelled: false,
+        archiving: false,
+        error: null,
+        failures: [],
+      };
+      const row = {
+        key,
+        label,
+        destination:
+          job.method === "exportFiles"
+            ? job.request.destination
+            : job.destination,
+        startedAt: Date.now(),
+      };
+      try {
+        const started = await coreRequest<ExportProgress>(method, request);
+        setRows((current) => [
+          { ...row, id: started.id, initial: started },
+          ...current,
+        ]);
+        return started;
+      } catch (error) {
+        // A refusal the user can still read after the toast has gone.
+        setRows((current) => [
+          { ...row, id: "", initial: { ...settled, error: String(error) } },
+          ...current,
+        ]);
+        const kind = method === "importFiles" ? "import" : "export";
+        toast.error(`Could not start the ${kind}`, {
+          description: String(error),
+        });
+        return null;
+      }
+    },
+    [],
+  );
 
   const cancel = useCallback(
     (key: string) => {

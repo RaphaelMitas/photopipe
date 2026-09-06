@@ -30,7 +30,7 @@ const SET_ROOT_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Requests that mutate state must never be silently re-sent after a respawn:
 /// the first send may have taken effect before the connection died.
-const MUTATING_METHODS: &[&str] = &["setRating", "setEdit", "exportFiles"];
+const MUTATING_METHODS: &[&str] = &["setRating", "setEdit", "exportFiles", "importFiles"];
 
 #[derive(Debug, Deserialize)]
 struct WireError {
@@ -540,17 +540,24 @@ mod tests {
         let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/wedged-sidecar.sh");
         let mut sidecar = Sidecar::new(script);
         sidecar.read_timeout = Duration::from_millis(200);
-        let start = Instant::now();
-        let error = sidecar
-            .request("setRating", Some(json!({"path": "/r/DSC1.ARW", "rating": 3})))
-            .expect_err("must fail");
-        // One attempt only — no silent re-send of a possibly-applied mutation.
-        assert!(error.contains("connection failed"), "got: {error}");
-        assert!(
-            start.elapsed() < Duration::from_millis(600),
-            "took {:?} — looks like it retried",
-            start.elapsed()
-        );
+        // Spelled out: a loop over the constant would stay green if a method left it.
+        for method in ["setRating", "setEdit", "exportFiles", "importFiles"] {
+            assert!(
+                MUTATING_METHODS.contains(&method),
+                "{method} mutates the library and must never be re-sent"
+            );
+            let start = Instant::now();
+            let error = sidecar
+                .request(method, Some(json!({"path": "/r/DSC1.ARW", "rating": 3})))
+                .expect_err("must fail");
+            // One attempt only — no silent re-send of a possibly-applied mutation.
+            assert!(error.contains("connection failed"), "{method} got: {error}");
+            assert!(
+                start.elapsed() < Duration::from_millis(600),
+                "{method} took {:?} — looks like it retried",
+                start.elapsed()
+            );
+        }
         sidecar.shutdown();
     }
 }

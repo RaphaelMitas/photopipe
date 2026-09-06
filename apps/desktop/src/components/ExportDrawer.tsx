@@ -90,6 +90,7 @@ function jobDetail(job: ExportJob, status: JobStatus, settled: number): string {
     case "cancelled":
       return `Cancelled · ${files}`;
     case "done":
+      if (job.total === 0) return "Nothing new — already in the shoot";
       return `${files} · ${job.destination}`;
   }
 }
@@ -468,7 +469,7 @@ export function ExportDrawer({
                         size="icon"
                         variant="ghost"
                         data-testid="job-cancel"
-                        title="Cancel export"
+                        title="Cancel"
                         onClick={() => onCancel(job.key)}
                         className="size-5 shrink-0 text-muted-foreground"
                       >

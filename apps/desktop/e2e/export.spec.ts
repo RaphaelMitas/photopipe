@@ -234,3 +234,20 @@ test("a camera without RAW 9 disables the option instead of promising it", async
   );
   await expect(page.getByTestId("decoder-banner")).toHaveCount(0);
 });
+
+test("an import runs as a job and says what it skipped", async ({ page }) => {
+  await openZell(page);
+  await page.getByTestId("open-export").click();
+  await page.getByTestId("import-files").click();
+
+  await expect(page.getByText(/1 of 6 skipped/)).toBeVisible();
+
+  const running = page.getByTestId("job-running");
+  await expect(running).toContainText("Import 6 files");
+  await expect(running).toContainText("of 5");
+
+  const done = page.getByTestId("job-done");
+  await expect(done).toBeVisible();
+  await expect(done).toContainText("5 files");
+  await expect(page.getByTestId("job-running")).toHaveCount(0);
+});

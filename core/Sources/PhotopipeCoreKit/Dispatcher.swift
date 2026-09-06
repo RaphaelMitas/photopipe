@@ -293,14 +293,8 @@ public final class Dispatcher {
                         id: request.id, code: "invalid_params",
                         message: "shoot and paths required")
                 }
-                let result = try library.importFiles(shoot: shoot, paths: paths)
-                return .success(
-                    id: request.id,
-                    result: .object([
-                        "imported": .number(Double(result.imported)),
-                        "skipped": .number(Double(result.skipped)),
-                        "generation": .number(Double(result.generation)),
-                    ]))
+                let job = try library.startImport(shoot: shoot, paths: paths)
+                return .success(id: request.id, result: Self.exportProgress(job))
             case "updateProject":
                 guard let shoot = request.params?["shoot"]?.stringValue else {
                     return .failure(
