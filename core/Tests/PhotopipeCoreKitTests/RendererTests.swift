@@ -113,10 +113,11 @@ private func tempCacheDir() -> URL {
 /// Warm scrubs must stay interactive: ~35ms on real hardware, and 250ms fails
 /// the build long before a slider feels broken.
 ///
-/// CI is a GPU-less VM where the same scrub took 2180ms and 3230ms on
-/// consecutive runs, so any absolute ceiling there measures the runner. It
-/// asserts the self-relative invariant instead: warm renders reuse the cached
-/// CIRAWFilter rather than decoding again.
+/// CI is a GPU-less VM running the whole suite at once, where the same scrub
+/// took 2180ms and 3230ms on consecutive runs and a warm render has clocked
+/// slower than the cold one it reused, so any stopwatch there measures the
+/// runner. The decode count is the invariant under the budget, and it holds
+/// on every machine: warm renders reuse the cached CIRAWFilter.
 @Test func warmRenderLatencyBudget() throws {
     guard let fixture = fixtureARW() else { return }
     let cacheDir = tempCacheDir()
@@ -139,12 +140,11 @@ private func tempCacheDir() -> URL {
     let median = times.sorted()[times.count / 2]
     print("warm render median \(median)ms, cold \(cold)ms")
 
-    if ProcessInfo.processInfo.environment["CI"] != nil {
-        #expect(
-            median < cold,
-            "warm render \(median)ms is no faster than cold \(cold)ms: the CIRAWFilter cache is not being reused"
-        )
-    } else {
+    #expect(
+        renderer.rawDecodeCount == 1,
+        "8 warm renders decoded the raw \(renderer.rawDecodeCount) times: the CIRAWFilter cache is not being reused"
+    )
+    if ProcessInfo.processInfo.environment["CI"] == nil {
         #expect(median < 250, "warm render median \(median)ms exceeds the 250ms budget")
     }
 }

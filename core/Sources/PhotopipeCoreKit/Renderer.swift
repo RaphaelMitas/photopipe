@@ -37,6 +37,7 @@ public final class Renderer {
 
     private let lock = NSLock()
     private var filtersByPathAndSize: [String: CachedFilter] = [:]
+    private(set) var rawDecodeCount = 0
     private var defaultsByPath: [String: (values: RawDefaults, mtime: Double)] = [:]
     private var supportsByCamera: [String: Bool] = [:]
     private var supportsByPath: [String: (supported: Bool, mtime: Double)] = [:]
@@ -337,6 +338,7 @@ public final class Renderer {
 
         let entry = try makeFilter(for: file, decoderVersion: decoderVersion)
         lock.lock()
+        rawDecodeCount += 1
         filtersByPathAndSize[key] = entry
         if filtersByPathAndSize.count > filterCapacity {
             let oldest = filtersByPathAndSize.min { $0.value.lastUsed < $1.value.lastUsed }
