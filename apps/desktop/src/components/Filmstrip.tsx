@@ -78,11 +78,10 @@ export function Filmstrip({ images, index, mode, onNavigate }: Props) {
       data-testid="filmstrip"
       data-mode={mode}
       className="shrink-0 overflow-x-auto border-t border-border bg-background/80 px-2 py-2"
-      style={{ height: cellHeight + 16 }}
     >
       <div
-        className="relative h-full"
-        style={{ width: virtualizer.getTotalSize() }}
+        className="relative"
+        style={{ width: virtualizer.getTotalSize(), height: cellHeight }}
       >
         {virtualizer.getVirtualItems().map((item) => {
           const image = images[item.index];

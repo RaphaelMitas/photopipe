@@ -1,12 +1,5 @@
 import { expect, test } from "@playwright/test";
-
-async function openZell(page: import("@playwright/test").Page) {
-  await page.goto("/");
-  await page.getByTestId("root-input").fill("/fake");
-  await page.getByTestId("root-submit").click();
-  await page.getByTestId("shoot-2026-07-12_zell").click();
-  await expect(page.getByTestId("grid")).toBeVisible();
-}
+import { openZell } from "./open-zell";
 
 async function rate(
   page: import("@playwright/test").Page,
