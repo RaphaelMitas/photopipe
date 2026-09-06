@@ -12,19 +12,19 @@ const GAP = 4;
 const FIXED_CELL_WIDTH = 56;
 const FIXED_THUMB_HEIGHT = 56;
 const RATING_ROW_HEIGHT = 16;
+const THUMB_CLASS = "min-h-0 w-full flex-1";
 
 function Thumb({ image }: { image: ImageFile }) {
   const thumb = useThumbnail(image);
-  const className = "min-h-0 w-full flex-1";
   if (!thumb.data) {
-    return <Skeleton className={`${className} rounded-none`} />;
+    return <Skeleton className={`${THUMB_CLASS} rounded-none`} />;
   }
   return (
     <img
       src={fileSrc(thumb.data)}
       alt={image.rel}
       loading="lazy"
-      className={`${className} object-cover`}
+      className={`${THUMB_CLASS} object-cover`}
     />
   );
 }

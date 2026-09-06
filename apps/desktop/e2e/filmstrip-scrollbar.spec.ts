@@ -17,6 +17,11 @@ test("the rating row stays above a classic scrollbar", async ({ page }) => {
     content: "[data-testid='filmstrip']::-webkit-scrollbar{height:15px}",
   });
 
+  const rating = strip
+    .locator("[data-path='abends/DSC00938.ARW']")
+    .getByTestId("filmstrip-rating");
+  await expect(rating).toHaveText("2");
+
   // Without a reserved gutter the assertion below passes on the bug too.
   const gutter = await strip.evaluate((el) => {
     const style = getComputedStyle(el);
@@ -29,10 +34,6 @@ test("the rating row stays above a classic scrollbar", async ({ page }) => {
   });
   expect(gutter).toBeGreaterThanOrEqual(10);
 
-  const rating = strip
-    .locator("[data-path='abends/DSC00938.ARW']")
-    .getByTestId("filmstrip-rating");
-  await expect(rating).toHaveText("2");
   const clipped = await rating.evaluate((el) => {
     const parent = el.closest("[data-testid='filmstrip']");
     if (!parent) throw new Error("rating outside the filmstrip");
