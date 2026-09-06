@@ -13,18 +13,11 @@ const FIXED_CELL_WIDTH = 56;
 const FIXED_THUMB_HEIGHT = 56;
 const RATING_ROW_HEIGHT = 16;
 
-function Thumb({
-  image,
-  className,
-  style,
-}: {
-  image: ImageFile;
-  className: string;
-  style?: React.CSSProperties;
-}) {
+function Thumb({ image }: { image: ImageFile }) {
   const thumb = useThumbnail(image);
+  const className = "min-h-0 w-full flex-1";
   if (!thumb.data) {
-    return <Skeleton className={`${className} rounded-none`} style={style} />;
+    return <Skeleton className={`${className} rounded-none`} />;
   }
   return (
     <img
@@ -32,7 +25,6 @@ function Thumb({
       alt={image.rel}
       loading="lazy"
       className={`${className} object-cover`}
-      style={style}
     />
   );
 }
@@ -102,17 +94,7 @@ export function Filmstrip({ images, index, mode, onNavigate }: Props) {
                 width: widths[item.index],
               }}
             >
-              <Thumb
-                image={image}
-                className={
-                  mode === "ratings" ? "w-full shrink-0" : "h-full w-full"
-                }
-                style={
-                  mode === "ratings"
-                    ? { height: FIXED_THUMB_HEIGHT }
-                    : undefined
-                }
-              />
+              <Thumb image={image} />
               {mode === "ratings" && (
                 <span
                   data-testid="filmstrip-rating"

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { openZell } from "./open-zell";
+import { openShoot, openZell } from "./open-shoot";
 
 test("the export drawer acts on the selection, with quick actions", async ({
   page,
@@ -213,11 +213,7 @@ test("the decoder row warns before a RAW 8 export and knows what RAW 9 can reach
 test("a camera without RAW 9 disables the option instead of promising it", async ({
   page,
 }) => {
-  await page.goto("/");
-  await page.getByTestId("root-input").fill("/fake");
-  await page.getByTestId("root-submit").click();
-  await page.getByTestId("shoot-misc").click();
-  await expect(page.getByTestId("grid")).toBeVisible();
+  await openShoot(page, "misc");
 
   await page.getByTestId("open-export").click();
   await page.getByTestId("select-all").click();
