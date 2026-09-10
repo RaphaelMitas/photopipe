@@ -106,6 +106,17 @@ function Row({
   );
 }
 
+const TONE_SLIDERS: Array<{
+  key: keyof Pick<Edit, "highlights" | "shadows" | "whites" | "blacks">;
+  label: string;
+  short: string;
+}> = [
+  { key: "highlights", label: "Highlights", short: "hl" },
+  { key: "shadows", label: "Shadows", short: "sh" },
+  { key: "whites", label: "Whites", short: "wh" },
+  { key: "blacks", label: "Blacks", short: "bl" },
+];
+
 const signed = (value: number, digits = 0) =>
   `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
 
@@ -120,10 +131,9 @@ const cropSummary = (edit: Edit): string | null => {
 const toneSummary = (edit: Edit): string | null => {
   const parts: string[] = [];
   if (edit.exposure !== 0) parts.push(`${signed(edit.exposure, 2)} ev`);
-  if (edit.highlights !== 0) parts.push(`hl ${signed(edit.highlights)}`);
-  if (edit.shadows !== 0) parts.push(`sh ${signed(edit.shadows)}`);
-  if (edit.whites !== 0) parts.push(`wh ${signed(edit.whites)}`);
-  if (edit.blacks !== 0) parts.push(`bl ${signed(edit.blacks)}`);
+  for (const { key, short } of TONE_SLIDERS) {
+    if (edit[key] !== 0) parts.push(`${short} ${signed(edit[key])}`);
+  }
   const curves = [
     edit.curveRGB,
     edit.curveRed,
@@ -273,54 +283,21 @@ export function EditPanel({
             onValue={(exposure) => set({ exposure })}
             onReset={() => set({ exposure: 0 })}
           />
-          <Row
-            label="Highlights"
-            value={edit.highlights}
-            display={signed(edit.highlights)}
-            min={-100}
-            max={100}
-            step={1}
-            testid="highlights"
-            resetTitle="Reset highlights"
-            onValue={(highlights) => set({ highlights })}
-            onReset={() => set({ highlights: 0 })}
-          />
-          <Row
-            label="Shadows"
-            value={edit.shadows}
-            display={signed(edit.shadows)}
-            min={-100}
-            max={100}
-            step={1}
-            testid="shadows"
-            resetTitle="Reset shadows"
-            onValue={(shadows) => set({ shadows })}
-            onReset={() => set({ shadows: 0 })}
-          />
-          <Row
-            label="Whites"
-            value={edit.whites}
-            display={signed(edit.whites)}
-            min={-100}
-            max={100}
-            step={1}
-            testid="whites"
-            resetTitle="Reset whites"
-            onValue={(whites) => set({ whites })}
-            onReset={() => set({ whites: 0 })}
-          />
-          <Row
-            label="Blacks"
-            value={edit.blacks}
-            display={signed(edit.blacks)}
-            min={-100}
-            max={100}
-            step={1}
-            testid="blacks"
-            resetTitle="Reset blacks"
-            onValue={(blacks) => set({ blacks })}
-            onReset={() => set({ blacks: 0 })}
-          />
+          {TONE_SLIDERS.map(({ key, label }) => (
+            <Row
+              key={key}
+              label={label}
+              value={edit[key]}
+              display={signed(edit[key])}
+              min={-100}
+              max={100}
+              step={1}
+              testid={key}
+              resetTitle={`Reset ${label.toLowerCase()}`}
+              onValue={(value) => set({ [key]: value })}
+              onReset={() => set({ [key]: 0 })}
+            />
+          ))}
         </Group>
         <Separator />
         <Group id="color" title="Color" summary={colorSummary(edit, raw)}>

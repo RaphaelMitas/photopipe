@@ -271,28 +271,22 @@ public enum Curve {
 public enum ToneLUT {
     public static let resolution = 256
 
-    /// `v^a·(1-v)^b` normalized to peak at 1, so a slider's amplitude is the
-    /// most it can move its own region, and both ends stay anchored.
-    private static func bump(_ v: Double, _ a: Double, _ b: Double) -> Double {
-        let peak = pow(a / (a + b), a) * pow(b / (a + b), b)
-        return pow(v, a) * pow(1 - v, b) / peak
-    }
-
     public static func samples(for edit: Edit) -> [Float]? {
         guard edit.hasToneComponent else { return nil }
 
-        // Blacks/whites peak at 1/9 and 8/9, near enough the ends that the
-        // clamp swallows what they push past: that plateau is the clipping
-        // point. Shadows/highlights peak at 1/3 and 2/3 and never clip.
+        // blacks/whites weigh heaviest at the ends themselves, which is what
+        // moves the black and white point instead of only recovering detail
         let s = edit.shadows / 100 * 0.25
         let h = edit.highlights / 100 * 0.25
         let b = edit.blacks / 100 * 0.15
         let w = edit.whites / 100 * 0.15
         var tone = (0..<resolution).map { i -> Double in
             let v = Double(i) / Double(resolution - 1)
+            let shadowWeight = v * (1 - v) * (1 - v) * 6.75
+            let highlightWeight = v * v * (1 - v) * 6.75
             let shifted =
-                v + s * bump(v, 1, 2) + h * bump(v, 2, 1)
-                + b * bump(v, 1, 8) + w * bump(v, 8, 1)
+                v + s * shadowWeight + h * highlightWeight
+                + b * pow(1 - v, 8) + w * pow(v, 8)
             return min(max(shifted, 0), 1)
         }
         // monotone, so an extreme slider cannot fold the scale back on itself

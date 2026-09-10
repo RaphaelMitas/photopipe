@@ -120,11 +120,16 @@ export type ImageFile = {
   enriched: boolean;
 };
 
-/// The core leaves nulls out when it encodes, so an unrated photo arrives with
-/// no `score` at all. Everything downstream compares against null, so the field
-/// is filled in here, once, where the images come in.
+/// The core omits nulls and defaulted fields when it encodes, so an unrated
+/// photo arrives with no `score` and an untouched one with no `whites`.
+/// Everything downstream reads them as plain values, so they are filled in
+/// here, once, where the images come in.
 export function normalizeImage(image: ImageFile): ImageFile {
-  return image.score === undefined ? { ...image, score: null } : image;
+  return {
+    ...image,
+    score: image.score ?? null,
+    edit: { ...identityEdit, ...image.edit },
+  };
 }
 
 export function isRawFile(file: { ext: string }): boolean {

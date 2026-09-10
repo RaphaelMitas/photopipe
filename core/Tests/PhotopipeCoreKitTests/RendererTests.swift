@@ -367,11 +367,11 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
     #expect(brightRecovered < brightNeutral - 5, "highlights -80 must pull bright tones down")
 }
 
-@Test func whitesAndBlacksMoveTheClippingPoints() throws {
+@Test func whitesAndBlacksRenderAgainstTheEndPoints() throws {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let nearBlackURL = try writeSyntheticJPEG(color: CIColor(red: 0.12, green: 0.12, blue: 0.12))
-    let brightURL = try writeSyntheticJPEG(color: CIColor(red: 0.8, green: 0.8, blue: 0.8))
+    let brightURL = try writeSyntheticJPEG(color: CIColor(red: 0.9, green: 0.9, blue: 0.9))
     defer {
         try? FileManager.default.removeItem(at: nearBlackURL)
         try? FileManager.default.removeItem(at: brightURL)
