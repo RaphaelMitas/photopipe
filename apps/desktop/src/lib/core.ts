@@ -16,6 +16,8 @@ export type Edit = {
   exposure: number;
   highlights: number;
   shadows: number;
+  whites: number;
+  blacks: number;
   temperature?: number | null;
   tint?: number | null;
   denoise?: number | null;
@@ -34,6 +36,8 @@ export const identityEdit: Edit = Object.freeze({
   exposure: 0,
   highlights: 0,
   shadows: 0,
+  whites: 0,
+  blacks: 0,
   temperature: null,
   tint: null,
   denoise: null,
@@ -53,6 +57,8 @@ export function isIdentityEdit(edit: Edit): boolean {
     edit.exposure === 0 &&
     edit.highlights === 0 &&
     edit.shadows === 0 &&
+    edit.whites === 0 &&
+    edit.blacks === 0 &&
     (edit.temperature ?? null) === null &&
     (edit.tint ?? null) === null &&
     (edit.denoise ?? null) === null &&
@@ -79,6 +85,8 @@ export function editKey(edit: Edit): string {
     edit.exposure,
     edit.highlights,
     edit.shadows,
+    edit.whites,
+    edit.blacks,
     edit.temperature ?? "",
     edit.tint ?? "",
     edit.denoise ?? "",

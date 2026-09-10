@@ -503,6 +503,8 @@ describe("EditSidebar", () => {
       "exposure",
       "highlights",
       "shadows",
+      "whites",
+      "blacks",
       "temperature",
       "tint",
       "vibrance",

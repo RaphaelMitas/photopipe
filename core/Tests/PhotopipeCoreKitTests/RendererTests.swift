@@ -367,6 +367,32 @@ private func writeHalvesJPEG(width: Int = 64, height: Int = 64) throws -> URL {
     #expect(brightRecovered < brightNeutral - 5, "highlights -80 must pull bright tones down")
 }
 
+@Test func whitesAndBlacksMoveTheClippingPoints() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let nearBlackURL = try writeSyntheticJPEG(color: CIColor(red: 0.12, green: 0.12, blue: 0.12))
+    let brightURL = try writeSyntheticJPEG(color: CIColor(red: 0.8, green: 0.8, blue: 0.8))
+    defer {
+        try? FileManager.default.removeItem(at: nearBlackURL)
+        try? FileManager.default.removeItem(at: brightURL)
+    }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let nearBlack = try imageFile(for: nearBlackURL)
+    let bright = try imageFile(for: brightURL)
+
+    let blackNeutral = try meanLuminance(
+        of: renderer.render(file: nearBlack, edit: .identity, maxPixel: 64))
+    let crushed = try meanLuminance(
+        of: renderer.render(file: nearBlack, edit: Edit(blacks: -80), maxPixel: 64))
+    #expect(crushed < blackNeutral - 5, "blacks -80 must crush the near-blacks")
+
+    let brightNeutral = try meanLuminance(
+        of: renderer.render(file: bright, edit: .identity, maxPixel: 64))
+    let blown = try meanLuminance(
+        of: renderer.render(file: bright, edit: Edit(whites: 80), maxPixel: 64))
+    #expect(blown > brightNeutral + 5, "whites +80 must push the brights toward white")
+}
+
 @Test func saturationAndVibranceMoveColorfulness() throws {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }

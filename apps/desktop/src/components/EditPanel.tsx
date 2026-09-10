@@ -122,6 +122,8 @@ const toneSummary = (edit: Edit): string | null => {
   if (edit.exposure !== 0) parts.push(`${signed(edit.exposure, 2)} ev`);
   if (edit.highlights !== 0) parts.push(`hl ${signed(edit.highlights)}`);
   if (edit.shadows !== 0) parts.push(`sh ${signed(edit.shadows)}`);
+  if (edit.whites !== 0) parts.push(`wh ${signed(edit.whites)}`);
+  if (edit.blacks !== 0) parts.push(`bl ${signed(edit.blacks)}`);
   const curves = [
     edit.curveRGB,
     edit.curveRed,
@@ -294,6 +296,30 @@ export function EditPanel({
             resetTitle="Reset shadows"
             onValue={(shadows) => set({ shadows })}
             onReset={() => set({ shadows: 0 })}
+          />
+          <Row
+            label="Whites"
+            value={edit.whites}
+            display={signed(edit.whites)}
+            min={-100}
+            max={100}
+            step={1}
+            testid="whites"
+            resetTitle="Reset whites"
+            onValue={(whites) => set({ whites })}
+            onReset={() => set({ whites: 0 })}
+          />
+          <Row
+            label="Blacks"
+            value={edit.blacks}
+            display={signed(edit.blacks)}
+            min={-100}
+            max={100}
+            step={1}
+            testid="blacks"
+            resetTitle="Reset blacks"
+            onValue={(blacks) => set({ blacks })}
+            onReset={() => set({ blacks: 0 })}
           />
         </Group>
         <Separator />

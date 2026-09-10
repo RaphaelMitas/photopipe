@@ -5,6 +5,7 @@ import { Section } from "@/components/Section";
 const CONTROLS = [
   { name: "Exposure", detail: "Written as Lightroom's own crs:Exposure2012." },
   { name: "Highlights · Shadows", detail: "Recovery either end of the range." },
+  { name: "Whites · Blacks", detail: "Set where the photo clips, either end." },
   { name: "Temp · Tint", detail: "True Kelvin on raw, incremental elsewhere." },
   {
     name: "Denoise",
