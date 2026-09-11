@@ -432,20 +432,18 @@ public final class LibraryService: @unchecked Sendable {
         return (settled.edit, status().generation)
     }
 
-    static func validDay(_ day: String) -> Bool {
-        day.wholeMatch(of: /\d{4}-\d{2}-\d{2}/) != nil
+    static func checkDay(_ day: String?) throws {
+        if let day, !isDay(day) { throw ServiceError.invalidProjectDay(day) }
     }
 
     static func projectFolder(name: String, day: String?, dateInFolder: Bool) throws -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.contains("/"), !trimmed.contains(":"), trimmed != "..",
-            trimmed != "."
+        guard !trimmed.isEmpty, !trimmed.contains("/"), !trimmed.contains(":"),
+            !trimmed.hasPrefix(".")
         else {
             throw ServiceError.invalidProjectName(name)
         }
-        if let day {
-            guard Self.validDay(day) else { throw ServiceError.invalidProjectDay(day) }
-        }
+        try checkDay(day)
         guard dateInFolder, let day else { return trimmed }
         return "\(day)_\(trimmed)"
     }
@@ -459,40 +457,36 @@ public final class LibraryService: @unchecked Sendable {
         return url
     }
 
+    /// Moves the folder first, so a refused move leaves the metadata untouched.
     public func updateProject(
-        shoot shootName: String, notes: String?, day: String?? = nil, cover: String??
-    ) throws -> Int {
-        let path = try shootPath(shootName)
-        if case .some(.some(let day)) = day, !Self.validDay(day) {
-            throw ServiceError.invalidProjectDay(day)
-        }
-        var file = ProjectFile.read(inShoot: path)
-        if let notes { file.notes = notes }
-        if let day { file.day = day }
-        if let cover { file.cover = cover }
-        try file.write(inShoot: path)
-        rescanNow()
-        return status().generation
-    }
-
-    public func renameProject(shoot shootName: String, name: String, dateInFolder: Bool) throws
-        -> (shoot: String, generation: Int)
-    {
-        let path = try shootPath(shootName)
+        shoot shootName: String, name: String? = nil, day: String?? = nil,
+        dateInFolder: Bool? = nil, notes: String? = nil, cover: String?? = nil
+    ) throws -> (shoot: String, generation: Int) {
+        let shoot = try self.shoot(named: shootName)
         lock.lock()
         let currentRoot = root
-        let day = snapshot.shoots.first { $0.name == shootName }?.day
         lock.unlock()
         guard let currentRoot else { throw ServiceError.noRoot }
 
-        let folder = try Self.projectFolder(name: name, day: day, dateInFolder: dateInFolder)
-        guard folder != shootName else { return (shootName, status().generation) }
-
-        let destination = try Self.projectURL(root: currentRoot, folder: folder)
-        guard !FileManager.default.fileExists(atPath: destination.path) else {
-            throw ServiceError.projectExists(folder)
+        let newDay = day ?? shoot.day
+        let folder = try Self.projectFolder(
+            name: name ?? shoot.project, day: newDay,
+            dateInFolder: dateInFolder ?? (shoot.name != shoot.project))
+        var path = URL(fileURLWithPath: shoot.path)
+        if folder != shoot.name {
+            let destination = try Self.projectURL(root: currentRoot, folder: folder)
+            guard !FileManager.default.fileExists(atPath: destination.path) else {
+                throw ServiceError.projectExists(folder)
+            }
+            try FileManager.default.moveItem(at: path, to: destination)
+            path = destination
         }
-        try FileManager.default.moveItem(at: URL(fileURLWithPath: path), to: destination)
+
+        var file = ProjectFile.read(inShoot: path.path)
+        file.day = newDay
+        if let notes { file.notes = notes }
+        if let cover { file.cover = cover }
+        try file.write(inShoot: path.path)
 
         rescanNow()
         return (folder, status().generation)
@@ -511,7 +505,7 @@ public final class LibraryService: @unchecked Sendable {
         guard !FileManager.default.fileExists(atPath: path.path) else {
             throw ServiceError.projectExists(folder)
         }
-        try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: path, withIntermediateDirectories: false)
         try ProjectFile(notes: notes, day: day).write(inShoot: path.path)
 
         rescanNow()
@@ -521,7 +515,7 @@ public final class LibraryService: @unchecked Sendable {
     public func startImport(shoot shootName: String, paths: [String]) throws
         -> Exporter.Progress
     {
-        let shootPath = try self.shootPath(shootName)
+        let shootPath = try shoot(named: shootName).path
         let images = paths.filter(isImagePath)
         guard !images.isEmpty else { throw FileActions.ActionError.noFiles }
 
@@ -644,12 +638,12 @@ public final class LibraryService: @unchecked Sendable {
         }
     }
 
-    private func shootPath(_ shootName: String) throws -> String {
+    private func shoot(named shootName: String) throws -> Shoot {
         lock.lock()
-        let path = snapshot.shoots.first { $0.name == shootName }?.path
+        let shoot = snapshot.shoots.first { $0.name == shootName }
         lock.unlock()
-        guard let path else { throw ServiceError.unknownShoot(shootName) }
-        return path
+        guard let shoot else { throw ServiceError.unknownShoot(shootName) }
+        return shoot
     }
 
     public func reveal(paths: [String]) throws {

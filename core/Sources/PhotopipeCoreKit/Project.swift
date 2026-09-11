@@ -1,13 +1,8 @@
 import Foundation
 
-/// `photopipe.json` — per-project *metadata*, and deliberately nothing more.
-/// Notes and the shoot day live here because no image file can carry them;
-/// workflow state never does, because the files themselves are the only
-/// truth about where work stands.
+/// `photopipe.json`: per-project metadata only; workflow state lives in the files themselves.
 public struct ProjectFile: Codable, Equatable, Sendable {
     public var notes: String
-    /// YYYY-MM-DD. Older files spelled this `created`; those folders all
-    /// carry the day in their name, which `makeShoot` falls back to.
     public var day: String?
     /// Rel path of the cover image; nil means "use the first one".
     public var cover: String?
@@ -16,6 +11,29 @@ public struct ProjectFile: Codable, Equatable, Sendable {
         self.notes = notes
         self.day = day
         self.cover = cover
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case notes, day, cover
+        /// How files written before v0.6 spelled `day`.
+        case created
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        day = try [
+            container.decodeIfPresent(String.self, forKey: .day),
+            container.decodeIfPresent(String.self, forKey: .created),
+        ].compactMap { $0 }.first(where: isDay)
+        cover = try container.decodeIfPresent(String.self, forKey: .cover)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(notes, forKey: .notes)
+        try container.encodeIfPresent(day, forKey: .day)
+        try container.encodeIfPresent(cover, forKey: .cover)
     }
 
     public static let fileName = "photopipe.json"

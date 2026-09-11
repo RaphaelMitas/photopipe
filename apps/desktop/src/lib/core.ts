@@ -159,7 +159,6 @@ export type Shoot = {
   path: string;
   day: string | null;
   project: string;
-  dateInFolder: boolean;
   imageCount: number;
   notes: string;
   cover: string | null;

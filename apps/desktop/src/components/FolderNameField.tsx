@@ -15,9 +15,10 @@ export function FolderNameField({
   onDateInFolderChange,
 }: Props) {
   const fallback = dateInFolderDefault.use();
-  const [touched, setTouched] = useState(false);
+  const [initial] = useState(dateInFolder);
   const [dismissed, setDismissed] = useState(false);
-  const asksToRemember = touched && !dismissed && dateInFolder !== fallback;
+  const asksToRemember =
+    !dismissed && dateInFolder !== fallback && dateInFolder !== initial;
 
   return (
     <div className="flex flex-col gap-2">
@@ -44,10 +45,7 @@ export function FolderNameField({
           data-testid="date-in-folder"
           size="sm"
           checked={dateInFolder}
-          onCheckedChange={(on) => {
-            setTouched(true);
-            onDateInFolderChange(on);
-          }}
+          onCheckedChange={onDateInFolderChange}
         />
       </div>
       {asksToRemember && (

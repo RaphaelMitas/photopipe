@@ -81,9 +81,7 @@ public struct Shoot: Codable, Equatable, Sendable {
     public let name: String
     public let path: String
     public let day: String?
-    /// The folder name with any leading date stripped.
     public let project: String
-    public let dateInFolder: Bool
     public let imageCount: Int
     public let notes: String
     public let cover: String?
@@ -93,14 +91,20 @@ public struct Shoot: Codable, Equatable, Sendable {
     public let indexed: Bool
 }
 
+public func isDay(_ value: String) -> Bool {
+    value.wholeMatch(of: /\d{4}-\d{2}-\d{2}/) != nil
+}
+
 public func parseShootName(_ name: String) -> (day: String, project: String)? {
     let pattern = /^(\d{4}-\d{2}-\d{2})_(.+)$/
     guard let match = name.wholeMatch(of: pattern) else { return nil }
     return (String(match.1), String(match.2))
 }
 
+/// A date in the folder name wins over `photopipe.json`, so a rename in
+/// Finder is never undone by the next save.
 public func makeShoot(
-    name: String, path: String, images: [ImageFile], notes: String = "", day: String? = nil,
+    name: String, path: String, images: [ImageFile], notes: String = "", day: String?,
     cover: String? = nil
 ) -> Shoot {
     let parsed = parseShootName(name)
@@ -111,9 +115,8 @@ public func makeShoot(
     return Shoot(
         name: name,
         path: path,
-        day: day ?? parsed?.day,
+        day: parsed?.day ?? day,
         project: parsed?.project ?? name,
-        dateInFolder: parsed != nil,
         imageCount: images.count,
         notes: notes,
         cover: cover,

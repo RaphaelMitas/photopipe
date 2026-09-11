@@ -29,113 +29,115 @@ type Props = {
 };
 
 export function NewProjectDialog({ open, onOpenChange, onCreated }: Props) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <NewProjectForm
+          onCancel={() => onOpenChange(false)}
+          onCreated={(shoot) => {
+            onOpenChange(false);
+            onCreated(shoot);
+          }}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function NewProjectForm({
+  onCancel,
+  onCreated,
+}: {
+  onCancel: () => void;
+  onCreated: (shoot: string) => void;
+}) {
   const [name, setName] = useState("");
   const [day, setDay] = useState(today);
   const [dateInFolder, setDateInFolder] = useState(dateInFolderDefault.read);
   const [notes, setNotes] = useState("");
   const create = useCreateProject();
-
-  const reset = () => {
-    setName("");
-    setDay(today());
-    setDateInFolder(dateInFolderDefault.read());
-    setNotes("");
-    create.reset();
-  };
+  const folder = projectFolder(name, day, dateInFolder);
 
   const submit = () => {
+    if (!folder) return;
     create.mutate(
       { name: name.trim(), day: day || null, dateInFolder, notes },
-      {
-        onSuccess: (result) => {
-          onOpenChange(false);
-          reset();
-          onCreated(result.shoot);
-        },
-      },
+      { onSuccess: (result) => onCreated(result.shoot) },
     );
   };
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) reset();
-        onOpenChange(next);
-      }}
-    >
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="font-heading">New project</DialogTitle>
-          <DialogDescription>
-            An empty folder in your library, ready for photos.
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <DialogHeader>
+        <DialogTitle className="font-heading">New project</DialogTitle>
+        <DialogDescription>
+          An empty folder in your library, ready for photos.
+        </DialogDescription>
+      </DialogHeader>
 
-        <form
-          className="flex flex-col gap-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (name.trim()) submit();
-          }}
-        >
-          <div className="flex gap-3">
-            <div className="flex-1 space-y-1.5">
-              <Label htmlFor="project-name">Project</Label>
-              <Input
-                id="project-name"
-                data-testid="project-name"
-                value={name}
-                autoFocus
-                placeholder="zell"
-                onChange={(event) => setName(event.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="project-day">Date</Label>
-              <Input
-                id="project-day"
-                data-testid="project-day"
-                type="date"
-                value={day}
-                onChange={(event) => setDay(event.target.value)}
-              />
-            </div>
-          </div>
-
-          <FolderNameField
-            folder={projectFolder(name, day || null, dateInFolder)}
-            dateInFolder={dateInFolder}
-            onDateInFolderChange={setDateInFolder}
-          />
-
-          <div className="space-y-1.5">
-            <Label htmlFor="project-notes">Notes</Label>
-            <Textarea
-              id="project-notes"
-              data-testid="project-notes"
-              value={notes}
-              rows={3}
-              placeholder="Anything worth remembering about this shoot."
-              onChange={(event) => setNotes(event.target.value)}
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit();
+        }}
+      >
+        <div className="flex gap-3">
+          <div className="flex-1 space-y-1.5">
+            <Label htmlFor="project-name">Project</Label>
+            <Input
+              id="project-name"
+              data-testid="project-name"
+              value={name}
+              autoFocus
+              placeholder="zell"
+              onChange={(event) => setName(event.target.value)}
             />
           </div>
-        </form>
+          <div className="space-y-1.5">
+            <Label htmlFor="project-day">Date</Label>
+            <Input
+              id="project-day"
+              data-testid="project-day"
+              type="date"
+              value={day}
+              onChange={(event) => setDay(event.target.value)}
+            />
+          </div>
+        </div>
 
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            data-testid="create-project"
-            disabled={!name.trim() || create.isPending}
-            onClick={submit}
-          >
-            {create.isPending && <Loader2 className="animate-spin" />}
-            Create
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <FolderNameField
+          folder={folder}
+          dateInFolder={dateInFolder}
+          onDateInFolderChange={setDateInFolder}
+        />
+
+        <div className="space-y-1.5">
+          <Label htmlFor="project-notes">Notes</Label>
+          <Textarea
+            id="project-notes"
+            data-testid="project-notes"
+            value={notes}
+            rows={3}
+            placeholder="Anything worth remembering about this shoot."
+            onChange={(event) => setNotes(event.target.value)}
+          />
+        </div>
+      </form>
+
+      <DialogFooter>
+        <Button variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button
+          data-testid="create-project"
+          disabled={!folder || create.isPending}
+          onClick={submit}
+        >
+          {create.isPending && <Loader2 className="animate-spin" />}
+          Create
+        </Button>
+      </DialogFooter>
+    </>
   );
 }

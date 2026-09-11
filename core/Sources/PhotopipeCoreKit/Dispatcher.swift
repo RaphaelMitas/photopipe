@@ -55,7 +55,7 @@ public final class Dispatcher {
             "setEdit", "rawDefaults", "status", "reveal", "trash", "decoderSupport",
             "decoderAvailability", "exportFiles",
             "exportStatus", "cancelExport",
-            "createProject", "importFiles", "updateProject", "renameProject",
+            "createProject", "importFiles", "updateProject",
             "scoreShoot", "scoreStatus":
             return .respond(libraryResponse(request))
         default:
@@ -300,30 +300,18 @@ public final class Dispatcher {
                     return .failure(
                         id: request.id, code: "invalid_params", message: "shoot required")
                 }
-                let generation = try library.updateProject(
+                let updated = try library.updateProject(
                     shoot: shoot,
-                    notes: request.params?["notes"]?.stringValue,
+                    name: request.params?["name"]?.stringValue,
                     day: request.params?["day"].map { $0.stringValue },
+                    dateInFolder: request.params?["dateInFolder"]?.boolValue,
+                    notes: request.params?["notes"]?.stringValue,
                     cover: request.params?["cover"].map { $0.stringValue })
                 return .success(
                     id: request.id,
-                    result: .object(["generation": .number(Double(generation))]))
-            case "renameProject":
-                guard let shoot = request.params?["shoot"]?.stringValue,
-                    let name = request.params?["name"]?.stringValue
-                else {
-                    return .failure(
-                        id: request.id, code: "invalid_params",
-                        message: "shoot and name required")
-                }
-                let renamed = try library.renameProject(
-                    shoot: shoot, name: name,
-                    dateInFolder: request.params?["dateInFolder"]?.boolValue ?? true)
-                return .success(
-                    id: request.id,
                     result: .object([
-                        "shoot": .string(renamed.shoot),
-                        "generation": .number(Double(renamed.generation)),
+                        "shoot": .string(updated.shoot),
+                        "generation": .number(Double(updated.generation)),
                     ]))
             case "status":
                 let status = library.status(since: request.params?["since"]?.intValue)

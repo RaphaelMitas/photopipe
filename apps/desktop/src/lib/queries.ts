@@ -521,40 +521,23 @@ export function useUpdateProject() {
     mutationKey: ["write", "updateProject"],
     mutationFn: (vars: {
       shoot: string;
-      notes?: string;
+      name?: string;
       day?: string | null;
+      dateInFolder?: boolean;
+      notes?: string;
       cover?: string | null;
-    }) => coreRequest<{ generation: number }>("updateProject", vars),
-    onSuccess: () => {
+    }) =>
+      coreRequest<{ shoot: string; generation: number }>("updateProject", vars),
+    onSuccess: (result, vars) => {
+      if (result.shoot !== vars.shoot) {
+        toast.success(`Renamed to ${result.shoot}`);
+        queryClient.invalidateQueries({ queryKey: ["images"] });
+      }
       queryClient.invalidateQueries({ queryKey: ["shoots"] });
       queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
     },
     onError: (error) => {
       toast.error("Could not save the project", { description: String(error) });
-    },
-  });
-}
-
-export function useRenameProject() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationKey: ["write", "renameProject"],
-    mutationFn: (vars: {
-      shoot: string;
-      name: string;
-      dateInFolder: boolean;
-    }) =>
-      coreRequest<{ shoot: string; generation: number }>("renameProject", vars),
-    onSuccess: (result) => {
-      toast.success(`Renamed to ${result.shoot}`);
-      queryClient.invalidateQueries({ queryKey: ["shoots"] });
-      queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
-      queryClient.invalidateQueries({ queryKey: ["images"] });
-    },
-    onError: (error) => {
-      toast.error("Could not rename the project", {
-        description: String(error),
-      });
     },
   });
 }

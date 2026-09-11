@@ -40,9 +40,7 @@ private func tempDir() throws -> URL {
     #expect(shoot?.notes == "client wants 12 finals")
     #expect(shoot?.day == "2026-08-10")
     #expect(shoot?.project == "riverside")
-    #expect(shoot?.dateInFolder == true)
 }
-
 @Test func theDayLivesInMetadataAndTheFolderNameIsOptional() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
@@ -59,42 +57,49 @@ private func tempDir() throws -> URL {
     // Dated projects sort newest first, undated ones last, whatever the folder says.
     _ = try service.createProject(name: "old", day: "2020-01-01", dateInFolder: true, notes: "")
     #expect(service.listShoots().map(\.name) == ["tanzabend", "2020-01-01_old", "loose"])
-    let shoot = service.listShoots()[0]
-    #expect(shoot.day == "2026-09-05")
-    #expect(shoot.project == "tanzabend")
-    #expect(!shoot.dateInFolder)
+    #expect(service.listShoots()[0].day == "2026-09-05")
+    #expect(service.listShoots()[0].project == "tanzabend")
     #expect(service.listShoots()[2].day == nil)
 
-    // Changing the day is a metadata write; the folder stays put.
-    _ = try service.updateProject(shoot: "tanzabend", notes: nil, day: "2026-09-06", cover: nil)
+    _ = try service.updateProject(shoot: "tanzabend", day: "2026-09-06")
     #expect(service.listShoots()[0].name == "tanzabend")
     #expect(service.listShoots()[0].day == "2026-09-06")
-    _ = try service.updateProject(shoot: "tanzabend", notes: nil, day: .some(nil), cover: nil)
+    _ = try service.updateProject(shoot: "tanzabend", day: .some(nil))
     #expect(service.listShoots().first { $0.name == "tanzabend" }?.day == nil)
     #expect(throws: LibraryService.ServiceError.self) {
-        try service.updateProject(shoot: "tanzabend", notes: nil, day: "yesterday", cover: nil)
+        try service.updateProject(shoot: "tanzabend", day: "yesterday")
     }
 }
-
-@Test func metadataDayWinsOverTheFolderName() throws {
+@Test func theFolderDateWinsAndMetadataFillsIn() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
-    let shoot = dir.appendingPathComponent("2026-07-12_zell")
-    try FileManager.default.createDirectory(at: shoot, withIntermediateDirectories: true)
-    try ProjectFile(day: "2026-07-13").write(inShoot: shoot.path)
-    let legacy = dir.appendingPathComponent("2026-01-01_legacy")
-    try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
-    try Data(#"{"notes":"","created":"2026-01-01"}"#.utf8).write(
-        to: ProjectFile.url(inShoot: legacy.path))
+    for (folder, json) in [
+        ("2026-07-12_zell", #"{"notes":"","day":"2026-07-13"}"#),
+        ("legacy", #"{"notes":"kept","created":"2026-01-01"}"#),
+        ("broken", #"{"notes":"","day":"2026-9-5"}"#),
+    ] {
+        let shoot = dir.appendingPathComponent(folder)
+        try FileManager.default.createDirectory(at: shoot, withIntermediateDirectories: true)
+        try Data(json.utf8).write(to: ProjectFile.url(inShoot: shoot.path))
+    }
 
     let shoots = try walkLibrary(root: dir.path).shoots
-    #expect(shoots[0].day == "2026-07-13")
+    #expect(shoots.map(\.name) == ["2026-07-12_zell", "legacy", "broken"])
+    #expect(shoots[0].day == "2026-07-12")
     #expect(shoots[0].project == "zell")
-    // Older files spelled the day `created`; the folder name still carries it.
     #expect(shoots[1].day == "2026-01-01")
-    #expect(shoots[1].project == "legacy")
-}
+    #expect(shoots[1].notes == "kept")
+    #expect(shoots[2].day == nil)
 
+    var file = ProjectFile.read(inShoot: dir.appendingPathComponent("legacy").path)
+    file.notes = "edited"
+    try file.write(inShoot: dir.appendingPathComponent("legacy").path)
+    let rewritten = try String(
+        contentsOf: ProjectFile.url(inShoot: dir.appendingPathComponent("legacy").path),
+        encoding: .utf8)
+    #expect(rewritten.contains(#""day" : "2026-01-01""#))
+    #expect(!rewritten.contains("created"))
+}
 @Test func createProjectRefusesBadNamesAndDuplicates() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
@@ -104,14 +109,19 @@ private func tempDir() throws -> URL {
     _ = try service.createProject(name: "dup", day: "2026-08-10", dateInFolder: true, notes: "")
     for (name, day) in [
         ("dup", "2026-08-10"), ("   ", "2026-08-10"), ("a/b", "2026-08-10"),
-        ("dup", "2026-8-10"),
+        ("dup", "2026-8-10"), (".hidden", "2026-08-10"),
     ] {
         #expect(throws: LibraryService.ServiceError.self) {
             try service.createProject(name: name, day: day, dateInFolder: true, notes: "")
         }
     }
+    // A hidden folder would vanish from the scan, so the name is refused
+    // even without a date prefix to protect it.
+    #expect(throws: LibraryService.ServiceError.self) {
+        try service.createProject(name: ".hidden", day: nil, dateInFolder: false, notes: "")
+    }
+    #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path) == ["2026-08-10_dup"])
 }
-
 @Test func projectFileToleratesGarbage() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
@@ -179,28 +189,26 @@ private func tempDir() throws -> URL {
     let service = makeService(in: dir)
     _ = try service.setRoot(path: dir.path, indexPath: nil)
 
-    let renamed = try service.renameProject(
-        shoot: "2026-09-09_before", name: "after", dateInFolder: true)
+    let renamed = try service.updateProject(shoot: "2026-09-09_before", name: "after")
     #expect(renamed.shoot == "2026-09-09_after")
 
     let moved = dir.appendingPathComponent("2026-09-09_after")
     #expect(FileManager.default.fileExists(atPath: moved.path))
     #expect(!FileManager.default.fileExists(atPath: shoot.path))
-    // Photos and notes travel with the folder.
     #expect(
-        FileManager.default.fileExists(atPath: moved.appendingPathComponent("original/DSC00001.ARW").path))
+        FileManager.default.fileExists(
+            atPath: moved.appendingPathComponent("original/DSC00001.ARW").path))
     #expect(ProjectFile.read(inShoot: moved.path).notes == "keep me")
     #expect(service.listShoots().map(\.name) == ["2026-09-09_after"])
 
-    // The date can leave the folder name and come back; the day itself is untouched.
     #expect(
-        try service.renameProject(shoot: "2026-09-09_after", name: "after", dateInFolder: false).shoot
-            == "after")
+        try service.updateProject(shoot: "2026-09-09_after", dateInFolder: false).shoot == "after")
     #expect(service.listShoots()[0].day == "2026-09-09")
-    #expect(!service.listShoots()[0].dateInFolder)
+    #expect(try service.updateProject(shoot: "after", day: "2026-09-10").shoot == "after")
     #expect(
-        try service.renameProject(shoot: "after", name: "after", dateInFolder: true).shoot
-            == "2026-09-09_after")
+        try service.updateProject(shoot: "after", dateInFolder: true).shoot == "2026-09-10_after")
+    #expect(try service.updateProject(shoot: "2026-09-10_after", day: .some(nil)).shoot == "after")
+    #expect(service.listShoots()[0].day == nil)
 
     // Renaming onto an existing project is refused, not a silent merge.
     try FileManager.default.createDirectory(
@@ -208,14 +216,30 @@ private func tempDir() throws -> URL {
     try ProjectFile().write(inShoot: dir.appendingPathComponent("taken").path)
     service.rescanNow()
     #expect(throws: LibraryService.ServiceError.self) {
-        try service.renameProject(shoot: "2026-09-09_after", name: "taken", dateInFolder: false)
+        try service.updateProject(shoot: "after", name: "taken")
     }
     #expect(throws: LibraryService.ServiceError.self) {
-        try service.renameProject(shoot: "2026-09-09_after", name: " ", dateInFolder: true)
+        try service.updateProject(shoot: "after", name: " ")
     }
 }
 
-@Test func aHostileNameCannotEscapeTheLibrary() throws {
+@Test func aRefusedMoveLeavesTheMetadataAlone() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let service = makeService(in: dir)
+    _ = try service.setRoot(path: dir.path, indexPath: nil)
+    _ = try service.createProject(name: "zell", day: "2026-07-12", dateInFolder: true, notes: "")
+    _ = try service.createProject(name: "zell", day: "2026-07-13", dateInFolder: true, notes: "")
+
+    #expect(throws: LibraryService.ServiceError.self) {
+        try service.updateProject(shoot: "2026-07-12_zell", day: "2026-07-13", notes: "moved?")
+    }
+    let file = ProjectFile.read(inShoot: dir.appendingPathComponent("2026-07-12_zell").path)
+    #expect(file.day == "2026-07-12")
+    #expect(file.notes == "")
+    #expect(service.listShoots().map(\.name) == ["2026-07-13_zell", "2026-07-12_zell"])
+}
+@Test func aHostileNameOrDayCannotEscapeTheLibrary() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
     let root = dir.appendingPathComponent("library")
@@ -226,8 +250,6 @@ private func tempDir() throws -> URL {
     let service = makeService(in: dir)
     _ = try service.setRoot(path: root.path, indexPath: nil)
 
-    // Both `name` and `day` are interpolated into a path. Creating must not
-    // reach outside the library...
     for hostile in ["../outside", "..", ".", "a/../../x", ""] {
         #expect(throws: LibraryService.ServiceError.self) {
             try service.createProject(name: hostile, day: nil, dateInFolder: false, notes: "")
@@ -241,19 +263,17 @@ private func tempDir() throws -> URL {
     #expect(try FileManager.default.contentsOfDirectory(atPath: outside.path).isEmpty)
     #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
 
-    // ...and renaming must not move an existing project out of it.
     let created = try service.createProject(
         name: "keep", day: "2026-09-09", dateInFolder: true, notes: "")
     for hostile in ["../outside", "a/../../x"] {
         #expect(throws: LibraryService.ServiceError.self) {
-            try service.renameProject(shoot: created.shoot, name: hostile, dateInFolder: true)
+            try service.updateProject(shoot: created.shoot, name: hostile)
         }
     }
     #expect(FileManager.default.fileExists(atPath: created.path), "the project stayed put")
     #expect(try FileManager.default.contentsOfDirectory(atPath: outside.path).isEmpty)
     #expect(service.listShoots().map(\.name) == ["2026-09-09_keep"])
 }
-
 @Test func projectFolderNamesAreCheckedInOnePlace() throws {
     #expect(
         try LibraryService.projectFolder(name: " zell ", day: "2026-09-09", dateInFolder: true)
@@ -264,7 +284,7 @@ private func tempDir() throws -> URL {
     #expect(try LibraryService.projectFolder(name: "zell", day: nil, dateInFolder: true) == "zell")
     for (name, day) in [
         ("zell", "2026-9-9"), ("a/b", "2026-09-09"), ("  ", "2026-09-09"),
-        ("n", "2026-09-09_a/../../x"),
+        (".x", "2026-09-09"), ("n", "2026-09-09_a/../../x"),
     ] {
         #expect(throws: LibraryService.ServiceError.self) {
             try LibraryService.projectFolder(name: name, day: day, dateInFolder: true)
