@@ -4,6 +4,7 @@ import {
   SidebarProvider,
 } from "@photopipe/ui/components/sidebar";
 import { TooltipProvider } from "@photopipe/ui/components/tooltip";
+import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
@@ -72,7 +73,7 @@ import {
   useShoots,
   useTrash,
 } from "@/lib/queries";
-import { listRoots, openRoot, type RootError, toRootError } from "@/lib/roots";
+import { openRoot, type RootError, rootsQuery, toRootError } from "@/lib/roots";
 import { useSelection } from "@/lib/selection";
 import { browserOrder, type SortKey } from "@/lib/sort";
 import { useDebouncedEdit } from "@/lib/useDebouncedEdit";
@@ -83,6 +84,9 @@ const EDIT_PANEL_KEY = "photopipe.editPanel";
 const SORT_KEY = "photopipe.sort";
 const NO_HELD = { key: "", paths: [] };
 const AUTO_SCORE_KEY = "photopipe.autoScore";
+/// Where the DMG builds before the shell owned roots kept the last folder.
+const LEGACY_ROOT_KEY = "photopipe.root";
+const LEGACY_RECENTS_KEY = "photopipe.recentRoots";
 /// One toast id for the whole update conversation, so a download replaces the
 /// offer rather than stacking under it.
 const UPDATE_TOAST = "update";
@@ -189,10 +193,16 @@ export default function App() {
     }
   }, []);
 
+  const queryClient = useQueryClient();
   useEffect(() => {
-    listRoots()
+    queryClient
+      .fetchQuery(rootsQuery)
       .then((roots) => {
+        const legacy = localStorage.getItem(LEGACY_ROOT_KEY);
+        localStorage.removeItem(LEGACY_ROOT_KEY);
+        localStorage.removeItem(LEGACY_RECENTS_KEY);
         if (roots[0]?.status === "ok") connectRoot(roots[0].path);
+        else if (roots.length === 0 && legacy) connectRoot(legacy);
       })
       .catch((error) => {
         setRootState({
@@ -201,7 +211,7 @@ export default function App() {
           busy: false,
         });
       });
-  }, [connectRoot]);
+  }, [connectRoot, queryClient]);
 
   const ready = rootState.kind === "ready";
   const shoots = useShoots(ready);
@@ -668,6 +678,7 @@ export default function App() {
       onOpenChange={setSettingsOpen}
       autoScore={autoScore}
       onAutoScore={changeAutoScore}
+      updaterAvailable={updater.available}
       onCheckUpdates={checkForUpdates}
     />
   );

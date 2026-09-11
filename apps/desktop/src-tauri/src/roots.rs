@@ -9,34 +9,26 @@ const KEEP: usize = 5;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RootEntry {
     pub path: String,
-    pub name: String,
     #[serde(default)]
     pub bookmark: Option<Vec<u8>>,
 }
 
-impl RootEntry {
-    pub fn new(path: String, bookmark: Option<Vec<u8>>) -> Self {
-        let name = Path::new(&path)
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| path.clone());
-        Self {
-            path,
-            name,
-            bookmark,
-        }
-    }
-}
-
-/// A missing file is an empty store. Any other failure is an error: under the
-/// sandbox these bookmarks are the only way back into a folder, so a store
-/// that cannot be read must never be mistaken for one with nothing in it.
+/// A missing file is an empty store. A file that does not parse is moved aside
+/// to `roots.json.corrupt` rather than overwritten: under the sandbox these
+/// bookmarks are the only way back into a folder. Any other failure is an
+/// error, so an unreadable store is never mistaken for an empty one.
 pub fn load(file: &Path) -> Result<Vec<RootEntry>, String> {
+    let describe = |e: std::io::Error| format!("roots store {}: {e}", file.display());
     match std::fs::read(file) {
-        Ok(bytes) => serde_json::from_slice(&bytes)
-            .map_err(|e| format!("roots store {} is unreadable: {e}", file.display())),
+        Ok(bytes) => match serde_json::from_slice(&bytes) {
+            Ok(entries) => Ok(entries),
+            Err(_) => {
+                std::fs::rename(file, file.with_extension("json.corrupt")).map_err(describe)?;
+                Ok(Vec::new())
+            }
+        },
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-        Err(e) => Err(format!("roots store {}: {e}", file.display())),
+        Err(e) => Err(describe(e)),
     }
 }
 
@@ -72,6 +64,13 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    fn entry(path: &str, bookmark: Option<Vec<u8>>) -> RootEntry {
+        RootEntry {
+            path: path.into(),
+            bookmark,
+        }
+    }
+
     fn temp_store(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "photopipe-roots-{tag}-{}-{:?}",
@@ -91,12 +90,12 @@ mod tests {
     fn save_then_load_round_trips_newest_first() {
         let file = temp_store("roundtrip");
         let mut entries = Vec::new();
-        remember(&mut entries, RootEntry::new("/a/old".into(), Some(vec![1, 2])));
-        remember(&mut entries, RootEntry::new("/b/new".into(), None));
+        remember(&mut entries, entry("/a/old", Some(vec![1, 2])));
+        remember(&mut entries, entry("/b/new", None));
         save(&file, &entries).unwrap();
         let loaded = load(&file).unwrap();
         assert_eq!(loaded, entries);
-        assert_eq!(loaded[0].name, "new");
+        assert_eq!(loaded[0].path, "/b/new");
         assert_eq!(loaded[1].bookmark, Some(vec![1, 2]));
         assert!(!file.with_extension("json.tmp").exists());
     }
@@ -105,11 +104,11 @@ mod tests {
     fn remembering_again_moves_to_front_and_caps() {
         let mut entries = Vec::new();
         for i in 0..7 {
-            remember(&mut entries, RootEntry::new(format!("/r{i}"), None));
+            remember(&mut entries, entry(&format!("/r{i}"), None));
         }
         assert_eq!(entries.len(), KEEP);
         assert_eq!(entries[0].path, "/r6");
-        remember(&mut entries, RootEntry::new("/r3".into(), Some(vec![9])));
+        remember(&mut entries, entry("/r3", Some(vec![9])));
         assert_eq!(entries[0].path, "/r3");
         assert_eq!(entries[0].bookmark, Some(vec![9]));
         assert_eq!(entries.iter().filter(|e| e.path == "/r3").count(), 1);
@@ -117,7 +116,7 @@ mod tests {
 
     #[test]
     fn dropping_a_broken_bookmark_keeps_the_entry() {
-        let mut entries = vec![RootEntry::new("/gone".into(), Some(vec![1]))];
+        let mut entries = vec![entry("/gone", Some(vec![1]))];
         drop_bookmark(&mut entries, "/gone");
         assert_eq!(entries[0].bookmark, None);
         assert_eq!(entries[0].path, "/gone");
@@ -126,11 +125,16 @@ mod tests {
     }
 
     #[test]
-    fn unreadable_store_is_an_error_not_an_empty_store() {
+    fn corrupt_store_is_moved_aside_and_unreadable_store_is_an_error() {
         let file = temp_store("corrupt");
         std::fs::create_dir_all(file.parent().unwrap()).unwrap();
         std::fs::write(&file, b"{not json").unwrap();
-        assert!(load(&file).unwrap_err().contains("unreadable"));
+        assert_eq!(load(&file).unwrap(), Vec::new());
+        assert!(!file.exists());
+        assert_eq!(
+            std::fs::read(file.with_extension("json.corrupt")).unwrap(),
+            b"{not json"
+        );
 
         let dir = temp_store("directory");
         std::fs::create_dir_all(&dir).unwrap();

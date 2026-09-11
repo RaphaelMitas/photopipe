@@ -6,7 +6,7 @@ import { RootPicker } from "./RootPicker";
 
 const roots = vi.hoisted(() => ({ list: [] as RootEntry[] }));
 vi.mock("@/lib/roots", () => ({
-  listRoots: async () => roots.list,
+  rootsQuery: { queryKey: ["roots"], queryFn: async () => roots.list },
   forgetRoot: vi.fn(async () => {}),
 }));
 
@@ -56,6 +56,13 @@ describe("RootPicker", () => {
     renderPicker({ error: { kind: "denied", message: "no permission" } });
     expect(screen.getByTestId("root-error")).toHaveTextContent(
       "System Settings > Privacy & Security > Files and Folders",
+    );
+  });
+
+  it("says a typed path has no folder behind it", () => {
+    renderPicker({ error: { kind: "missing", message: "no folder at /x" } });
+    expect(screen.getByTestId("root-error")).toHaveTextContent(
+      "There is no folder at that path",
     );
   });
 

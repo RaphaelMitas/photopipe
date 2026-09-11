@@ -141,22 +141,27 @@ pkg. `scripts/smoke-bundle.sh --mas` checks the entitlements, the missing
 updater and the pkg rules the store enforces, and does not drive the core: a
 binary entitled `app-sandbox` + `inherit` only launches under a sandboxed
 parent. Every release validates the pkg against App Store Connect through
-fastlane; the upload to TestFlight and the listing (text from
+fastlane (pinned by `Gemfile.lock`); the listing (text from
 `fastlane/metadata/en-US`, screenshots from `fastlane/screenshots/en-US` at a
-Mac size such as 2880x1800) only happens on
-`gh workflow run release.yml -f submit_to_app_store=true`.
+Mac size such as 2880x1800) and then the TestFlight upload only happen on
+`gh workflow run release.yml -f submit_to_app_store=true`, which rebuilds the
+tagged commit for the store alone and leaves the DMG release untouched.
+Metadata goes first because it can be re-sent and a binary cannot, so a
+retry only repeats idempotent steps.
 
 Sandbox consent works in two halves. The Rust shell owns it: the folder
 picker returns a security-scoped bookmark, the shell stores it and starts
-access before spawning the core, and the store entitlements
-(`files.user-selected.read-write`, `files.bookmarks.app-scope`) belong to the
-app alone. The core carries only `app-sandbox` and `inherit`, so it sees
-exactly what its parent has opened, and exiftool, spawned by the core through
-`/usr/bin/perl` from `Contents/Resources`, inherits the same view. Nothing
-under `Contents/MacOS` may be unsigned, which is why exiftool's Perl tree
-stays under `Resources`. A save panel grants one path, so the zip export
-builds its archive in the temp directory and moves it into place rather than
-writing a sibling beside the destination.
+access, and the store entitlements (`files.user-selected.read-write`,
+`files.bookmarks.app-scope`) belong to the app alone. The core carries only
+`app-sandbox` and `inherit` and shares the shell's sandbox, so a grant the
+shell receives while the core is already running (open and save panels,
+drops) reaches the core too; spawn order does not matter. exiftool, spawned
+by the core through `/usr/bin/perl` from `Contents/Resources`, inherits the
+same view. Nothing under `Contents/MacOS` may be unsigned, which is why
+exiftool's Perl tree stays under `Resources`. A save panel grants one path,
+so the zip export builds its archive in the destination volume's item
+replacement directory and renames it into place rather than writing a
+sibling beside the destination.
 
 Retry a failed release with `gh workflow run release.yml`. If the tag was
 already created, the retry checks out **that tag** and rebuilds it, rather

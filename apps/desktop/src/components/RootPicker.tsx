@@ -13,9 +13,9 @@ import { FolderOpen, History, Unplug, X } from "lucide-react";
 import { useState } from "react";
 import {
   forgetRoot,
-  listRoots,
   type RootEntry,
   type RootError,
+  rootsQuery,
 } from "@/lib/roots";
 
 type Props = {
@@ -36,6 +36,8 @@ export function errorText(error: RootError): string {
       return "macOS did not let Photopipe open that folder. Allow it under System Settings > Privacy & Security > Files and Folders, or choose the folder again.";
     case "unplugged":
       return "That folder is not reachable right now. Connect the drive it lives on and try again.";
+    case "missing":
+      return `There is no folder at that path. Check it, or choose the folder with the panel. (${error.message})`;
     case "broken":
       return `Photopipe lost its access to that folder. Choose it again to reconnect. (${error.message})`;
     default:
@@ -45,7 +47,7 @@ export function errorText(error: RootError): string {
 
 export function RootPicker({ error, busy, onPick }: Props) {
   const [path, setPath] = useState("");
-  const roots = useQuery({ queryKey: ["roots"], queryFn: listRoots });
+  const roots = useQuery(rootsQuery);
 
   return (
     <TooltipProvider>

@@ -5,7 +5,7 @@ mod sidecar;
 use roots::RootEntry;
 use serde::Serialize;
 use sidecar::Sidecar;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tauri::menu::{
     AboutMetadataBuilder, MenuBuilder, MenuItemBuilder, SubmenuBuilder, HELP_SUBMENU_ID,
@@ -54,6 +54,7 @@ impl From<bookmark::Failure> for RootError {
     fn from(failure: bookmark::Failure) -> Self {
         let (kind, message) = match failure {
             bookmark::Failure::Unplugged(message) => ("unplugged", message),
+            bookmark::Failure::Missing(message) => ("missing", message),
             bookmark::Failure::Denied(message) => ("denied", message),
             bookmark::Failure::Broken(message) => ("broken", message),
         };
@@ -94,8 +95,11 @@ async fn list_roots(roots: State<'_, Arc<Roots>>) -> Result<Vec<RootListing>, Ro
                     Some(Err(bookmark::Failure::Unplugged(_))) => "unplugged",
                     _ => "broken",
                 },
+                name: Path::new(&entry.path)
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| entry.path.clone()),
                 path: entry.path,
-                name: entry.name,
             })
             .collect())
     })
@@ -125,8 +129,16 @@ fn open_root_blocking(
     roots: &Roots,
     path: Option<String>,
 ) -> Result<Option<OpenedRoot>, RootError> {
-    let path = match path {
-        Some(path) => path,
+    let (requested, stored) = match path {
+        Some(path) => {
+            let stored = roots::load(&roots.file)?
+                .into_iter()
+                .find(|entry| entry.path == path)
+                .and_then(|entry| entry.bookmark);
+            (path, stored)
+        }
+        // The panel just granted this folder; a bookmark stored for the same
+        // path is older than that grant and must not be reused.
         None => {
             let Some(picked) = app
                 .dialog()
@@ -136,28 +148,21 @@ fn open_root_blocking(
             else {
                 return Ok(None);
             };
-            picked
+            let path = picked
                 .into_path()
                 .map_err(|e| RootError::failed(e.to_string()))?
                 .to_string_lossy()
-                .into_owned()
+                .into_owned();
+            (path, None)
         }
     };
 
-    let mut entries = roots::load(&roots.file)?;
-    let stored = entries
-        .iter()
-        .find(|entry| entry.path == path)
-        .and_then(|entry| entry.bookmark.clone());
-    let mut bookmark = match stored.clone() {
-        Some(bookmark) => bookmark,
-        None => bookmark::mint(&path)?,
-    };
-    let resolved = match bookmark::resolve(&bookmark) {
-        Ok(resolved) => resolved,
+    let (mut bookmark, resolved) = match reconnect(stored.as_deref(), &requested) {
+        Ok(found) => found,
         Err(failure) => {
-            if stored.is_some() {
-                roots::drop_bookmark(&mut entries, &path);
+            if stored.is_some() && !matches!(failure, bookmark::Failure::Unplugged(_)) {
+                let mut entries = roots::load(&roots.file)?;
+                roots::drop_bookmark(&mut entries, &requested);
                 roots::save(&roots.file, &entries)?;
             }
             return Err(failure.into());
@@ -172,9 +177,47 @@ fn open_root_blocking(
 
     let result = sidecar.request("setRoot", Some(serde_json::json!({ "path": path })))?;
     *roots.access.lock().unwrap() = Some(access);
-    roots::remember(&mut entries, RootEntry::new(path.clone(), Some(bookmark)));
+    // Loaded again here: setRoot can take a long time, and another command may
+    // have written the store meanwhile.
+    let mut entries = roots::load(&roots.file)?;
+    roots::forget(&mut entries, &requested);
+    roots::remember(
+        &mut entries,
+        RootEntry {
+            path: path.clone(),
+            bookmark: Some(bookmark),
+        },
+    );
     roots::save(&roots.file, &entries)?;
     Ok(Some(OpenedRoot { path, result }))
+}
+
+/// Which bookmark gets the app back into `path`. A stored one that resolves
+/// wins. Unplugged means the bookmark is fine and the drive is not, so it
+/// stays. Anything else gives way to a fresh mint, which succeeds only while
+/// the path is reachable: a live grant, or no sandbox at all.
+fn reconnect(
+    stored: Option<&[u8]>,
+    path: &str,
+) -> Result<(Vec<u8>, bookmark::Resolved), bookmark::Failure> {
+    let fresh = || {
+        let bookmark = bookmark::mint(path)?;
+        let resolved = bookmark::resolve(&bookmark)?;
+        Ok((bookmark, resolved))
+    };
+    let Some(stored) = stored else {
+        return fresh();
+    };
+    match bookmark::resolve(stored) {
+        Ok(resolved) => Ok((stored.to_vec(), resolved)),
+        Err(failure @ bookmark::Failure::Unplugged(_)) => Err(failure),
+        Err(failure) => fresh().or(Err(failure)),
+    }
+}
+
+#[tauri::command]
+fn updater_available() -> bool {
+    cfg!(feature = "updater")
 }
 
 #[tauri::command]
@@ -293,7 +336,8 @@ pub fn run() {
             core_request,
             list_roots,
             open_root,
-            forget_root
+            forget_root,
+            updater_available
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -302,4 +346,35 @@ pub fn run() {
                 app.state::<Arc<Sidecar>>().shutdown();
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unplugged_keeps_the_stored_bookmark_and_a_broken_one_is_replaced() {
+        let dir = std::env::temp_dir().join(format!("photopipe-reconnect-{}", std::process::id()));
+        let path = dir.to_str().unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        let stored = bookmark::mint(path).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(matches!(
+            reconnect(Some(&stored), path),
+            Err(bookmark::Failure::Unplugged(_))
+        ));
+        assert!(matches!(
+            reconnect(None, path),
+            Err(bookmark::Failure::Missing(_))
+        ));
+
+        std::fs::create_dir_all(&dir).unwrap();
+        let (fresh, _) = reconnect(Some(b"not a bookmark"), path).unwrap();
+        assert!(bookmark::resolve(&fresh).is_ok());
+        assert!(matches!(
+            reconnect(Some(b"not a bookmark"), "/nonexistent/photopipe"),
+            Err(bookmark::Failure::Broken(_))
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

@@ -14,13 +14,14 @@ platform :mac do
     deliver(pkg: ENV.fetch("PKG"), verify_only: true, skip_metadata: true, skip_screenshots: true)
   end
 
-  desc "Upload the pkg to TestFlight, then the listing text and screenshots"
+  desc "Upload the listing text and screenshots, then the pkg to TestFlight"
   lane :submit do
+    # Metadata first: it can be re-sent, a binary already uploaded under this build number cannot.
+    deliver(app_version: ENV.fetch("APP_VERSION"), skip_binary_upload: true)
     upload_to_testflight(
       pkg: ENV.fetch("PKG"),
       app_platform: "osx",
       skip_waiting_for_build_processing: true
     )
-    deliver(app_version: ENV.fetch("APP_VERSION"), skip_binary_upload: true)
   end
 end

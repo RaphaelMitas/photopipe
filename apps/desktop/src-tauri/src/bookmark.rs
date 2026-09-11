@@ -7,13 +7,14 @@ use objc2::runtime::Bool;
 use objc2::AllocAnyThread;
 use objc2_foundation::{
     NSCocoaErrorDomain, NSData, NSError, NSFileNoSuchFileError, NSFileReadNoPermissionError,
-    NSFileReadNoSuchFileError, NSString, NSURL, NSURLBookmarkCreationOptions,
-    NSURLBookmarkResolutionOptions,
+    NSFileReadNoSuchFileError, NSString, NSURLBookmarkCreationOptions,
+    NSURLBookmarkResolutionOptions, NSURL,
 };
 
 #[derive(Debug)]
 pub enum Failure {
     Unplugged(String),
+    Missing(String),
     Denied(String),
     Broken(String),
 }
@@ -41,8 +42,13 @@ fn mint_url(url: &NSURL) -> Result<Vec<u8>, Failure> {
     .map_err(|error| classify(&error))
 }
 
+/// A bare path that does not exist is a typo or a deleted folder, not a
+/// drive that went away; only a bookmark can tell those apart.
 pub fn mint(path: &str) -> Result<Vec<u8>, Failure> {
-    mint_url(&NSURL::fileURLWithPath(&NSString::from_str(path)))
+    mint_url(&NSURL::fileURLWithPath(&NSString::from_str(path))).map_err(|failure| match failure {
+        Failure::Unplugged(_) => Failure::Missing(format!("no folder at {path}")),
+        other => other,
+    })
 }
 
 pub struct Resolved {
@@ -82,7 +88,10 @@ impl Resolved {
         if unsafe { self.url.startAccessingSecurityScopedResource() } {
             Ok(Access(self.url))
         } else {
-            Err(Failure::Denied(format!("macOS refused access to {}", self.path)))
+            Err(Failure::Denied(format!(
+                "macOS refused access to {}",
+                self.path
+            )))
         }
     }
 }
@@ -123,13 +132,20 @@ mod tests {
     }
 
     #[test]
-    fn missing_target_is_unplugged_and_garbage_is_broken() {
-        let dir = std::env::temp_dir().join(format!("photopipe-bookmark-gone-{}", std::process::id()));
+    fn gone_target_is_unplugged_bare_path_is_missing_and_garbage_is_broken() {
+        let dir =
+            std::env::temp_dir().join(format!("photopipe-bookmark-gone-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let bookmark = mint(dir.to_str().unwrap()).unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(matches!(resolve(&bookmark), Err(Failure::Unplugged(_))));
-        assert!(matches!(mint("/nonexistent/photopipe"), Err(Failure::Unplugged(_))));
-        assert!(matches!(resolve(b"not a bookmark"), Err(Failure::Broken(_))));
+        assert!(matches!(
+            mint("/nonexistent/photopipe"),
+            Err(Failure::Missing(_))
+        ));
+        assert!(matches!(
+            resolve(b"not a bookmark"),
+            Err(Failure::Broken(_))
+        ));
     }
 }

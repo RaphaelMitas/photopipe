@@ -80,7 +80,6 @@ jobs:
       - name: Clippy (deny warnings)
         working-directory: apps/desktop/src-tauri
         run: cargo clippy --all-targets -- -D warnings
-      # The App Store flavour compiles the updater out; keep it compiling.
       - name: Clippy, store flavour (deny warnings)
         working-directory: apps/desktop/src-tauri
         run: cargo clippy --all-targets --no-default-features -- -D warnings

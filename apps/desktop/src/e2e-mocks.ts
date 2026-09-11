@@ -194,11 +194,6 @@ function argPath(args: unknown): string | undefined {
     : undefined;
 }
 
-function setRoot(path: string) {
-  if (path === "/nonexistent") throw "root_not_found: /nonexistent";
-  return { shoots: shoots.length, files: 6, generation: 1 };
-}
-
 export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
   list_roots: () => roots,
   open_root: (args) => {
@@ -208,12 +203,12 @@ export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
     if (wanted && stored && stored.status !== "ok") {
       throw { kind: stored.status, message: `${stored.status}: ${path}` };
     }
-    const result = setRoot(path);
+    if (path === "/nonexistent") throw "root_not_found: /nonexistent";
     roots = [
       { path, name: path.split("/").pop() || path, status: "ok" },
       ...roots.filter((root) => root.path !== path),
     ];
-    return { path, ...result };
+    return { path, shoots: shoots.length, files: 6, generation: 1 };
   },
   forget_root: (args) => {
     roots = roots.filter((root) => root.path !== argPath(args));
@@ -226,7 +221,6 @@ export const E2E_HANDLERS: Record<
 > = {
   ping: () => ({ pong: true }),
   version: () => ({ version: "0.0.0-e2e", protocol: 1 }),
-  setRoot: (params) => setRoot(String(params.path)),
   listShoots: () => ({
     shoots: shoots.map((shoot) => ({ ...shoot, indexed: !indexing })),
   }),

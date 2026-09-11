@@ -71,6 +71,30 @@ describe("App", () => {
     expect(screen.getByTestId("root-input")).toBeInTheDocument();
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("list_roots"));
     expect(invoke).not.toHaveBeenCalledWith("open_root", expect.anything());
+    // The picker's list and the launch decision share one query.
+    expect(
+      invoke.mock.calls.filter(([cmd]) => cmd === "list_roots"),
+    ).toHaveLength(1);
+  });
+
+  it("carries the root a pre-bookmark build kept in localStorage over to the shell", async () => {
+    localStorage.setItem("photopipe.root", "/old");
+    localStorage.setItem("photopipe.recentRoots", JSON.stringify(["/old"]));
+    invoke.mockImplementation(async (cmd) => {
+      if (cmd === "list_roots") return [];
+      throw { kind: "denied", message: "sandboxed" };
+    });
+
+    renderWithQueries(<App />);
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("open_root", { path: "/old" }),
+    );
+    expect(await screen.findByTestId("root-error")).toHaveAttribute(
+      "data-kind",
+      "denied",
+    );
+    expect(localStorage.getItem("photopipe.root")).toBeNull();
+    expect(localStorage.getItem("photopipe.recentRoots")).toBeNull();
   });
 
   it("reopens the last root through the shell and shows the dashboard", async () => {

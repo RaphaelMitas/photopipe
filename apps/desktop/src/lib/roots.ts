@@ -1,3 +1,4 @@
+import { queryOptions } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import type { SetRootResult } from "./core";
 
@@ -9,7 +10,12 @@ export type RootEntry = {
   status: RootStatus;
 };
 
-export type RootErrorKind = "unplugged" | "denied" | "broken" | "failed";
+export type RootErrorKind =
+  | "unplugged"
+  | "missing"
+  | "denied"
+  | "broken"
+  | "failed";
 
 export type RootError = {
   kind: RootErrorKind;
@@ -21,6 +27,11 @@ export type OpenedRoot = SetRootResult & { path: string };
 export function listRoots(): Promise<RootEntry[]> {
   return invoke<RootEntry[]>("list_roots");
 }
+
+export const rootsQuery = queryOptions({
+  queryKey: ["roots"],
+  queryFn: listRoots,
+});
 
 /// Without a path the shell shows the folder panel; null means it was
 /// cancelled.
@@ -43,6 +54,7 @@ export function toRootError(error: unknown): RootError {
     const { kind } = error;
     if (
       kind === "unplugged" ||
+      kind === "missing" ||
       kind === "denied" ||
       kind === "broken" ||
       kind === "failed"

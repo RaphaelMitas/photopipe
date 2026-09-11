@@ -1,11 +1,6 @@
 platform "osx"
 
-# Listing text lives in metadata/en-US, one file per field. Screenshots go in
-# screenshots/en-US as PNGs; deliver sorts them into the Mac slot by pixel
-# size, so they must be one of Apple's Mac sizes (2880x1800 matches
-# `pnpm screenshots`).
-metadata_path "./fastlane/metadata"
-screenshots_path "./fastlane/screenshots"
+# deliver slots screenshots by pixel size, so they must be a Mac size; `pnpm screenshots` produces 2880x1800.
 
 # CI has nobody to confirm the HTML preview.
 force true

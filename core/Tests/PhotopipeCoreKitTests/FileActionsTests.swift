@@ -91,8 +91,6 @@ private func exportNow(
     _ = try service.setRoot(path: root.path, indexPath: nil)
 
     // A malformed request must never reach a file outside the library.
-    // (Reveal is the exception: it shows export destinations the user chose
-    // outside the root, and touches nothing.)
     #expect(throws: LibraryService.ServiceError.self) {
         try service.startExport(
             shoot: shoot.lastPathComponent, paths: ["/etc/hosts"],
@@ -260,8 +258,7 @@ private func exportNow(
     try fm.createDirectory(at: staging, withIntermediateDirectories: true)
     try Data("a".utf8).write(to: staging.appendingPathComponent("a.txt"))
 
-    // A save panel grants the chosen file alone, nothing beside it. A folder
-    // nothing can be created in is the closest a plain test gets to that.
+    // 0o500 stands in for a save panel's grant: nothing can be created beside the chosen file.
     let delivery = dir.appendingPathComponent("delivery")
     try fm.createDirectory(at: delivery, withIntermediateDirectories: true)
     try fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: delivery.path)

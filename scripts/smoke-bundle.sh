@@ -7,13 +7,12 @@
 # deliberately bare PATH and no env overrides, so anything it cannot find
 # inside itself is a failure.
 #
-# `--mas` checks the signed App Store flavour instead: entitlements, the
-# updater being gone, and what the store's automated review rejects a pkg
-# for. It does not drive the core, because a binary entitled app-sandbox +
-# inherit only launches under a sandboxed parent, and a shell is not one.
+# --mas checks the signed App Store build: entitlements, no updater, and what the store's review rejects.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+
+fail() { echo "::error::$1" >&2; exit 1; }
 
 MAS=false
 APP=""
@@ -25,24 +24,16 @@ for arg in "$@"; do
 done
 APP="${APP:-apps/desktop/src-tauri/target/release/bundle/macos/Photopipe.app}"
 
-if [ ! -d "$APP" ]; then
-  echo "::error::No app bundle at $APP (run: pnpm --filter desktop tauri build --bundles app)" >&2
-  exit 1
-fi
+[ -d "$APP" ] || fail "No app bundle at $APP (run: pnpm --filter desktop tauri build --bundles app)"
 
 echo "Smoke testing $APP"
 
 for required in "Contents/MacOS/photopipe-core" "Contents/Resources/exiftool/exiftool"; do
-  if [ ! -f "$APP/$required" ]; then
-    echo "::error::Bundle is missing $required" >&2
-    exit 1
-  fi
+  [ -f "$APP/$required" ] || fail "Bundle is missing $required"
 done
 echo "  contents: core and exiftool present"
 
 if [ "$MAS" = true ]; then
-  fail() { echo "::error::$1" >&2; exit 1; }
-
   entitlement_keys() {
     codesign -d --entitlements - --xml "$1" 2>/dev/null | /usr/bin/python3 -c '
 import plistlib, sys

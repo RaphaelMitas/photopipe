@@ -4,6 +4,8 @@ name: Release
 # a tag. When it does not, a release PR from `pnpm release` just landed, so
 # this tags the commit and ships it. workflow_dispatch re-runs the release for
 # the current version even if the tag exists, for retrying a failed run.
+# With submit_to_app_store it skips the DMG release and only submits the
+# already tagged build to App Store Connect.
 on:
   push:
     branches: [main]
@@ -24,6 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       is-release: ${{ steps.decide.outputs.is-release }}
+      submit: ${{ steps.decide.outputs.submit }}
       version: ${{ steps.decide.outputs.version }}
       tag: ${{ steps.decide.outputs.tag }}
       tag-exists: ${{ steps.decide.outputs.tag-exists }}
@@ -47,7 +50,16 @@ jobs:
           fi
           echo "tag-exists=$EXISTS" >> $GITHUB_OUTPUT
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ inputs.submit_to_app_store }}" = true ]; then
+            if [ "$EXISTS" != true ]; then
+              echo "::error::$TAG is not released yet. Release it first, then submit it to the App Store."
+              exit 1
+            fi
+            echo "Submitting $TAG to the App Store; the DMG release is not rebuilt."
+            echo "is-release=false" >> $GITHUB_OUTPUT
+            echo "submit=true" >> $GITHUB_OUTPUT
+            echo "ref=$TAG" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "is-release=true" >> $GITHUB_OUTPUT
             if [ "$EXISTS" = true ]; then
               # Retry of a release that already tagged: rebuild exactly what
@@ -313,21 +325,15 @@ jobs:
             -f release_tag="$TAG" \
             -f source_repo=RaphaelMitas/photopipe
 
-  # The same app built for the Mac App Store: updater compiled out, sandbox
-  # entitlements, a signed installer pkg. Skipped without the store secrets,
-  # so a release still succeeds before they exist. Every tag is validated
-  # against App Store Connect; the upload only happens on
-  # `gh workflow run release.yml -f submit_to_app_store=true`.
+  # Skipped without the store secrets, so a release still succeeds before they exist.
+  # Every release validates the pkg; `-f submit_to_app_store=true` uploads the tagged build.
   mas:
     name: Build, sign, validate for the App Store
-    needs: [check, release]
-    if: needs.check.outputs.is-release == 'true' && needs.check.outputs.mas == 'true'
+    needs: [check]
+    if: (needs.check.outputs.is-release == 'true' || needs.check.outputs.submit == 'true') && needs.check.outputs.mas == 'true'
     runs-on: macos-15
     env:
       APP: apps/desktop/src-tauri/target/release/bundle/macos/Photopipe.app
-      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-      APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -348,9 +354,7 @@ jobs:
           key: exiftool-${{ hashFiles('scripts/fetch-exiftool.sh') }}
       - run: pnpm install --frozen-lockfile
 
-      # `--no-default-features` drops the `updater` cargo feature, and the
-      # merged config strips its feed and narrows the capability; a store
-      # build that could still phone GitHub for updates would be rejected.
+      # A store build that could still phone GitHub for updates would be rejected.
       - name: Build the App Store flavour
         run: pnpm --filter desktop tauri build --bundles app --config src-tauri/mas.conf.json -- --no-default-features
 
@@ -359,6 +363,9 @@ jobs:
           MAS_CERTIFICATE: ${{ secrets.MAS_CERTIFICATE }}
           MAS_CERTIFICATE_PASSWORD: ${{ secrets.MAS_CERTIFICATE_PASSWORD }}
           MAS_PROVISIONING_PROFILE: ${{ secrets.MAS_PROVISIONING_PROFILE }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
         run: |
           for required in MAS_CERTIFICATE MAS_CERTIFICATE_PASSWORD MAS_PROVISIONING_PROFILE APP_STORE_CONNECT_KEY_ID APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_KEY; do
             if [ -z "${!required}" ]; then
@@ -394,12 +401,7 @@ jobs:
           echo "APP_IDENTITY=$APP_IDENTITY" >> $GITHUB_ENV
           echo "INSTALLER_IDENTITY=$INSTALLER_IDENTITY" >> $GITHUB_ENV
 
-      # Inside-out like the DMG build, but no hardened runtime: the store
-      # wants the sandbox, and the sandbox comes from the entitlements. The
-      # core gets app-sandbox + inherit and nothing else, or it stops
-      # inheriting. The app claims its identity in its entitlements because
-      # it ships an embedded provisioning profile; Xcode would inject those
-      # two keys, raw codesign does not.
+      # Raw codesign, unlike Xcode, does not inject the identity keys the embedded profile needs, so entitlements.mas.plist carries them.
       - name: Sign
         env:
           MAS_PROVISIONING_PROFILE: ${{ secrets.MAS_PROVISIONING_PROFILE }}
@@ -434,13 +436,20 @@ jobs:
       - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
         with:
           ruby-version: "3.3"
-      - run: bundle install
+          bundler-cache: true
 
       - name: Validate against App Store Connect
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
         run: bundle exec fastlane mac validate
 
       - name: Upload to TestFlight and App Store Connect
-        if: inputs.submit_to_app_store == true
+        if: needs.check.outputs.submit == 'true'
         env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
           APP_VERSION: ${{ needs.check.outputs.version }}
         run: bundle exec fastlane mac submit
