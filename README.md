@@ -38,8 +38,11 @@ live under the ⓘ in the sidebar footer.
 
 ## How it works
 
-A project is a folder named `<date>_<name>`. Whatever image files sit inside
-it — in subfolders or not — are its photos, shown as one flat set:
+A project is a folder in your library. Its date comes from a `YYYY-MM-DD_`
+prefix on the folder name if there is one, otherwise from a small
+`photopipe.json` inside it, which also holds the notes. So the prefix is a
+per-project choice. Whatever image files sit inside it — in subfolders or not
+— are its photos, shown as one flat set:
 
 ```
 2026-07-12_zell/

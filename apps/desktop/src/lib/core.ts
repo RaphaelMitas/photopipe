@@ -158,7 +158,7 @@ export type Shoot = {
   name: string;
   path: string;
   day: string | null;
-  project: string | null;
+  project: string;
   imageCount: number;
   notes: string;
   cover: string | null;

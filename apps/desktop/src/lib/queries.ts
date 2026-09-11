@@ -23,6 +23,7 @@ import {
   type Shoot,
   type StatusResult,
 } from "./core";
+import type { ProjectRequest } from "./projectFolder";
 import { useRawDecoderVersion } from "./rawDecoder";
 import type { ViewportRequest } from "./zoom";
 
@@ -519,37 +520,20 @@ export function useUpdateProject() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["write", "updateProject"],
-    mutationFn: (vars: {
-      shoot: string;
-      notes?: string;
-      cover?: string | null;
-    }) => coreRequest<{ generation: number }>("updateProject", vars),
-    onSuccess: () => {
+    mutationFn: (
+      vars: ProjectRequest & { shoot: string; cover: string | null },
+    ) =>
+      coreRequest<{ shoot: string; generation: number }>("updateProject", vars),
+    onSuccess: (result, vars) => {
+      if (result.shoot !== vars.shoot) {
+        toast.success(`Renamed to ${result.shoot}`);
+        queryClient.invalidateQueries({ queryKey: ["images"] });
+      }
       queryClient.invalidateQueries({ queryKey: ["shoots"] });
       queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
     },
     onError: (error) => {
       toast.error("Could not save the project", { description: String(error) });
-    },
-  });
-}
-
-export function useRenameProject() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationKey: ["write", "renameProject"],
-    mutationFn: (vars: { shoot: string; day: string; name: string }) =>
-      coreRequest<{ shoot: string; generation: number }>("renameProject", vars),
-    onSuccess: (result) => {
-      toast.success(`Renamed to ${result.shoot}`);
-      queryClient.invalidateQueries({ queryKey: ["shoots"] });
-      queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
-      queryClient.invalidateQueries({ queryKey: ["images"] });
-    },
-    onError: (error) => {
-      toast.error("Could not rename the project", {
-        description: String(error),
-      });
     },
   });
 }
@@ -719,7 +703,7 @@ export function useCreateProject() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["write", "createProject"],
-    mutationFn: (vars: { day: string; name: string; notes: string }) =>
+    mutationFn: (vars: ProjectRequest) =>
       coreRequest<CreateProjectResult>("createProject", vars),
     onSuccess: (result) => {
       toast.success(`Created ${result.shoot}`);

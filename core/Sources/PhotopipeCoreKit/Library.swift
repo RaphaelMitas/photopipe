@@ -81,7 +81,7 @@ public struct Shoot: Codable, Equatable, Sendable {
     public let name: String
     public let path: String
     public let day: String?
-    public let project: String?
+    public let project: String
     public let imageCount: Int
     public let notes: String
     public let cover: String?
@@ -91,14 +91,18 @@ public struct Shoot: Codable, Equatable, Sendable {
     public let indexed: Bool
 }
 
+public func isDay(_ value: String) -> Bool {
+    value.wholeMatch(of: /[0-9]{4}-[0-9]{2}-[0-9]{2}/) != nil
+}
+
 public func parseShootName(_ name: String) -> (day: String, project: String)? {
-    let pattern = /^(\d{4}-\d{2}-\d{2})_(.+)$/
+    let pattern = /^([0-9]{4}-[0-9]{2}-[0-9]{2})_(.+)$/
     guard let match = name.wholeMatch(of: pattern) else { return nil }
     return (String(match.1), String(match.2))
 }
 
 public func makeShoot(
-    name: String, path: String, images: [ImageFile], notes: String = "", cover: String? = nil
+    name: String, path: String, images: [ImageFile], notes: String, day: String?, cover: String?
 ) -> Shoot {
     let parsed = parseShootName(name)
     let chosen =
@@ -108,8 +112,9 @@ public func makeShoot(
     return Shoot(
         name: name,
         path: path,
-        day: parsed?.day,
-        project: parsed?.project,
+        // folder date wins so a Finder rename survives the next save
+        day: parsed?.day ?? day.flatMap { isDay($0) ? $0 : nil },
+        project: parsed?.project ?? name,
         imageCount: images.count,
         notes: notes,
         cover: cover,

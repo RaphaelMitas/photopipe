@@ -74,7 +74,7 @@ export function Dashboard({ shoots, onOpen, onNewProject, onSettings }: Props) {
             <CardContent className="p-4">
               <div className="flex items-baseline justify-between gap-2">
                 <span className="truncate font-heading font-medium">
-                  {shoot.project ?? shoot.name}
+                  {shoot.project}
                 </span>
                 {shoot.day && (
                   <span className="shrink-0 font-mono text-xs text-muted-foreground">

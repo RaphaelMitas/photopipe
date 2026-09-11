@@ -692,9 +692,9 @@ export default function App() {
         open={shootSettings !== null}
         onOpenChange={(next) => !next && setShootSettings(null)}
         shoot={shoots.data?.find((s) => s.name === shootSettings)}
-        onRenamed={(renamed) => {
+        onSaved={(saved) => {
           setShootSettings(null);
-          if (openShoot === shootSettings) setOpenShoot(renamed);
+          if (openShoot === shootSettings) setOpenShoot(saved);
         }}
       />
       <NewProjectDialog
@@ -751,7 +751,7 @@ export default function App() {
             {currentShoot ? (
               <>
                 <span className="truncate font-medium text-sm">
-                  {currentShoot.project ?? currentShoot.name}
+                  {currentShoot.project}
                 </span>
                 <span className="font-mono text-[10px] text-muted-foreground">
                   {currentShoot.imageCount} photos

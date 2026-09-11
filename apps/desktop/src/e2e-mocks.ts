@@ -5,6 +5,7 @@ import {
   identityEdit,
   type Shoot,
 } from "./lib/core";
+import { type ProjectRequest, projectFolder } from "./lib/projectFolder";
 import type { ExportProgress } from "./lib/queries";
 import { makeImage } from "./lib/test-image";
 
@@ -74,7 +75,7 @@ const shoots: Shoot[] = [
     name: "misc",
     path: "/fake/misc",
     day: null,
-    project: null,
+    project: "misc",
     imageCount: 1,
     notes: "",
     cover: null,
@@ -95,6 +96,15 @@ const shoots: Shoot[] = [
 ];
 
 const emptyShoots = new Set<string>();
+
+function projectParams(params: Record<string, unknown>): ProjectRequest {
+  return {
+    name: String(params.name),
+    day: typeof params.day === "string" ? params.day : null,
+    dateInFolder: params.dateInFolder === true,
+    notes: String(params.notes),
+  };
+}
 
 /// `?indexing=1` holds the library in the state it has right after a cold
 /// start: every file listed, none of its metadata read yet.
@@ -275,17 +285,18 @@ export const E2E_HANDLERS: Record<
       false,
     ),
   createProject: (params) => {
-    const shoot = `${String(params.day)}_${String(params.name)}`;
+    const request = projectParams(params);
+    const shoot = projectFolder(request);
     if (shoots.some((existing) => existing.name === shoot)) {
       throw `project_exists: ${shoot}`;
     }
     shoots.unshift({
       name: shoot,
       path: `/fake/${shoot}`,
-      day: String(params.day),
-      project: String(params.name),
+      day: request.day,
+      project: request.name.trim(),
       imageCount: 0,
-      notes: String(params.notes ?? ""),
+      notes: request.notes,
       cover: null,
       coverPath: null,
       indexed: true,
@@ -295,27 +306,19 @@ export const E2E_HANDLERS: Record<
   },
   updateProject: (params) => {
     const shoot = shoots.find((s) => s.name === params.shoot);
-    if (shoot) {
-      if (params.notes !== undefined) shoot.notes = String(params.notes);
-      if ("cover" in params) {
-        shoot.cover = (params.cover as string | null) ?? null;
-        const match = imagesFor(shoot.name).find(
-          (entry) => entry.rel === shoot.cover,
-        );
-        shoot.coverPath = match?.path ?? imagesFor(shoot.name)[0]?.path ?? null;
-      }
-    }
-    return { generation: 1 };
-  },
-  renameProject: (params) => {
-    const shoot = shoots.find((s) => s.name === params.shoot);
-    const renamed = `${String(params.day)}_${String(params.name)}`;
-    if (shoot) {
-      shoot.name = renamed;
-      shoot.day = String(params.day);
-      shoot.project = String(params.name);
-    }
-    return { shoot: renamed, generation: 1 };
+    if (!shoot) throw `unknown_shoot: ${String(params.shoot)}`;
+    const request = projectParams(params);
+    shoot.day = request.day;
+    shoot.project = request.name.trim();
+    shoot.name = projectFolder(request);
+    shoot.path = `/fake/${shoot.name}`;
+    shoot.notes = request.notes;
+    shoot.cover = typeof params.cover === "string" ? params.cover : null;
+    const match = imagesFor(shoot.name).find(
+      (entry) => entry.rel === shoot.cover,
+    );
+    shoot.coverPath = match?.path ?? imagesFor(shoot.name)[0]?.path ?? null;
+    return { shoot: shoot.name, generation: 1 };
   },
   status: () => ({
     generation: 1,

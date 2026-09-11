@@ -277,6 +277,9 @@ test("a new project is created from the library and opens empty", async ({
   await page.getByTestId("project-name").fill("riverside");
   await page.getByTestId("project-day").fill("2026-09-09");
   await page.getByTestId("project-notes").fill("client wants 12 finals");
+  await expect(page.getByTestId("folder-preview")).toHaveText(
+    "2026-09-09_riverside",
+  );
   await page.getByTestId("create-project").click();
 
   await expect(page.getByText(/Created 2026-09-09_riverside/)).toBeVisible();
@@ -293,6 +296,31 @@ test("a new project is created from the library and opens empty", async ({
   ).toBeVisible();
 });
 
+test("leaving the date out of the folder can be remembered as the default", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByTestId("root-input").fill("/fake");
+  await page.getByTestId("root-submit").click();
+
+  await page.getByTestId("new-project").click();
+  await page.getByTestId("project-name").fill("riverside");
+  await expect(page.getByTestId("remember-default")).toHaveCount(0);
+  await page.getByTestId("date-in-folder").click();
+  await expect(page.getByTestId("folder-preview")).toHaveText("riverside");
+  await expect(page.getByTestId("remember-default")).toBeVisible();
+  await page.getByTestId("remember-default-yes").click();
+  await expect(page.getByTestId("remember-default")).toHaveCount(0);
+  await page.getByTestId("create-project").click();
+  await expect(page.getByText(/Created riverside/)).toBeVisible();
+
+  await page.getByTestId("back-to-shoots").click();
+  await page.getByTestId("new-project").click();
+  await page.getByTestId("project-name").fill("next");
+  await expect(page.getByTestId("folder-preview")).toHaveText("next");
+  await expect(page.getByTestId("remember-default")).toHaveCount(0);
+});
+
 test("library cards show a cover and open project settings", async ({
   page,
 }) => {
@@ -304,16 +332,17 @@ test("library cards show a cover and open project settings", async ({
   await expect(page.getByTestId("shoot-cover").first()).toBeVisible();
 
   await page.getByTestId("shoot-settings-2026-07-12_zell").click();
-  await expect(page.getByTestId("shoot-name")).toHaveValue("zell");
-  await expect(page.getByTestId("shoot-day")).toHaveValue("2026-07-12");
-  await expect(page.getByTestId("shoot-notes")).toHaveValue(
+  await expect(page.getByTestId("project-name")).toHaveValue("zell");
+  await expect(page.getByTestId("project-day")).toHaveValue("2026-07-12");
+  await expect(page.getByTestId("project-notes")).toHaveValue(
     "Golden hour at the river",
   );
 
-  // Picking a cover, and the rename preview appearing only on a real change.
-  await expect(page.getByTestId("rename-preview")).toHaveCount(0);
-  await page.getByTestId("shoot-name").fill("zell-revisited");
-  await expect(page.getByTestId("rename-preview")).toContainText(
+  await expect(page.getByTestId("folder-preview")).toHaveText(
+    "2026-07-12_zell",
+  );
+  await page.getByTestId("project-name").fill("zell-revisited");
+  await expect(page.getByTestId("folder-preview")).toHaveText(
     "2026-07-12_zell-revisited",
   );
 
