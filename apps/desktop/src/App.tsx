@@ -41,20 +41,18 @@ import {
   type RatingOp,
   ratingCounts,
 } from "@/components/RatingFilter";
-import { RootPicker, rememberRoot } from "@/components/RootPicker";
+import { RootPicker } from "@/components/RootPicker";
 import { SelectionBar } from "@/components/SelectionBar";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import { ShootSettingsDialog } from "@/components/ShootSettingsDialog";
 import { ShowSidebarTrigger } from "@/components/ShowSidebarTrigger";
 import {
-  coreRequest,
   type Edit,
   editKey,
   type ImageFile,
   identityEdit,
   isIdentityEdit,
   isRawFile,
-  type SetRootResult,
 } from "@/lib/core";
 import { type EditClipboard, pasteEdit } from "@/lib/editClipboard";
 import { betterThan, scoreRanks } from "@/lib/instinct";
@@ -74,12 +72,12 @@ import {
   useShoots,
   useTrash,
 } from "@/lib/queries";
+import { listRoots, openRoot, type RootError, toRootError } from "@/lib/roots";
 import { useSelection } from "@/lib/selection";
 import { browserOrder, type SortKey } from "@/lib/sort";
 import { useDebouncedEdit } from "@/lib/useDebouncedEdit";
 import { useUpdater } from "@/lib/useUpdater";
 
-const ROOT_KEY = "photopipe.root";
 const VIEW_KEY = "photopipe.view";
 const EDIT_PANEL_KEY = "photopipe.editPanel";
 const SORT_KEY = "photopipe.sort";
@@ -98,7 +96,7 @@ const isTyping = (target: EventTarget | null) =>
 const fileName = (path: string) => path.split("/").pop() ?? path;
 
 type RootState =
-  | { kind: "picking"; error: string | null; busy: boolean }
+  | { kind: "picking"; error: RootError | null; busy: boolean }
   | { kind: "ready"; path: string; generation: number };
 
 const EDIT_COMMIT_MS = 400;
@@ -175,22 +173,34 @@ export default function App() {
   const cropping = cropDraft !== null;
   const [clipboard, setClipboard] = useState<EditClipboard | null>(null);
 
-  const connectRoot = useCallback(async (path: string) => {
+  // The shell owns the folder panel and the bookmarks; the UI only says
+  // which root it wants, or none for the panel.
+  const connectRoot = useCallback(async (path?: string) => {
     setRootState({ kind: "picking", error: null, busy: true });
     try {
-      const result = await coreRequest<SetRootResult>("setRoot", { path });
-      localStorage.setItem(ROOT_KEY, path);
-      rememberRoot(path);
-      setRootState({ kind: "ready", path, generation: result.generation });
+      const opened = await openRoot(path);
+      setRootState(
+        opened
+          ? { kind: "ready", path: opened.path, generation: opened.generation }
+          : { kind: "picking", error: null, busy: false },
+      );
     } catch (error) {
-      localStorage.removeItem(ROOT_KEY);
-      setRootState({ kind: "picking", error: String(error), busy: false });
+      setRootState({ kind: "picking", error: toRootError(error), busy: false });
     }
   }, []);
 
   useEffect(() => {
-    const stored = localStorage.getItem(ROOT_KEY);
-    if (stored) connectRoot(stored);
+    listRoots()
+      .then((roots) => {
+        if (roots[0]?.status === "ok") connectRoot(roots[0].path);
+      })
+      .catch((error) => {
+        setRootState({
+          kind: "picking",
+          error: toRootError(error),
+          busy: false,
+        });
+      });
   }, [connectRoot]);
 
   const ready = rootState.kind === "ready";
@@ -668,7 +678,7 @@ export default function App() {
         <RootPicker
           error={rootState.error}
           busy={rootState.busy}
-          onSubmit={connectRoot}
+          onPick={connectRoot}
         />
         {settingsDialog}
       </>

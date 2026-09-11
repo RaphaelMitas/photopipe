@@ -6,6 +6,7 @@ import {
   type Shoot,
 } from "./lib/core";
 import type { ExportProgress } from "./lib/queries";
+import type { RootEntry } from "./lib/roots";
 import { makeImage } from "./lib/test-image";
 
 function image(
@@ -170,16 +171,62 @@ function advanceExport(id: string): ExportProgress {
   return job;
 }
 
+// `?roots=stored|broken|unplugged` starts with one remembered root in that
+// state; the panel, which nothing can drive from a browser, always picks /fake.
+const scenario = new URLSearchParams(location.search).get("roots");
+let roots: RootEntry[] =
+  scenario === "stored" || scenario === "broken" || scenario === "unplugged"
+    ? [
+        {
+          path: "/fake",
+          name: "fake",
+          status: scenario === "stored" ? "ok" : scenario,
+        },
+      ]
+    : [];
+
+function argPath(args: unknown): string | undefined {
+  return typeof args === "object" &&
+    args !== null &&
+    "path" in args &&
+    typeof args.path === "string"
+    ? args.path
+    : undefined;
+}
+
+function setRoot(path: string) {
+  if (path === "/nonexistent") throw "root_not_found: /nonexistent";
+  return { shoots: shoots.length, files: 6, generation: 1 };
+}
+
+export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
+  list_roots: () => roots,
+  open_root: (args) => {
+    const wanted = argPath(args);
+    const path = wanted ?? "/fake";
+    const stored = roots.find((root) => root.path === path);
+    if (wanted && stored && stored.status !== "ok") {
+      throw { kind: stored.status, message: `${stored.status}: ${path}` };
+    }
+    const result = setRoot(path);
+    roots = [
+      { path, name: path.split("/").pop() || path, status: "ok" },
+      ...roots.filter((root) => root.path !== path),
+    ];
+    return { path, ...result };
+  },
+  forget_root: (args) => {
+    roots = roots.filter((root) => root.path !== argPath(args));
+  },
+};
+
 export const E2E_HANDLERS: Record<
   string,
   (params: Record<string, unknown>) => unknown
 > = {
   ping: () => ({ pong: true }),
   version: () => ({ version: "0.0.0-e2e", protocol: 1 }),
-  setRoot: (params) => {
-    if (params.path === "/nonexistent") throw "root_not_found: /nonexistent";
-    return { shoots: shoots.length, files: 6, generation: 1 };
-  },
+  setRoot: (params) => setRoot(String(params.path)),
   listShoots: () => ({
     shoots: shoots.map((shoot) => ({ ...shoot, indexed: !indexing })),
   }),
@@ -236,7 +283,6 @@ export const E2E_HANDLERS: Record<
       rawTotal: raws.length,
     };
   },
-  reveal: () => ({ revealed: true }),
   trash: (params) => {
     const paths = new Set(params.paths as string[]);
     let files = 0;

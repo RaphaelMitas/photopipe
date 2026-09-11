@@ -18,11 +18,27 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+default = ["updater"]
+updater = ["dep:tauri-plugin-updater", "dep:tauri-plugin-process"]
+
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
-tauri-plugin-process = "2"
-tauri-plugin-updater = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-process = { version = "2", optional = true }
+tauri-plugin-updater = { version = "2", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "FoundationErrors",
+    "NSData",
+    "NSError",
+    "NSString",
+    "NSURL",
+] }
 

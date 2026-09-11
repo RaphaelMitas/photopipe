@@ -6,11 +6,24 @@
 # the *bundle* works. This drives the core out of the built app with a
 # deliberately bare PATH and no env overrides, so anything it cannot find
 # inside itself is a failure.
+#
+# `--mas` checks the signed App Store flavour instead: entitlements, the
+# updater being gone, and what the store's automated review rejects a pkg
+# for. It does not drive the core, because a binary entitled app-sandbox +
+# inherit only launches under a sandboxed parent, and a shell is not one.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-APP="${1:-apps/desktop/src-tauri/target/release/bundle/macos/Photopipe.app}"
+MAS=false
+APP=""
+for arg in "$@"; do
+  case "$arg" in
+    --mas) MAS=true ;;
+    *) APP="$arg" ;;
+  esac
+done
+APP="${APP:-apps/desktop/src-tauri/target/release/bundle/macos/Photopipe.app}"
 
 if [ ! -d "$APP" ]; then
   echo "::error::No app bundle at $APP (run: pnpm --filter desktop tauri build --bundles app)" >&2
@@ -26,6 +39,55 @@ for required in "Contents/MacOS/photopipe-core" "Contents/Resources/exiftool/exi
   fi
 done
 echo "  contents: core and exiftool present"
+
+if [ "$MAS" = true ]; then
+  fail() { echo "::error::$1" >&2; exit 1; }
+
+  entitlement_keys() {
+    codesign -d --entitlements - --xml "$1" 2>/dev/null | /usr/bin/python3 -c '
+import plistlib, sys
+raw = sys.stdin.buffer.read()
+print("\n".join(sorted(plistlib.loads(raw))) if raw else "")'
+  }
+
+  APP_KEYS=$(entitlement_keys "$APP")
+  for key in \
+    com.apple.application-identifier \
+    com.apple.developer.team-identifier \
+    com.apple.security.app-sandbox \
+    com.apple.security.network.client \
+    com.apple.security.files.user-selected.read-write \
+    com.apple.security.files.bookmarks.app-scope; do
+    grep -qx "$key" <<<"$APP_KEYS" || fail "app is missing entitlement $key"
+  done
+  CORE_KEYS=$(entitlement_keys "$APP/Contents/MacOS/photopipe-core")
+  if [ "$CORE_KEYS" != $'com.apple.security.app-sandbox\ncom.apple.security.inherit' ]; then
+    fail "core must carry exactly app-sandbox and inherit, has: $(tr '\n' ' ' <<<"$CORE_KEYS")"
+  fi
+  echo "  entitlements: app sandboxed with bookmarks, core inherits"
+
+  [ -f "$APP/Contents/embedded.provisionprofile" ] || fail "no embedded.provisionprofile; the identity entitlements need one"
+
+  EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP/Contents/Info.plist")
+  if grep -qa -e tauri_plugin_updater -e releases/latest/download/latest.json "$APP/Contents/MacOS/$EXECUTABLE"; then
+    fail "the updater or its feed URL is still compiled into $EXECUTABLE"
+  fi
+  echo "  updater:  absent from the binary"
+
+  MACOS_DIR=$(ls "$APP/Contents/MacOS" | sort | tr '\n' ' ')
+  if [ "$MACOS_DIR" != "$EXECUTABLE photopipe-core " ]; then
+    fail "Contents/MacOS must hold only the two executables, has: $MACOS_DIR"
+  fi
+  UNREADABLE=$(find "$APP" ! -perm -o=r)
+  [ -z "$UNREADABLE" ] || fail "not world-readable, the store rejects the pkg: $UNREADABLE"
+  ENCRYPTION=$(/usr/libexec/PlistBuddy -c "Print :ITSAppUsesNonExemptEncryption" "$APP/Contents/Info.plist" 2>/dev/null || true)
+  [ "$ENCRYPTION" = false ] || fail "Info.plist needs ITSAppUsesNonExemptEncryption=false, has '$ENCRYPTION'"
+  echo "  layout:   world-readable, MacOS holds the two executables, encryption declared"
+
+  echo "  skipped:  the live core drive; app-sandbox + inherit only launches under a sandboxed parent"
+  echo "App Store flavour is in order."
+  exit 0
+fi
 
 APP="$APP" exec /usr/bin/python3 - <<'PY'
 import json, os, shutil, subprocess, sys, tempfile

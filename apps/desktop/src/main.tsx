@@ -8,7 +8,7 @@ import "./index.css";
 async function prepare() {
   if (import.meta.env.VITE_E2E === "1") {
     const { mockIPC } = await import("@tauri-apps/api/mocks");
-    const { E2E_HANDLERS } = await import("./e2e-mocks");
+    const { E2E_COMMANDS, E2E_HANDLERS } = await import("./e2e-mocks");
     mockIPC((cmd, args) => {
       // The file pickers are OS windows with nothing to drive them from a
       // browser, so e2e answers them and moves on. Only the import picker
@@ -27,6 +27,8 @@ async function prepare() {
             ]
           : "/fake/delivery";
       }
+      if (cmd === "plugin:opener|reveal_item_in_dir") return null;
+      if (cmd in E2E_COMMANDS) return E2E_COMMANDS[cmd](args);
       const method = (args as { method?: string } | undefined)?.method;
       const params = (args as { params?: Record<string, unknown> } | undefined)
         ?.params;

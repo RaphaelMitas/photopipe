@@ -8,6 +8,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      submit_to_app_store:
+        description: Upload the App Store build to App Store Connect and TestFlight
+        type: boolean
+        default: false
 
 concurrency:
   group: release
@@ -23,6 +28,8 @@ jobs:
       tag: ${{ steps.decide.outputs.tag }}
       tag-exists: ${{ steps.decide.outputs.tag-exists }}
       ref: ${{ steps.decide.outputs.ref }}
+      # A job-level `if:` cannot read `secrets`, but an output can.
+      mas: ${{ secrets.MAS_CERTIFICATE != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Compare the app version against existing tags
@@ -305,3 +312,135 @@ jobs:
             -f cask_name=photopipe \
             -f release_tag="$TAG" \
             -f source_repo=RaphaelMitas/photopipe
+
+  # The same app built for the Mac App Store: updater compiled out, sandbox
+  # entitlements, a signed installer pkg. Skipped without the store secrets,
+  # so a release still succeeds before they exist. Every tag is validated
+  # against App Store Connect; the upload only happens on
+  # `gh workflow run release.yml -f submit_to_app_store=true`.
+  mas:
+    name: Build, sign, validate for the App Store
+    needs: [check, release]
+    if: needs.check.outputs.is-release == 'true' && needs.check.outputs.mas == 'true'
+    runs-on: macos-15
+    env:
+      APP: apps/desktop/src-tauri/target/release/bundle/macos/Photopipe.app
+      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.check.outputs.ref }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - name: Cache vendored exiftool
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: apps/desktop/src-tauri/resources/exiftool
+          key: exiftool-${{ hashFiles('scripts/fetch-exiftool.sh') }}
+      - run: pnpm install --frozen-lockfile
+
+      # `--no-default-features` drops the `updater` cargo feature, and the
+      # merged config strips its feed and narrows the capability; a store
+      # build that could still phone GitHub for updates would be rejected.
+      - name: Build the App Store flavour
+        run: pnpm --filter desktop tauri build --bundles app --config src-tauri/mas.conf.json -- --no-default-features
+
+      - name: Import signing certificates
+        env:
+          MAS_CERTIFICATE: ${{ secrets.MAS_CERTIFICATE }}
+          MAS_CERTIFICATE_PASSWORD: ${{ secrets.MAS_CERTIFICATE_PASSWORD }}
+          MAS_PROVISIONING_PROFILE: ${{ secrets.MAS_PROVISIONING_PROFILE }}
+        run: |
+          for required in MAS_CERTIFICATE MAS_CERTIFICATE_PASSWORD MAS_PROVISIONING_PROFILE APP_STORE_CONNECT_KEY_ID APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_KEY; do
+            if [ -z "${!required}" ]; then
+              echo "::error::$required is not set. See docs/engineering.md for the six App Store secrets."
+              exit 1
+            fi
+          done
+          KEYCHAIN_PATH=$RUNNER_TEMP/mas.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "$MAS_CERTIFICATE" | base64 --decode > $RUNNER_TEMP/mas.p12
+          security import $RUNNER_TEMP/mas.p12 -P "$MAS_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          rm $RUNNER_TEMP/mas.p12
+
+          APP_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+            | grep "Apple Distribution" | head -1 | awk -F'"' '{print $2}')
+          # Installer certificates are not code-signing identities, so no
+          # policy filter here. Newer certificates spell the name differently.
+          INSTALLER_IDENTITY=$(security find-identity -v "$KEYCHAIN_PATH" \
+            | grep -e "3rd Party Mac Developer Installer" -e "Mac Installer Distribution" \
+            | head -1 | awk -F'"' '{print $2}')
+          if [ -z "$APP_IDENTITY" ] || [ -z "$INSTALLER_IDENTITY" ]; then
+            echo "::error::MAS_CERTIFICATE needs both an Apple Distribution and a Mac Installer Distribution identity."
+            exit 1
+          fi
+          echo "APP_IDENTITY=$APP_IDENTITY" >> $GITHUB_ENV
+          echo "INSTALLER_IDENTITY=$INSTALLER_IDENTITY" >> $GITHUB_ENV
+
+      # Inside-out like the DMG build, but no hardened runtime: the store
+      # wants the sandbox, and the sandbox comes from the entitlements. The
+      # core gets app-sandbox + inherit and nothing else, or it stops
+      # inheriting. The app claims its identity in its entitlements because
+      # it ships an embedded provisioning profile; Xcode would inject those
+      # two keys, raw codesign does not.
+      - name: Sign
+        env:
+          MAS_PROVISIONING_PROFILE: ${{ secrets.MAS_PROVISIONING_PROFILE }}
+        run: |
+          echo "$MAS_PROVISIONING_PROFILE" | base64 --decode > "$APP/Contents/embedded.provisionprofile"
+          codesign --force --timestamp \
+            --entitlements apps/desktop/src-tauri/entitlements.mas.inherit.plist \
+            --sign "$APP_IDENTITY" "$APP/Contents/MacOS/photopipe-core"
+          codesign --force --timestamp \
+            --entitlements apps/desktop/src-tauri/entitlements.mas.plist \
+            --sign "$APP_IDENTITY" "$APP"
+
+          codesign --verify --strict --verbose=2 "$APP"
+          codesign --verify --strict --verbose=2 "$APP/Contents/MacOS/photopipe-core"
+
+      - name: Smoke test the bundle
+        run: ./scripts/smoke-bundle.sh --mas "$APP"
+
+      - name: Build the installer package
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          PKG="$RUNNER_TEMP/Photopipe-$VERSION.pkg"
+          productbuild --component "$APP" /Applications --sign "$INSTALLER_IDENTITY" "$PKG"
+          echo "PKG=$PKG" >> $GITHUB_ENV
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: photopipe-mas
+          path: ${{ env.PKG }}
+
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "3.3"
+      - run: bundle install
+
+      - name: Validate against App Store Connect
+        run: bundle exec fastlane mac validate
+
+      - name: Upload to TestFlight and App Store Connect
+        if: inputs.submit_to_app_store == true
+        env:
+          APP_VERSION: ${{ needs.check.outputs.version }}
+        run: bundle exec fastlane mac submit

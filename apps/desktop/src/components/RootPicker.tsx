@@ -8,51 +8,44 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@photopipe/ui/components/tooltip";
-import { open } from "@tauri-apps/plugin-dialog";
-import { FolderOpen, History } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { FolderOpen, History, Unplug, X } from "lucide-react";
 import { useState } from "react";
-
-function folderName(path: string): string {
-  return path.replace(/\/+$/, "").split("/").pop() || path;
-}
-
-const RECENT_KEY = "photopipe.recentRoots";
-
-export function recentRoots(): string[] {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
-    return Array.isArray(parsed)
-      ? parsed.filter((r) => typeof r === "string")
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-export function rememberRoot(path: string) {
-  const next = [path, ...recentRoots().filter((r) => r !== path)].slice(0, 5);
-  localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-}
+import {
+  forgetRoot,
+  listRoots,
+  type RootEntry,
+  type RootError,
+} from "@/lib/roots";
 
 type Props = {
-  error?: string | null;
+  error?: RootError | null;
   busy?: boolean;
-  onSubmit: (path: string) => void;
+  onPick: (path?: string) => void;
 };
 
-export function RootPicker({ error, busy, onSubmit }: Props) {
-  const [path, setPath] = useState("");
-  const recents = recentRoots();
+const STATUS_HINT: Record<RootEntry["status"], string | null> = {
+  ok: null,
+  unplugged: "connect the drive",
+  broken: "choose it again to reconnect",
+};
 
-  async function pickFolder() {
-    try {
-      const dir = await open({
-        directory: true,
-        title: "Choose your photos folder",
-      });
-      if (typeof dir === "string") onSubmit(dir);
-    } catch {}
+export function errorText(error: RootError): string {
+  switch (error.kind) {
+    case "denied":
+      return "macOS did not let Photopipe open that folder. Allow it under System Settings > Privacy & Security > Files and Folders, or choose the folder again.";
+    case "unplugged":
+      return "That folder is not reachable right now. Connect the drive it lives on and try again.";
+    case "broken":
+      return `Photopipe lost its access to that folder. Choose it again to reconnect. (${error.message})`;
+    default:
+      return error.message;
   }
+}
+
+export function RootPicker({ error, busy, onPick }: Props) {
+  const [path, setPath] = useState("");
+  const roots = useQuery({ queryKey: ["roots"], queryFn: listRoots });
 
   return (
     <TooltipProvider>
@@ -68,31 +61,60 @@ export function RootPicker({ error, busy, onSubmit }: Props) {
         </div>
 
         <div className="flex w-80 flex-col gap-2">
-          <Button size="lg" onClick={pickFolder} disabled={busy}>
+          <Button size="lg" onClick={() => onPick()} disabled={busy}>
             <FolderOpen />
             Choose your photos folder
           </Button>
-          {recents.map((recent) => (
-            <Tooltip key={recent}>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  disabled={busy}
-                  onClick={() => onSubmit(recent)}
-                  className="justify-start text-muted-foreground"
+          {(roots.data ?? []).map((root) => (
+            <div key={root.path} className="flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    disabled={busy}
+                    data-testid="recent-root"
+                    data-status={root.status}
+                    onClick={() =>
+                      onPick(root.status === "broken" ? undefined : root.path)
+                    }
+                    className={`min-w-0 flex-1 justify-start text-muted-foreground ${
+                      root.status === "ok" ? "" : "opacity-50"
+                    }`}
+                  >
+                    {root.status === "unplugged" ? (
+                      <Unplug className="shrink-0" />
+                    ) : (
+                      <History className="shrink-0" />
+                    )}
+                    <span className="truncate">{root.name}</span>
+                    {STATUS_HINT[root.status] && (
+                      <span className="ml-auto shrink-0 text-xs">
+                        {STATUS_HINT[root.status]}
+                      </span>
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="right"
+                  collisionPadding={8}
+                  className="max-w-[min(24rem,var(--radix-tooltip-content-available-width))] break-all font-mono text-xs"
                 >
-                  <History className="shrink-0" />
-                  <span className="truncate">{folderName(recent)}</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent
-                side="right"
-                collisionPadding={8}
-                className="max-w-[min(24rem,var(--radix-tooltip-content-available-width))] break-all font-mono text-xs"
+                  {root.path}
+                </TooltipContent>
+              </Tooltip>
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled={busy}
+                aria-label={`Forget ${root.name}`}
+                className="size-7 shrink-0 text-muted-foreground"
+                onClick={() =>
+                  forgetRoot(root.path).then(() => roots.refetch())
+                }
               >
-                {recent}
-              </TooltipContent>
-            </Tooltip>
+                <X />
+              </Button>
+            </div>
           ))}
         </div>
 
@@ -100,7 +122,7 @@ export function RootPicker({ error, busy, onSubmit }: Props) {
           className="flex w-80 gap-2 opacity-60 transition-opacity focus-within:opacity-100 hover:opacity-100"
           onSubmit={(e) => {
             e.preventDefault();
-            if (path.trim()) onSubmit(path.trim());
+            if (path.trim()) onPick(path.trim());
           }}
         >
           <Input
@@ -125,9 +147,10 @@ export function RootPicker({ error, busy, onSubmit }: Props) {
         {error && (
           <p
             data-testid="root-error"
+            data-kind={error.kind}
             className="max-w-96 text-sm text-destructive"
           >
-            {error}
+            {errorText(error)}
           </p>
         )}
       </main>

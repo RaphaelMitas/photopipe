@@ -3,14 +3,7 @@ import Foundation
 public enum FileActions {
     public enum ActionError: Error, Equatable {
         case noFiles
-        case openFailed(String)
         case zipFailed(String)
-    }
-
-    public static func reveal(paths: [String]) throws {
-        guard !paths.isEmpty else { throw ActionError.noFiles }
-        let result = try run("/usr/bin/open", ["-R"] + paths)
-        guard result.status == 0 else { throw ActionError.openFailed(result.output) }
     }
 
     @discardableResult
@@ -57,9 +50,11 @@ public enum FileActions {
         }
     }
 
+    /// Built in the temp dir, not beside the destination: a save panel grants
+    /// exactly the chosen path, so a sibling file there is a sandbox denial.
     public static func zipDirectory(at dir: URL, to destination: String) throws {
         let dest = URL(fileURLWithPath: destination)
-        let temp = dest.deletingLastPathComponent()
+        let temp = FileManager.default.temporaryDirectory
             .appendingPathComponent("\(tempPrefix)\(UUID().uuidString).zip")
         defer { try? FileManager.default.removeItem(at: temp) }
         let result = try run(

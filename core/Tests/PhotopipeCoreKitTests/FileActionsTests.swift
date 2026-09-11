@@ -252,6 +252,32 @@ private func exportNow(
     #expect(try FileActions.list(zip: dest).contains { $0.contains("a.txt") })
 }
 
+@Test func zipIsBuiltOutsideTheDestinationFolder() throws {
+    let fm = FileManager.default
+    let dir = try tempDir()
+    defer { try? fm.removeItem(at: dir) }
+    let staging = dir.appendingPathComponent("staging")
+    try fm.createDirectory(at: staging, withIntermediateDirectories: true)
+    try Data("a".utf8).write(to: staging.appendingPathComponent("a.txt"))
+
+    // A save panel grants the chosen file alone, nothing beside it. A folder
+    // nothing can be created in is the closest a plain test gets to that.
+    let delivery = dir.appendingPathComponent("delivery")
+    try fm.createDirectory(at: delivery, withIntermediateDirectories: true)
+    try fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: delivery.path)
+    defer { try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: delivery.path) }
+
+    do {
+        try FileActions.zipDirectory(
+            at: staging, to: delivery.appendingPathComponent("delivery.zip").path)
+        Issue.record("landing the archive in an unwritable folder should fail")
+    } catch let error as FileActions.ActionError {
+        Issue.record("zip ran inside the destination folder: \(error)")
+    } catch {}
+
+    #expect(try fm.contentsOfDirectory(atPath: delivery.path).isEmpty)
+}
+
 @Test func jpegExportRendersWithConvertedExtension() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
@@ -555,6 +581,5 @@ private func exportNow(
 @Test func emptySelectionsAreRefusedRatherThanSilentlyDoingNothing() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
-    #expect(throws: FileActions.ActionError.noFiles) { try FileActions.reveal(paths: []) }
     #expect(throws: FileActions.ActionError.noFiles) { try FileActions.trash(paths: []) }
 }

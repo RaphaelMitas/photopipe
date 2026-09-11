@@ -62,17 +62,26 @@ beforeEach(() => {
 });
 
 describe("App", () => {
-  it("asks for a root folder when none is stored", () => {
+  it("asks for a root folder when the shell remembers none", async () => {
+    invoke.mockImplementation(async (cmd) => {
+      if (cmd === "list_roots") return [];
+      throw new Error(`unexpected ${cmd}`);
+    });
     renderWithQueries(<App />);
     expect(screen.getByTestId("root-input")).toBeInTheDocument();
-    expect(invoke).not.toHaveBeenCalled();
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("list_roots"));
+    expect(invoke).not.toHaveBeenCalledWith("open_root", expect.anything());
   });
 
-  it("reconnects a stored root and shows the dashboard", async () => {
-    localStorage.setItem("photopipe.root", "/r");
-    invoke.mockImplementation(async (_cmd, args) => {
+  it("reopens the last root through the shell and shows the dashboard", async () => {
+    invoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "list_roots")
+        return [{ path: "/r", name: "r", status: "ok" }];
+      if (cmd === "open_root") {
+        expect(args).toEqual({ path: "/r" });
+        return { path: "/r", shoots: 1, files: 4, generation: 1 };
+      }
       const { method } = args as { method: string };
-      if (method === "setRoot") return { shoots: 1, files: 4, generation: 1 };
       if (method === "listShoots") return { shoots: [SHOOT] };
       if (method === "status") return { generation: 1, root: "/r", shoots: 1 };
       throw new Error(`unexpected ${method}`);
@@ -84,6 +93,7 @@ describe("App", () => {
   });
 
   it("opens settings from the menu bar before a folder is picked", async () => {
+    invoke.mockResolvedValue([]);
     renderWithQueries(<App />);
     expect(screen.getByTestId("root-input")).toBeInTheDocument();
 
@@ -101,14 +111,17 @@ describe("App", () => {
     expect(await screen.findByTestId("auto-score")).toBeInTheDocument();
   });
 
-  it("drops back to the picker with the error when setRoot fails", async () => {
-    localStorage.setItem("photopipe.root", "/gone");
-    invoke.mockRejectedValue("root_not_found: /gone");
+  it("stays on the picker with the shell's error when reopening fails", async () => {
+    invoke.mockImplementation(async (cmd) => {
+      if (cmd === "list_roots")
+        return [{ path: "/gone", name: "gone", status: "ok" }];
+      throw { kind: "failed", message: "root_not_found: /gone" };
+    });
 
     renderWithQueries(<App />);
     expect(await screen.findByTestId("root-error")).toHaveTextContent(
       "root_not_found",
     );
-    expect(localStorage.getItem("photopipe.root")).toBeNull();
+    expect(screen.getByTestId("root-input")).toBeInTheDocument();
   });
 });
