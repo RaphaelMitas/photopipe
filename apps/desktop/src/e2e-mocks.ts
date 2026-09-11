@@ -5,6 +5,7 @@ import {
   identityEdit,
   type Shoot,
 } from "./lib/core";
+import { projectFolder } from "./lib/projectFolder";
 import type { ExportProgress } from "./lib/queries";
 import { makeImage } from "./lib/test-image";
 
@@ -64,6 +65,7 @@ const shoots: Shoot[] = [
     path: "/fake/2026-07-12_zell",
     day: "2026-07-12",
     project: "zell",
+    dateInFolder: true,
     imageCount: zellImages.length,
     notes: "Golden hour at the river",
     cover: null,
@@ -74,7 +76,8 @@ const shoots: Shoot[] = [
     name: "misc",
     path: "/fake/misc",
     day: null,
-    project: null,
+    project: "misc",
+    dateInFolder: false,
     imageCount: 1,
     notes: "",
     cover: null,
@@ -86,6 +89,7 @@ const shoots: Shoot[] = [
     path: "/fake/2026-08-01_dolomites",
     day: "2026-08-01",
     project: "dolomites",
+    dateInFolder: true,
     imageCount: 200,
     notes: "Two days above Cortina",
     cover: null,
@@ -275,15 +279,18 @@ export const E2E_HANDLERS: Record<
       false,
     ),
   createProject: (params) => {
-    const shoot = `${String(params.day)}_${String(params.name)}`;
+    const day = typeof params.day === "string" ? params.day : null;
+    const dateInFolder = params.dateInFolder !== false;
+    const shoot = projectFolder(String(params.name), day, dateInFolder);
     if (shoots.some((existing) => existing.name === shoot)) {
       throw `project_exists: ${shoot}`;
     }
     shoots.unshift({
       name: shoot,
       path: `/fake/${shoot}`,
-      day: String(params.day),
+      day,
       project: String(params.name),
+      dateInFolder: dateInFolder && day !== null,
       imageCount: 0,
       notes: String(params.notes ?? ""),
       cover: null,
@@ -297,6 +304,9 @@ export const E2E_HANDLERS: Record<
     const shoot = shoots.find((s) => s.name === params.shoot);
     if (shoot) {
       if (params.notes !== undefined) shoot.notes = String(params.notes);
+      if ("day" in params) {
+        shoot.day = typeof params.day === "string" ? params.day : null;
+      }
       if ("cover" in params) {
         shoot.cover = (params.cover as string | null) ?? null;
         const match = imagesFor(shoot.name).find(
@@ -309,12 +319,13 @@ export const E2E_HANDLERS: Record<
   },
   renameProject: (params) => {
     const shoot = shoots.find((s) => s.name === params.shoot);
-    const renamed = `${String(params.day)}_${String(params.name)}`;
-    if (shoot) {
-      shoot.name = renamed;
-      shoot.day = String(params.day);
-      shoot.project = String(params.name);
-    }
+    if (!shoot) throw `unknown_shoot: ${String(params.shoot)}`;
+    const dateInFolder = params.dateInFolder !== false;
+    const renamed = projectFolder(String(params.name), shoot.day, dateInFolder);
+    shoot.name = renamed;
+    shoot.path = `/fake/${renamed}`;
+    shoot.project = String(params.name);
+    shoot.dateInFolder = dateInFolder && shoot.day !== null;
     return { shoot: renamed, generation: 1 };
   },
   status: () => ({

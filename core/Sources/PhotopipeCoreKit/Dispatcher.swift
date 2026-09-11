@@ -269,14 +269,14 @@ public final class Dispatcher {
                     : try library.cancelExport(id: id)
                 return .success(id: request.id, result: Self.exportProgress(job))
             case "createProject":
-                guard let day = request.params?["day"]?.stringValue,
-                    let name = request.params?["name"]?.stringValue
-                else {
+                guard let name = request.params?["name"]?.stringValue else {
                     return .failure(
-                        id: request.id, code: "invalid_params", message: "day and name required")
+                        id: request.id, code: "invalid_params", message: "name required")
                 }
                 let result = try library.createProject(
-                    day: day, name: name,
+                    name: name,
+                    day: request.params?["day"]?.stringValue,
+                    dateInFolder: request.params?["dateInFolder"]?.boolValue ?? true,
                     notes: request.params?["notes"]?.stringValue ?? "")
                 return .success(
                     id: request.id,
@@ -300,24 +300,25 @@ public final class Dispatcher {
                     return .failure(
                         id: request.id, code: "invalid_params", message: "shoot required")
                 }
-                let coverParam = request.params?["cover"]
                 let generation = try library.updateProject(
                     shoot: shoot,
                     notes: request.params?["notes"]?.stringValue,
-                    cover: coverParam.map { $0.stringValue })
+                    day: request.params?["day"].map { $0.stringValue },
+                    cover: request.params?["cover"].map { $0.stringValue })
                 return .success(
                     id: request.id,
                     result: .object(["generation": .number(Double(generation))]))
             case "renameProject":
                 guard let shoot = request.params?["shoot"]?.stringValue,
-                    let day = request.params?["day"]?.stringValue,
                     let name = request.params?["name"]?.stringValue
                 else {
                     return .failure(
                         id: request.id, code: "invalid_params",
-                        message: "shoot, day and name required")
+                        message: "shoot and name required")
                 }
-                let renamed = try library.renameProject(shoot: shoot, day: day, name: name)
+                let renamed = try library.renameProject(
+                    shoot: shoot, name: name,
+                    dateInFolder: request.params?["dateInFolder"]?.boolValue ?? true)
                 return .success(
                     id: request.id,
                     result: .object([

@@ -14,7 +14,9 @@ import { Textarea } from "@photopipe/ui/components/textarea";
 import { cn } from "@photopipe/ui/lib/utils";
 import { Check } from "lucide-react";
 import { useEffect, useState } from "react";
+import { FolderNameField } from "@/components/FolderNameField";
 import { fileSrc, type ImageFile, type Shoot } from "@/lib/core";
+import { projectFolder } from "@/lib/projectFolder";
 import {
   useImages,
   useRenameProject,
@@ -83,29 +85,36 @@ export function ShootSettingsDialog({
 
   const [name, setName] = useState("");
   const [day, setDay] = useState("");
+  const [dateInFolder, setDateInFolder] = useState(true);
   const [notes, setNotes] = useState("");
   const [cover, setCover] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen || !shoot) return;
-    setName(shoot.project ?? shoot.name);
+    setName(shoot.project);
     setDay(shoot.day ?? "");
+    setDateInFolder(shoot.dateInFolder);
     setNotes(shoot.notes);
     setCover(shoot.cover);
   }, [isOpen, shoot]);
 
   if (!shoot) return null;
 
-  const renames =
-    day !== "" && (name !== (shoot.project ?? shoot.name) || day !== shoot.day);
+  const folder = projectFolder(name, day || null, dateInFolder);
+  const renames = folder !== "" && folder !== shoot.name;
 
   const submit = async () => {
-    await update.mutateAsync({ shoot: shoot.name, notes, cover });
+    await update.mutateAsync({
+      shoot: shoot.name,
+      notes,
+      day: day || null,
+      cover,
+    });
     if (renames) {
       const result = await rename.mutateAsync({
         shoot: shoot.name,
-        day,
         name,
+        dateInFolder,
       });
       onRenamed(result.shoot);
     }
@@ -118,7 +127,7 @@ export function ShootSettingsDialog({
         <DialogHeader>
           <DialogTitle className="font-heading">Project settings</DialogTitle>
           <DialogDescription>
-            Name and date rename the folder; the rest is metadata.
+            Changing the folder name moves it; the rest is metadata.
           </DialogDescription>
         </DialogHeader>
 
@@ -144,14 +153,11 @@ export function ShootSettingsDialog({
               />
             </div>
           </div>
-          {renames && (
-            <p
-              data-testid="rename-preview"
-              className="font-mono text-[10px] text-muted-foreground"
-            >
-              Folder becomes {day}_{name}
-            </p>
-          )}
+          <FolderNameField
+            folder={folder}
+            dateInFolder={dateInFolder}
+            onDateInFolderChange={setDateInFolder}
+          />
 
           <div className="space-y-1.5">
             <Label htmlFor="shoot-notes">Notes</Label>
@@ -206,7 +212,7 @@ export function ShootSettingsDialog({
           </Button>
           <Button
             data-testid="save-shoot-settings"
-            disabled={update.isPending || rename.isPending}
+            disabled={folder === "" || update.isPending || rename.isPending}
             onClick={submit}
           >
             Save

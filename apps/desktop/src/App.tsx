@@ -751,7 +751,7 @@ export default function App() {
             {currentShoot ? (
               <>
                 <span className="truncate font-medium text-sm">
-                  {currentShoot.project ?? currentShoot.name}
+                  {currentShoot.project}
                 </span>
                 <span className="font-mono text-[10px] text-muted-foreground">
                   {currentShoot.imageCount} photos

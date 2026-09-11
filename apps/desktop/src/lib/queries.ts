@@ -522,6 +522,7 @@ export function useUpdateProject() {
     mutationFn: (vars: {
       shoot: string;
       notes?: string;
+      day?: string | null;
       cover?: string | null;
     }) => coreRequest<{ generation: number }>("updateProject", vars),
     onSuccess: () => {
@@ -538,7 +539,11 @@ export function useRenameProject() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["write", "renameProject"],
-    mutationFn: (vars: { shoot: string; day: string; name: string }) =>
+    mutationFn: (vars: {
+      shoot: string;
+      name: string;
+      dateInFolder: boolean;
+    }) =>
       coreRequest<{ shoot: string; generation: number }>("renameProject", vars),
     onSuccess: (result) => {
       toast.success(`Renamed to ${result.shoot}`);
@@ -719,8 +724,12 @@ export function useCreateProject() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["write", "createProject"],
-    mutationFn: (vars: { day: string; name: string; notes: string }) =>
-      coreRequest<CreateProjectResult>("createProject", vars),
+    mutationFn: (vars: {
+      name: string;
+      day: string | null;
+      dateInFolder: boolean;
+      notes: string;
+    }) => coreRequest<CreateProjectResult>("createProject", vars),
     onSuccess: (result) => {
       toast.success(`Created ${result.shoot}`);
       queryClient.invalidateQueries({ queryKey: ["shoots"] });

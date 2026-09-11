@@ -1,9 +1,9 @@
 import { useSyncExternalStore } from "react";
+import { storedFlag } from "@/lib/storedFlag";
 
 export type RawDecoderVersion = 8 | 9;
 
 const VERSION_KEY = "photopipe.rawDecoder";
-const QUICK_SWITCH_KEY = "photopipe.rawDecoderQuickSwitch";
 
 const listeners = new Set<() => void>();
 
@@ -31,15 +31,6 @@ export function useRawDecoderVersion(): RawDecoderVersion {
   return useSyncExternalStore(subscribe, rawDecoderVersion);
 }
 
-export function rawDecoderQuickSwitch(): boolean {
-  return localStorage.getItem(QUICK_SWITCH_KEY) !== "off";
-}
-
-export function setRawDecoderQuickSwitch(on: boolean) {
-  localStorage.setItem(QUICK_SWITCH_KEY, on ? "on" : "off");
-  emit();
-}
-
-export function useRawDecoderQuickSwitch(): boolean {
-  return useSyncExternalStore(subscribe, rawDecoderQuickSwitch);
-}
+const quickSwitch = storedFlag("photopipe.rawDecoderQuickSwitch", true);
+export const setRawDecoderQuickSwitch = quickSwitch.set;
+export const useRawDecoderQuickSwitch = quickSwitch.use;

@@ -81,7 +81,9 @@ public struct Shoot: Codable, Equatable, Sendable {
     public let name: String
     public let path: String
     public let day: String?
-    public let project: String?
+    /// The folder name with any leading date stripped.
+    public let project: String
+    public let dateInFolder: Bool
     public let imageCount: Int
     public let notes: String
     public let cover: String?
@@ -98,7 +100,8 @@ public func parseShootName(_ name: String) -> (day: String, project: String)? {
 }
 
 public func makeShoot(
-    name: String, path: String, images: [ImageFile], notes: String = "", cover: String? = nil
+    name: String, path: String, images: [ImageFile], notes: String = "", day: String? = nil,
+    cover: String? = nil
 ) -> Shoot {
     let parsed = parseShootName(name)
     let chosen =
@@ -108,8 +111,9 @@ public func makeShoot(
     return Shoot(
         name: name,
         path: path,
-        day: parsed?.day,
-        project: parsed?.project,
+        day: day ?? parsed?.day,
+        project: parsed?.project ?? name,
+        dateInFolder: parsed != nil,
         imageCount: images.count,
         notes: notes,
         cover: cover,

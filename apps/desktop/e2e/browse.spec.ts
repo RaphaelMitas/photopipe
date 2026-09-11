@@ -277,9 +277,20 @@ test("a new project is created from the library and opens empty", async ({
   await page.getByTestId("project-name").fill("riverside");
   await page.getByTestId("project-day").fill("2026-09-09");
   await page.getByTestId("project-notes").fill("client wants 12 finals");
+  await expect(page.getByTestId("folder-preview")).toHaveText(
+    "2026-09-09_riverside",
+  );
+  // Leaving the date out of the folder is a per-project choice until it is
+  // remembered as the default.
+  await expect(page.getByTestId("remember-default")).toHaveCount(0);
+  await page.getByTestId("date-in-folder").click();
+  await expect(page.getByTestId("folder-preview")).toHaveText("riverside");
+  await expect(page.getByTestId("remember-default")).toBeVisible();
+  await page.getByTestId("remember-default-yes").click();
+  await expect(page.getByTestId("remember-default")).toHaveCount(0);
   await page.getByTestId("create-project").click();
 
-  await expect(page.getByText(/Created 2026-09-09_riverside/)).toBeVisible();
+  await expect(page.getByText(/Created riverside/)).toBeVisible();
   // The fresh project opens empty; folders are the user's own business.
   await expect(page.getByTestId("browser-empty")).toContainText(
     "subfolders are fine",
@@ -291,6 +302,12 @@ test("a new project is created from the library and opens empty", async ({
   await expect(
     page.getByText("client wants 12 finals", { exact: false }),
   ).toBeVisible();
+
+  // The remembered default carries into the next project.
+  await page.getByTestId("new-project").click();
+  await page.getByTestId("project-name").fill("next");
+  await expect(page.getByTestId("folder-preview")).toHaveText("next");
+  await expect(page.getByTestId("remember-default")).toHaveCount(0);
 });
 
 test("library cards show a cover and open project settings", async ({
@@ -310,10 +327,12 @@ test("library cards show a cover and open project settings", async ({
     "Golden hour at the river",
   );
 
-  // Picking a cover, and the rename preview appearing only on a real change.
-  await expect(page.getByTestId("rename-preview")).toHaveCount(0);
+  // The folder row follows the name; the date prefix reflects the disk.
+  await expect(page.getByTestId("folder-preview")).toHaveText(
+    "2026-07-12_zell",
+  );
   await page.getByTestId("shoot-name").fill("zell-revisited");
-  await expect(page.getByTestId("rename-preview")).toContainText(
+  await expect(page.getByTestId("folder-preview")).toHaveText(
     "2026-07-12_zell-revisited",
   );
 

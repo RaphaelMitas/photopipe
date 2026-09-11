@@ -1,18 +1,20 @@
 import Foundation
 
 /// `photopipe.json` — per-project *metadata*, and deliberately nothing more.
-/// Notes and the creation date live here because no image file can carry
-/// them; workflow state never does, because the files themselves are the
-/// only truth about where work stands.
+/// Notes and the shoot day live here because no image file can carry them;
+/// workflow state never does, because the files themselves are the only
+/// truth about where work stands.
 public struct ProjectFile: Codable, Equatable, Sendable {
     public var notes: String
-    public var created: String?
+    /// YYYY-MM-DD. Older files spelled this `created`; those folders all
+    /// carry the day in their name, which `makeShoot` falls back to.
+    public var day: String?
     /// Rel path of the cover image; nil means "use the first one".
     public var cover: String?
 
-    public init(notes: String = "", created: String? = nil, cover: String? = nil) {
+    public init(notes: String = "", day: String? = nil, cover: String? = nil) {
         self.notes = notes
-        self.created = created
+        self.day = day
         self.cover = cover
     }
 

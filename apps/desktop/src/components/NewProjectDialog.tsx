@@ -12,6 +12,8 @@ import { Label } from "@photopipe/ui/components/label";
 import { Textarea } from "@photopipe/ui/components/textarea";
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
+import { FolderNameField } from "@/components/FolderNameField";
+import { dateInFolderDefault, projectFolder } from "@/lib/projectFolder";
 import { useCreateProject } from "@/lib/queries";
 
 function today(): string {
@@ -29,19 +31,21 @@ type Props = {
 export function NewProjectDialog({ open, onOpenChange, onCreated }: Props) {
   const [name, setName] = useState("");
   const [day, setDay] = useState(today);
+  const [dateInFolder, setDateInFolder] = useState(dateInFolderDefault.read);
   const [notes, setNotes] = useState("");
   const create = useCreateProject();
 
   const reset = () => {
     setName("");
     setDay(today());
+    setDateInFolder(dateInFolderDefault.read());
     setNotes("");
     create.reset();
   };
 
   const submit = () => {
     create.mutate(
-      { day, name: name.trim(), notes },
+      { name: name.trim(), day: day || null, dateInFolder, notes },
       {
         onSuccess: (result) => {
           onOpenChange(false);
@@ -64,12 +68,7 @@ export function NewProjectDialog({ open, onOpenChange, onCreated }: Props) {
         <DialogHeader>
           <DialogTitle className="font-heading">New project</DialogTitle>
           <DialogDescription>
-            Creates{" "}
-            <span className="font-mono">
-              {day}_{name.trim() || "name"}
-            </span>{" "}
-            with an <span className="font-mono">original/</span> folder ready
-            for photos.
+            An empty folder in your library, ready for photos.
           </DialogDescription>
         </DialogHeader>
 
@@ -103,6 +102,12 @@ export function NewProjectDialog({ open, onOpenChange, onCreated }: Props) {
               />
             </div>
           </div>
+
+          <FolderNameField
+            folder={projectFolder(name, day || null, dateInFolder)}
+            dateInFolder={dateInFolder}
+            onDateInFolderChange={setDateInFolder}
+          />
 
           <div className="space-y-1.5">
             <Label htmlFor="project-notes">Notes</Label>

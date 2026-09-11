@@ -30,7 +30,7 @@ public struct LibrarySnapshot: Equatable, Sendable {
         let existing = shoots[position]
         shoots[position] = makeShoot(
             name: existing.name, path: existing.path, images: images,
-            notes: existing.notes, cover: existing.cover)
+            notes: existing.notes, day: existing.day, cover: existing.cover)
         return LibrarySnapshot(shoots: shoots, imagesByShoot: imagesByShoot, fileCount: fileCount)
     }
 }
@@ -69,7 +69,7 @@ public func walkLibrary(root: String) throws -> LibrarySnapshot {
         let project = isProject ? ProjectFile.read(inShoot: dir.path) : ProjectFile()
         let shoot = makeShoot(
             name: dir.lastPathComponent, path: dir.path, images: images,
-            notes: project.notes, cover: project.cover)
+            notes: project.notes, day: project.day, cover: project.cover)
         shoots.append(shoot)
         imagesByShoot[shoot.name] = images
     }
@@ -118,7 +118,7 @@ public func carryEnrichment(
     let shoots = walked.shoots.map { shoot in
         makeShoot(
             name: shoot.name, path: shoot.path, images: imagesByShoot[shoot.name] ?? [],
-            notes: shoot.notes, cover: shoot.cover)
+            notes: shoot.notes, day: shoot.day, cover: shoot.cover)
     }
     return LibrarySnapshot(
         shoots: shoots, imagesByShoot: imagesByShoot, fileCount: walked.fileCount)

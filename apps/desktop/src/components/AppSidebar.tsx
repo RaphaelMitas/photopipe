@@ -90,7 +90,7 @@ export function AppSidebar({
               className="flex flex-col gap-1 px-2 py-1"
             >
               <span className="truncate font-medium text-sm">
-                {currentShoot.project ?? currentShoot.name}
+                {currentShoot.project}
               </span>
               {currentShoot.day && (
                 <span className="font-mono text-[10px] text-muted-foreground">
