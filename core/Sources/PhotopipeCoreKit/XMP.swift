@@ -91,6 +91,8 @@ public enum XMP {
             exposure: parseDouble("Exposure2012", in: text) ?? 0,
             highlights: parseDouble("Highlights2012", in: text) ?? 0,
             shadows: parseDouble("Shadows2012", in: text) ?? 0,
+            whites: parseDouble("Whites2012", in: text) ?? 0,
+            blacks: parseDouble("Blacks2012", in: text) ?? 0,
             temperature: parseDouble(isRaw ? "Temperature" : "IncrementalTemperature", in: text),
             tint: parseDouble(isRaw ? "Tint" : "IncrementalTint", in: text),
             denoise: isRaw ? parseDouble("LuminanceSmoothing", in: text) : nil,
@@ -257,6 +259,8 @@ public enum XMP {
             exposure: scalars["Exposure2012"] ?? 0,
             highlights: scalars["Highlights2012"] ?? 0,
             shadows: scalars["Shadows2012"] ?? 0,
+            whites: scalars["Whites2012"] ?? 0,
+            blacks: scalars["Blacks2012"] ?? 0,
             temperature: scalars[isRaw ? "Temperature" : "IncrementalTemperature"],
             tint: scalars[isRaw ? "Tint" : "IncrementalTint"],
             denoise: isRaw ? scalars["LuminanceSmoothing"] : nil,
@@ -359,6 +363,8 @@ public enum XMP {
         )
         integerScalar("Highlights2012", edit.highlights)
         integerScalar("Shadows2012", edit.shadows)
+        integerScalar("Whites2012", edit.whites)
+        integerScalar("Blacks2012", edit.blacks)
         // exiftool's name for crs:Temperature is ColorTemperature.
         let temperatureTag = file.isRaw ? "ColorTemperature" : "IncrementalTemperature"
         let tintTag = file.isRaw ? "Tint" : "IncrementalTint"

@@ -13,7 +13,9 @@ public final class SQLiteIndex: @unchecked Sendable {
     private var db: OpaquePointer?
     private let path: String
 
-    private static let schemaVersion = 3
+    // 4: the sidecar parser learned whites/blacks, so rows read without them
+    // must be re-parsed, not carried forward and written back over the tags
+    private static let schemaVersion = 4
 
     public init(path: String) throws {
         self.path = path

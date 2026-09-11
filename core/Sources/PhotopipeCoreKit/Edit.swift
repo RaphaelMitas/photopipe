@@ -57,6 +57,8 @@ public struct Edit: Codable, Equatable, Sendable {
     public var exposure: Double
     public var highlights: Double
     public var shadows: Double
+    public var whites: Double
+    public var blacks: Double
     public var temperature: Double?
     public var tint: Double?
     public var denoise: Double?
@@ -73,12 +75,14 @@ public struct Edit: Codable, Equatable, Sendable {
     public static let identity = Edit()
 
     enum CodingKeys: String, CodingKey {
-        case exposure, highlights, shadows, temperature, tint, denoise, vibrance, saturation
+        case exposure, highlights, shadows, whites, blacks
+        case temperature, tint, denoise, vibrance, saturation
         case curveRGB, curveRed, curveGreen, curveBlue, crop, cropAngle, rotation
     }
 
     public init(
         exposure: Double = 0, highlights: Double = 0, shadows: Double = 0,
+        whites: Double = 0, blacks: Double = 0,
         temperature: Double? = nil, tint: Double? = nil, denoise: Double? = nil,
         vibrance: Double = 0, saturation: Double = 0,
         curveRGB: [CurvePoint] = [], curveRed: [CurvePoint] = [],
@@ -88,6 +92,8 @@ public struct Edit: Codable, Equatable, Sendable {
         self.exposure = exposure
         self.highlights = highlights
         self.shadows = shadows
+        self.whites = whites
+        self.blacks = blacks
         self.temperature = temperature
         self.tint = tint
         self.denoise = denoise
@@ -107,6 +113,8 @@ public struct Edit: Codable, Equatable, Sendable {
         exposure = try container.decodeIfPresent(Double.self, forKey: .exposure) ?? 0
         highlights = try container.decodeIfPresent(Double.self, forKey: .highlights) ?? 0
         shadows = try container.decodeIfPresent(Double.self, forKey: .shadows) ?? 0
+        whites = try container.decodeIfPresent(Double.self, forKey: .whites) ?? 0
+        blacks = try container.decodeIfPresent(Double.self, forKey: .blacks) ?? 0
         temperature = try container.decodeIfPresent(Double.self, forKey: .temperature)
         tint = try container.decodeIfPresent(Double.self, forKey: .tint)
         denoise = try container.decodeIfPresent(Double.self, forKey: .denoise)
@@ -128,6 +136,12 @@ public struct Edit: Codable, Equatable, Sendable {
         try container.encode(exposure, forKey: .exposure)
         try container.encode(highlights, forKey: .highlights)
         try container.encode(shadows, forKey: .shadows)
+        if whites != 0 {
+            try container.encode(whites, forKey: .whites)
+        }
+        if blacks != 0 {
+            try container.encode(blacks, forKey: .blacks)
+        }
         try container.encodeIfPresent(temperature, forKey: .temperature)
         try container.encodeIfPresent(tint, forKey: .tint)
         try container.encodeIfPresent(denoise, forKey: .denoise)
@@ -160,9 +174,9 @@ public struct Edit: Codable, Equatable, Sendable {
     }
 
     public var hasToneComponent: Bool {
-        highlights != 0 || shadows != 0 || !Curve.isIdentity(curveRGB)
-            || !Curve.isIdentity(curveRed) || !Curve.isIdentity(curveGreen)
-            || !Curve.isIdentity(curveBlue)
+        highlights != 0 || shadows != 0 || whites != 0 || blacks != 0
+            || !Curve.isIdentity(curveRGB) || !Curve.isIdentity(curveRed)
+            || !Curve.isIdentity(curveGreen) || !Curve.isIdentity(curveBlue)
     }
 
     /// Deterministic representation for render cache keys.
@@ -252,25 +266,30 @@ public enum Curve {
     }
 }
 
-/// Highlights/shadows and the user curves folded into one per-channel lookup
-/// table, applied by a single CIColorCurves.
+/// The parametric tone sliders and the user curves folded into one
+/// per-channel lookup table, applied by a single CIColorCurves.
 public enum ToneLUT {
     public static let resolution = 256
 
     public static func samples(for edit: Edit) -> [Float]? {
         guard edit.hasToneComponent else { return nil }
 
-        // Parametric highlights/shadows: smooth bumps peaking at 1/3 and 2/3
-        // of the range, forced monotone so extreme slider values cannot fold
-        // the tone scale back on itself.
+        // blacks/whites weigh heaviest at the ends themselves, which is what
+        // moves the black and white point instead of only recovering detail
         let s = edit.shadows / 100 * 0.25
         let h = edit.highlights / 100 * 0.25
+        let b = edit.blacks / 100 * 0.15
+        let w = edit.whites / 100 * 0.15
         var tone = (0..<resolution).map { i -> Double in
             let v = Double(i) / Double(resolution - 1)
             let shadowWeight = v * (1 - v) * (1 - v) * 6.75
             let highlightWeight = v * v * (1 - v) * 6.75
-            return min(max(v + s * shadowWeight + h * highlightWeight, 0), 1)
+            let shifted =
+                v + s * shadowWeight + h * highlightWeight
+                + b * pow(1 - v, 8) + w * pow(v, 8)
+            return min(max(shifted, 0), 1)
         }
+        // monotone, so an extreme slider cannot fold the scale back on itself
         for i in 1..<resolution {
             tone[i] = max(tone[i], tone[i - 1])
         }

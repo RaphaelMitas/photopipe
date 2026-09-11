@@ -82,6 +82,26 @@ private let fixtureCases: [(name: String, points: [CurvePoint])] = [
     }
 }
 
+@Test func whitesAndBlacksMoveTheEndPoints() {
+    let clipped = ToneLUT.samples(for: Edit(whites: 100, blacks: -100))
+    #expect(clipped != nil)
+    if let clipped {
+        #expect(clipped[3 * 12] == 0, "blacks -100 crushes a run of darks onto black")
+        #expect(clipped[3 * 243] == 1, "whites +100 blows a run of brights onto white")
+        #expect(abs(Double(clipped[3 * 128]) - 128.0 / 255) < 0.01, "the midtones stay put")
+        for i in 1..<ToneLUT.resolution {
+            #expect(clipped[i * 3] >= clipped[(i - 1) * 3], "the tone scale stays monotone")
+        }
+    }
+
+    let faded = ToneLUT.samples(for: Edit(whites: -100, blacks: 100))
+    #expect(faded != nil)
+    if let faded {
+        #expect(Double(faded[0]) > 0.1, "blacks +100 lifts black off the floor")
+        #expect(Double(faded[3 * 255]) < 0.9, "whites -100 pulls white off the ceiling")
+    }
+}
+
 @Test func editDecodesFromPartialJSON() throws {
     let empty = try JSONDecoder().decode(Edit.self, from: Data("{}".utf8))
     #expect(empty == .identity)

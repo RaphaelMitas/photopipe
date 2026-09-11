@@ -16,6 +16,8 @@ export type Edit = {
   exposure: number;
   highlights: number;
   shadows: number;
+  whites: number;
+  blacks: number;
   temperature?: number | null;
   tint?: number | null;
   denoise?: number | null;
@@ -34,6 +36,8 @@ export const identityEdit: Edit = Object.freeze({
   exposure: 0,
   highlights: 0,
   shadows: 0,
+  whites: 0,
+  blacks: 0,
   temperature: null,
   tint: null,
   denoise: null,
@@ -53,6 +57,8 @@ export function isIdentityEdit(edit: Edit): boolean {
     edit.exposure === 0 &&
     edit.highlights === 0 &&
     edit.shadows === 0 &&
+    edit.whites === 0 &&
+    edit.blacks === 0 &&
     (edit.temperature ?? null) === null &&
     (edit.tint ?? null) === null &&
     (edit.denoise ?? null) === null &&
@@ -79,6 +85,8 @@ export function editKey(edit: Edit): string {
     edit.exposure,
     edit.highlights,
     edit.shadows,
+    edit.whites,
+    edit.blacks,
     edit.temperature ?? "",
     edit.tint ?? "",
     edit.denoise ?? "",
@@ -112,11 +120,16 @@ export type ImageFile = {
   enriched: boolean;
 };
 
-/// The core leaves nulls out when it encodes, so an unrated photo arrives with
-/// no `score` at all. Everything downstream compares against null, so the field
-/// is filled in here, once, where the images come in.
+/// The core omits nulls and defaulted fields when it encodes, so an unrated
+/// photo arrives with no `score` and an untouched one with no `whites`.
+/// Everything downstream reads them as plain values, so they are filled in
+/// here, once, where the images come in.
 export function normalizeImage(image: ImageFile): ImageFile {
-  return image.score === undefined ? { ...image, score: null } : image;
+  return {
+    ...image,
+    score: image.score ?? null,
+    edit: { ...identityEdit, ...image.edit },
+  };
 }
 
 export function isRawFile(file: { ext: string }): boolean {

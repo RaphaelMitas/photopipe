@@ -81,8 +81,8 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(XMP.readEdit(file: try image(arw)) == .identity, "no sidecar means untouched")
 
     let edit = Edit(
-        exposure: 1.5, highlights: -42, shadows: 18, temperature: 5600, tint: 12,
-        denoise: 25, vibrance: 10, saturation: -5,
+        exposure: 1.5, highlights: -42, shadows: 18, whites: 30, blacks: -20,
+        temperature: 5600, tint: 12, denoise: 25, vibrance: 10, saturation: -5,
         curveRGB: [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.6), CurvePoint(x: 1, y: 1)],
         curveRed: [CurvePoint(x: 0, y: 0.1), CurvePoint(x: 1, y: 0.9)])
     try XMP.writeEdit(edit, file: try image(arw), tool: .shared)
@@ -91,6 +91,8 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(read.exposure == 1.5)
     #expect(read.highlights == -42)
     #expect(read.shadows == 18)
+    #expect(read.whites == 30)
+    #expect(read.blacks == -20)
     #expect(read.temperature == 5600)
     #expect(read.tint == 12)
     #expect(read.denoise == 25)
@@ -105,6 +107,8 @@ func image(_ url: URL) throws -> ImageFile {
     let sidecar = XMP.sidecarURL(forImagePath: arw.path)
     #expect(try exiftoolTag("-XMP-crs:Exposure2012", of: sidecar) == "1.5")
     #expect(try exiftoolTag("-XMP-crs:Highlights2012", of: sidecar) == "-42")
+    #expect(try exiftoolTag("-XMP-crs:Whites2012", of: sidecar) == "30")
+    #expect(try exiftoolTag("-XMP-crs:Blacks2012", of: sidecar) == "-20")
     #expect(try exiftoolTag("-XMP-crs:ColorTemperature", of: sidecar) == "5600")
     #expect(try exiftoolTag("-XMP-crs:LuminanceSmoothing", of: sidecar) == "25")
     #expect(try exiftoolTag("-XMP-crs:ToneCurvePV2012", of: sidecar).contains("128, 153"))
@@ -435,7 +439,8 @@ func image(_ url: URL) throws -> ImageFile {
 
     try XMP.writeRating(3, file: try image(jpg), tool: .shared)
     let edit = Edit(
-        exposure: 0.5, shadows: 25, temperature: 30, tint: -10, saturation: 15,
+        exposure: 0.5, shadows: 25, whites: -15, blacks: 40,
+        temperature: 30, tint: -10, saturation: 15,
         curveRGB: [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.25, y: 0.2), CurvePoint(x: 1, y: 1)])
     try XMP.writeEdit(edit, file: try image(jpg), tool: .shared)
 
@@ -443,6 +448,8 @@ func image(_ url: URL) throws -> ImageFile {
     let read = XMP.readEdit(file: try image(jpg))
     #expect(read.exposure == 0.5)
     #expect(read.shadows == 25)
+    #expect(read.whites == -15)
+    #expect(read.blacks == 40)
     #expect(read.temperature == 30)
     #expect(read.tint == -10)
     #expect(read.saturation == 15)
