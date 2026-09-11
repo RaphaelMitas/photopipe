@@ -432,61 +432,60 @@ public final class LibraryService: @unchecked Sendable {
         return (settled.edit, status().generation)
     }
 
-    static func checkDay(_ day: String?) throws {
-        if let day, !isDay(day) { throw ServiceError.invalidProjectDay(day) }
-    }
-
     static func projectFolder(name: String, day: String?, dateInFolder: Bool) throws -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.contains("/"), !trimmed.contains(":"),
-            !trimmed.hasPrefix(".")
+        let scalars = trimmed.unicodeScalars
+        guard !trimmed.isEmpty, !scalars.contains("/"), !scalars.contains(":"),
+            scalars.first != "."
         else {
             throw ServiceError.invalidProjectName(name)
         }
-        try checkDay(day)
+        if let day, !isDay(day) { throw ServiceError.invalidProjectDay(day) }
         guard dateInFolder, let day else { return trimmed }
         return "\(day)_\(trimmed)"
     }
 
-    static func projectURL(root: String, folder: String) throws -> URL {
+    static func freeProjectURL(root: String, folder: String) throws -> URL {
         let rootURL = URL(fileURLWithPath: root).standardizedFileURL
         let url = rootURL.appendingPathComponent(folder).standardizedFileURL
         guard url.deletingLastPathComponent().path == rootURL.path else {
             throw ServiceError.invalidProjectName(folder)
         }
+        guard !FileManager.default.fileExists(atPath: url.path) else {
+            throw ServiceError.projectExists(folder)
+        }
         return url
     }
 
-    /// Moves the folder first, so a refused move leaves the metadata untouched.
+    /// Moves first, writes second, and undoes the move if the write fails.
     public func updateProject(
-        shoot shootName: String, name: String? = nil, day: String?? = nil,
-        dateInFolder: Bool? = nil, notes: String? = nil, cover: String?? = nil
+        shoot shootName: String, name: String, day: String?, dateInFolder: Bool, notes: String,
+        cover: String?
     ) throws -> (shoot: String, generation: Int) {
         let shoot = try self.shoot(named: shootName)
-        lock.lock()
-        let currentRoot = root
-        lock.unlock()
-        guard let currentRoot else { throw ServiceError.noRoot }
+        let source = URL(fileURLWithPath: shoot.path)
 
-        let newDay = day ?? shoot.day
-        let folder = try Self.projectFolder(
-            name: name ?? shoot.project, day: newDay,
-            dateInFolder: dateInFolder ?? (shoot.name != shoot.project))
-        var path = URL(fileURLWithPath: shoot.path)
+        // A folder named in Finder may break the rules; only validate a real change.
+        let sameFolder =
+            name == shoot.project && day == shoot.day
+            && (day == nil || dateInFolder == (shoot.name != shoot.project))
+        let folder =
+            sameFolder
+            ? shoot.name
+            : try Self.projectFolder(name: name, day: day, dateInFolder: dateInFolder)
+        var path = source
         if folder != shoot.name {
-            let destination = try Self.projectURL(root: currentRoot, folder: folder)
-            guard !FileManager.default.fileExists(atPath: destination.path) else {
-                throw ServiceError.projectExists(folder)
-            }
-            try FileManager.default.moveItem(at: path, to: destination)
-            path = destination
+            path = try Self.freeProjectURL(
+                root: source.deletingLastPathComponent().path, folder: folder)
+            try FileManager.default.moveItem(at: source, to: path)
         }
 
-        var file = ProjectFile.read(inShoot: path.path)
-        file.day = newDay
-        if let notes { file.notes = notes }
-        if let cover { file.cover = cover }
-        try file.write(inShoot: path.path)
+        do {
+            try ProjectFile(notes: notes, day: day, cover: cover).write(inShoot: path.path)
+        } catch {
+            if path != source { try? FileManager.default.moveItem(at: path, to: source) }
+            throw error
+        }
 
         rescanNow()
         return (folder, status().generation)
@@ -501,10 +500,7 @@ public final class LibraryService: @unchecked Sendable {
         guard let currentRoot else { throw ServiceError.noRoot }
 
         let folder = try Self.projectFolder(name: name, day: day, dateInFolder: dateInFolder)
-        let path = try Self.projectURL(root: currentRoot, folder: folder)
-        guard !FileManager.default.fileExists(atPath: path.path) else {
-            throw ServiceError.projectExists(folder)
-        }
+        let path = try Self.freeProjectURL(root: currentRoot, folder: folder)
         try FileManager.default.createDirectory(at: path, withIntermediateDirectories: false)
         try ProjectFile(notes: notes, day: day).write(inShoot: path.path)
 

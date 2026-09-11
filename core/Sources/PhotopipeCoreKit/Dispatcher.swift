@@ -269,15 +269,17 @@ public final class Dispatcher {
                     : try library.cancelExport(id: id)
                 return .success(id: request.id, result: Self.exportProgress(job))
             case "createProject":
-                guard let name = request.params?["name"]?.stringValue else {
+                guard let name = request.params?["name"]?.stringValue,
+                    let dateInFolder = request.params?["dateInFolder"]?.boolValue,
+                    let notes = request.params?["notes"]?.stringValue
+                else {
                     return .failure(
-                        id: request.id, code: "invalid_params", message: "name required")
+                        id: request.id, code: "invalid_params",
+                        message: "name, dateInFolder and notes required")
                 }
                 let result = try library.createProject(
-                    name: name,
-                    day: request.params?["day"]?.stringValue,
-                    dateInFolder: request.params?["dateInFolder"]?.boolValue ?? true,
-                    notes: request.params?["notes"]?.stringValue ?? "")
+                    name: name, day: request.params?["day"]?.stringValue,
+                    dateInFolder: dateInFolder, notes: notes)
                 return .success(
                     id: request.id,
                     result: .object([
@@ -296,17 +298,19 @@ public final class Dispatcher {
                 let job = try library.startImport(shoot: shoot, paths: paths)
                 return .success(id: request.id, result: Self.exportProgress(job))
             case "updateProject":
-                guard let shoot = request.params?["shoot"]?.stringValue else {
+                guard let shoot = request.params?["shoot"]?.stringValue,
+                    let name = request.params?["name"]?.stringValue,
+                    let dateInFolder = request.params?["dateInFolder"]?.boolValue,
+                    let notes = request.params?["notes"]?.stringValue
+                else {
                     return .failure(
-                        id: request.id, code: "invalid_params", message: "shoot required")
+                        id: request.id, code: "invalid_params",
+                        message: "shoot, name, dateInFolder and notes required")
                 }
                 let updated = try library.updateProject(
-                    shoot: shoot,
-                    name: request.params?["name"]?.stringValue,
-                    day: request.params?["day"].map { $0.stringValue },
-                    dateInFolder: request.params?["dateInFolder"]?.boolValue,
-                    notes: request.params?["notes"]?.stringValue,
-                    cover: request.params?["cover"].map { $0.stringValue })
+                    shoot: shoot, name: name, day: request.params?["day"]?.stringValue,
+                    dateInFolder: dateInFolder, notes: notes,
+                    cover: request.params?["cover"]?.stringValue)
                 return .success(
                     id: request.id,
                     result: .object([

@@ -3,6 +3,7 @@ import Foundation
 /// `photopipe.json`: per-project metadata only; workflow state lives in the files themselves.
 public struct ProjectFile: Codable, Equatable, Sendable {
     public var notes: String
+    /// Written as `created` on disk so older builds round-trip it instead of dropping it.
     public var day: String?
     /// Rel path of the cover image; nil means "use the first one".
     public var cover: String?
@@ -14,26 +15,8 @@ public struct ProjectFile: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case notes, day, cover
-        /// How files written before v0.6 spelled `day`.
-        case created
-    }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
-        day = try [
-            container.decodeIfPresent(String.self, forKey: .day),
-            container.decodeIfPresent(String.self, forKey: .created),
-        ].compactMap { $0 }.first(where: isDay)
-        cover = try container.decodeIfPresent(String.self, forKey: .cover)
-    }
-
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(notes, forKey: .notes)
-        try container.encodeIfPresent(day, forKey: .day)
-        try container.encodeIfPresent(cover, forKey: .cover)
+        case notes, cover
+        case day = "created"
     }
 
     public static let fileName = "photopipe.json"

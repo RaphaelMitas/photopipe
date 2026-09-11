@@ -7,14 +7,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@photopipe/ui/components/dialog";
-import { Input } from "@photopipe/ui/components/input";
 import { Label } from "@photopipe/ui/components/label";
 import { Skeleton } from "@photopipe/ui/components/skeleton";
-import { Textarea } from "@photopipe/ui/components/textarea";
 import { cn } from "@photopipe/ui/lib/utils";
 import { Check } from "lucide-react";
 import { useState } from "react";
-import { FolderNameField } from "@/components/FolderNameField";
+import {
+  type ProjectDraft,
+  ProjectFields,
+  projectRequest,
+} from "@/components/ProjectFields";
 import { fileSrc, type ImageFile, type Shoot } from "@/lib/core";
 import {
   dateInFolderDefault,
@@ -104,32 +106,28 @@ function ShootSettingsForm({
 }) {
   const images = useImages(shoot.name);
   const update = useUpdateProject();
-
-  const [name, setName] = useState(shoot.project);
-  const [day, setDay] = useState(shoot.day ?? "");
-  const [dateInFolder, setDateInFolder] = useState(() =>
-    shoot.day ? hasDateInFolder(shoot) : dateInFolderDefault.read(),
-  );
-  const [notes, setNotes] = useState(shoot.notes);
+  const [draft, setDraft] = useState<ProjectDraft>(() => ({
+    name: shoot.project,
+    day: shoot.day ?? "",
+    dateInFolder: shoot.day
+      ? hasDateInFolder(shoot)
+      : dateInFolderDefault.read(),
+    notes: shoot.notes,
+  }));
   const [cover, setCover] = useState(shoot.cover);
-  const folder = projectFolder(name, day, dateInFolder);
-
-  const submit = () => {
-    update.mutate(
-      {
-        shoot: shoot.name,
-        name: name.trim(),
-        day: day || null,
-        dateInFolder,
-        notes,
-        cover,
-      },
-      { onSuccess: (result) => onSaved(result.shoot) },
-    );
-  };
+  const folder = projectFolder(draft.name, draft.day, draft.dateInFolder);
 
   return (
-    <>
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        update.mutate(
+          { shoot: shoot.name, cover, ...projectRequest(draft) },
+          { onSuccess: (result) => onSaved(result.shoot) },
+        );
+      }}
+    >
       <DialogHeader>
         <DialogTitle className="font-heading">Project settings</DialogTitle>
         <DialogDescription>
@@ -137,93 +135,56 @@ function ShootSettingsForm({
         </DialogDescription>
       </DialogHeader>
 
-      <div className="flex flex-col gap-4">
-        <div className="flex gap-3">
-          <div className="flex-1 space-y-1.5">
-            <Label htmlFor="shoot-name">Project</Label>
-            <Input
-              id="shoot-name"
-              data-testid="shoot-name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="shoot-day">Date</Label>
-            <Input
-              id="shoot-day"
-              data-testid="shoot-day"
-              type="date"
-              value={day}
-              onChange={(event) => setDay(event.target.value)}
-            />
-          </div>
-        </div>
-        <FolderNameField
-          folder={folder}
-          dateInFolder={dateInFolder}
-          onDateInFolderChange={setDateInFolder}
-        />
+      <ProjectFields draft={draft} onChange={setDraft} />
 
-        <div className="space-y-1.5">
-          <Label htmlFor="shoot-notes">Notes</Label>
-          <Textarea
-            id="shoot-notes"
-            data-testid="shoot-notes"
-            rows={2}
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <Label>Cover</Label>
-            {cover && (
-              <Button
-                variant="ghost"
-                size="sm"
-                data-testid="cover-clear"
-                onClick={() => setCover(null)}
-                className="h-6 text-[10px] text-muted-foreground"
-              >
-                Use the first photo
-              </Button>
-            )}
-          </div>
-          {images.data && images.data.length > 0 ? (
-            <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
-              {images.data.map((image) => (
-                <CoverChoice
-                  key={image.path}
-                  image={image}
-                  chosen={cover === image.rel}
-                  onChoose={() =>
-                    setCover(cover === image.rel ? null : image.rel)
-                  }
-                />
-              ))}
-            </div>
-          ) : (
-            <p className="text-muted-foreground text-xs">
-              No photos yet. The cover appears once this project has some.
-            </p>
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <Label>Cover</Label>
+          {cover && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-testid="cover-clear"
+              onClick={() => setCover(null)}
+              className="h-6 text-[10px] text-muted-foreground"
+            >
+              Use the first photo
+            </Button>
           )}
         </div>
+        {images.data && images.data.length > 0 ? (
+          <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
+            {images.data.map((image) => (
+              <CoverChoice
+                key={image.path}
+                image={image}
+                chosen={cover === image.rel}
+                onChoose={() =>
+                  setCover(cover === image.rel ? null : image.rel)
+                }
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="text-muted-foreground text-xs">
+            No photos yet. The cover appears once this project has some.
+          </p>
+        )}
       </div>
 
       <DialogFooter>
-        <Button variant="ghost" onClick={onCancel}>
+        <Button type="button" variant="ghost" onClick={onCancel}>
           Cancel
         </Button>
         <Button
+          type="submit"
           data-testid="save-shoot-settings"
           disabled={!folder || update.isPending}
-          onClick={submit}
         >
           Save
         </Button>
       </DialogFooter>
-    </>
+    </form>
   );
 }

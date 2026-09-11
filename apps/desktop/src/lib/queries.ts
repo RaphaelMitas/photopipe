@@ -521,11 +521,11 @@ export function useUpdateProject() {
     mutationKey: ["write", "updateProject"],
     mutationFn: (vars: {
       shoot: string;
-      name?: string;
-      day?: string | null;
-      dateInFolder?: boolean;
-      notes?: string;
-      cover?: string | null;
+      name: string;
+      day: string | null;
+      dateInFolder: boolean;
+      notes: string;
+      cover: string | null;
     }) =>
       coreRequest<{ shoot: string; generation: number }>("updateProject", vars),
     onSuccess: (result, vars) => {

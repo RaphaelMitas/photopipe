@@ -332,16 +332,16 @@ test("library cards show a cover and open project settings", async ({
   await expect(page.getByTestId("shoot-cover").first()).toBeVisible();
 
   await page.getByTestId("shoot-settings-2026-07-12_zell").click();
-  await expect(page.getByTestId("shoot-name")).toHaveValue("zell");
-  await expect(page.getByTestId("shoot-day")).toHaveValue("2026-07-12");
-  await expect(page.getByTestId("shoot-notes")).toHaveValue(
+  await expect(page.getByTestId("project-name")).toHaveValue("zell");
+  await expect(page.getByTestId("project-day")).toHaveValue("2026-07-12");
+  await expect(page.getByTestId("project-notes")).toHaveValue(
     "Golden hour at the river",
   );
 
   await expect(page.getByTestId("folder-preview")).toHaveText(
     "2026-07-12_zell",
   );
-  await page.getByTestId("shoot-name").fill("zell-revisited");
+  await page.getByTestId("project-name").fill("zell-revisited");
   await expect(page.getByTestId("folder-preview")).toHaveText(
     "2026-07-12_zell-revisited",
   );

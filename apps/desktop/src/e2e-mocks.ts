@@ -5,7 +5,7 @@ import {
   identityEdit,
   type Shoot,
 } from "./lib/core";
-import { hasDateInFolder, projectFolder } from "./lib/projectFolder";
+import { projectFolder } from "./lib/projectFolder";
 import type { ExportProgress } from "./lib/queries";
 import { makeImage } from "./lib/test-image";
 
@@ -277,8 +277,11 @@ export const E2E_HANDLERS: Record<
     ),
   createProject: (params) => {
     const day = typeof params.day === "string" ? params.day : null;
-    const dateInFolder = params.dateInFolder !== false;
-    const shoot = projectFolder(String(params.name), day, dateInFolder);
+    const shoot = projectFolder(
+      String(params.name),
+      day,
+      params.dateInFolder === true,
+    );
     if (shoots.some((existing) => existing.name === shoot)) {
       throw `project_exists: ${shoot}`;
     }
@@ -286,9 +289,9 @@ export const E2E_HANDLERS: Record<
       name: shoot,
       path: `/fake/${shoot}`,
       day,
-      project: String(params.name),
+      project: String(params.name).trim(),
       imageCount: 0,
-      notes: String(params.notes ?? ""),
+      notes: String(params.notes),
       cover: null,
       coverPath: null,
       indexed: true,
@@ -299,24 +302,20 @@ export const E2E_HANDLERS: Record<
   updateProject: (params) => {
     const shoot = shoots.find((s) => s.name === params.shoot);
     if (!shoot) throw `unknown_shoot: ${String(params.shoot)}`;
-    const dateInFolder =
-      typeof params.dateInFolder === "boolean"
-        ? params.dateInFolder
-        : hasDateInFolder(shoot);
-    if ("day" in params) {
-      shoot.day = typeof params.day === "string" ? params.day : null;
-    }
-    if (typeof params.name === "string") shoot.project = params.name.trim();
-    shoot.name = projectFolder(shoot.project, shoot.day, dateInFolder);
+    shoot.day = typeof params.day === "string" ? params.day : null;
+    shoot.project = String(params.name).trim();
+    shoot.name = projectFolder(
+      shoot.project,
+      shoot.day,
+      params.dateInFolder === true,
+    );
     shoot.path = `/fake/${shoot.name}`;
-    if (params.notes !== undefined) shoot.notes = String(params.notes);
-    if ("cover" in params) {
-      shoot.cover = (params.cover as string | null) ?? null;
-      const match = imagesFor(shoot.name).find(
-        (entry) => entry.rel === shoot.cover,
-      );
-      shoot.coverPath = match?.path ?? imagesFor(shoot.name)[0]?.path ?? null;
-    }
+    shoot.notes = String(params.notes);
+    shoot.cover = typeof params.cover === "string" ? params.cover : null;
+    const match = imagesFor(shoot.name).find(
+      (entry) => entry.rel === shoot.cover,
+    );
+    shoot.coverPath = match?.path ?? imagesFor(shoot.name)[0]?.path ?? null;
     return { shoot: shoot.name, generation: 1 };
   },
   status: () => ({

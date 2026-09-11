@@ -7,12 +7,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@photopipe/ui/components/dialog";
-import { Input } from "@photopipe/ui/components/input";
-import { Label } from "@photopipe/ui/components/label";
-import { Textarea } from "@photopipe/ui/components/textarea";
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
-import { FolderNameField } from "@/components/FolderNameField";
+import {
+  type ProjectDraft,
+  ProjectFields,
+  projectRequest,
+} from "@/components/ProjectFields";
 import { dateInFolderDefault, projectFolder } from "@/lib/projectFolder";
 import { useCreateProject } from "@/lib/queries";
 
@@ -51,23 +52,25 @@ function NewProjectForm({
   onCancel: () => void;
   onCreated: (shoot: string) => void;
 }) {
-  const [name, setName] = useState("");
-  const [day, setDay] = useState(today);
-  const [dateInFolder, setDateInFolder] = useState(dateInFolderDefault.read);
-  const [notes, setNotes] = useState("");
+  const [draft, setDraft] = useState<ProjectDraft>(() => ({
+    name: "",
+    day: today(),
+    dateInFolder: dateInFolderDefault.read(),
+    notes: "",
+  }));
   const create = useCreateProject();
-  const folder = projectFolder(name, day, dateInFolder);
-
-  const submit = () => {
-    if (!folder) return;
-    create.mutate(
-      { name: name.trim(), day: day || null, dateInFolder, notes },
-      { onSuccess: (result) => onCreated(result.shoot) },
-    );
-  };
+  const folder = projectFolder(draft.name, draft.day, draft.dateInFolder);
 
   return (
-    <>
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        create.mutate(projectRequest(draft), {
+          onSuccess: (result) => onCreated(result.shoot),
+        });
+      }}
+    >
       <DialogHeader>
         <DialogTitle className="font-heading">New project</DialogTitle>
         <DialogDescription>
@@ -75,69 +78,21 @@ function NewProjectForm({
         </DialogDescription>
       </DialogHeader>
 
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          submit();
-        }}
-      >
-        <div className="flex gap-3">
-          <div className="flex-1 space-y-1.5">
-            <Label htmlFor="project-name">Project</Label>
-            <Input
-              id="project-name"
-              data-testid="project-name"
-              value={name}
-              autoFocus
-              placeholder="zell"
-              onChange={(event) => setName(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="project-day">Date</Label>
-            <Input
-              id="project-day"
-              data-testid="project-day"
-              type="date"
-              value={day}
-              onChange={(event) => setDay(event.target.value)}
-            />
-          </div>
-        </div>
-
-        <FolderNameField
-          folder={folder}
-          dateInFolder={dateInFolder}
-          onDateInFolderChange={setDateInFolder}
-        />
-
-        <div className="space-y-1.5">
-          <Label htmlFor="project-notes">Notes</Label>
-          <Textarea
-            id="project-notes"
-            data-testid="project-notes"
-            value={notes}
-            rows={3}
-            placeholder="Anything worth remembering about this shoot."
-            onChange={(event) => setNotes(event.target.value)}
-          />
-        </div>
-      </form>
+      <ProjectFields draft={draft} onChange={setDraft} />
 
       <DialogFooter>
-        <Button variant="ghost" onClick={onCancel}>
+        <Button type="button" variant="ghost" onClick={onCancel}>
           Cancel
         </Button>
         <Button
+          type="submit"
           data-testid="create-project"
           disabled={!folder || create.isPending}
-          onClick={submit}
         >
           {create.isPending && <Loader2 className="animate-spin" />}
           Create
         </Button>
       </DialogFooter>
-    </>
+    </form>
   );
 }
