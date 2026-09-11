@@ -23,6 +23,7 @@ import {
   type Shoot,
   type StatusResult,
 } from "./core";
+import type { ProjectRequest } from "./projectFolder";
 import { useRawDecoderVersion } from "./rawDecoder";
 import type { ViewportRequest } from "./zoom";
 
@@ -519,14 +520,9 @@ export function useUpdateProject() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["write", "updateProject"],
-    mutationFn: (vars: {
-      shoot: string;
-      name: string;
-      day: string | null;
-      dateInFolder: boolean;
-      notes: string;
-      cover: string | null;
-    }) =>
+    mutationFn: (
+      vars: ProjectRequest & { shoot: string; cover: string | null },
+    ) =>
       coreRequest<{ shoot: string; generation: number }>("updateProject", vars),
     onSuccess: (result, vars) => {
       if (result.shoot !== vars.shoot) {
@@ -707,12 +703,8 @@ export function useCreateProject() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["write", "createProject"],
-    mutationFn: (vars: {
-      name: string;
-      day: string | null;
-      dateInFolder: boolean;
-      notes: string;
-    }) => coreRequest<CreateProjectResult>("createProject", vars),
+    mutationFn: (vars: ProjectRequest) =>
+      coreRequest<CreateProjectResult>("createProject", vars),
     onSuccess: (result) => {
       toast.success(`Created ${result.shoot}`);
       queryClient.invalidateQueries({ queryKey: ["shoots"] });

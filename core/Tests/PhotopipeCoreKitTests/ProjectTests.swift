@@ -239,7 +239,7 @@ private func makeProjectFolder(_ dir: URL, _ folder: String, json: String? = nil
     }
 }
 
-@Test func foldersNamedInFinderAreLeftAloneUntilTheNameChanges() throws {
+@Test func foldersNamedInFinderAreLeftAloneUntilTheirNameWouldChange() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
     // "a:b" is how a folder called "a/b" in Finder sits on disk.
@@ -247,18 +247,27 @@ private func makeProjectFolder(_ dir: URL, _ folder: String, json: String? = nil
     _ = try makeProjectFolder(dir, " spaced", json: "{}")
     let service = makeService(in: dir)
     _ = try service.setRoot(path: dir.path, indexPath: nil)
+    let save = { (folder: String, day: String?, dateInFolder: Bool) in
+        try service.updateProject(
+            shoot: folder, name: folder, day: day, dateInFolder: dateInFolder, notes: "noted",
+            cover: nil
+        ).shoot
+    }
 
     for folder in ["a:b", " spaced"] {
-        let saved = try service.updateProject(
-            shoot: folder, name: folder, day: nil, dateInFolder: true, notes: "noted",
-            cover: nil)
-        #expect(saved.shoot == folder)
+        #expect(try save(folder, nil, true) == folder)
+        #expect(try save(folder, "2026-09-09", false) == folder)
     }
     #expect(service.listShoots().map(\.notes) == ["noted", "noted"])
+    #expect(service.listShoots().map(\.day) == ["2026-09-09", "2026-09-09"])
+
+    // Putting the date into the name is a rename, and the rules apply again.
+    #expect(try save(" spaced", "2026-09-09", true) == "2026-09-09_spaced")
     #expect(throws: LibraryService.ServiceError.self) {
-        try service.updateProject(
-            shoot: "a:b", name: "a:b", day: "2026-09-09", dateInFolder: false, notes: "",
-            cover: nil)
+        try save("a:b", "2026-09-09", true)
+    }
+    #expect(throws: LibraryService.ServiceError.self) {
+        try save("a:b", "garbage", false)
     }
 }
 
@@ -351,11 +360,10 @@ private func makeProjectFolder(_ dir: URL, _ folder: String, json: String? = nil
             try LibraryService.projectFolder(name: name, day: day, dateInFolder: true)
         }
     }
-    // A malformed day is rejected even when it would not reach the folder name.
+    // The day is written to photopipe.json, so it is checked even when it stays out of the name.
     #expect(throws: LibraryService.ServiceError.self) {
         try LibraryService.projectFolder(name: "n", day: "nope", dateInFolder: false)
     }
-    // And the composed path must land directly inside the root.
     #expect(throws: LibraryService.ServiceError.self) {
         try LibraryService.freeProjectURL(root: "/tmp/library", folder: "a/../../x")
     }

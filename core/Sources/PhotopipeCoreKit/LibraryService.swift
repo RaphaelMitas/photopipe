@@ -432,6 +432,10 @@ public final class LibraryService: @unchecked Sendable {
         return (settled.edit, status().generation)
     }
 
+    static func checkDay(_ day: String?) throws {
+        if let day, !isDay(day) { throw ServiceError.invalidProjectDay(day) }
+    }
+
     static func projectFolder(name: String, day: String?, dateInFolder: Bool) throws -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let scalars = trimmed.unicodeScalars
@@ -440,7 +444,7 @@ public final class LibraryService: @unchecked Sendable {
         else {
             throw ServiceError.invalidProjectName(name)
         }
-        if let day, !isDay(day) { throw ServiceError.invalidProjectDay(day) }
+        try checkDay(day)
         guard dateInFolder, let day else { return trimmed }
         return "\(day)_\(trimmed)"
     }
@@ -457,18 +461,19 @@ public final class LibraryService: @unchecked Sendable {
         return url
     }
 
-    /// Moves first, writes second, and undoes the move if the write fails.
     public func updateProject(
         shoot shootName: String, name: String, day: String?, dateInFolder: Bool, notes: String,
         cover: String?
     ) throws -> (shoot: String, generation: Int) {
         let shoot = try self.shoot(named: shootName)
         let source = URL(fileURLWithPath: shoot.path)
+        try Self.checkDay(day)
 
-        // A folder named in Finder may break the rules; only validate a real change.
+        // A folder named in Finder may break the rules; only validate when its name would change.
+        let hasDate = shoot.name != shoot.project
+        let wantsDate = dateInFolder && day != nil
         let sameFolder =
-            name == shoot.project && day == shoot.day
-            && (day == nil || dateInFolder == (shoot.name != shoot.project))
+            name == shoot.project && hasDate == wantsDate && (!wantsDate || day == shoot.day)
         let folder =
             sameFolder
             ? shoot.name
@@ -484,6 +489,7 @@ public final class LibraryService: @unchecked Sendable {
             try ProjectFile(notes: notes, day: day, cover: cover).write(inShoot: path.path)
         } catch {
             if path != source { try? FileManager.default.moveItem(at: path, to: source) }
+            rescanNow()
             throw error
         }
 

@@ -5,7 +5,7 @@ import {
   identityEdit,
   type Shoot,
 } from "./lib/core";
-import { projectFolder } from "./lib/projectFolder";
+import { type ProjectRequest, projectFolder } from "./lib/projectFolder";
 import type { ExportProgress } from "./lib/queries";
 import { makeImage } from "./lib/test-image";
 
@@ -96,6 +96,15 @@ const shoots: Shoot[] = [
 ];
 
 const emptyShoots = new Set<string>();
+
+function projectParams(params: Record<string, unknown>): ProjectRequest {
+  return {
+    name: String(params.name),
+    day: typeof params.day === "string" ? params.day : null,
+    dateInFolder: params.dateInFolder === true,
+    notes: String(params.notes),
+  };
+}
 
 /// `?indexing=1` holds the library in the state it has right after a cold
 /// start: every file listed, none of its metadata read yet.
@@ -276,22 +285,18 @@ export const E2E_HANDLERS: Record<
       false,
     ),
   createProject: (params) => {
-    const day = typeof params.day === "string" ? params.day : null;
-    const shoot = projectFolder(
-      String(params.name),
-      day,
-      params.dateInFolder === true,
-    );
+    const request = projectParams(params);
+    const shoot = projectFolder(request);
     if (shoots.some((existing) => existing.name === shoot)) {
       throw `project_exists: ${shoot}`;
     }
     shoots.unshift({
       name: shoot,
       path: `/fake/${shoot}`,
-      day,
-      project: String(params.name).trim(),
+      day: request.day,
+      project: request.name.trim(),
       imageCount: 0,
-      notes: String(params.notes),
+      notes: request.notes,
       cover: null,
       coverPath: null,
       indexed: true,
@@ -302,15 +307,12 @@ export const E2E_HANDLERS: Record<
   updateProject: (params) => {
     const shoot = shoots.find((s) => s.name === params.shoot);
     if (!shoot) throw `unknown_shoot: ${String(params.shoot)}`;
-    shoot.day = typeof params.day === "string" ? params.day : null;
-    shoot.project = String(params.name).trim();
-    shoot.name = projectFolder(
-      shoot.project,
-      shoot.day,
-      params.dateInFolder === true,
-    );
+    const request = projectParams(params);
+    shoot.day = request.day;
+    shoot.project = request.name.trim();
+    shoot.name = projectFolder(request);
     shoot.path = `/fake/${shoot.name}`;
-    shoot.notes = String(params.notes);
+    shoot.notes = request.notes;
     shoot.cover = typeof params.cover === "string" ? params.cover : null;
     const match = imagesFor(shoot.name).find(
       (entry) => entry.rel === shoot.cover,

@@ -4,18 +4,11 @@ import { Label } from "@photopipe/ui/components/label";
 import { Switch } from "@photopipe/ui/components/switch";
 import { Textarea } from "@photopipe/ui/components/textarea";
 import { useState } from "react";
-import { dateInFolderDefault, projectFolder } from "@/lib/projectFolder";
-
-export type ProjectDraft = {
-  name: string;
-  day: string;
-  dateInFolder: boolean;
-  notes: string;
-};
-
-export function projectRequest(draft: ProjectDraft) {
-  return { ...draft, day: draft.day || null };
-}
+import {
+  dateInFolderDefault,
+  type ProjectDraft,
+  projectFolder,
+} from "@/lib/projectFolder";
 
 export function ProjectFields({
   draft,
@@ -53,7 +46,7 @@ export function ProjectFields({
       </div>
 
       <FolderNameField
-        folder={projectFolder(draft.name, draft.day, draft.dateInFolder)}
+        folder={projectFolder(draft)}
         dateInFolder={draft.dateInFolder}
         disabled={!draft.day}
         onDateInFolderChange={(dateInFolder) => set({ dateInFolder })}

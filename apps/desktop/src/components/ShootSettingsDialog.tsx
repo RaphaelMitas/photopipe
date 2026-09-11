@@ -12,16 +12,13 @@ import { Skeleton } from "@photopipe/ui/components/skeleton";
 import { cn } from "@photopipe/ui/lib/utils";
 import { Check } from "lucide-react";
 import { useState } from "react";
-import {
-  type ProjectDraft,
-  ProjectFields,
-  projectRequest,
-} from "@/components/ProjectFields";
+import { ProjectFields } from "@/components/ProjectFields";
 import { fileSrc, type ImageFile, type Shoot } from "@/lib/core";
 import {
   dateInFolderDefault,
-  hasDateInFolder,
+  type ProjectDraft,
   projectFolder,
+  projectRequest,
 } from "@/lib/projectFolder";
 import { useImages, useThumbnail, useUpdateProject } from "@/lib/queries";
 
@@ -83,12 +80,19 @@ export function ShootSettingsDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
-        {shoot && (
+        {shoot ? (
           <ShootSettingsForm
             shoot={shoot}
             onCancel={() => onOpenChange(false)}
             onSaved={onSaved}
           />
+        ) : (
+          <DialogHeader>
+            <DialogTitle className="font-heading">Project settings</DialogTitle>
+            <DialogDescription>
+              This project is no longer in the library.
+            </DialogDescription>
+          </DialogHeader>
         )}
       </DialogContent>
     </Dialog>
@@ -110,12 +114,12 @@ function ShootSettingsForm({
     name: shoot.project,
     day: shoot.day ?? "",
     dateInFolder: shoot.day
-      ? hasDateInFolder(shoot)
+      ? shoot.name !== shoot.project
       : dateInFolderDefault.read(),
     notes: shoot.notes,
   }));
   const [cover, setCover] = useState(shoot.cover);
-  const folder = projectFolder(draft.name, draft.day, draft.dateInFolder);
+  const folder = projectFolder(draft);
 
   return (
     <form

@@ -9,12 +9,13 @@ import {
 } from "@photopipe/ui/components/dialog";
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
+import { ProjectFields } from "@/components/ProjectFields";
 import {
+  dateInFolderDefault,
   type ProjectDraft,
-  ProjectFields,
+  projectFolder,
   projectRequest,
-} from "@/components/ProjectFields";
-import { dateInFolderDefault, projectFolder } from "@/lib/projectFolder";
+} from "@/lib/projectFolder";
 import { useCreateProject } from "@/lib/queries";
 
 function today(): string {
@@ -59,7 +60,7 @@ function NewProjectForm({
     notes: "",
   }));
   const create = useCreateProject();
-  const folder = projectFolder(draft.name, draft.day, draft.dateInFolder);
+  const folder = projectFolder(draft);
 
   return (
     <form
