@@ -10,13 +10,23 @@ use objc2_foundation::{
     NSFileReadNoSuchFileError, NSString, NSURLBookmarkCreationOptions,
     NSURLBookmarkResolutionOptions, NSURL,
 };
+use serde::Serialize;
 
-#[derive(Debug)]
+/// Also what the root commands hand the UI, so `Failed` carries what the store or core said.
+#[derive(Debug, Serialize)]
+#[serde(tag = "kind", content = "message", rename_all = "lowercase")]
 pub enum Failure {
     Unplugged(String),
     Missing(String),
     Denied(String),
     Broken(String),
+    Failed(String),
+}
+
+impl From<String> for Failure {
+    fn from(message: String) -> Self {
+        Failure::Failed(message)
+    }
 }
 
 fn classify(error: &NSError) -> Failure {
@@ -42,8 +52,7 @@ fn mint_url(url: &NSURL) -> Result<Vec<u8>, Failure> {
     .map_err(|error| classify(&error))
 }
 
-/// A bare path that does not exist is a typo or a deleted folder, not a
-/// drive that went away; only a bookmark can tell those apart.
+/// Without a bookmark, NoSuchFile is a typo or a deleted folder, not an unplugged drive.
 pub fn mint(path: &str) -> Result<Vec<u8>, Failure> {
     mint_url(&NSURL::fileURLWithPath(&NSString::from_str(path))).map_err(|failure| match failure {
         Failure::Unplugged(_) => Failure::Missing(format!("no folder at {path}")),

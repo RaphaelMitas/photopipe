@@ -37,6 +37,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Compare the app version against existing tags
         id: decide
+        env:
+          MAS_CONFIGURED: ${{ secrets.MAS_CERTIFICATE != '' }}
         run: |
           VERSION=$(python3 -c "import json;print(json.load(open('apps/desktop/src-tauri/tauri.conf.json'))['version'])")
           TAG="v$VERSION"
@@ -53,6 +55,10 @@ jobs:
           if [ "${{ inputs.submit_to_app_store }}" = true ]; then
             if [ "$EXISTS" != true ]; then
               echo "::error::$TAG is not released yet. Release it first, then submit it to the App Store."
+              exit 1
+            fi
+            if [ "$MAS_CONFIGURED" != true ]; then
+              echo "::error::MAS_CERTIFICATE is not set; there is nothing to submit with."
               exit 1
             fi
             echo "Submitting $TAG to the App Store; the DMG release is not rebuilt."
@@ -228,6 +234,7 @@ jobs:
           xcrun stapler staple "$DMG"
           # What a user's Mac will conclude before it opens the thing.
           spctl --assess --type open --context context:primary-signature -vv "$DMG"
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db"
 
       # The Homebrew tap's update-cask workflow fetches
       # `<repo>-<version>.zip`, so the cask asset has to carry that exact
@@ -326,7 +333,6 @@ jobs:
             -f source_repo=RaphaelMitas/photopipe
 
   # Skipped without the store secrets, so a release still succeeds before they exist.
-  # Every release validates the pkg; `-f submit_to_app_store=true` uploads the tagged build.
   mas:
     name: Build, sign, validate for the App Store
     needs: [check]
@@ -427,6 +433,8 @@ jobs:
           PKG="$RUNNER_TEMP/Photopipe-$VERSION.pkg"
           productbuild --component "$APP" /Applications --sign "$INSTALLER_IDENTITY" "$PKG"
           echo "PKG=$PKG" >> $GITHUB_ENV
+          # Nothing after this needs the identities, and the gems below should not have them.
+          security delete-keychain "$RUNNER_TEMP/mas.keychain-db"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -444,6 +452,13 @@ jobs:
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
         run: bundle exec fastlane mac validate
+
+      # deliver wants one folder per locale; the README shots are the real UI at a Mac size.
+      - name: Stage the store screenshots
+        if: needs.check.outputs.submit == 'true'
+        run: |
+          mkdir -p fastlane/screenshots/en-US
+          cp docs/screenshots/*.png fastlane/screenshots/en-US/
 
       - name: Upload to TestFlight and App Store Connect
         if: needs.check.outputs.submit == 'true'

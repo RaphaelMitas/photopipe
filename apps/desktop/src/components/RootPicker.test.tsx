@@ -28,8 +28,8 @@ beforeEach(() => {
 describe("RootPicker", () => {
   it("reopens an ok root by path and re-picks a broken one via the panel", async () => {
     roots.list = [
-      { path: "/v/ok", name: "ok", status: "ok" },
-      { path: "/v/broken", name: "broken", status: "broken" },
+      { path: "/v/ok", status: "ok" },
+      { path: "/v/broken", status: "broken" },
     ];
     const onPick = renderPicker();
     const entries = await screen.findAllByTestId("recent-root");
@@ -43,9 +43,7 @@ describe("RootPicker", () => {
   });
 
   it("greys an unplugged root and asks for the drive", async () => {
-    roots.list = [
-      { path: "/Volumes/T7/photos", name: "photos", status: "unplugged" },
-    ];
+    roots.list = [{ path: "/Volumes/T7/photos", status: "unplugged" }];
     renderPicker();
     const entry = await screen.findByTestId("recent-root");
     expect(entry).toHaveAttribute("data-status", "unplugged");

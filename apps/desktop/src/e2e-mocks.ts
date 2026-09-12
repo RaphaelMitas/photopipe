@@ -171,18 +171,10 @@ function advanceExport(id: string): ExportProgress {
   return job;
 }
 
-// `?roots=stored|broken|unplugged` starts with one remembered root in that
-// state; the panel, which nothing can drive from a browser, always picks /fake.
 const scenario = new URLSearchParams(location.search).get("roots");
 let roots: RootEntry[] =
   scenario === "stored" || scenario === "broken" || scenario === "unplugged"
-    ? [
-        {
-          path: "/fake",
-          name: "fake",
-          status: scenario === "stored" ? "ok" : scenario,
-        },
-      ]
+    ? [{ path: "/fake", status: scenario === "stored" ? "ok" : scenario }]
     : [];
 
 function argPath(args: unknown): string | undefined {
@@ -205,7 +197,7 @@ export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
     }
     if (path === "/nonexistent") throw "root_not_found: /nonexistent";
     roots = [
-      { path, name: path.split("/").pop() || path, status: "ok" },
+      { path, status: "ok" },
       ...roots.filter((root) => root.path !== path),
     ];
     return { path, shoots: shoots.length, files: 6, generation: 1 };

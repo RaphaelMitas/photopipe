@@ -24,6 +24,7 @@ import {
   type Shoot,
   type StatusResult,
 } from "./core";
+import { fileName } from "./fileName";
 import { useRawDecoderVersion } from "./rawDecoder";
 import type { ViewportRequest } from "./zoom";
 
@@ -301,7 +302,7 @@ export function useSetRating(shoot: string | null) {
       if (context?.previous) {
         queryClient.setQueryData(["images", shoot], context.previous);
       }
-      toast.error(`Rating ${vars.path.split("/").pop()} failed`, {
+      toast.error(`Rating ${fileName(vars.path)} failed`, {
         description: String(error),
       });
     },
@@ -378,7 +379,7 @@ export function useSetEdit(shoot: string | null) {
     },
     onError: (error, vars, context) => {
       if (context?.previous) patchEdits(queryClient, shoot, context.previous);
-      toast.error(`Saving edits for ${vars.path.split("/").pop()} failed`, {
+      toast.error(`Saving edits for ${fileName(vars.path)} failed`, {
         description: String(error),
       });
     },

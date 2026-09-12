@@ -2,41 +2,29 @@ import { queryOptions } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import type { SetRootResult } from "./core";
 
-export type RootStatus = "ok" | "unplugged" | "broken";
-
 export type RootEntry = {
   path: string;
-  name: string;
-  status: RootStatus;
+  status: "ok" | "unplugged" | "broken";
 };
 
-export type RootErrorKind =
-  | "unplugged"
-  | "missing"
-  | "denied"
-  | "broken"
-  | "failed";
+const KINDS = ["unplugged", "missing", "denied", "broken", "failed"] as const;
 
 export type RootError = {
-  kind: RootErrorKind;
+  kind: (typeof KINDS)[number];
   message: string;
 };
 
-export type OpenedRoot = SetRootResult & { path: string };
-
-export function listRoots(): Promise<RootEntry[]> {
-  return invoke<RootEntry[]>("list_roots");
-}
-
 export const rootsQuery = queryOptions({
   queryKey: ["roots"],
-  queryFn: listRoots,
+  queryFn: () => invoke<RootEntry[]>("list_roots"),
 });
 
 /// Without a path the shell shows the folder panel; null means it was
 /// cancelled.
-export function openRoot(path?: string): Promise<OpenedRoot | null> {
-  return invoke<OpenedRoot | null>("open_root", { path: path ?? null });
+export function openRoot(
+  path?: string,
+): Promise<(SetRootResult & { path: string }) | null> {
+  return invoke("open_root", { path: path ?? null });
 }
 
 export function forgetRoot(path: string): Promise<void> {
@@ -51,16 +39,8 @@ export function toRootError(error: unknown): RootError {
     "message" in error &&
     typeof error.message === "string"
   ) {
-    const { kind } = error;
-    if (
-      kind === "unplugged" ||
-      kind === "missing" ||
-      kind === "denied" ||
-      kind === "broken" ||
-      kind === "failed"
-    ) {
-      return { kind, message: error.message };
-    }
+    const kind = KINDS.find((known) => known === error.kind);
+    if (kind) return { kind, message: error.message };
   }
   return { kind: "failed", message: String(error) };
 }

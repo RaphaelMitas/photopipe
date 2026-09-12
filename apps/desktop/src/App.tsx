@@ -56,6 +56,7 @@ import {
   isRawFile,
 } from "@/lib/core";
 import { type EditClipboard, pasteEdit } from "@/lib/editClipboard";
+import { fileName } from "@/lib/fileName";
 import { betterThan, scoreRanks } from "@/lib/instinct";
 import { heldOrder } from "@/lib/loupeWalk";
 import {
@@ -84,7 +85,6 @@ const EDIT_PANEL_KEY = "photopipe.editPanel";
 const SORT_KEY = "photopipe.sort";
 const NO_HELD = { key: "", paths: [] };
 const AUTO_SCORE_KEY = "photopipe.autoScore";
-/// Where the DMG builds before the shell owned roots kept the last folder.
 const LEGACY_ROOT_KEY = "photopipe.root";
 const LEGACY_RECENTS_KEY = "photopipe.recentRoots";
 /// One toast id for the whole update conversation, so a download replaces the
@@ -96,8 +96,6 @@ const isTyping = (target: EventTarget | null) =>
   (target.isContentEditable ||
     target.tagName === "INPUT" ||
     target.tagName === "TEXTAREA");
-
-const fileName = (path: string) => path.split("/").pop() ?? path;
 
 type RootState =
   | { kind: "picking"; error: RootError | null; busy: boolean }
@@ -177,8 +175,6 @@ export default function App() {
   const cropping = cropDraft !== null;
   const [clipboard, setClipboard] = useState<EditClipboard | null>(null);
 
-  // The shell owns the folder panel and the bookmarks; the UI only says
-  // which root it wants, or none for the panel.
   const connectRoot = useCallback(async (path?: string) => {
     setRootState({ kind: "picking", error: null, busy: true });
     try {
@@ -188,8 +184,10 @@ export default function App() {
           ? { kind: "ready", path: opened.path, generation: opened.generation }
           : { kind: "picking", error: null, busy: false },
       );
+      return opened !== null;
     } catch (error) {
       setRootState({ kind: "picking", error: toRootError(error), busy: false });
+      return false;
     }
   }, []);
 
@@ -197,12 +195,17 @@ export default function App() {
   useEffect(() => {
     queryClient
       .fetchQuery(rootsQuery)
-      .then((roots) => {
+      .then(async (roots) => {
+        if (roots[0]?.status === "ok") {
+          connectRoot(roots[0].path);
+          return;
+        }
+        // Kept until the shell has the folder, or an unplugged drive loses it.
         const legacy = localStorage.getItem(LEGACY_ROOT_KEY);
-        localStorage.removeItem(LEGACY_ROOT_KEY);
-        localStorage.removeItem(LEGACY_RECENTS_KEY);
-        if (roots[0]?.status === "ok") connectRoot(roots[0].path);
-        else if (roots.length === 0 && legacy) connectRoot(legacy);
+        if (roots.length === 0 && legacy && (await connectRoot(legacy))) {
+          localStorage.removeItem(LEGACY_ROOT_KEY);
+          localStorage.removeItem(LEGACY_RECENTS_KEY);
+        }
       })
       .catch((error) => {
         setRootState({

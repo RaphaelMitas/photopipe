@@ -1,7 +1,5 @@
 platform "osx"
 
-# deliver slots screenshots by pixel size, so they must be a Mac size; `pnpm screenshots` produces 2880x1800.
-
 # CI has nobody to confirm the HTML preview.
 force true
 # precheck cannot inspect in-app purchases with an API key, and there are none.

@@ -2,10 +2,11 @@ mod bookmark;
 mod roots;
 mod sidecar;
 
+use bookmark::Failure;
 use roots::RootEntry;
 use serde::Serialize;
 use sidecar::Sidecar;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::menu::{
     AboutMetadataBuilder, MenuBuilder, MenuItemBuilder, SubmenuBuilder, HELP_SUBMENU_ID,
@@ -28,50 +29,17 @@ async fn core_request(
         .map_err(|e| format!("sidecar task panicked: {e}"))?
 }
 
-/// The shell owns consent: the roots file and the access it currently holds.
 /// The core inherits whatever access is live here when it is asked for a root.
 struct Roots {
     file: PathBuf,
+    /// Held across load, modify and save so two commands cannot undo each other.
+    store: Mutex<()>,
     access: Mutex<Option<bookmark::Access>>,
-}
-
-#[derive(Serialize)]
-struct RootError {
-    kind: &'static str,
-    message: String,
-}
-
-impl RootError {
-    fn failed(message: impl Into<String>) -> Self {
-        Self {
-            kind: "failed",
-            message: message.into(),
-        }
-    }
-}
-
-impl From<bookmark::Failure> for RootError {
-    fn from(failure: bookmark::Failure) -> Self {
-        let (kind, message) = match failure {
-            bookmark::Failure::Unplugged(message) => ("unplugged", message),
-            bookmark::Failure::Missing(message) => ("missing", message),
-            bookmark::Failure::Denied(message) => ("denied", message),
-            bookmark::Failure::Broken(message) => ("broken", message),
-        };
-        Self { kind, message }
-    }
-}
-
-impl From<String> for RootError {
-    fn from(message: String) -> Self {
-        Self::failed(message)
-    }
 }
 
 #[derive(Serialize)]
 struct RootListing {
     path: String,
-    name: String,
     status: &'static str,
 }
 
@@ -83,44 +51,39 @@ struct OpenedRoot {
 }
 
 #[tauri::command]
-async fn list_roots(roots: State<'_, Arc<Roots>>) -> Result<Vec<RootListing>, RootError> {
+async fn list_roots(roots: State<'_, Arc<Roots>>) -> Result<Vec<RootListing>, Failure> {
     let roots = Arc::clone(&roots);
     tauri::async_runtime::spawn_blocking(move || {
         let entries = roots::load(&roots.file)?;
         Ok(entries
             .into_iter()
             .map(|entry| RootListing {
-                status: match entry.bookmark.as_deref().map(bookmark::resolve) {
-                    Some(Ok(_)) => "ok",
-                    Some(Err(bookmark::Failure::Unplugged(_))) => "unplugged",
-                    _ => "broken",
+                status: match bookmark::resolve(&entry.bookmark) {
+                    Ok(_) => "ok",
+                    Err(Failure::Unplugged(_)) => "unplugged",
+                    Err(_) => "broken",
                 },
-                name: Path::new(&entry.path)
-                    .file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| entry.path.clone()),
                 path: entry.path,
             })
             .collect())
     })
     .await
-    .map_err(|e| RootError::failed(format!("roots task panicked: {e}")))?
+    .map_err(|e| Failure::Failed(format!("roots task panicked: {e}")))?
 }
 
-/// No path shows the folder panel. A bare path with no stored bookmark gets
-/// one minted, which works unsandboxed and fails cleanly under the sandbox.
+/// A bare path with no stored bookmark gets one minted, which works unsandboxed and fails cleanly under the sandbox.
 #[tauri::command]
 async fn open_root(
     app: AppHandle,
     sidecar: State<'_, Arc<Sidecar>>,
     roots: State<'_, Arc<Roots>>,
     path: Option<String>,
-) -> Result<Option<OpenedRoot>, RootError> {
+) -> Result<Option<OpenedRoot>, Failure> {
     let sidecar = Arc::clone(&sidecar);
     let roots = Arc::clone(&roots);
     tauri::async_runtime::spawn_blocking(move || open_root_blocking(&app, &sidecar, &roots, path))
         .await
-        .map_err(|e| RootError::failed(format!("roots task panicked: {e}")))?
+        .map_err(|e| Failure::Failed(format!("roots task panicked: {e}")))?
 }
 
 fn open_root_blocking(
@@ -128,13 +91,13 @@ fn open_root_blocking(
     sidecar: &Sidecar,
     roots: &Roots,
     path: Option<String>,
-) -> Result<Option<OpenedRoot>, RootError> {
+) -> Result<Option<OpenedRoot>, Failure> {
     let (requested, stored) = match path {
         Some(path) => {
             let stored = roots::load(&roots.file)?
                 .into_iter()
                 .find(|entry| entry.path == path)
-                .and_then(|entry| entry.bookmark);
+                .map(|entry| entry.bookmark);
             (path, stored)
         }
         // The panel just granted this folder; a bookmark stored for the same
@@ -150,24 +113,14 @@ fn open_root_blocking(
             };
             let path = picked
                 .into_path()
-                .map_err(|e| RootError::failed(e.to_string()))?
+                .map_err(|e| Failure::Failed(e.to_string()))?
                 .to_string_lossy()
                 .into_owned();
             (path, None)
         }
     };
 
-    let (mut bookmark, resolved) = match reconnect(stored.as_deref(), &requested) {
-        Ok(found) => found,
-        Err(failure) => {
-            if stored.is_some() && !matches!(failure, bookmark::Failure::Unplugged(_)) {
-                let mut entries = roots::load(&roots.file)?;
-                roots::drop_bookmark(&mut entries, &requested);
-                roots::save(&roots.file, &entries)?;
-            }
-            return Err(failure.into());
-        }
-    };
+    let (mut bookmark, resolved) = reconnect(stored.as_deref(), &requested)?;
     let stale = resolved.stale;
     let path = resolved.path.clone();
     let access = resolved.start_access()?;
@@ -177,6 +130,7 @@ fn open_root_blocking(
 
     let result = sidecar.request("setRoot", Some(serde_json::json!({ "path": path })))?;
     *roots.access.lock().unwrap() = Some(access);
+    let _store = roots.store.lock().unwrap();
     // Loaded again here: setRoot can take a long time, and another command may
     // have written the store meanwhile.
     let mut entries = roots::load(&roots.file)?;
@@ -185,21 +139,15 @@ fn open_root_blocking(
         &mut entries,
         RootEntry {
             path: path.clone(),
-            bookmark: Some(bookmark),
+            bookmark,
         },
     );
     roots::save(&roots.file, &entries)?;
     Ok(Some(OpenedRoot { path, result }))
 }
 
-/// Which bookmark gets the app back into `path`. A stored one that resolves
-/// wins. Unplugged means the bookmark is fine and the drive is not, so it
-/// stays. Anything else gives way to a fresh mint, which succeeds only while
-/// the path is reachable: a live grant, or no sandbox at all.
-fn reconnect(
-    stored: Option<&[u8]>,
-    path: &str,
-) -> Result<(Vec<u8>, bookmark::Resolved), bookmark::Failure> {
+/// Unplugged keeps the stored bookmark: it is the drive that is gone, not the grant.
+fn reconnect(stored: Option<&[u8]>, path: &str) -> Result<(Vec<u8>, bookmark::Resolved), Failure> {
     let fresh = || {
         let bookmark = bookmark::mint(path)?;
         let resolved = bookmark::resolve(&bookmark)?;
@@ -210,7 +158,7 @@ fn reconnect(
     };
     match bookmark::resolve(stored) {
         Ok(resolved) => Ok((stored.to_vec(), resolved)),
-        Err(failure @ bookmark::Failure::Unplugged(_)) => Err(failure),
+        Err(failure @ Failure::Unplugged(_)) => Err(failure),
         Err(failure) => fresh().or(Err(failure)),
     }
 }
@@ -221,15 +169,16 @@ fn updater_available() -> bool {
 }
 
 #[tauri::command]
-async fn forget_root(roots: State<'_, Arc<Roots>>, path: String) -> Result<(), RootError> {
+async fn forget_root(roots: State<'_, Arc<Roots>>, path: String) -> Result<(), Failure> {
     let roots = Arc::clone(&roots);
     tauri::async_runtime::spawn_blocking(move || {
+        let _store = roots.store.lock().unwrap();
         let mut entries = roots::load(&roots.file)?;
         roots::forget(&mut entries, &path);
         Ok(roots::save(&roots.file, &entries)?)
     })
     .await
-    .map_err(|e| RootError::failed(format!("roots task panicked: {e}")))?
+    .map_err(|e| Failure::Failed(format!("roots task panicked: {e}")))?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -246,6 +195,7 @@ pub fn run() {
         .setup(|app| {
             app.manage(Arc::new(Roots {
                 file: app.path().app_data_dir()?.join("roots.json"),
+                store: Mutex::new(()),
                 access: Mutex::new(None),
             }));
             // Granted here rather than in capabilities/ because tauri-build
@@ -361,19 +311,16 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(matches!(
             reconnect(Some(&stored), path),
-            Err(bookmark::Failure::Unplugged(_))
+            Err(Failure::Unplugged(_))
         ));
-        assert!(matches!(
-            reconnect(None, path),
-            Err(bookmark::Failure::Missing(_))
-        ));
+        assert!(matches!(reconnect(None, path), Err(Failure::Missing(_))));
 
         std::fs::create_dir_all(&dir).unwrap();
         let (fresh, _) = reconnect(Some(b"not a bookmark"), path).unwrap();
         assert!(bookmark::resolve(&fresh).is_ok());
         assert!(matches!(
             reconnect(Some(b"not a bookmark"), "/nonexistent/photopipe"),
-            Err(bookmark::Failure::Broken(_))
+            Err(Failure::Broken(_))
         ));
         let _ = std::fs::remove_dir_all(&dir);
     }

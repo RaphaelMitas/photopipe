@@ -11,6 +11,8 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { FolderOpen, History, Unplug, X } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
+import { fileName } from "@/lib/fileName";
 import {
   forgetRoot,
   type RootEntry,
@@ -30,7 +32,7 @@ const STATUS_HINT: Record<RootEntry["status"], string | null> = {
   broken: "choose it again to reconnect",
 };
 
-export function errorText(error: RootError): string {
+function errorText(error: RootError): string {
   switch (error.kind) {
     case "denied":
       return "macOS did not let Photopipe open that folder. Allow it under System Settings > Privacy & Security > Files and Folders, or choose the folder again.";
@@ -88,7 +90,7 @@ export function RootPicker({ error, busy, onPick }: Props) {
                     ) : (
                       <History className="shrink-0" />
                     )}
-                    <span className="truncate">{root.name}</span>
+                    <span className="truncate">{fileName(root.path)}</span>
                     {STATUS_HINT[root.status] && (
                       <span className="ml-auto shrink-0 text-xs">
                         {STATUS_HINT[root.status]}
@@ -108,10 +110,16 @@ export function RootPicker({ error, busy, onPick }: Props) {
                 variant="ghost"
                 size="icon"
                 disabled={busy}
-                aria-label={`Forget ${root.name}`}
+                aria-label={`Forget ${fileName(root.path)}`}
                 className="size-7 shrink-0 text-muted-foreground"
                 onClick={() =>
-                  forgetRoot(root.path).then(() => roots.refetch())
+                  forgetRoot(root.path)
+                    .then(() => roots.refetch())
+                    .catch((error) =>
+                      toast.error("Could not forget that folder", {
+                        description: String(error),
+                      }),
+                    )
                 }
               >
                 <X />

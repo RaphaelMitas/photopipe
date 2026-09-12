@@ -118,7 +118,7 @@ Secrets: `APPLE_CERTIFICATE` (base64 .p12), `APPLE_CERTIFICATE_PASSWORD`,
 `TAP_DISPATCH_TOKEN`. The tap step is guarded, so a release succeeds without
 the last one.
 
-The App Store build is a second job, `mas`, that runs after the DMG release
+The App Store build is a second job, `mas`, that runs alongside the DMG release
 and needs six more secrets: `MAS_CERTIFICATE` (base64 .p12 holding both an
 Apple Distribution and a Mac Installer Distribution identity),
 `MAS_CERTIFICATE_PASSWORD`, `MAS_PROVISIONING_PROFILE` (base64 Mac App Store
@@ -142,8 +142,9 @@ updater and the pkg rules the store enforces, and does not drive the core: a
 binary entitled `app-sandbox` + `inherit` only launches under a sandboxed
 parent. Every release validates the pkg against App Store Connect through
 fastlane (pinned by `Gemfile.lock`); the listing (text from
-`fastlane/metadata/en-US`, screenshots from `fastlane/screenshots/en-US` at a
-Mac size such as 2880x1800) and then the TestFlight upload only happen on
+`fastlane/metadata/en-US`, screenshots copied from `docs/screenshots`, whose
+2560x1600 is one of the Mac sizes deliver accepts) and then the TestFlight
+upload only happen on
 `gh workflow run release.yml -f submit_to_app_store=true`, which rebuilds the
 tagged commit for the store alone and leaves the DMG release untouched.
 Metadata goes first because it can be re-sent and a binary cannot, so a

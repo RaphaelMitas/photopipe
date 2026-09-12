@@ -93,14 +93,33 @@ describe("App", () => {
       "data-kind",
       "denied",
     );
-    expect(localStorage.getItem("photopipe.root")).toBeNull();
+    expect(localStorage.getItem("photopipe.root")).toBe("/old");
+  });
+
+  it("drops the legacy keys once the shell has the folder", async () => {
+    localStorage.setItem("photopipe.root", "/old");
+    localStorage.setItem("photopipe.recentRoots", JSON.stringify(["/old"]));
+    invoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "list_roots") return [];
+      if (cmd === "open_root")
+        return { path: "/old", shoots: 1, files: 4, generation: 1 };
+      const { method } = args as { method: string };
+      if (method === "listShoots") return { shoots: [SHOOT] };
+      if (method === "status")
+        return { generation: 1, root: "/old", shoots: 1 };
+      throw new Error(`unexpected ${method}`);
+    });
+
+    renderWithQueries(<App />);
+    await waitFor(() =>
+      expect(localStorage.getItem("photopipe.root")).toBeNull(),
+    );
     expect(localStorage.getItem("photopipe.recentRoots")).toBeNull();
   });
 
   it("reopens the last root through the shell and shows the dashboard", async () => {
     invoke.mockImplementation(async (cmd, args) => {
-      if (cmd === "list_roots")
-        return [{ path: "/r", name: "r", status: "ok" }];
+      if (cmd === "list_roots") return [{ path: "/r", status: "ok" }];
       if (cmd === "open_root") {
         expect(args).toEqual({ path: "/r" });
         return { path: "/r", shoots: 1, files: 4, generation: 1 };
@@ -137,8 +156,7 @@ describe("App", () => {
 
   it("stays on the picker with the shell's error when reopening fails", async () => {
     invoke.mockImplementation(async (cmd) => {
-      if (cmd === "list_roots")
-        return [{ path: "/gone", name: "gone", status: "ok" }];
+      if (cmd === "list_roots") return [{ path: "/gone", status: "ok" }];
       throw { kind: "failed", message: "root_not_found: /gone" };
     });
 
