@@ -6,6 +6,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -23,6 +24,7 @@ import {
   type Shoot,
   type StatusResult,
 } from "./core";
+import { fileName } from "./fileName";
 import { useRawDecoderVersion } from "./rawDecoder";
 import type { ViewportRequest } from "./zoom";
 
@@ -300,7 +302,7 @@ export function useSetRating(shoot: string | null) {
       if (context?.previous) {
         queryClient.setQueryData(["images", shoot], context.previous);
       }
-      toast.error(`Rating ${vars.path.split("/").pop()} failed`, {
+      toast.error(`Rating ${fileName(vars.path)} failed`, {
         description: String(error),
       });
     },
@@ -377,7 +379,7 @@ export function useSetEdit(shoot: string | null) {
     },
     onError: (error, vars, context) => {
       if (context?.previous) patchEdits(queryClient, shoot, context.previous);
-      toast.error(`Saving edits for ${vars.path.split("/").pop()} failed`, {
+      toast.error(`Saving edits for ${fileName(vars.path)} failed`, {
         description: String(error),
       });
     },
@@ -483,8 +485,7 @@ export function usePasteEdits(shoot: string | null) {
 export function useReveal() {
   return useMutation({
     mutationKey: ["write", "reveal"],
-    mutationFn: (paths: string[]) =>
-      coreRequest<{ revealed: boolean }>("reveal", { paths }),
+    mutationFn: (paths: string[]) => revealItemInDir(paths),
     onError: (error) => {
       toast.error("Could not reveal in Finder", { description: String(error) });
     },

@@ -325,7 +325,9 @@ impl Sidecar {
                 }
             }
         }
-        Err(format!("sidecar unreachable after restart: {last_io_error}"))
+        Err(format!(
+            "sidecar unreachable after restart: {last_io_error}"
+        ))
     }
 
     /// Best-effort graceful shutdown: ask politely, then reap or kill.
@@ -436,7 +438,9 @@ mod tests {
             return;
         };
         let sidecar = Sidecar::new(bin);
-        let error = sidecar.request("levitate", None).expect_err("unknown method");
+        let error = sidecar
+            .request("levitate", None)
+            .expect_err("unknown method");
         assert!(error.contains("unknown_method"), "got: {error}");
         assert_eq!(sidecar.request("ping", None).expect("ping")["pong"], true);
         sidecar.shutdown();
@@ -468,7 +472,9 @@ mod tests {
 
         // Next request must respawn AND replay the root — a bare respawn
         // would answer `no_root` here.
-        let shoots = sidecar.request("listShoots", None).expect("respawned listShoots");
+        let shoots = sidecar
+            .request("listShoots", None)
+            .expect("respawned listShoots");
         assert_eq!(shoots["shoots"].as_array().unwrap().len(), 1);
         sidecar.shutdown();
         let _ = std::fs::remove_dir_all(&root);
@@ -531,7 +537,11 @@ mod tests {
         let error = sidecar.request("ping", None).expect_err("must time out");
         assert!(error.contains("did not answer"), "got: {error}");
         // Two attempts (initial + respawn retry), each bounded by the timeout.
-        assert!(start.elapsed() < Duration::from_secs(2), "took {:?}", start.elapsed());
+        assert!(
+            start.elapsed() < Duration::from_secs(2),
+            "took {:?}",
+            start.elapsed()
+        );
         sidecar.shutdown();
     }
 

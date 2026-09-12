@@ -80,6 +80,9 @@ jobs:
       - name: Clippy (deny warnings)
         working-directory: apps/desktop/src-tauri
         run: cargo clippy --all-targets -- -D warnings
+      - name: Clippy, store flavour (deny warnings)
+        working-directory: apps/desktop/src-tauri
+        run: cargo clippy --all-targets --no-default-features -- -D warnings
       - name: Cargo tests (sidecar integration against real core)
         working-directory: apps/desktop/src-tauri
         run: cargo test

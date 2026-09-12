@@ -24,6 +24,7 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   autoScore: boolean;
   onAutoScore: (on: boolean) => void;
+  updaterAvailable: boolean;
   onCheckUpdates: () => void;
 };
 
@@ -127,6 +128,7 @@ export function SettingsDialog({
   onOpenChange,
   autoScore,
   onAutoScore,
+  updaterAvailable,
   onCheckUpdates,
 }: Props) {
   const quickSwitch = useRawDecoderQuickSwitch();
@@ -183,16 +185,18 @@ export function SettingsDialog({
             onCheckedChange={setRawDecoderQuickSwitch}
           />
         </div>
-        <DialogFooter className="sm:justify-start">
-          <Button
-            variant="outline"
-            size="sm"
-            data-testid="check-updates"
-            onClick={onCheckUpdates}
-          >
-            Check for Updates
-          </Button>
-        </DialogFooter>
+        {updaterAvailable && (
+          <DialogFooter className="sm:justify-start">
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="check-updates"
+              onClick={onCheckUpdates}
+            >
+              Check for Updates
+            </Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

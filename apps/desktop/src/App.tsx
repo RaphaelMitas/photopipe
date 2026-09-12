@@ -4,6 +4,7 @@ import {
   SidebarProvider,
 } from "@photopipe/ui/components/sidebar";
 import { TooltipProvider } from "@photopipe/ui/components/tooltip";
+import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
@@ -41,22 +42,21 @@ import {
   type RatingOp,
   ratingCounts,
 } from "@/components/RatingFilter";
-import { RootPicker, rememberRoot } from "@/components/RootPicker";
+import { RootPicker } from "@/components/RootPicker";
 import { SelectionBar } from "@/components/SelectionBar";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import { ShootSettingsDialog } from "@/components/ShootSettingsDialog";
 import { ShowSidebarTrigger } from "@/components/ShowSidebarTrigger";
 import {
-  coreRequest,
   type Edit,
   editKey,
   type ImageFile,
   identityEdit,
   isIdentityEdit,
   isRawFile,
-  type SetRootResult,
 } from "@/lib/core";
 import { type EditClipboard, pasteEdit } from "@/lib/editClipboard";
+import { fileName } from "@/lib/fileName";
 import { betterThan, scoreRanks } from "@/lib/instinct";
 import { heldOrder } from "@/lib/loupeWalk";
 import {
@@ -74,17 +74,19 @@ import {
   useShoots,
   useTrash,
 } from "@/lib/queries";
+import { openRoot, type RootError, rootsQuery, toRootError } from "@/lib/roots";
 import { useSelection } from "@/lib/selection";
 import { browserOrder, type SortKey } from "@/lib/sort";
 import { useDebouncedEdit } from "@/lib/useDebouncedEdit";
 import { useUpdater } from "@/lib/useUpdater";
 
-const ROOT_KEY = "photopipe.root";
 const VIEW_KEY = "photopipe.view";
 const EDIT_PANEL_KEY = "photopipe.editPanel";
 const SORT_KEY = "photopipe.sort";
 const NO_HELD = { key: "", paths: [] };
 const AUTO_SCORE_KEY = "photopipe.autoScore";
+const LEGACY_ROOT_KEY = "photopipe.root";
+const LEGACY_RECENTS_KEY = "photopipe.recentRoots";
 /// One toast id for the whole update conversation, so a download replaces the
 /// offer rather than stacking under it.
 const UPDATE_TOAST = "update";
@@ -95,10 +97,8 @@ const isTyping = (target: EventTarget | null) =>
     target.tagName === "INPUT" ||
     target.tagName === "TEXTAREA");
 
-const fileName = (path: string) => path.split("/").pop() ?? path;
-
 type RootState =
-  | { kind: "picking"; error: string | null; busy: boolean }
+  | { kind: "picking"; error: RootError | null; busy: boolean }
   | { kind: "ready"; path: string; generation: number };
 
 const EDIT_COMMIT_MS = 400;
@@ -175,23 +175,46 @@ export default function App() {
   const cropping = cropDraft !== null;
   const [clipboard, setClipboard] = useState<EditClipboard | null>(null);
 
-  const connectRoot = useCallback(async (path: string) => {
+  const connectRoot = useCallback(async (path?: string) => {
     setRootState({ kind: "picking", error: null, busy: true });
     try {
-      const result = await coreRequest<SetRootResult>("setRoot", { path });
-      localStorage.setItem(ROOT_KEY, path);
-      rememberRoot(path);
-      setRootState({ kind: "ready", path, generation: result.generation });
+      const opened = await openRoot(path);
+      setRootState(
+        opened
+          ? { kind: "ready", path: opened.path, generation: opened.generation }
+          : { kind: "picking", error: null, busy: false },
+      );
+      return opened !== null;
     } catch (error) {
-      localStorage.removeItem(ROOT_KEY);
-      setRootState({ kind: "picking", error: String(error), busy: false });
+      setRootState({ kind: "picking", error: toRootError(error), busy: false });
+      return false;
     }
   }, []);
 
+  const queryClient = useQueryClient();
   useEffect(() => {
-    const stored = localStorage.getItem(ROOT_KEY);
-    if (stored) connectRoot(stored);
-  }, [connectRoot]);
+    queryClient
+      .fetchQuery(rootsQuery)
+      .then(async (roots) => {
+        if (roots[0]?.status === "ok") {
+          connectRoot(roots[0].path);
+          return;
+        }
+        // Kept until the shell has the folder, or an unplugged drive loses it.
+        const legacy = localStorage.getItem(LEGACY_ROOT_KEY);
+        if (roots.length === 0 && legacy && (await connectRoot(legacy))) {
+          localStorage.removeItem(LEGACY_ROOT_KEY);
+          localStorage.removeItem(LEGACY_RECENTS_KEY);
+        }
+      })
+      .catch((error) => {
+        setRootState({
+          kind: "picking",
+          error: toRootError(error),
+          busy: false,
+        });
+      });
+  }, [connectRoot, queryClient]);
 
   const ready = rootState.kind === "ready";
   const shoots = useShoots(ready);
@@ -658,6 +681,7 @@ export default function App() {
       onOpenChange={setSettingsOpen}
       autoScore={autoScore}
       onAutoScore={changeAutoScore}
+      updaterAvailable={updater.available}
       onCheckUpdates={checkForUpdates}
     />
   );
@@ -668,7 +692,7 @@ export default function App() {
         <RootPicker
           error={rootState.error}
           busy={rootState.busy}
-          onSubmit={connectRoot}
+          onPick={connectRoot}
         />
         {settingsDialog}
       </>

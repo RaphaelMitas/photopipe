@@ -91,8 +91,6 @@ private func exportNow(
     _ = try service.setRoot(path: root.path, indexPath: nil)
 
     // A malformed request must never reach a file outside the library.
-    // (Reveal is the exception: it shows export destinations the user chose
-    // outside the root, and touches nothing.)
     #expect(throws: LibraryService.ServiceError.self) {
         try service.startExport(
             shoot: shoot.lastPathComponent, paths: ["/etc/hosts"],
@@ -250,6 +248,31 @@ private func exportNow(
     }
     #expect(FileManager.default.fileExists(atPath: dest))
     #expect(try FileActions.list(zip: dest).contains { $0.contains("a.txt") })
+}
+
+@Test func zipIsBuiltOutsideTheDestinationFolder() throws {
+    let fm = FileManager.default
+    let dir = try tempDir()
+    defer { try? fm.removeItem(at: dir) }
+    let staging = dir.appendingPathComponent("staging")
+    try fm.createDirectory(at: staging, withIntermediateDirectories: true)
+    try Data("a".utf8).write(to: staging.appendingPathComponent("a.txt"))
+
+    // 0o500 stands in for a save panel's grant: nothing can be created beside the chosen file.
+    let delivery = dir.appendingPathComponent("delivery")
+    try fm.createDirectory(at: delivery, withIntermediateDirectories: true)
+    try fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: delivery.path)
+    defer { try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: delivery.path) }
+
+    do {
+        try FileActions.zipDirectory(
+            at: staging, to: delivery.appendingPathComponent("delivery.zip").path)
+        Issue.record("landing the archive in an unwritable folder should fail")
+    } catch let error as FileActions.ActionError {
+        Issue.record("zip ran inside the destination folder: \(error)")
+    } catch {}
+
+    #expect(try fm.contentsOfDirectory(atPath: delivery.path).isEmpty)
 }
 
 @Test func jpegExportRendersWithConvertedExtension() throws {
@@ -555,6 +578,5 @@ private func exportNow(
 @Test func emptySelectionsAreRefusedRatherThanSilentlyDoingNothing() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
-    #expect(throws: FileActions.ActionError.noFiles) { try FileActions.reveal(paths: []) }
     #expect(throws: FileActions.ActionError.noFiles) { try FileActions.trash(paths: []) }
 }

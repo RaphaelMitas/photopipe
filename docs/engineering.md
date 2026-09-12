@@ -118,6 +118,52 @@ Secrets: `APPLE_CERTIFICATE` (base64 .p12), `APPLE_CERTIFICATE_PASSWORD`,
 `TAP_DISPATCH_TOKEN`. The tap step is guarded, so a release succeeds without
 the last one.
 
+The App Store build is a second job, `mas`, that runs alongside the DMG release
+and needs six more secrets: `MAS_CERTIFICATE` (base64 .p12 holding both an
+Apple Distribution and a Mac Installer Distribution identity),
+`MAS_CERTIFICATE_PASSWORD`, `MAS_PROVISIONING_PROFILE` (base64 Mac App Store
+profile), `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID` and
+`APP_STORE_CONNECT_KEY` (the .p8 contents). Without `MAS_CERTIFICATE` the job
+is skipped and the release still succeeds. The job builds
+
+```bash
+pnpm --filter desktop tauri build --bundles app --config src-tauri/mas.conf.json -- --no-default-features
+```
+
+which compiles the `updater` cargo feature out and merges `mas.conf.json`
+over `tauri.conf.json`: `plugins.updater` set to `null` removes the feed (the
+merge is RFC 7396). The updater and restart permissions are granted at
+runtime behind the same cargo feature, because `tauri-build` validates every
+file under `capabilities/` against the plugins compiled in. Signing is by hand as for the
+DMG, inside-out, with `entitlements.mas.inherit.plist` on the core and
+`entitlements.mas.plist` on the app, then `productbuild` wraps it in a signed
+pkg. `scripts/smoke-bundle.sh --mas` checks the entitlements, the missing
+updater and the pkg rules the store enforces, and does not drive the core: a
+binary entitled `app-sandbox` + `inherit` only launches under a sandboxed
+parent. Every release validates the pkg against App Store Connect through
+fastlane (pinned by `Gemfile.lock`); the listing (text from
+`fastlane/metadata/en-US`, screenshots copied from `docs/screenshots`, whose
+2560x1600 is one of the Mac sizes deliver accepts) and then the TestFlight
+upload only happen on
+`gh workflow run release.yml -f submit_to_app_store=true`, which rebuilds the
+tagged commit for the store alone and leaves the DMG release untouched.
+Metadata goes first because it can be re-sent and a binary cannot, so a
+retry only repeats idempotent steps.
+
+Sandbox consent works in two halves. The Rust shell owns it: the folder
+picker returns a security-scoped bookmark, the shell stores it and starts
+access, and the store entitlements (`files.user-selected.read-write`,
+`files.bookmarks.app-scope`) belong to the app alone. The core carries only
+`app-sandbox` and `inherit` and shares the shell's sandbox, so a grant the
+shell receives while the core is already running (open and save panels,
+drops) reaches the core too; spawn order does not matter. exiftool, spawned
+by the core through `/usr/bin/perl` from `Contents/Resources`, inherits the
+same view. Nothing under `Contents/MacOS` may be unsigned, which is why
+exiftool's Perl tree stays under `Resources`. A save panel grants one path,
+so the zip export builds its archive in the destination volume's item
+replacement directory and renames it into place rather than writing a
+sibling beside the destination.
+
 Retry a failed release with `gh workflow run release.yml`. If the tag was
 already created, the retry checks out **that tag** and rebuilds it, rather
 than whatever main has become: shipping different code under a version

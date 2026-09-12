@@ -4,10 +4,17 @@ name: Release
 # a tag. When it does not, a release PR from `pnpm release` just landed, so
 # this tags the commit and ships it. workflow_dispatch re-runs the release for
 # the current version even if the tag exists, for retrying a failed run.
+# With submit_to_app_store it skips the DMG release and only submits the
+# already tagged build to App Store Connect.
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      submit_to_app_store:
+        description: Upload the App Store build to App Store Connect and TestFlight
+        type: boolean
+        default: false
 
 concurrency:
   group: release
@@ -19,14 +26,19 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       is-release: ${{ steps.decide.outputs.is-release }}
+      submit: ${{ steps.decide.outputs.submit }}
       version: ${{ steps.decide.outputs.version }}
       tag: ${{ steps.decide.outputs.tag }}
       tag-exists: ${{ steps.decide.outputs.tag-exists }}
       ref: ${{ steps.decide.outputs.ref }}
+      # A job-level `if:` cannot read `secrets`, but an output can.
+      mas: ${{ secrets.MAS_CERTIFICATE != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Compare the app version against existing tags
         id: decide
+        env:
+          MAS_CONFIGURED: ${{ secrets.MAS_CERTIFICATE != '' }}
         run: |
           VERSION=$(python3 -c "import json;print(json.load(open('apps/desktop/src-tauri/tauri.conf.json'))['version'])")
           TAG="v$VERSION"
@@ -40,7 +52,20 @@ jobs:
           fi
           echo "tag-exists=$EXISTS" >> $GITHUB_OUTPUT
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ inputs.submit_to_app_store }}" = true ]; then
+            if [ "$EXISTS" != true ]; then
+              echo "::error::$TAG is not released yet. Release it first, then submit it to the App Store."
+              exit 1
+            fi
+            if [ "$MAS_CONFIGURED" != true ]; then
+              echo "::error::MAS_CERTIFICATE is not set; there is nothing to submit with."
+              exit 1
+            fi
+            echo "Submitting $TAG to the App Store; the DMG release is not rebuilt."
+            echo "is-release=false" >> $GITHUB_OUTPUT
+            echo "submit=true" >> $GITHUB_OUTPUT
+            echo "ref=$TAG" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "is-release=true" >> $GITHUB_OUTPUT
             if [ "$EXISTS" = true ]; then
               # Retry of a release that already tagged: rebuild exactly what
@@ -209,6 +234,7 @@ jobs:
           xcrun stapler staple "$DMG"
           # What a user's Mac will conclude before it opens the thing.
           spctl --assess --type open --context context:primary-signature -vv "$DMG"
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db"
 
       # The Homebrew tap's update-cask workflow fetches
       # `<repo>-<version>.zip`, so the cask asset has to carry that exact
@@ -305,3 +331,140 @@ jobs:
             -f cask_name=photopipe \
             -f release_tag="$TAG" \
             -f source_repo=RaphaelMitas/photopipe
+
+  # Skipped without the store secrets, so a release still succeeds before they exist.
+  mas:
+    name: Build, sign, validate for the App Store
+    needs: [check]
+    if: (needs.check.outputs.is-release == 'true' || needs.check.outputs.submit == 'true') && needs.check.outputs.mas == 'true'
+    runs-on: macos-15
+    env:
+      APP: apps/desktop/src-tauri/target/release/bundle/macos/Photopipe.app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.check.outputs.ref }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - name: Cache vendored exiftool
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: apps/desktop/src-tauri/resources/exiftool
+          key: exiftool-${{ hashFiles('scripts/fetch-exiftool.sh') }}
+      - run: pnpm install --frozen-lockfile
+
+      # A store build that could still phone GitHub for updates would be rejected.
+      - name: Build the App Store flavour
+        run: pnpm --filter desktop tauri build --bundles app --config src-tauri/mas.conf.json -- --no-default-features
+
+      - name: Import signing certificates
+        env:
+          MAS_CERTIFICATE: ${{ secrets.MAS_CERTIFICATE }}
+          MAS_CERTIFICATE_PASSWORD: ${{ secrets.MAS_CERTIFICATE_PASSWORD }}
+          MAS_PROVISIONING_PROFILE: ${{ secrets.MAS_PROVISIONING_PROFILE }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+        run: |
+          for required in MAS_CERTIFICATE MAS_CERTIFICATE_PASSWORD MAS_PROVISIONING_PROFILE APP_STORE_CONNECT_KEY_ID APP_STORE_CONNECT_ISSUER_ID APP_STORE_CONNECT_KEY; do
+            if [ -z "${!required}" ]; then
+              echo "::error::$required is not set. See docs/engineering.md for the six App Store secrets."
+              exit 1
+            fi
+          done
+          KEYCHAIN_PATH=$RUNNER_TEMP/mas.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "$MAS_CERTIFICATE" | base64 --decode > $RUNNER_TEMP/mas.p12
+          security import $RUNNER_TEMP/mas.p12 -P "$MAS_CERTIFICATE_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          rm $RUNNER_TEMP/mas.p12
+
+          APP_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+            | grep "Apple Distribution" | head -1 | awk -F'"' '{print $2}')
+          # Installer certificates are not code-signing identities, so no
+          # policy filter here. Newer certificates spell the name differently.
+          INSTALLER_IDENTITY=$(security find-identity -v "$KEYCHAIN_PATH" \
+            | grep -e "3rd Party Mac Developer Installer" -e "Mac Installer Distribution" \
+            | head -1 | awk -F'"' '{print $2}')
+          if [ -z "$APP_IDENTITY" ] || [ -z "$INSTALLER_IDENTITY" ]; then
+            echo "::error::MAS_CERTIFICATE needs both an Apple Distribution and a Mac Installer Distribution identity."
+            exit 1
+          fi
+          echo "APP_IDENTITY=$APP_IDENTITY" >> $GITHUB_ENV
+          echo "INSTALLER_IDENTITY=$INSTALLER_IDENTITY" >> $GITHUB_ENV
+
+      # Raw codesign, unlike Xcode, does not inject the identity keys the embedded profile needs, so entitlements.mas.plist carries them.
+      - name: Sign
+        env:
+          MAS_PROVISIONING_PROFILE: ${{ secrets.MAS_PROVISIONING_PROFILE }}
+        run: |
+          echo "$MAS_PROVISIONING_PROFILE" | base64 --decode > "$APP/Contents/embedded.provisionprofile"
+          codesign --force --timestamp \
+            --entitlements apps/desktop/src-tauri/entitlements.mas.inherit.plist \
+            --sign "$APP_IDENTITY" "$APP/Contents/MacOS/photopipe-core"
+          codesign --force --timestamp \
+            --entitlements apps/desktop/src-tauri/entitlements.mas.plist \
+            --sign "$APP_IDENTITY" "$APP"
+
+          codesign --verify --strict --verbose=2 "$APP"
+          codesign --verify --strict --verbose=2 "$APP/Contents/MacOS/photopipe-core"
+
+      - name: Smoke test the bundle
+        run: ./scripts/smoke-bundle.sh --mas "$APP"
+
+      - name: Build the installer package
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          PKG="$RUNNER_TEMP/Photopipe-$VERSION.pkg"
+          productbuild --component "$APP" /Applications --sign "$INSTALLER_IDENTITY" "$PKG"
+          echo "PKG=$PKG" >> $GITHUB_ENV
+          # Nothing after this needs the identities, and the gems below should not have them.
+          security delete-keychain "$RUNNER_TEMP/mas.keychain-db"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: photopipe-mas
+          path: ${{ env.PKG }}
+
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      - name: Validate against App Store Connect
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+        run: bundle exec fastlane mac validate
+
+      # deliver wants one folder per locale; the README shots are the real UI at a Mac size.
+      - name: Stage the store screenshots
+        if: needs.check.outputs.submit == 'true'
+        run: |
+          mkdir -p fastlane/screenshots/en-US
+          cp docs/screenshots/*.png fastlane/screenshots/en-US/
+
+      - name: Upload to TestFlight and App Store Connect
+        if: needs.check.outputs.submit == 'true'
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+          APP_VERSION: ${{ needs.check.outputs.version }}
+        run: bundle exec fastlane mac submit

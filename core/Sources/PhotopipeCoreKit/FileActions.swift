@@ -3,14 +3,7 @@ import Foundation
 public enum FileActions {
     public enum ActionError: Error, Equatable {
         case noFiles
-        case openFailed(String)
         case zipFailed(String)
-    }
-
-    public static func reveal(paths: [String]) throws {
-        guard !paths.isEmpty else { throw ActionError.noFiles }
-        let result = try run("/usr/bin/open", ["-R"] + paths)
-        guard result.status == 0 else { throw ActionError.openFailed(result.output) }
     }
 
     @discardableResult
@@ -58,17 +51,21 @@ public enum FileActions {
     }
 
     public static func zipDirectory(at dir: URL, to destination: String) throws {
+        let fm = FileManager.default
         let dest = URL(fileURLWithPath: destination)
-        let temp = dest.deletingLastPathComponent()
-            .appendingPathComponent("\(tempPrefix)\(UUID().uuidString).zip")
-        defer { try? FileManager.default.removeItem(at: temp) }
+        // A save panel grants only the chosen path, so the temp zip goes to the destination volume's replacement directory, not beside it.
+        let scratch = try fm.url(
+            for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: dest,
+            create: true)
+        defer { try? fm.removeItem(at: scratch) }
+        let temp = scratch.appendingPathComponent("\(tempPrefix)\(UUID().uuidString).zip")
         let result = try run(
             "/usr/bin/zip", ["-q", "-r", temp.path, "."], currentDirectory: dir)
         guard result.status == 0 else { throw ActionError.zipFailed(result.output) }
-        if FileManager.default.fileExists(atPath: dest.path) {
-            _ = try FileManager.default.replaceItemAt(dest, withItemAt: temp)
+        if fm.fileExists(atPath: dest.path) {
+            _ = try fm.replaceItemAt(dest, withItemAt: temp)
         } else {
-            try FileManager.default.moveItem(at: temp, to: dest)
+            try fm.moveItem(at: temp, to: dest)
         }
     }
 

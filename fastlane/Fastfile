@@ -1,0 +1,27 @@
+default_platform(:mac)
+
+platform :mac do
+  before_all do
+    app_store_connect_api_key(
+      key_id: ENV.fetch("APP_STORE_CONNECT_KEY_ID"),
+      issuer_id: ENV.fetch("APP_STORE_CONNECT_ISSUER_ID"),
+      key_content: ENV.fetch("APP_STORE_CONNECT_KEY")
+    )
+  end
+
+  desc "Check the pkg against App Store Connect without uploading it"
+  lane :validate do
+    deliver(pkg: ENV.fetch("PKG"), verify_only: true, skip_metadata: true, skip_screenshots: true)
+  end
+
+  desc "Upload the listing text and screenshots, then the pkg to TestFlight"
+  lane :submit do
+    # Metadata first: it can be re-sent, a binary already uploaded under this build number cannot.
+    deliver(app_version: ENV.fetch("APP_VERSION"), skip_binary_upload: true)
+    upload_to_testflight(
+      pkg: ENV.fetch("PKG"),
+      app_platform: "osx",
+      skip_waiting_for_build_processing: true
+    )
+  end
+end
