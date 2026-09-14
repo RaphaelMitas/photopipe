@@ -57,9 +57,7 @@ pub fn mint(path: &str) -> Result<Vec<u8>, Failure> {
     })
 }
 
-/// A folder this process can read and write until it exits. The scope is
-/// never stopped: the core inherits it and would lose it too.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Live {
     pub path: String,
     pub bookmark: Vec<u8>,
@@ -84,6 +82,7 @@ pub fn activate(bookmark: &[u8]) -> Result<Live, Failure> {
         .path()
         .map(|path| path.to_string())
         .ok_or_else(|| Failure::Broken("bookmark resolved to no path".into()))?;
+    // never stopped: the core inherits the scope and would lose it too
     if !unsafe { url.startAccessingSecurityScopedResource() } {
         return Err(Failure::Denied(format!("macOS refused access to {path}")));
     }

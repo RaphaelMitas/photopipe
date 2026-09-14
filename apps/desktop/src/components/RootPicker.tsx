@@ -47,9 +47,11 @@ function errorText(error: RootError): string {
   }
 }
 
-export function RootPicker({ error, busy, onPick }: Props) {
+export function RootPicker({ error, busy: opening, onPick }: Props) {
   const [path, setPath] = useState("");
   const roots = useQuery(rootsQuery);
+  // the first listing may auto-open a root; a pick before it lands would race it
+  const busy = opening || roots.isPending;
 
   return (
     <TooltipProvider>

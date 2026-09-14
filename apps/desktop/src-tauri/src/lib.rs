@@ -14,8 +14,16 @@ use tauri::menu::{
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
-// Blocking sidecar I/O runs on the dedicated blocking pool, never on the main
-// thread or a tokio worker; the read timeout inside `request` bounds it.
+/// Sidecar I/O and bookmark resolution can stall, so neither runs on the main
+/// thread or a tokio worker.
+async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|e| format!("task panicked: {e}"))
+}
+
 #[tauri::command]
 async fn core_request(
     state: State<'_, Arc<Sidecar>>,
@@ -23,9 +31,7 @@ async fn core_request(
     params: Option<serde_json::Value>,
 ) -> Result<serde_json::Value, String> {
     let sidecar = Arc::clone(&state);
-    tauri::async_runtime::spawn_blocking(move || sidecar.request(&method, params))
-        .await
-        .map_err(|e| format!("sidecar task panicked: {e}"))?
+    blocking(move || sidecar.request(&method, params)).await?
 }
 
 #[derive(Serialize)]
@@ -35,20 +41,10 @@ struct OpenedRoot {
     result: serde_json::Value,
 }
 
-/// Resolving a bookmark can stall on a slow volume, so it never runs where the
-/// UI would wait.
-async fn blocking<T: Send + 'static>(
-    work: impl FnOnce() -> Result<T, Failure> + Send + 'static,
-) -> Result<T, Failure> {
-    tauri::async_runtime::spawn_blocking(work)
-        .await
-        .map_err(|e| Failure::Failed(format!("roots task panicked: {e}")))?
-}
-
 #[tauri::command]
 async fn list_roots(roots: State<'_, Arc<Roots>>) -> Result<Vec<Listing>, Failure> {
     let roots = Arc::clone(&roots);
-    blocking(move || Ok(roots.list())).await
+    Ok(blocking(move || roots.list()).await?)
 }
 
 /// No path shows the folder panel. Minting for a bare path only works under
@@ -62,7 +58,7 @@ async fn open_root(
 ) -> Result<Option<OpenedRoot>, Failure> {
     let sidecar = Arc::clone(&sidecar);
     let roots = Arc::clone(&roots);
-    blocking(move || {
+    blocking(move || -> Result<_, Failure> {
         let path = match path {
             Some(path) => path,
             None => {
@@ -93,17 +89,13 @@ async fn open_root(
         roots.adopt(live);
         Ok(Some(OpenedRoot { path, result }))
     })
-    .await
+    .await?
 }
 
 #[tauri::command]
 async fn forget_root(roots: State<'_, Arc<Roots>>, path: String) -> Result<(), Failure> {
     let roots = Arc::clone(&roots);
-    blocking(move || {
-        roots.forget(&path);
-        Ok(())
-    })
-    .await
+    Ok(blocking(move || roots.forget(&path)).await?)
 }
 
 #[tauri::command]
@@ -124,9 +116,7 @@ pub fn run() {
         .manage(Arc::new(Sidecar::new(Sidecar::default_bin())))
         .setup(|app| {
             app.manage(Arc::new(Roots::load(None)));
-            // Granted here rather than in capabilities/ because tauri-build
-            // validates every file there against the plugins compiled in, and
-            // the store build compiles without these two.
+            // not in capabilities/: tauri-build rejects permissions for plugins the store build compiles out
             #[cfg(feature = "updater")]
             app.add_capability(
                 tauri::ipc::CapabilityBuilder::new("updater")

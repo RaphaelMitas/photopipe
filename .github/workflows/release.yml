@@ -4,8 +4,8 @@ name: Release
 # a tag. When it does not, a release PR from `pnpm release` just landed, so
 # this tags the commit and ships it. workflow_dispatch re-runs the release for
 # the current version even if the tag exists, for retrying a failed run.
-# With submit_to_app_store it skips the DMG release and only submits the
-# already tagged build to App Store Connect.
+# With submit_to_app_store it skips the DMG release and builds the already
+# tagged commit for App Store Connect alone.
 on:
   push:
     branches: [main]
@@ -161,7 +161,7 @@ jobs:
 
           echo "$APPLE_CERTIFICATE" | base64 --decode > $RUNNER_TEMP/certificate.p12
           security import $RUNNER_TEMP/certificate.p12 -P "$APPLE_CERTIFICATE_PASSWORD" \
-            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+            -T /usr/bin/codesign -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychain -d user -s "$KEYCHAIN_PATH"
           rm $RUNNER_TEMP/certificate.p12
@@ -391,7 +391,7 @@ jobs:
 
           echo "$MAS_CERTIFICATE" | base64 --decode > $RUNNER_TEMP/mas.p12
           security import $RUNNER_TEMP/mas.p12 -P "$MAS_CERTIFICATE_PASSWORD" \
-            -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+            -T /usr/bin/codesign -T /usr/bin/productbuild -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychain -d user -s "$KEYCHAIN_PATH"
           rm $RUNNER_TEMP/mas.p12

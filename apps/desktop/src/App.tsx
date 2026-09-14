@@ -174,24 +174,36 @@ export default function App() {
   const [cropDraft, setCropDraft] = useState<CropDraft | null>(null);
   const cropping = cropDraft !== null;
   const [clipboard, setClipboard] = useState<EditClipboard | null>(null);
-
-  const connectRoot = useCallback(async (path?: string) => {
-    setRootState({ kind: "picking", error: null, busy: true });
-    try {
-      const opened = await openRoot(path);
-      setRootState(
-        opened
-          ? { kind: "ready", path: opened.path, generation: opened.generation }
-          : { kind: "picking", error: null, busy: false },
-      );
-      return opened !== null;
-    } catch (error) {
-      setRootState({ kind: "picking", error: toRootError(error), busy: false });
-      return false;
-    }
-  }, []);
-
   const queryClient = useQueryClient();
+
+  const connectRoot = useCallback(
+    async (path?: string) => {
+      setRootState({ kind: "picking", error: null, busy: true });
+      try {
+        const opened = await openRoot(path);
+        setRootState(
+          opened
+            ? {
+                kind: "ready",
+                path: opened.path,
+                generation: opened.generation,
+              }
+            : { kind: "picking", error: null, busy: false },
+        );
+        return opened !== null;
+      } catch (error) {
+        setRootState({
+          kind: "picking",
+          error: toRootError(error),
+          busy: false,
+        });
+        void queryClient.invalidateQueries(rootsQuery);
+        return false;
+      }
+    },
+    [queryClient],
+  );
+
   useEffect(() => {
     queryClient
       .fetchQuery(rootsQuery)
@@ -681,8 +693,7 @@ export default function App() {
       onOpenChange={setSettingsOpen}
       autoScore={autoScore}
       onAutoScore={changeAutoScore}
-      updaterEnabled={updater.enabled}
-      onCheckUpdates={checkForUpdates}
+      onCheckUpdates={updater.enabled ? checkForUpdates : undefined}
     />
   );
 

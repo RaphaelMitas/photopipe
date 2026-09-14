@@ -44,9 +44,7 @@ export function useUpdater(): Updater {
       if (!enabled || !updatable()) {
         const blocked: UpdateState = {
           kind: "error",
-          message: enabled
-            ? "Not a release build."
-            : "Updates come through the App Store.",
+          message: "Not a release build.",
         };
         if (!silent) setState(blocked);
         return blocked;

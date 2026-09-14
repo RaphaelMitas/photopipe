@@ -45,34 +45,28 @@ pub struct Listing {
 
 /// Remembered folders, newest first.
 pub struct Roots {
-    suite: Option<String>,
+    defaults: Retained<NSUserDefaults>,
     entries: Mutex<Vec<Entry>>,
 }
 
 impl Roots {
     pub fn load(suite: Option<&str>) -> Self {
-        let roots = Roots {
-            suite: suite.map(str::to_owned),
-            entries: Mutex::new(Vec::new()),
-        };
-        // only a change to Live makes this unparseable; starting empty beats refusing to launch
-        let stored: Vec<Live> = roots
-            .defaults()
-            .stringForKey(&NSString::from_str(KEY))
-            .and_then(|json| serde_json::from_str(&json.to_string()).ok())
-            .unwrap_or_default();
-        *roots.entries.lock().unwrap() = stored.into_iter().map(Entry::activate).collect();
-        roots
-    }
-
-    fn defaults(&self) -> Retained<NSUserDefaults> {
-        match &self.suite {
+        let defaults = match suite {
             Some(suite) => NSUserDefaults::initWithSuiteName(
                 NSUserDefaults::alloc(),
                 Some(&NSString::from_str(suite)),
             )
             .expect("suite defaults"),
             None => NSUserDefaults::standardUserDefaults(),
+        };
+        // only a change to Live makes this unparseable; starting empty beats refusing to launch
+        let stored: Vec<Live> = defaults
+            .stringForKey(&NSString::from_str(KEY))
+            .and_then(|json| serde_json::from_str(&json.to_string()).ok())
+            .unwrap_or_default();
+        Roots {
+            defaults,
+            entries: Mutex::new(stored.into_iter().map(Entry::activate).collect()),
         }
     }
 
@@ -81,19 +75,31 @@ impl Roots {
         let json = NSString::from_str(&serde_json::to_string(&stored).expect("roots json"));
         let object: &AnyObject = &json;
         unsafe {
-            self.defaults()
+            self.defaults
                 .setObject_forKey(Some(object), &NSString::from_str(KEY));
         }
     }
 
     pub fn list(&self) -> Vec<Listing> {
         let mut entries = self.entries.lock().unwrap();
-        let mut seen = HashSet::new();
-        entries.retain_mut(|entry| {
+        let before: Vec<Live> = entries.iter().map(|entry| entry.live.clone()).collect();
+        for entry in entries.iter_mut() {
             let _ = entry.refresh();
-            seen.insert(entry.live.path.clone())
+        }
+        // a renamed folder can refresh onto a path another entry already holds
+        let working: HashSet<String> = entries
+            .iter()
+            .filter(|entry| entry.failure.is_none())
+            .map(|entry| entry.live.path.clone())
+            .collect();
+        let mut seen = HashSet::new();
+        entries.retain(|entry| {
+            (entry.failure.is_none() || !working.contains(&entry.live.path))
+                && seen.insert(entry.live.path.clone())
         });
-        self.write(&entries);
+        if entries.iter().map(|entry| &entry.live).ne(before.iter()) {
+            self.write(&entries);
+        }
         entries
             .iter()
             .map(|entry| Listing {
@@ -229,6 +235,46 @@ mod tests {
         assert_eq!(listed[0].status, "ok");
         assert!(same(&listed[0].path, &after));
         let _ = std::fs::remove_dir_all(&after);
+        NSUserDefaults::standardUserDefaults()
+            .removePersistentDomainForName(&NSString::from_str(&suite));
+    }
+
+    #[test]
+    fn a_working_root_wins_over_a_dead_one_at_the_same_path_and_a_clean_list_is_not_rewritten() {
+        let suite = suite("samepath");
+        let dir = folder("samepath");
+        let roots = Roots::load(Some(&suite));
+        let ok = live(&dir);
+        let dead = Live {
+            path: ok.path.clone(),
+            bookmark: b"garbage".to_vec(),
+        };
+        *roots.entries.lock().unwrap() = vec![
+            Entry {
+                live: dead,
+                failure: Some(Failure::Broken("stale".into())),
+            },
+            Entry {
+                live: ok,
+                failure: None,
+            },
+        ];
+        let listed = roots.list();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].status, "ok");
+
+        let key = NSString::from_str(KEY);
+        unsafe {
+            roots
+                .defaults
+                .setObject_forKey(Some(&*NSString::from_str("untouched")), &key);
+        }
+        roots.list();
+        assert_eq!(
+            roots.defaults.stringForKey(&key).unwrap().to_string(),
+            "untouched"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
         NSUserDefaults::standardUserDefaults()
             .removePersistentDomainForName(&NSString::from_str(&suite));
     }

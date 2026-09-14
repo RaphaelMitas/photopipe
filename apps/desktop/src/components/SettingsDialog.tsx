@@ -24,8 +24,7 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   autoScore: boolean;
   onAutoScore: (on: boolean) => void;
-  updaterEnabled: boolean;
-  onCheckUpdates: () => void;
+  onCheckUpdates?: () => void;
 };
 
 function MeterDots({ filled }: { filled: number }) {
@@ -128,7 +127,6 @@ export function SettingsDialog({
   onOpenChange,
   autoScore,
   onAutoScore,
-  updaterEnabled,
   onCheckUpdates,
 }: Props) {
   const quickSwitch = useRawDecoderQuickSwitch();
@@ -185,7 +183,7 @@ export function SettingsDialog({
             onCheckedChange={setRawDecoderQuickSwitch}
           />
         </div>
-        {updaterEnabled && (
+        {onCheckUpdates && (
           <DialogFooter className="sm:justify-start">
             <Button
               variant="outline"
