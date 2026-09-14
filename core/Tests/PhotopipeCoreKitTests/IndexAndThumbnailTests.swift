@@ -73,8 +73,6 @@ private let sampleFiles: [String: [ImageFile]] = [
     #expect(try SQLiteIndex(path: path).load() == nil)
 }
 
-/// Guards two things: the bump path spares the scores table, and save() keeps
-/// the schema row, without which no bump ever fires.
 @Test func schemaBumpDropsParsedRowsButKeepsScores() throws {
     let path = tempFile("index.sqlite")
     defer { try? FileManager.default.removeItem(atPath: path) }
@@ -92,6 +90,24 @@ private let sampleFiles: [String: [ImageFile]] = [
     let reopened = try SQLiteIndex(path: path)
     #expect(try reopened.load() == nil, "rows parsed by an older reader are re-read")
     #expect(try reopened.loadScores()["/r/misc/a.dng"] == row, "scores are still valid")
+}
+
+@Test func rowsEnrichedByAnotherSchemaReadAsUnparsed() throws {
+    let path = tempFile("index.sqlite")
+    defer { try? FileManager.default.removeItem(atPath: path) }
+
+    let index = try SQLiteIndex(path: path)
+    let enriched = sampleFiles.mapValues { $0.map { $0.with(enriched: true) } }
+    try index.save(root: "/r", filesByShoot: enriched)
+    #expect(try index.load()?.filesByShoot["misc"]?.first?.enriched == true)
+
+    var db: OpaquePointer?
+    #expect(sqlite3_open(path, &db) == SQLITE_OK)
+    #expect(sqlite3_exec(db, "UPDATE files SET enriched = 1", nil, nil, nil) == SQLITE_OK)
+    sqlite3_close(db)
+    #expect(
+        try index.load()?.filesByShoot["misc"]?.first?.enriched == false,
+        "an older build's flag must not pass for this parser's work")
 }
 
 @Test func corruptIndexFileIsRecreatedNotFatal() throws {

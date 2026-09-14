@@ -81,7 +81,8 @@ public enum XMP {
         else { return [] }
         return body.matches(of: /<rdf:li>\s*([\d.]+)\s*,\s*([\d.]+)\s*<\/rdf:li>/)
             .compactMap { item in
-                guard let x = Double(item.1), let y = Double(item.2) else { return nil }
+                guard let x = Double(item.1), let y = Double(item.2), x.isFinite, y.isFinite
+                else { return nil }
                 return CurvePoint(x: x / 255, y: y / 255)
             }
     }
@@ -362,22 +363,24 @@ public enum XMP {
                 args.append("-XMP-crs:\(tag)=")
                 return
             }
-            for point in points {
+            // clamped to the unit square first: Int(1e30) traps
+            for point in Curve.normalized(points) {
                 let x = Int((point.x * 255).rounded())
                 let y = Int((point.y * 255).rounded())
                 args.append("-XMP-crs:\(tag)=\(x), \(y)")
             }
         }
-        args.append(
-            edit.exposure == 0 ? "-XMP-crs:Exposure2012=" : "-XMP-crs:Exposure2012=\(edit.exposure)"
-        )
+        func realScalar(_ tag: String, _ value: Double) {
+            args.append(value == 0 ? "-XMP-crs:\(tag)=" : "-XMP-crs:\(tag)=\(value)")
+        }
+        realScalar("Exposure2012", edit.exposure)
         integerScalar("Highlights2012", edit.highlights)
         integerScalar("Shadows2012", edit.shadows)
         integerScalar("Whites2012", edit.whites)
         integerScalar("Blacks2012", edit.blacks)
         integerScalar("Texture", edit.texture)
         integerScalar("Clarity2012", edit.clarity)
-        integerScalar("Dehaze", edit.dehaze)
+        realScalar("Dehaze", edit.dehaze)
         // exiftool's name for crs:Temperature is ColorTemperature.
         let temperatureTag = file.isRaw ? "ColorTemperature" : "IncrementalTemperature"
         let tintTag = file.isRaw ? "Tint" : "IncrementalTint"

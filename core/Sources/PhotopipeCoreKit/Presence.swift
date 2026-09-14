@@ -40,15 +40,29 @@ enum Presence {
             })
     }()
 
-    // low-frequency estimates only need coarse structure, so they're built at this size
     private static let coarseLongEdge: CGFloat = 1024
 
     private static func longEdge(_ image: CIImage) -> CGFloat {
         max(image.extent.width, image.extent.height)
     }
 
-    private static func coarseScale(for image: CIImage) -> CGFloat {
-        min(coarseLongEdge / longEdge(image), 1)
+    /// Whole pixels on both axes: a fractional last row is part transparent,
+    /// and the blur spreads that into a bright band along the edge.
+    private static func coarseTransform(for image: CIImage) -> CGAffineTransform {
+        let scale = min(coarseLongEdge / longEdge(image), 1)
+        let size = image.extent.size
+        return .init(
+            scaleX: (size.width * scale).rounded() / size.width,
+            y: (size.height * scale).rounded() / size.height)
+    }
+
+    private static func coarse(_ image: CIImage, _ transform: CGAffineTransform) -> CIImage {
+        let rect = image.extent.applying(transform)
+        return image.clampedToExtent().transformed(by: transform)
+            .cropped(
+                to: CGRect(
+                    x: rect.minX.rounded(), y: rect.minY.rounded(),
+                    width: rect.width.rounded(), height: rect.height.rounded()))
     }
 
     private static func clamped(_ image: CIImage, _ filter: String, radius: CGFloat) -> CIImage {
@@ -69,8 +83,8 @@ enum Presence {
     }
 
     static func dehaze(_ image: CIImage, amount: Double) -> CIImage {
-        let scale = coarseScale(for: image)
-        let coarse = image.transformed(by: .init(scaleX: scale, y: scale))
+        let transform = coarseTransform(for: image)
+        let coarse = coarse(image, transform)
         // dark channel kept per channel, so its per-channel max estimates a tinted airlight
         let veil = blurred(
             clamped(coarse, "CIMorphologyMinimum", radius: longEdge(coarse) * 0.01),
@@ -78,16 +92,16 @@ enum Presence {
         let light = veil.applyingFilter(
             "CIAreaMaximum", parameters: [kCIInputExtentKey: CIVector(cgRect: veil.extent)]
         ).clampedToExtent()
-        let full = veil.samplingLinear().transformed(by: .init(scaleX: 1 / scale, y: 1 / scale))
+        let full = veil.samplingLinear().transformed(by: transform.inverted())
         return apply(
             "dehaze", to: image, arguments: [full, light, Float(amount / 100 * 0.75)])
     }
 
     static func clarity(_ image: CIImage, amount: Double) -> CIImage {
-        let scale = coarseScale(for: image)
-        let coarse = image.transformed(by: .init(scaleX: scale, y: scale))
+        let transform = coarseTransform(for: image)
+        let coarse = coarse(image, transform)
         let base = blurred(coarse, radius: longEdge(coarse) * 0.015)
-            .samplingLinear().transformed(by: .init(scaleX: 1 / scale, y: 1 / scale))
+            .samplingLinear().transformed(by: transform.inverted())
         return apply("localContrast", to: image, arguments: [base, Float(amount / 100)])
     }
 

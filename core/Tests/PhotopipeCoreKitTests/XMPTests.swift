@@ -187,6 +187,26 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(edit.curveRed.count == 2)
 }
 
+@Test func hugeCurvePointsNeitherPoisonNorTrap() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00009.ARW")
+    try Data("fake".utf8).write(to: arw)
+
+    let overflow = String(repeating: "9", count: 400)
+    let sidecar = """
+        <x:xmpmeta><rdf:Description><crs:ToneCurvePV2012><rdf:Seq>
+        <rdf:li>0, 0</rdf:li><rdf:li>\(overflow), 255</rdf:li>
+        </rdf:Seq></crs:ToneCurvePV2012></rdf:Description></x:xmpmeta>
+        """
+    #expect(XMP.parseEdit(sidecar, isRaw: true).curveRGB.isEmpty, "an infinite point is dropped")
+
+    // finite but far past Int.max, as IPC can send it
+    let huge = Edit(curveRGB: [CurvePoint(x: 0, y: 0.2), CurvePoint(x: 1e30, y: 1)])
+    try XMP.writeEdit(huge, file: try image(arw), tool: .shared)
+    #expect(XMP.readEdit(file: try image(arw)).curveRGB.last == CurvePoint(x: 1, y: 1))
+}
+
 @Test func hostileCropValuesAreRejectedOnParse() {
     let digits = String(repeating: "9", count: 400)
     let sidecar = """
@@ -456,7 +476,7 @@ func image(_ url: URL) throws -> ImageFile {
 
     try XMP.writeRating(3, file: try image(jpg), tool: .shared)
     let edit = Edit(
-        exposure: 0.5, shadows: 25, whites: -15, blacks: 40, dehaze: 35,
+        exposure: 0.5, shadows: 25, whites: -15, blacks: 40, dehaze: 12.5,
         temperature: 30, tint: -10, saturation: 15,
         curveRGB: [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.25, y: 0.2), CurvePoint(x: 1, y: 1)])
     try XMP.writeEdit(edit, file: try image(jpg), tool: .shared)
@@ -467,7 +487,7 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(read.shadows == 25)
     #expect(read.whites == -15)
     #expect(read.blacks == 40)
-    #expect(read.dehaze == 35)
+    #expect(read.dehaze == 12.5, "Dehaze is a real tag, so a foreign fraction survives")
     #expect(read.temperature == 30)
     #expect(read.tint == -10)
     #expect(read.saturation == 15)

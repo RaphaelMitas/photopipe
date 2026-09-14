@@ -13,8 +13,7 @@ public final class SQLiteIndex: @unchecked Sendable {
     private var db: OpaquePointer?
     private let path: String
 
-    // bump whenever the sidecar parser learns a tag, so rows read without it
-    // are re-parsed instead of carried forward and written back over the tag
+    // bump when the sidecar parser learns a tag, or stale rows get written back over it
     private static let schemaVersion = 5
 
     public init(path: String) throws {
@@ -72,9 +71,8 @@ public final class SQLiteIndex: @unchecked Sendable {
             );
             """)
         let stored = try scalarInt("SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schema'")
-        // only the parsed rows go; scores took minutes per shoot and are still
-        // valid. nil counts: older builds dropped the row on every save
-        if stored != Self.schemaVersion {
+        // scores took minutes per shoot and survive a parser change; only parsed rows go
+        if let stored, stored != Self.schemaVersion {
             try exec("DELETE FROM files; DELETE FROM meta")
         }
         try exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema', '\(Self.schemaVersion)')")
@@ -161,7 +159,9 @@ public final class SQLiteIndex: @unchecked Sendable {
                 }
                 sqlite3_bind_int64(statement, 9, Int64(file.width))
                 sqlite3_bind_int64(statement, 10, Int64(file.height))
-                sqlite3_bind_int64(statement, 11, file.enriched ? 1 : 0)
+                // the version, not a flag, so a row an older build writes while
+                // both run reads as unparsed here
+                sqlite3_bind_int64(statement, 11, file.enriched ? Int64(Self.schemaVersion) : 0)
                 sqlite3_bind_double(statement, 12, file.sidecarMtime)
                 guard sqlite3_step(statement) == SQLITE_DONE else {
                     throw IndexError.exec(String(cString: sqlite3_errmsg(db)))
@@ -216,7 +216,7 @@ public final class SQLiteIndex: @unchecked Sendable {
                 edit: edit ?? .identity,
                 width: Int(sqlite3_column_int64(statement, 8)),
                 height: Int(sqlite3_column_int64(statement, 9)),
-                enriched: sqlite3_column_int64(statement, 10) == 1,
+                enriched: sqlite3_column_int64(statement, 10) == Self.schemaVersion,
                 sidecarMtime: sqlite3_column_double(statement, 11))
             filesByShoot[String(cString: shootText), default: []].append(record)
         }
