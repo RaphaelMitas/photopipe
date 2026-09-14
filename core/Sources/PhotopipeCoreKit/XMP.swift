@@ -86,18 +86,19 @@ public enum XMP {
             }
     }
 
-    /// One view over a sidecar's text and an embedded file's metadata, so the
-    /// crs tag mapping lives once.
     private struct Tags {
         let scalar: (String) -> Double?
         let curve: (String) -> [CurvePoint]
         let hasCrop: Bool?
     }
 
-    /// Lightroom's crop-reset keeps the Crop* values and flips HasCrop to
-    /// False, so HasCrop wins when present.
     private static func edit(from tags: Tags, isRaw: Bool, rotation: Int) -> Edit {
-        Edit(
+        // other tools write a straight curve as two points; ours is the empty one
+        func curve(_ tag: String) -> [CurvePoint] {
+            let points = tags.curve(tag)
+            return Curve.isIdentity(points) ? [] : points
+        }
+        return Edit(
             exposure: tags.scalar("Exposure2012") ?? 0,
             highlights: tags.scalar("Highlights2012") ?? 0,
             shadows: tags.scalar("Shadows2012") ?? 0,
@@ -111,10 +112,11 @@ public enum XMP {
             denoise: isRaw ? tags.scalar("LuminanceSmoothing") : nil,
             vibrance: tags.scalar("Vibrance") ?? 0,
             saturation: tags.scalar("Saturation") ?? 0,
-            curveRGB: tags.curve("ToneCurvePV2012"),
-            curveRed: tags.curve("ToneCurvePV2012Red"),
-            curveGreen: tags.curve("ToneCurvePV2012Green"),
-            curveBlue: tags.curve("ToneCurvePV2012Blue"),
+            curveRGB: curve("ToneCurvePV2012"),
+            curveRed: curve("ToneCurvePV2012Red"),
+            curveGreen: curve("ToneCurvePV2012Green"),
+            curveBlue: curve("ToneCurvePV2012Blue"),
+            // Lightroom's crop reset keeps Crop* but sets HasCrop False, so HasCrop wins
             crop: tags.hasCrop == false ? nil : cropRect { tags.scalar("Crop\($0)") },
             cropAngle: tags.hasCrop == false ? 0 : tags.scalar("CropAngle") ?? 0,
             rotation: rotation)

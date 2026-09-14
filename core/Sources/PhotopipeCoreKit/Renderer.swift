@@ -237,8 +237,11 @@ public final class Renderer {
                     "inputColorSpace": curveColorSpace,
                 ])
         }
-        if edit.texture != 0 || edit.clarity != 0 {
-            image = Presence.localContrast(image, texture: edit.texture, clarity: edit.clarity)
+        if edit.clarity != 0 {
+            image = Presence.clarity(image, amount: edit.clarity)
+        }
+        if edit.texture != 0 {
+            image = Presence.texture(image, amount: edit.texture)
         }
         if edit.vibrance != 0 {
             image = image.applyingFilter(

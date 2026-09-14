@@ -174,6 +174,19 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(active.cropAngle == 2.5)
 }
 
+@Test func straightCurveFromAnotherToolReadsAsNoCurve() {
+    let sidecar = """
+        <x:xmpmeta><rdf:Description><crs:ToneCurvePV2012><rdf:Seq>
+        <rdf:li>0, 0</rdf:li><rdf:li>255, 255</rdf:li>
+        </rdf:Seq></crs:ToneCurvePV2012><crs:ToneCurvePV2012Red><rdf:Seq>
+        <rdf:li>0, 10</rdf:li><rdf:li>255, 255</rdf:li>
+        </rdf:Seq></crs:ToneCurvePV2012Red></rdf:Description></x:xmpmeta>
+        """
+    let edit = XMP.parseEdit(sidecar, isRaw: true)
+    #expect(edit.curveRGB.isEmpty, "a straight curve is the same edit as no curve")
+    #expect(edit.curveRed.count == 2)
+}
+
 @Test func hostileCropValuesAreRejectedOnParse() {
     let digits = String(repeating: "9", count: 400)
     let sidecar = """

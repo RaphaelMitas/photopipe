@@ -53,7 +53,6 @@ public struct CropRect: Codable, Equatable, Sendable {
 /// the crop rect stays axis-aligned.
 /// `rotation`: whole-photo turn (0/90/180/270) on top of the file's own
 /// orientation; the crop rect is against the turned frame.
-/// `texture`/`clarity`/`dehaze`: local contrast at three scales, -100..100.
 public struct Edit: Codable, Equatable, Sendable {
     public var exposure: Double
     public var highlights: Double
@@ -145,7 +144,7 @@ public struct Edit: Codable, Equatable, Sendable {
     /// the cache keys and sidecar JSON they already had.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        func encodeUnlessZero(_ value: Double, forKey key: CodingKeys) throws {
+        func encodeUnlessZero<T: Encodable & Numeric>(_ value: T, forKey key: CodingKeys) throws {
             if value != 0 {
                 try container.encode(value, forKey: key)
             }
@@ -169,9 +168,7 @@ public struct Edit: Codable, Equatable, Sendable {
         try container.encode(curveBlue, forKey: .curveBlue)
         try container.encodeIfPresent(crop, forKey: .crop)
         try encodeUnlessZero(cropAngle, forKey: .cropAngle)
-        if rotation != 0 {
-            try container.encode(rotation, forKey: .rotation)
-        }
+        try encodeUnlessZero(rotation, forKey: .rotation)
     }
 
     public var isIdentity: Bool {

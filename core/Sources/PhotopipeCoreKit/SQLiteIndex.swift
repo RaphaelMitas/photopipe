@@ -72,12 +72,10 @@ public final class SQLiteIndex: @unchecked Sendable {
             );
             """)
         let stored = try scalarInt("SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schema'")
-        if let stored, stored != Self.schemaVersion {
-            sqlite3_close(db)
-            db = nil
-            try? FileManager.default.removeItem(atPath: path)
-            try open()
-            return
+        // only the parsed rows go; scores took minutes per shoot and are still
+        // valid. nil counts: older builds dropped the row on every save
+        if stored != Self.schemaVersion {
+            try exec("DELETE FROM files; DELETE FROM meta")
         }
         try exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema', '\(Self.schemaVersion)')")
         try exec("SELECT count(*) FROM files")

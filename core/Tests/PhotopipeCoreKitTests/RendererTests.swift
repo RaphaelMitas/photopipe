@@ -52,8 +52,8 @@ private func meanChannels(
     return (Double(pixel[0]), Double(pixel[1]), Double(pixel[2]))
 }
 
-private func meanLuminance(of url: URL) throws -> Double {
-    let channels = try meanChannels(of: url)
+private func meanLuminance(of url: URL, region: CGRect? = nil) throws -> Double {
+    let channels = try meanChannels(of: url, region: region)
     return (channels.red + channels.green + channels.blue) / 3
 }
 
@@ -304,8 +304,6 @@ private func writeSyntheticJPEG(color: CIColor) throws -> URL {
     return url
 }
 
-/// Left half red, right half blue by default; the geometry tests read where
-/// the halves end up after crops, turns, and orientation.
 private func writeHalvesJPEG(
     left: CIColor = CIColor(red: 1, green: 0, blue: 0),
     right: CIColor = CIColor(red: 0, green: 0, blue: 1),
@@ -327,12 +325,12 @@ private func gray(_ value: CGFloat) -> CIColor {
     CIColor(red: value, green: value, blue: value)
 }
 
-/// Luminance step across the halves' seam, averaged over a band either side.
+/// Step across the seam of a 256 px halves render, averaged over a band either side.
 private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
-    let left = try meanChannels(
+    let left = try meanLuminance(
         of: url, region: CGRect(x: 128 - band, y: 0, width: band, height: 256))
-    let right = try meanChannels(of: url, region: CGRect(x: 128, y: 0, width: band, height: 256))
-    return right.green - left.green
+    let right = try meanLuminance(of: url, region: CGRect(x: 128, y: 0, width: band, height: 256))
+    return right - left
 }
 
 @Test func dehazeLiftsTheVeilAndNegativeAddsIt() throws {
@@ -343,12 +341,11 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
     defer { try? FileManager.default.removeItem(at: jpegURL) }
     let renderer = Renderer(cacheDir: cacheDir)
     let file = try imageFile(for: jpegURL)
+    let render = { (edit: Edit) in try renderer.render(file: file, edit: edit, maxPixel: 256) }
 
-    let neutral = try seamContrast(of: renderer.render(file: file, edit: .identity, maxPixel: 256))
-    let cleared = try seamContrast(
-        of: renderer.render(file: file, edit: Edit(dehaze: 80), maxPixel: 256))
-    let veiled = try seamContrast(
-        of: renderer.render(file: file, edit: Edit(dehaze: -80), maxPixel: 256))
+    let neutral = try seamContrast(of: render(.identity))
+    let cleared = try seamContrast(of: render(Edit(dehaze: 80)))
+    let veiled = try seamContrast(of: render(Edit(dehaze: -80)))
     #expect(cleared > neutral + 10, "dehaze +80 must spread the tones apart, got \(neutral) → \(cleared)")
     #expect(veiled < neutral - 5, "dehaze -80 must squeeze them together, got \(neutral) → \(veiled)")
 }
@@ -360,25 +357,21 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
     defer { try? FileManager.default.removeItem(at: jpegURL) }
     let renderer = Renderer(cacheDir: cacheDir)
     let file = try imageFile(for: jpegURL)
+    let render = { (edit: Edit) in try renderer.render(file: file, edit: edit, maxPixel: 256) }
 
-    let neutral = try seamContrast(of: renderer.render(file: file, edit: .identity, maxPixel: 256))
-    let punchy = try seamContrast(
-        of: renderer.render(file: file, edit: Edit(clarity: 100), maxPixel: 256))
-    let soft = try seamContrast(
-        of: renderer.render(file: file, edit: Edit(clarity: -100), maxPixel: 256))
+    let neutral = try seamContrast(of: render(.identity))
+    let punchy = try seamContrast(of: render(Edit(clarity: 100)))
+    let soft = try seamContrast(of: render(Edit(clarity: -100)))
     #expect(punchy > neutral + 5, "clarity +100 must deepen the seam, got \(neutral) → \(punchy)")
     #expect(soft < neutral - 5, "clarity -100 must soften the seam, got \(neutral) → \(soft)")
 
     // texture's radius is a sliver of this frame, so read right at the seam
-    let fine = try seamContrast(
-        of: renderer.render(file: file, edit: .identity, maxPixel: 256), band: 2)
-    let crisp = try seamContrast(
-        of: renderer.render(file: file, edit: Edit(texture: 100), maxPixel: 256), band: 2)
+    let fine = try seamContrast(of: render(.identity), band: 2)
+    let crisp = try seamContrast(of: render(Edit(texture: 100)), band: 2)
     #expect(crisp > fine + 2, "texture +100 must crisp the seam, got \(fine) → \(crisp)")
 
-    let flat = try meanLuminance(of: renderer.render(file: file, edit: .identity, maxPixel: 256))
-    let flatPunchy = try meanLuminance(
-        of: renderer.render(file: file, edit: Edit(clarity: 100), maxPixel: 256))
+    let flat = try meanLuminance(of: render(.identity))
+    let flatPunchy = try meanLuminance(of: render(Edit(clarity: 100)))
     #expect(abs(flatPunchy - flat) < 3, "local contrast must not move the overall brightness")
 }
 

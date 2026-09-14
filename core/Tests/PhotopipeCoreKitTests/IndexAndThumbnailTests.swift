@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import ImageIO
+import SQLite3
 import Testing
 import UniformTypeIdentifiers
 
@@ -70,6 +71,27 @@ private let sampleFiles: [String: [ImageFile]] = [
     let path = tempFile("index.sqlite")
     defer { try? FileManager.default.removeItem(atPath: path) }
     #expect(try SQLiteIndex(path: path).load() == nil)
+}
+
+/// Guards two things: the bump path spares the scores table, and save() keeps
+/// the schema row, without which no bump ever fires.
+@Test func schemaBumpDropsParsedRowsButKeepsScores() throws {
+    let path = tempFile("index.sqlite")
+    defer { try? FileManager.default.removeItem(atPath: path) }
+
+    let index = try SQLiteIndex(path: path)
+    try index.save(root: "/r", filesByShoot: sampleFiles)
+    let row = ScoreRow(score: 0.4, mtime: 1, size: 5, version: 1)
+    try index.saveScores([("/r/misc/a.dng", row)])
+
+    var db: OpaquePointer?
+    #expect(sqlite3_open(path, &db) == SQLITE_OK)
+    #expect(sqlite3_exec(db, "UPDATE meta SET value = '1' WHERE key = 'schema'", nil, nil, nil) == SQLITE_OK)
+    sqlite3_close(db)
+
+    let reopened = try SQLiteIndex(path: path)
+    #expect(try reopened.load() == nil, "rows parsed by an older reader are re-read")
+    #expect(try reopened.loadScores()["/r/misc/a.dng"] == row, "scores are still valid")
 }
 
 @Test func corruptIndexFileIsRecreatedNotFatal() throws {
