@@ -6,6 +6,11 @@ const CONTROLS = [
   { name: "Exposure", detail: "Written as Lightroom's own crs:Exposure2012." },
   { name: "Highlights · Shadows", detail: "Recovery either end of the range." },
   { name: "Whites · Blacks", detail: "Set where the photo clips, either end." },
+  {
+    name: "Texture · Clarity · Dehaze",
+    detail:
+      "Local contrast at three scales; dehaze reads the haze colour per photo.",
+  },
   { name: "Temp · Tint", detail: "True Kelvin on raw, incremental elsewhere." },
   {
     name: "Denoise",

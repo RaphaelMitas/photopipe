@@ -1,5 +1,5 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { type CurvePoint, isIdentityCurve } from "./curve";
+import type { CurvePoint } from "./curve";
 import { placeholderFor } from "./placeholder";
 
 // Normalized crop in the unit square with a top-left origin, crs-style.
@@ -18,6 +18,9 @@ export type Edit = {
   shadows: number;
   whites: number;
   blacks: number;
+  texture: number;
+  clarity: number;
+  dehaze: number;
   temperature?: number | null;
   tint?: number | null;
   denoise?: number | null;
@@ -38,6 +41,9 @@ export const identityEdit: Edit = Object.freeze({
   shadows: 0,
   whites: 0,
   blacks: 0,
+  texture: 0,
+  clarity: 0,
+  dehaze: 0,
   temperature: null,
   tint: null,
   denoise: null,
@@ -53,25 +59,7 @@ export const identityEdit: Edit = Object.freeze({
 });
 
 export function isIdentityEdit(edit: Edit): boolean {
-  return (
-    edit.exposure === 0 &&
-    edit.highlights === 0 &&
-    edit.shadows === 0 &&
-    edit.whites === 0 &&
-    edit.blacks === 0 &&
-    (edit.temperature ?? null) === null &&
-    (edit.tint ?? null) === null &&
-    (edit.denoise ?? null) === null &&
-    edit.vibrance === 0 &&
-    edit.saturation === 0 &&
-    isIdentityCurve(edit.curveRGB) &&
-    isIdentityCurve(edit.curveRed) &&
-    isIdentityCurve(edit.curveGreen) &&
-    isIdentityCurve(edit.curveBlue) &&
-    (edit.crop ?? null) === null &&
-    (edit.cropAngle ?? 0) === 0 &&
-    (edit.rotation ?? 0) === 0
-  );
+  return editKey(edit) === editKey(identityEdit);
 }
 
 // Stable string for react-query keys and mock cache paths.
@@ -87,6 +75,9 @@ export function editKey(edit: Edit): string {
     edit.shadows,
     edit.whites,
     edit.blacks,
+    edit.texture,
+    edit.clarity,
+    edit.dehaze,
     edit.temperature ?? "",
     edit.tint ?? "",
     edit.denoise ?? "",

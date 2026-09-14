@@ -106,34 +106,102 @@ function Row({
   );
 }
 
-const TONE_SLIDERS: Array<{
-  key: keyof Pick<Edit, "highlights" | "shadows" | "whites" | "blacks">;
+type SliderSpec = {
+  key: keyof Pick<
+    Edit,
+    | "highlights"
+    | "shadows"
+    | "whites"
+    | "blacks"
+    | "texture"
+    | "clarity"
+    | "dehaze"
+    | "vibrance"
+    | "saturation"
+  >;
   label: string;
   short: string;
-}> = [
+  trackClassName?: string;
+};
+
+const TONE_SLIDERS: SliderSpec[] = [
   { key: "highlights", label: "Highlights", short: "hl" },
   { key: "shadows", label: "Shadows", short: "sh" },
   { key: "whites", label: "Whites", short: "wh" },
   { key: "blacks", label: "Blacks", short: "bl" },
 ];
 
+const PRESENCE_SLIDERS: SliderSpec[] = [
+  { key: "texture", label: "Texture", short: "tex" },
+  { key: "clarity", label: "Clarity", short: "cl" },
+  { key: "dehaze", label: "Dehaze", short: "dh" },
+];
+
+const COLOR_SLIDERS: SliderSpec[] = [
+  {
+    key: "vibrance",
+    label: "Vibrance",
+    short: "vib",
+    trackClassName: "bg-gradient-to-r from-zinc-500/60 to-teal-400/70",
+  },
+  {
+    key: "saturation",
+    label: "Saturation",
+    short: "sat",
+    trackClassName: "bg-gradient-to-r from-zinc-500/60 to-orange-400/70",
+  },
+];
+
+function SliderRows({
+  sliders,
+  edit,
+  set,
+}: {
+  sliders: SliderSpec[];
+  edit: Edit;
+  set: (partial: Partial<Edit>) => void;
+}) {
+  return sliders.map(({ key, label, trackClassName }) => (
+    <Row
+      key={key}
+      label={label}
+      value={edit[key]}
+      display={signed(edit[key])}
+      min={-100}
+      max={100}
+      step={1}
+      testid={key}
+      resetTitle={`Reset ${label.toLowerCase()}`}
+      trackClassName={trackClassName}
+      onValue={(value) => set({ [key]: value })}
+      onReset={() => set({ [key]: 0 })}
+    />
+  ));
+}
+
 const signed = (value: number, digits = 0) =>
   `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
+
+const sliderSummary = (edit: Edit, sliders: SliderSpec[]): string[] =>
+  sliders
+    .filter(({ key }) => edit[key] !== 0)
+    .map(({ key, short }) => `${short} ${signed(edit[key])}`);
+
+const joined = (parts: string[]): string | null =>
+  parts.length ? parts.join(" · ") : null;
 
 const cropSummary = (edit: Edit): string | null => {
   const parts: string[] = [];
   if (edit.rotation) parts.push(`↻${edit.rotation}°`);
   if (edit.crop) parts.push("cropped");
   if (edit.cropAngle) parts.push(`∠${edit.cropAngle.toFixed(1)}°`);
-  return parts.length ? parts.join(" · ") : null;
+  return joined(parts);
 };
 
 const toneSummary = (edit: Edit): string | null => {
   const parts: string[] = [];
   if (edit.exposure !== 0) parts.push(`${signed(edit.exposure, 2)} ev`);
-  for (const { key, short } of TONE_SLIDERS) {
-    if (edit[key] !== 0) parts.push(`${short} ${signed(edit[key])}`);
-  }
+  parts.push(...sliderSummary(edit, TONE_SLIDERS));
   const curves = [
     edit.curveRGB,
     edit.curveRed,
@@ -141,7 +209,7 @@ const toneSummary = (edit: Edit): string | null => {
     edit.curveBlue,
   ];
   if (curves.some((points) => !isIdentityCurve(points))) parts.push("curve");
-  return parts.length ? parts.join(" · ") : null;
+  return joined(parts);
 };
 
 const colorSummary = (edit: Edit, raw: boolean): string | null => {
@@ -154,9 +222,8 @@ const colorSummary = (edit: Edit, raw: boolean): string | null => {
     );
   }
   if (edit.tint != null) parts.push(`tint ${signed(edit.tint)}`);
-  if (edit.vibrance !== 0) parts.push(`vib ${signed(edit.vibrance)}`);
-  if (edit.saturation !== 0) parts.push(`sat ${signed(edit.saturation)}`);
-  return parts.length ? parts.join(" · ") : null;
+  parts.push(...sliderSummary(edit, COLOR_SLIDERS));
+  return joined(parts);
 };
 
 const detailSummary = (edit: Edit): string | null =>
@@ -283,21 +350,15 @@ export function EditPanel({
             onValue={(exposure) => set({ exposure })}
             onReset={() => set({ exposure: 0 })}
           />
-          {TONE_SLIDERS.map(({ key, label }) => (
-            <Row
-              key={key}
-              label={label}
-              value={edit[key]}
-              display={signed(edit[key])}
-              min={-100}
-              max={100}
-              step={1}
-              testid={key}
-              resetTitle={`Reset ${label.toLowerCase()}`}
-              onValue={(value) => set({ [key]: value })}
-              onReset={() => set({ [key]: 0 })}
-            />
-          ))}
+          <SliderRows sliders={TONE_SLIDERS} edit={edit} set={set} />
+        </Group>
+        <Separator />
+        <Group
+          id="presence"
+          title="Presence"
+          summary={joined(sliderSummary(edit, PRESENCE_SLIDERS))}
+        >
+          <SliderRows sliders={PRESENCE_SLIDERS} edit={edit} set={set} />
         </Group>
         <Separator />
         <Group id="color" title="Color" summary={colorSummary(edit, raw)}>
@@ -347,32 +408,7 @@ export function EditPanel({
             }
             onReset={() => set({ tint: null })}
           />
-          <Row
-            label="Vibrance"
-            value={edit.vibrance}
-            display={signed(edit.vibrance)}
-            min={-100}
-            max={100}
-            step={1}
-            testid="vibrance"
-            resetTitle="Reset vibrance"
-            trackClassName="bg-gradient-to-r from-zinc-500/60 to-teal-400/70"
-            onValue={(vibrance) => set({ vibrance })}
-            onReset={() => set({ vibrance: 0 })}
-          />
-          <Row
-            label="Saturation"
-            value={edit.saturation}
-            display={signed(edit.saturation)}
-            min={-100}
-            max={100}
-            step={1}
-            testid="saturation"
-            resetTitle="Reset saturation"
-            trackClassName="bg-gradient-to-r from-zinc-500/60 to-orange-400/70"
-            onValue={(saturation) => set({ saturation })}
-            onReset={() => set({ saturation: 0 })}
-          />
+          <SliderRows sliders={COLOR_SLIDERS} edit={edit} set={set} />
         </Group>
         {raw && (
           <>

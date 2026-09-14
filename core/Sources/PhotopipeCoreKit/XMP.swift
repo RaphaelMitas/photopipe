@@ -86,26 +86,50 @@ public enum XMP {
             }
     }
 
+    private struct Tags {
+        let scalar: (String) -> Double?
+        let curve: (String) -> [CurvePoint]
+        let hasCrop: Bool?
+    }
+
+    private static func edit(from tags: Tags, isRaw: Bool, rotation: Int) -> Edit {
+        // other tools write a straight curve as two points; ours is the empty one.
+        // nan or inf would fail every JSON encode of the whole shoot's listing
+        func curve(_ tag: String) -> [CurvePoint] {
+            let points = tags.curve(tag).filter { $0.x.isFinite && $0.y.isFinite }
+            return Curve.isIdentity(points) ? [] : points
+        }
+        return Edit(
+            exposure: tags.scalar("Exposure2012") ?? 0,
+            highlights: tags.scalar("Highlights2012") ?? 0,
+            shadows: tags.scalar("Shadows2012") ?? 0,
+            whites: tags.scalar("Whites2012") ?? 0,
+            blacks: tags.scalar("Blacks2012") ?? 0,
+            texture: tags.scalar("Texture") ?? 0,
+            clarity: tags.scalar("Clarity2012") ?? 0,
+            dehaze: tags.scalar("Dehaze") ?? 0,
+            temperature: tags.scalar(isRaw ? "Temperature" : "IncrementalTemperature"),
+            tint: tags.scalar(isRaw ? "Tint" : "IncrementalTint"),
+            denoise: isRaw ? tags.scalar("LuminanceSmoothing") : nil,
+            vibrance: tags.scalar("Vibrance") ?? 0,
+            saturation: tags.scalar("Saturation") ?? 0,
+            curveRGB: curve("ToneCurvePV2012"),
+            curveRed: curve("ToneCurvePV2012Red"),
+            curveGreen: curve("ToneCurvePV2012Green"),
+            curveBlue: curve("ToneCurvePV2012Blue"),
+            // Lightroom's crop reset keeps Crop* but sets HasCrop False, so HasCrop wins
+            crop: tags.hasCrop == false ? nil : cropRect { tags.scalar("Crop\($0)") },
+            cropAngle: tags.hasCrop == false ? 0 : tags.scalar("CropAngle") ?? 0,
+            rotation: rotation)
+    }
+
     static func parseEdit(_ text: String, isRaw: Bool, baseOrientation: Int = 1) -> Edit {
-        Edit(
-            exposure: parseDouble("Exposure2012", in: text) ?? 0,
-            highlights: parseDouble("Highlights2012", in: text) ?? 0,
-            shadows: parseDouble("Shadows2012", in: text) ?? 0,
-            whites: parseDouble("Whites2012", in: text) ?? 0,
-            blacks: parseDouble("Blacks2012", in: text) ?? 0,
-            temperature: parseDouble(isRaw ? "Temperature" : "IncrementalTemperature", in: text),
-            tint: parseDouble(isRaw ? "Tint" : "IncrementalTint", in: text),
-            denoise: isRaw ? parseDouble("LuminanceSmoothing", in: text) : nil,
-            vibrance: parseDouble("Vibrance", in: text) ?? 0,
-            saturation: parseDouble("Saturation", in: text) ?? 0,
-            curveRGB: parseCurve("ToneCurvePV2012", in: text),
-            curveRed: parseCurve("ToneCurvePV2012Red", in: text),
-            curveGreen: parseCurve("ToneCurvePV2012Green", in: text),
-            curveBlue: parseCurve("ToneCurvePV2012Blue", in: text),
-            crop: parseHasCrop(in: text) == false
-                ? nil : cropRect { parseDouble("Crop\($0)", in: text) },
-            cropAngle: parseHasCrop(in: text) == false
-                ? 0 : parseDouble("CropAngle", in: text) ?? 0,
+        edit(
+            from: Tags(
+                scalar: { parseDouble($0, in: text) },
+                curve: { parseCurve($0, in: text) },
+                hasCrop: parseHasCrop(in: text)),
+            isRaw: isRaw,
             rotation: rotation(fromXMP: parseOrientation(in: text), base: baseOrientation))
     }
 
@@ -143,8 +167,6 @@ public enum XMP {
             .flatMap(Int.init)
     }
 
-    /// Lightroom's crop-reset keeps the Crop* values and flips HasCrop to
-    /// False, so HasCrop wins when present.
     private static func cropRect(_ value: (String) -> Double?) -> CropRect? {
         guard let left = value("Left"), let top = value("Top"),
             let right = value("Right"), let bottom = value("Bottom"),
@@ -255,23 +277,12 @@ public enum XMP {
             }
             return true
         }
-        let edit = Edit(
-            exposure: scalars["Exposure2012"] ?? 0,
-            highlights: scalars["Highlights2012"] ?? 0,
-            shadows: scalars["Shadows2012"] ?? 0,
-            whites: scalars["Whites2012"] ?? 0,
-            blacks: scalars["Blacks2012"] ?? 0,
-            temperature: scalars[isRaw ? "Temperature" : "IncrementalTemperature"],
-            tint: scalars[isRaw ? "Tint" : "IncrementalTint"],
-            denoise: isRaw ? scalars["LuminanceSmoothing"] : nil,
-            vibrance: scalars["Vibrance"] ?? 0,
-            saturation: scalars["Saturation"] ?? 0,
-            curveRGB: curves["ToneCurvePV2012"] ?? [],
-            curveRed: curves["ToneCurvePV2012Red"] ?? [],
-            curveGreen: curves["ToneCurvePV2012Green"] ?? [],
-            curveBlue: curves["ToneCurvePV2012Blue"] ?? [],
-            crop: hasCrop == false ? nil : cropRect { scalars["Crop\($0)"] },
-            cropAngle: hasCrop == false ? 0 : scalars["CropAngle"] ?? 0,
+        let edit = edit(
+            from: Tags(
+                scalar: { scalars[$0] },
+                curve: { curves[$0] ?? [] },
+                hasCrop: hasCrop),
+            isRaw: isRaw,
             rotation: rotation(
                 fromXMP: embeddedXMPOrientation(at: url),
                 base: baseOrientation(at: url) ?? 1))
@@ -352,19 +363,32 @@ public enum XMP {
                 args.append("-XMP-crs:\(tag)=")
                 return
             }
-            for point in points {
+            // clamped to the unit square first: Int(1e30) traps
+            for point in Curve.normalized(points) {
                 let x = Int((point.x * 255).rounded())
                 let y = Int((point.y * 255).rounded())
                 args.append("-XMP-crs:\(tag)=\(x), \(y)")
             }
         }
-        args.append(
-            edit.exposure == 0 ? "-XMP-crs:Exposure2012=" : "-XMP-crs:Exposure2012=\(edit.exposure)"
-        )
+        // Swift's Double interpolation switches to exponent form below 1e-4,
+        // which Lightroom does not read back
+        func plainDecimal(_ value: Double) -> String {
+            var text = String(format: "%.6f", value)
+            while text.hasSuffix("0") { text.removeLast() }
+            if text.hasSuffix(".") { text.removeLast() }
+            return text
+        }
+        func realScalar(_ tag: String, _ value: Double) {
+            args.append(value == 0 ? "-XMP-crs:\(tag)=" : "-XMP-crs:\(tag)=\(plainDecimal(value))")
+        }
+        realScalar("Exposure2012", edit.exposure)
         integerScalar("Highlights2012", edit.highlights)
         integerScalar("Shadows2012", edit.shadows)
         integerScalar("Whites2012", edit.whites)
         integerScalar("Blacks2012", edit.blacks)
+        integerScalar("Texture", edit.texture)
+        integerScalar("Clarity2012", edit.clarity)
+        realScalar("Dehaze", edit.dehaze)
         // exiftool's name for crs:Temperature is ColorTemperature.
         let temperatureTag = file.isRaw ? "ColorTemperature" : "IncrementalTemperature"
         let tintTag = file.isRaw ? "Tint" : "IncrementalTint"
@@ -385,14 +409,6 @@ public enum XMP {
         }
         integerScalar("Vibrance", edit.vibrance)
         integerScalar("Saturation", edit.saturation)
-        // Swift's Double interpolation switches to exponent form below 1e-4,
-        // which neither our sidecar parser nor Lightroom reads back.
-        func plainDecimal(_ value: Double) -> String {
-            var text = String(format: "%.6f", value)
-            while text.hasSuffix("0") { text.removeLast() }
-            if text.hasSuffix(".") { text.removeLast() }
-            return text
-        }
         for (tag, value) in [
             ("Left", edit.crop?.left), ("Top", edit.crop?.top),
             ("Right", edit.crop?.right), ("Bottom", edit.crop?.bottom),
@@ -401,9 +417,7 @@ public enum XMP {
                 value.map { "-XMP-crs:Crop\(tag)=\(plainDecimal($0))" }
                     ?? "-XMP-crs:Crop\(tag)=")
         }
-        args.append(
-            edit.cropAngle == 0
-                ? "-XMP-crs:CropAngle=" : "-XMP-crs:CropAngle=\(plainDecimal(edit.cropAngle))")
+        realScalar("CropAngle", edit.cropAngle)
         args.append(edit.hasCropComponent ? "-XMP-crs:HasCrop=True" : "-XMP-crs:HasCrop=")
         // Absolute, like Lightroom writes it; `#` keeps exiftool numeric here.
         // An unreadable base can default to 1 only for sidecars: guessing one
