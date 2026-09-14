@@ -1,0 +1,6 @@
+platform "osx"
+
+# CI has nobody to confirm the HTML preview.
+force true
+# precheck cannot inspect in-app purchases with an API key, and there are none.
+precheck_include_in_app_purchases false

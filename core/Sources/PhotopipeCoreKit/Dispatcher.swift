@@ -52,7 +52,7 @@ public final class Dispatcher {
             library.stopExports()
             return .shutdown(.success(id: request.id, result: .object(["bye": .bool(true)])))
         case "setRoot", "listShoots", "listImages", "thumbnail", "render", "setRating",
-            "setEdit", "rawDefaults", "status", "reveal", "trash", "decoderSupport",
+            "setEdit", "rawDefaults", "status", "trash", "decoderSupport",
             "decoderAvailability", "exportFiles",
             "exportStatus", "cancelExport",
             "createProject", "importFiles", "updateProject", "renameProject",
@@ -200,13 +200,6 @@ public final class Dispatcher {
                         "tint": asShot.map { .number($0.tint) } ?? .null,
                         "denoise": asShot.map { .number($0.denoise * 100) } ?? .null,
                     ]))
-            case "reveal":
-                guard let paths = request.params?["paths"]?.stringArrayValue else {
-                    return .failure(
-                        id: request.id, code: "invalid_params", message: "paths required")
-                }
-                try library.reveal(paths: paths)
-                return .success(id: request.id, result: .object(["revealed": .bool(true)]))
             case "trash":
                 guard let shoot = request.params?["shoot"]?.stringValue,
                     let paths = request.params?["paths"]?.stringArrayValue
@@ -367,8 +360,6 @@ public final class Dispatcher {
                 id: request.id, code: "project_exists", message: "\(folder) already exists")
         } catch FileActions.ActionError.noFiles {
             return .failure(id: request.id, code: "no_files", message: "nothing selected")
-        } catch FileActions.ActionError.openFailed(let output) {
-            return .failure(id: request.id, code: "open_failed", message: output)
         } catch FileActions.ActionError.zipFailed(let output) {
             return .failure(id: request.id, code: "zip_failed", message: output)
         } catch ExifTool.ExifToolError.notInstalled {

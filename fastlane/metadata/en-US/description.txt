@@ -1,0 +1,5 @@
+Photopipe is a photoshoot pipeline organizer for photographers who shoot a lot and deliver fast.
+
+Point it at the folder your shoots already live in. Rate, cull and adjust exposure on raw files at interactive speed, then export a selection as files or a zip. Ratings and edits travel as XMP sidecars, so nothing is locked into the app.
+
+TODO: replace this placeholder with the final listing text before the first submission.

@@ -39,5 +39,7 @@ test("a bad root surfaces the core error instead of hanging", async ({
   await page.goto("/");
   await page.getByTestId("root-input").fill("/nonexistent");
   await page.getByTestId("root-submit").click();
-  await expect(page.getByTestId("root-error")).toContainText("root_not_found");
+  await expect(page.getByTestId("root-error")).toContainText(
+    "There is no folder at that path",
+  );
 });

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>Photopipe reads and organizes the photos in the folder you choose and writes edits and ratings next to them.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Photopipe reads and organizes the photos in the folder you choose and writes edits and ratings next to them.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Photopipe reads and organizes the photos in the folder you choose and writes edits and ratings next to them.</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>Photopipe reads photos straight from your camera card or external drive and writes edits and ratings next to them.</string>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string>Photopipe reads and organizes the photos on your network drive and writes edits and ratings next to them.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+</dict>
+</plist>
