@@ -87,20 +87,28 @@ private func makeProjectFolder(_ dir: URL, _ folder: String, json: String? = nil
     }
 }
 
-@Test func theFolderDateWinsAndMetadataFillsIn() throws {
+@Test func theFileHoldsTheDateAndAFolderPrefixIsCopiedInOnce() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
     _ = try makeProjectFolder(dir, "2026-07-12_zell", json: #"{"notes":"","created":"2026-07-13"}"#)
-    _ = try makeProjectFolder(dir, "legacy", json: #"{"notes":"kept","created":"2026-01-01"}"#)
+    _ = try makeProjectFolder(dir, "2026-01-01_legacy", json: #"{"notes":"kept"}"#)
+    let photosOnly = try makeProjectFolder(dir, "2026-02-02_photos")
+    try Data("x".utf8).write(to: photosOnly.appendingPathComponent("DSC00001.ARW"))
     _ = try makeProjectFolder(dir, "broken", json: #"{"notes":"","created":"2026-9-5"}"#)
+    _ = try makeProjectFolder(dir, "2026-03-03_empty")
 
     let shoots = try walkLibrary(root: dir.path).shoots
-    #expect(shoots.map(\.name) == ["2026-07-12_zell", "legacy", "broken"])
-    #expect(shoots[0].day == "2026-07-12")
-    #expect(shoots[0].project == "zell")
-    #expect(shoots[1].day == "2026-01-01")
-    #expect(shoots[1].notes == "kept")
-    #expect(shoots[2].day == nil)
+    #expect(shoots.map(\.name) == ["2026-07-12_zell", "2026-02-02_photos", "2026-01-01_legacy", "broken"])
+    #expect(shoots.map(\.day) == ["2026-07-13", "2026-02-02", "2026-01-01", nil])
+    #expect(shoots.map(\.project) == ["zell", "photos", "legacy", "broken"])
+    #expect(shoots[2].notes == "kept")
+
+    #expect(
+        ProjectFile.read(inShoot: dir.appendingPathComponent("2026-01-01_legacy").path).day == "2026-01-01")
+    #expect(ProjectFile.read(inShoot: photosOnly.path).day == "2026-02-02")
+    #expect(
+        !FileManager.default.fileExists(
+            atPath: ProjectFile.url(inShoot: dir.appendingPathComponent("2026-03-03_empty").path).path))
 }
 
 @Test func theDayIsStoredUnderTheKeyOlderBuildsKnow() throws {
@@ -121,7 +129,8 @@ private func makeProjectFolder(_ dir: URL, _ folder: String, json: String? = nil
     _ = try service.createProject(name: "dup", day: "2026-08-10", dateInFolder: true, notes: "")
     for (name, day) in [
         ("dup", "2026-08-10"), ("   ", "2026-08-10"), ("a/b", "2026-08-10"),
-        ("dup", "2026-8-10"), (".hidden", "2026-08-10"),
+        ("dup", "2026-8-10"), (".hidden", "2026-08-10"), ("2026-01-01_x", "2026-08-10"),
+        ("line\nbreak", "2026-08-10"),
     ] {
         #expect(throws: LibraryService.ServiceError.self) {
             try service.createProject(name: name, day: day, dateInFolder: true, notes: "")
@@ -261,7 +270,6 @@ private func makeProjectFolder(_ dir: URL, _ folder: String, json: String? = nil
     #expect(service.listShoots().map(\.notes) == ["noted", "noted"])
     #expect(service.listShoots().map(\.day) == ["2026-09-09", "2026-09-09"])
 
-    // Putting the date into the name is a rename, and the rules apply again.
     #expect(try save(" spaced", "2026-09-09", true) == "2026-09-09_spaced")
     #expect(throws: LibraryService.ServiceError.self) {
         try save("a:b", "2026-09-09", true)

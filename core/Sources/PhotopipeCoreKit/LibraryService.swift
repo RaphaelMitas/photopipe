@@ -440,7 +440,8 @@ public final class LibraryService: @unchecked Sendable {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let scalars = trimmed.unicodeScalars
         guard !trimmed.isEmpty, !scalars.contains("/"), !scalars.contains(":"),
-            scalars.first != "."
+            scalars.first != ".", !scalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F }),
+            parseShootName(trimmed) == nil
         else {
             throw ServiceError.invalidProjectName(name)
         }

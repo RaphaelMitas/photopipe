@@ -46,9 +46,7 @@ export function ProjectFields({
       </div>
 
       <FolderNameField
-        folder={projectFolder(draft)}
-        dateInFolder={draft.dateInFolder}
-        disabled={!draft.day}
+        draft={draft}
         onDateInFolderChange={(dateInFolder) => set({ dateInFolder })}
       />
 
@@ -68,16 +66,14 @@ export function ProjectFields({
 }
 
 function FolderNameField({
-  folder,
-  dateInFolder,
-  disabled,
+  draft,
   onDateInFolderChange,
 }: {
-  folder: string;
-  dateInFolder: boolean;
-  disabled: boolean;
+  draft: ProjectDraft;
   onDateInFolderChange: (on: boolean) => void;
 }) {
+  const { dateInFolder } = draft;
+  const folder = projectFolder(draft);
   const fallback = dateInFolderDefault.use();
   const [initial] = useState(dateInFolder);
   const [dismissed, setDismissed] = useState(false);
@@ -109,7 +105,6 @@ function FolderNameField({
           data-testid="date-in-folder"
           size="sm"
           checked={dateInFolder}
-          disabled={disabled}
           onCheckedChange={onDateInFolderChange}
         />
       </div>

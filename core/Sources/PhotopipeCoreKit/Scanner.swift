@@ -66,7 +66,12 @@ public func walkLibrary(root: String) throws -> LibrarySnapshot {
         let isProject = fm.fileExists(atPath: ProjectFile.url(inShoot: dir.path).path)
         guard !images.isEmpty || isProject else { continue }
         fileCount += images.count
-        let project = isProject ? ProjectFile.read(inShoot: dir.path) : ProjectFile()
+        var project = isProject ? ProjectFile.read(inShoot: dir.path) : ProjectFile()
+        if project.day == nil, let parsed = parseShootName(dir.lastPathComponent) {
+            // A dated folder from before the file carried the date: copy it in once.
+            project.day = parsed.day
+            try? project.write(inShoot: dir.path)
+        }
         let shoot = makeShoot(
             name: dir.lastPathComponent, path: dir.path, images: images,
             notes: project.notes, day: project.day, cover: project.cover)

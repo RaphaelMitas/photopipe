@@ -104,7 +104,6 @@ public func parseShootName(_ name: String) -> (day: String, project: String)? {
 public func makeShoot(
     name: String, path: String, images: [ImageFile], notes: String, day: String?, cover: String?
 ) -> Shoot {
-    let parsed = parseShootName(name)
     let chosen =
         cover.flatMap { rel in
             images.first { $0.rel.lowercased() == rel.lowercased() }
@@ -112,9 +111,8 @@ public func makeShoot(
     return Shoot(
         name: name,
         path: path,
-        // folder date wins so a Finder rename survives the next save
-        day: parsed?.day ?? day.flatMap { isDay($0) ? $0 : nil },
-        project: parsed?.project ?? name,
+        day: day.flatMap { isDay($0) ? $0 : nil },
+        project: parseShootName(name)?.project ?? name,
         imageCount: images.count,
         notes: notes,
         cover: cover,

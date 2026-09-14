@@ -25,8 +25,8 @@ public struct ProjectFile: Codable, Equatable, Sendable {
         URL(fileURLWithPath: shootPath).appendingPathComponent(fileName)
     }
 
-    /// Missing or corrupt → defaults. Losing this file costs notes, never
-    /// the library.
+    /// Missing or corrupt → defaults. Losing this file costs notes and the
+    /// date, never the library.
     public static func read(inShoot shootPath: String) -> ProjectFile {
         guard let data = try? Data(contentsOf: url(inShoot: shootPath)),
             let decoded = try? JSONDecoder().decode(ProjectFile.self, from: data)

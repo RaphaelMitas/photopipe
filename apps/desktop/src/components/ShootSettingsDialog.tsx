@@ -15,9 +15,9 @@ import { useState } from "react";
 import { ProjectFields } from "@/components/ProjectFields";
 import { fileSrc, type ImageFile, type Shoot } from "@/lib/core";
 import {
+  canSaveProject,
   dateInFolderDefault,
   type ProjectDraft,
-  projectFolder,
   projectRequest,
 } from "@/lib/projectFolder";
 import { useImages, useThumbnail, useUpdateProject } from "@/lib/queries";
@@ -119,7 +119,6 @@ function ShootSettingsForm({
     notes: shoot.notes,
   }));
   const [cover, setCover] = useState(shoot.cover);
-  const folder = projectFolder(draft);
 
   return (
     <form
@@ -184,7 +183,7 @@ function ShootSettingsForm({
         <Button
           type="submit"
           data-testid="save-shoot-settings"
-          disabled={!folder || update.isPending}
+          disabled={!canSaveProject(draft) || update.isPending}
         >
           Save
         </Button>

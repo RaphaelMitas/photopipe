@@ -11,9 +11,9 @@ import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import { ProjectFields } from "@/components/ProjectFields";
 import {
+  canSaveProject,
   dateInFolderDefault,
   type ProjectDraft,
-  projectFolder,
   projectRequest,
 } from "@/lib/projectFolder";
 import { useCreateProject } from "@/lib/queries";
@@ -60,7 +60,6 @@ function NewProjectForm({
     notes: "",
   }));
   const create = useCreateProject();
-  const folder = projectFolder(draft);
 
   return (
     <form
@@ -88,7 +87,7 @@ function NewProjectForm({
         <Button
           type="submit"
           data-testid="create-project"
-          disabled={!folder || create.isPending}
+          disabled={!canSaveProject(draft) || create.isPending}
         >
           {create.isPending && <Loader2 className="animate-spin" />}
           Create

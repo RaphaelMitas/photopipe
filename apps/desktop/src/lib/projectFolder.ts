@@ -28,3 +28,10 @@ export function projectFolder({
   if (!trimmed) return "";
   return dateInFolder && day ? `${day}_${trimmed}` : trimmed;
 }
+
+/// "Date in name" with no date would silently drop the prefix, so it can't be saved.
+export function canSaveProject(draft: ProjectDraft): boolean {
+  return (
+    projectFolder(draft) !== "" && (!draft.dateInFolder || draft.day !== "")
+  );
+}

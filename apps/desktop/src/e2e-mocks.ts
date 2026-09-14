@@ -97,12 +97,22 @@ const shoots: Shoot[] = [
 
 const emptyShoots = new Set<string>();
 
-function projectParams(params: Record<string, unknown>): ProjectRequest {
-  return {
+function projectFields(
+  params: Record<string, unknown>,
+): Pick<Shoot, "name" | "path" | "day" | "project" | "notes"> {
+  const request: ProjectRequest = {
     name: String(params.name),
     day: typeof params.day === "string" ? params.day : null,
     dateInFolder: params.dateInFolder === true,
     notes: String(params.notes),
+  };
+  const name = projectFolder(request);
+  return {
+    name,
+    path: `/fake/${name}`,
+    day: request.day,
+    project: request.name.trim(),
+    notes: request.notes,
   };
 }
 
@@ -285,34 +295,24 @@ export const E2E_HANDLERS: Record<
       false,
     ),
   createProject: (params) => {
-    const request = projectParams(params);
-    const shoot = projectFolder(request);
-    if (shoots.some((existing) => existing.name === shoot)) {
-      throw `project_exists: ${shoot}`;
+    const fields = projectFields(params);
+    if (shoots.some((existing) => existing.name === fields.name)) {
+      throw `project_exists: ${fields.name}`;
     }
     shoots.unshift({
-      name: shoot,
-      path: `/fake/${shoot}`,
-      day: request.day,
-      project: request.name.trim(),
+      ...fields,
       imageCount: 0,
-      notes: request.notes,
       cover: null,
       coverPath: null,
       indexed: true,
     });
-    emptyShoots.add(shoot);
-    return { shoot, path: `/fake/${shoot}`, generation: 1 };
+    emptyShoots.add(fields.name);
+    return { shoot: fields.name, path: fields.path, generation: 1 };
   },
   updateProject: (params) => {
     const shoot = shoots.find((s) => s.name === params.shoot);
     if (!shoot) throw `unknown_shoot: ${String(params.shoot)}`;
-    const request = projectParams(params);
-    shoot.day = request.day;
-    shoot.project = request.name.trim();
-    shoot.name = projectFolder(request);
-    shoot.path = `/fake/${shoot.name}`;
-    shoot.notes = request.notes;
+    Object.assign(shoot, projectFields(params));
     shoot.cover = typeof params.cover === "string" ? params.cover : null;
     const match = imagesFor(shoot.name).find(
       (entry) => entry.rel === shoot.cover,
