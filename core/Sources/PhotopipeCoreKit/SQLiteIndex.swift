@@ -44,9 +44,15 @@ public final class SQLiteIndex: @unchecked Sendable {
         // corrupt: the recovery path below deletes it, and that would throw away
         // every score ever computed.
         sqlite3_busy_timeout(db, 3000)
+        try exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        let stored = try scalarInt("SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schema'")
+        // scores took minutes per shoot and survive a parser change; the files
+        // table goes whole, since an older layout would not take today's rows
+        if let stored, stored != Self.schemaVersion {
+            try exec("DROP TABLE IF EXISTS files; DELETE FROM meta")
+        }
         try exec(
             """
-            CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS files (
                 path TEXT PRIMARY KEY,
                 shoot TEXT NOT NULL,
@@ -70,11 +76,6 @@ public final class SQLiteIndex: @unchecked Sendable {
                 version INTEGER NOT NULL
             );
             """)
-        let stored = try scalarInt("SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schema'")
-        // scores took minutes per shoot and survive a parser change; only parsed rows go
-        if let stored, stored != Self.schemaVersion {
-            try exec("DELETE FROM files; DELETE FROM meta")
-        }
         try exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema', '\(Self.schemaVersion)')")
         try exec("SELECT count(*) FROM files")
     }
@@ -159,8 +160,7 @@ public final class SQLiteIndex: @unchecked Sendable {
                 }
                 sqlite3_bind_int64(statement, 9, Int64(file.width))
                 sqlite3_bind_int64(statement, 10, Int64(file.height))
-                // the version, not a flag, so a row an older build writes while
-                // both run reads as unparsed here
+                // a row another build writes carries its own version, so it reads as unparsed
                 sqlite3_bind_int64(statement, 11, file.enriched ? Int64(Self.schemaVersion) : 0)
                 sqlite3_bind_double(statement, 12, file.sidecarMtime)
                 guard sqlite3_step(statement) == SQLITE_DONE else {

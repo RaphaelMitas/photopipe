@@ -92,6 +92,29 @@ private let sampleFiles: [String: [ImageFile]] = [
     #expect(try reopened.loadScores()["/r/misc/a.dng"] == row, "scores are still valid")
 }
 
+@Test func schemaBumpReplacesAnOlderTableLayout() throws {
+    let path = tempFile("index.sqlite")
+    defer { try? FileManager.default.removeItem(atPath: path) }
+
+    // v0.2's six-column table, which today's insert cannot write into
+    var db: OpaquePointer?
+    #expect(sqlite3_open(path, &db) == SQLITE_OK)
+    #expect(
+        sqlite3_exec(
+            db,
+            """
+            CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE files (path TEXT PRIMARY KEY, shoot TEXT NOT NULL, rel TEXT NOT NULL,
+                ext TEXT NOT NULL, size INTEGER NOT NULL, mtime REAL NOT NULL);
+            INSERT INTO meta VALUES ('schema', '2');
+            """, nil, nil, nil) == SQLITE_OK)
+    sqlite3_close(db)
+
+    let index = try SQLiteIndex(path: path)
+    try index.save(root: "/r", filesByShoot: sampleFiles)
+    #expect(try index.load()?.filesByShoot.count == 2)
+}
+
 @Test func rowsEnrichedByAnotherSchemaReadAsUnparsed() throws {
     let path = tempFile("index.sqlite")
     defer { try? FileManager.default.removeItem(atPath: path) }

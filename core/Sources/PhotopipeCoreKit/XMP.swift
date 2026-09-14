@@ -81,8 +81,7 @@ public enum XMP {
         else { return [] }
         return body.matches(of: /<rdf:li>\s*([\d.]+)\s*,\s*([\d.]+)\s*<\/rdf:li>/)
             .compactMap { item in
-                guard let x = Double(item.1), let y = Double(item.2), x.isFinite, y.isFinite
-                else { return nil }
+                guard let x = Double(item.1), let y = Double(item.2) else { return nil }
                 return CurvePoint(x: x / 255, y: y / 255)
             }
     }
@@ -94,9 +93,10 @@ public enum XMP {
     }
 
     private static func edit(from tags: Tags, isRaw: Bool, rotation: Int) -> Edit {
-        // other tools write a straight curve as two points; ours is the empty one
+        // other tools write a straight curve as two points; ours is the empty one.
+        // nan or inf would fail every JSON encode of the whole shoot's listing
         func curve(_ tag: String) -> [CurvePoint] {
-            let points = tags.curve(tag)
+            let points = tags.curve(tag).filter { $0.x.isFinite && $0.y.isFinite }
             return Curve.isIdentity(points) ? [] : points
         }
         return Edit(
@@ -370,8 +370,16 @@ public enum XMP {
                 args.append("-XMP-crs:\(tag)=\(x), \(y)")
             }
         }
+        // Swift's Double interpolation switches to exponent form below 1e-4,
+        // which Lightroom does not read back
+        func plainDecimal(_ value: Double) -> String {
+            var text = String(format: "%.6f", value)
+            while text.hasSuffix("0") { text.removeLast() }
+            if text.hasSuffix(".") { text.removeLast() }
+            return text
+        }
         func realScalar(_ tag: String, _ value: Double) {
-            args.append(value == 0 ? "-XMP-crs:\(tag)=" : "-XMP-crs:\(tag)=\(value)")
+            args.append(value == 0 ? "-XMP-crs:\(tag)=" : "-XMP-crs:\(tag)=\(plainDecimal(value))")
         }
         realScalar("Exposure2012", edit.exposure)
         integerScalar("Highlights2012", edit.highlights)
@@ -401,14 +409,6 @@ public enum XMP {
         }
         integerScalar("Vibrance", edit.vibrance)
         integerScalar("Saturation", edit.saturation)
-        // Swift's Double interpolation switches to exponent form below 1e-4,
-        // which neither our sidecar parser nor Lightroom reads back.
-        func plainDecimal(_ value: Double) -> String {
-            var text = String(format: "%.6f", value)
-            while text.hasSuffix("0") { text.removeLast() }
-            if text.hasSuffix(".") { text.removeLast() }
-            return text
-        }
         for (tag, value) in [
             ("Left", edit.crop?.left), ("Top", edit.crop?.top),
             ("Right", edit.crop?.right), ("Bottom", edit.crop?.bottom),
@@ -417,9 +417,7 @@ public enum XMP {
                 value.map { "-XMP-crs:Crop\(tag)=\(plainDecimal($0))" }
                     ?? "-XMP-crs:Crop\(tag)=")
         }
-        args.append(
-            edit.cropAngle == 0
-                ? "-XMP-crs:CropAngle=" : "-XMP-crs:CropAngle=\(plainDecimal(edit.cropAngle))")
+        realScalar("CropAngle", edit.cropAngle)
         args.append(edit.hasCropComponent ? "-XMP-crs:HasCrop=True" : "-XMP-crs:HasCrop=")
         // Absolute, like Lightroom writes it; `#` keeps exiftool numeric here.
         // An unreadable base can default to 1 only for sidecars: guessing one

@@ -207,6 +207,23 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(XMP.readEdit(file: try image(arw)).curveRGB.last == CurvePoint(x: 1, y: 1))
 }
 
+@Test func nonFiniteEmbeddedCurvePointsAreDropped() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let jpg = dir.appendingPathComponent("DSC00011.JPG")
+    try writeGrayJPEG(to: jpg)
+    try ExifTool.shared.write([
+        "-overwrite_original",
+        "-XMP-crs:ToneCurvePV2012=0, 0", "-XMP-crs:ToneCurvePV2012=nan, nan",
+        "-XMP-crs:ToneCurvePV2012=inf, 0", "-XMP-crs:ToneCurvePV2012=128, 160",
+        "-XMP-crs:ToneCurvePV2012=255, 255", jpg.path,
+    ])
+
+    let edit = XMP.readEdit(file: try image(jpg))
+    #expect(edit.curveRGB.count == 3, "nan and inf are dropped, the rest stays")
+    #expect(throws: Never.self) { try JSONEncoder().encode(edit) }
+}
+
 @Test func hostileCropValuesAreRejectedOnParse() {
     let digits = String(repeating: "9", count: 400)
     let sidecar = """

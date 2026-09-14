@@ -353,20 +353,24 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
 @Test func coarseEstimatesLeaveNoBandAlongTheEdge() throws {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
-    // 3:2 at this size shrinks to a fractional row count for the coarse copy
-    let jpegURL = try writeSyntheticJPEG(color: gray(0.5), width: 3000, height: 2000)
+    // 3:2 at this size shrinks to a fractional row count for the coarse copy;
+    // two tones, because on flat gray dehaze cancels out whatever the veil says
+    let jpegURL = try writeHalvesJPEG(
+        left: gray(0.55), right: gray(0.7), width: 3000, height: 2000)
     defer { try? FileManager.default.removeItem(at: jpegURL) }
     let renderer = Renderer(cacheDir: cacheDir)
     let file = try imageFile(for: jpegURL)
 
     for edit in [Edit(clarity: 100), Edit(dehaze: 80)] {
         let url = try renderer.render(file: file, edit: edit, maxPixel: 3000)
-        let top = try meanLuminance(of: url, region: CGRect(x: 0, y: 1984, width: 3000, height: 16))
-        let bottom = try meanLuminance(of: url, region: CGRect(x: 0, y: 0, width: 3000, height: 16))
-        let middle = try meanLuminance(
-            of: url, region: CGRect(x: 0, y: 992, width: 3000, height: 16))
-        #expect(abs(top - middle) < 1.5, "flat gray must stay flat at the top, got \(top) vs \(middle)")
-        #expect(abs(bottom - middle) < 1.5, "and at the bottom, got \(bottom) vs \(middle)")
+        let band = { (y: Int) in
+            try meanLuminance(of: url, region: CGRect(x: 0, y: y, width: 1400, height: 16))
+        }
+        let top = try band(1984)
+        let bottom = try band(0)
+        let middle = try band(992)
+        #expect(abs(top - middle) < 1.5, "the top must match the middle, got \(top) vs \(middle)")
+        #expect(abs(bottom - middle) < 1.5, "and the bottom, got \(bottom) vs \(middle)")
     }
 }
 

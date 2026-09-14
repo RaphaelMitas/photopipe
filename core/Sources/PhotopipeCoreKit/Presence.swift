@@ -46,23 +46,26 @@ enum Presence {
         max(image.extent.width, image.extent.height)
     }
 
-    /// Whole pixels on both axes: a fractional last row is part transparent,
-    /// and the blur spreads that into a bright band along the edge.
-    private static func coarseTransform(for image: CIImage) -> CGAffineTransform {
+    // clamped and whole pixels, or a part-transparent edge row blurs into a bright band
+    private static func coarse(_ image: CIImage) -> CIImage {
+        let extent = image.extent
         let scale = min(coarseLongEdge / longEdge(image), 1)
-        let size = image.extent.size
-        return .init(
-            scaleX: (size.width * scale).rounded() / size.width,
-            y: (size.height * scale).rounded() / size.height)
+        let size = CGSize(
+            width: max((extent.width * scale).rounded(), 1),
+            height: max((extent.height * scale).rounded(), 1))
+        return image.clampedToExtent()
+            .transformed(by: .init(translationX: -extent.minX, y: -extent.minY))
+            .transformed(by: .init(scaleX: size.width / extent.width, y: size.height / extent.height))
+            .cropped(to: CGRect(origin: .zero, size: size))
     }
 
-    private static func coarse(_ image: CIImage, _ transform: CGAffineTransform) -> CIImage {
-        let rect = image.extent.applying(transform)
-        return image.clampedToExtent().transformed(by: transform)
-            .cropped(
-                to: CGRect(
-                    x: rect.minX.rounded(), y: rect.minY.rounded(),
-                    width: rect.width.rounded(), height: rect.height.rounded()))
+    private static func upscaled(_ estimate: CIImage, to image: CIImage) -> CIImage {
+        let extent = image.extent
+        return estimate.samplingLinear().transformed(
+            by: CGAffineTransform(translationX: extent.minX, y: extent.minY)
+                .scaledBy(
+                    x: extent.width / estimate.extent.width,
+                    y: extent.height / estimate.extent.height))
     }
 
     private static func clamped(_ image: CIImage, _ filter: String, radius: CGFloat) -> CIImage {
@@ -83,8 +86,7 @@ enum Presence {
     }
 
     static func dehaze(_ image: CIImage, amount: Double) -> CIImage {
-        let transform = coarseTransform(for: image)
-        let coarse = coarse(image, transform)
+        let coarse = coarse(image)
         // dark channel kept per channel, so its per-channel max estimates a tinted airlight
         let veil = blurred(
             clamped(coarse, "CIMorphologyMinimum", radius: longEdge(coarse) * 0.01),
@@ -92,16 +94,14 @@ enum Presence {
         let light = veil.applyingFilter(
             "CIAreaMaximum", parameters: [kCIInputExtentKey: CIVector(cgRect: veil.extent)]
         ).clampedToExtent()
-        let full = veil.samplingLinear().transformed(by: transform.inverted())
         return apply(
-            "dehaze", to: image, arguments: [full, light, Float(amount / 100 * 0.75)])
+            "dehaze", to: image,
+            arguments: [upscaled(veil, to: image), light, Float(amount / 100 * 0.75)])
     }
 
     static func clarity(_ image: CIImage, amount: Double) -> CIImage {
-        let transform = coarseTransform(for: image)
-        let coarse = coarse(image, transform)
-        let base = blurred(coarse, radius: longEdge(coarse) * 0.015)
-            .samplingLinear().transformed(by: transform.inverted())
+        let coarse = coarse(image)
+        let base = upscaled(blurred(coarse, radius: longEdge(coarse) * 0.015), to: image)
         return apply("localContrast", to: image, arguments: [base, Float(amount / 100)])
     }
 
