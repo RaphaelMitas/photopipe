@@ -1,19 +1,28 @@
 import Foundation
 
-/// `photopipe.json` — per-project *metadata*, and deliberately nothing more.
-/// Notes and the creation date live here because no image file can carry
-/// them; workflow state never does, because the files themselves are the
-/// only truth about where work stands.
+/// `photopipe.json`: per-project metadata only; workflow state lives in the files themselves.
 public struct ProjectFile: Codable, Equatable, Sendable {
     public var notes: String
-    public var created: String?
+    /// YYYY-MM-DD, or nil when undated.
+    public var day: String?
     /// Rel path of the cover image; nil means "use the first one".
     public var cover: String?
 
-    public init(notes: String = "", created: String? = nil, cover: String? = nil) {
+    public init(notes: String = "", day: String? = nil, cover: String? = nil) {
         self.notes = notes
-        self.created = created
+        self.day = day
         self.cover = cover
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case notes, day, cover
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        day = try container.decodeIfPresent(String.self, forKey: .day)
+        cover = try container.decodeIfPresent(String.self, forKey: .cover)
     }
 
     public static let fileName = "photopipe.json"
@@ -22,13 +31,13 @@ public struct ProjectFile: Codable, Equatable, Sendable {
         URL(fileURLWithPath: shootPath).appendingPathComponent(fileName)
     }
 
-    /// Missing or corrupt → defaults. Losing this file costs notes, never
-    /// the library.
-    public static func read(inShoot shootPath: String) -> ProjectFile {
-        guard let data = try? Data(contentsOf: url(inShoot: shootPath)),
-            let decoded = try? JSONDecoder().decode(ProjectFile.self, from: data)
-        else { return ProjectFile() }
-        return decoded
+    /// Missing → defaults. nil only when a file is there but cannot be read,
+    /// so callers know not to write over it.
+    public static func read(inShoot shootPath: String) -> ProjectFile? {
+        let url = url(inShoot: shootPath)
+        guard FileManager.default.fileExists(atPath: url.path) else { return ProjectFile() }
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(ProjectFile.self, from: data)
     }
 
     public func write(inShoot shootPath: String) throws {

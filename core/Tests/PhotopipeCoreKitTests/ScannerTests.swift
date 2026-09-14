@@ -69,23 +69,16 @@ func makeTree(_ layout: [String: [String]]) throws -> URL {
     #expect(!isImagePath("/s/notes.txt"))
 }
 
-// MARK: - Shoot name parsing
+// MARK: - Day format
 
-@Test func shootNameParsesDayAndProject() throws {
-    let parsed = try #require(parseShootName("2026-07-12_zell"))
-    #expect(parsed.day == "2026-07-12")
-    #expect(parsed.project == "zell")
-}
-
-@Test func shootNameAllowsUnderscoresInProject() throws {
-    let parsed = try #require(parseShootName("2026-01-03_brand_shoot_v2"))
-    #expect(parsed.project == "brand_shoot_v2")
-}
-
-@Test func nonConventionShootNamesParseAsNil() {
-    #expect(parseShootName("random-folder") == nil)
-    #expect(parseShootName("2026-7-12_zell") == nil)
-    #expect(parseShootName("2026-07-12") == nil)
+@Test func isDayAcceptsOnlyIsoDates() {
+    #expect(isDay("2026-07-12"))
+    #expect(!isDay("2026-7-12"))
+    #expect(!isDay("random"))
+    #expect(!isDay("2026-07-12_zell"))
+    #expect(!isDay("0000-00-00"))
+    #expect(!isDay("2026-13-45"))
+    #expect(!isDay("2024-02-30"))
 }
 
 // MARK: - Scanning real directories
@@ -104,8 +97,9 @@ func makeTree(_ layout: [String: [String]]) throws -> URL {
     defer { try? FileManager.default.removeItem(at: root) }
 
     let snapshot = try walkLibrary(root: root.path)
-    // not-a-shoot has no images and no photopipe.json → dropped entirely
-    #expect(snapshot.shoots.map(\.name) == ["2026-08-01_beach", "2026-07-12_zell"])
+    // not-a-shoot has no images and no photopipe.json → dropped entirely.
+    // Both are undated (no photopipe.json), so they sort by name.
+    #expect(snapshot.shoots.map(\.name) == ["2026-07-12_zell", "2026-08-01_beach"])
     #expect(snapshot.fileCount == 5)
 
     let zell = try #require(snapshot.imagesByShoot["2026-07-12_zell"])
@@ -117,19 +111,21 @@ func makeTree(_ layout: [String: [String]]) throws -> URL {
     let nested = try #require(zell.first { $0.rel == "selects/DSC002.ARW" })
     #expect(nested.path == root.appendingPathComponent("2026-07-12_zell/selects/DSC002.ARW").path)
     #expect(nested.ext == "ARW")
-    #expect(snapshot.shoots[1].imageCount == 4)
+    #expect(snapshot.shoots.first { $0.name == "2026-07-12_zell" }?.imageCount == 4)
 }
 
 @Test func scanSortsNewestDayFirstUndatedLast() throws {
     let root = try makeTree([
-        "2026-01-01_old": ["a.ARW"],
-        "2026-12-31_new": ["b.ARW"],
+        "old": ["a.ARW"],
+        "new": ["b.ARW"],
         "misc": ["c.ARW"],
     ])
     defer { try? FileManager.default.removeItem(at: root) }
+    try ProjectFile(day: "2026-01-01").write(inShoot: root.appendingPathComponent("old").path)
+    try ProjectFile(day: "2026-12-31").write(inShoot: root.appendingPathComponent("new").path)
 
     let names = try walkLibrary(root: root.path).shoots.map(\.name)
-    #expect(names == ["2026-12-31_new", "2026-01-01_old", "misc"])
+    #expect(names == ["new", "old", "misc"])
 }
 
 @Test func scanMissingRootThrows() {
