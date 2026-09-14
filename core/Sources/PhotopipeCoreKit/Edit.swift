@@ -53,12 +53,16 @@ public struct CropRect: Codable, Equatable, Sendable {
 /// the crop rect stays axis-aligned.
 /// `rotation`: whole-photo turn (0/90/180/270) on top of the file's own
 /// orientation; the crop rect is against the turned frame.
+/// `texture`/`clarity`/`dehaze`: local contrast at three scales, -100..100.
 public struct Edit: Codable, Equatable, Sendable {
     public var exposure: Double
     public var highlights: Double
     public var shadows: Double
     public var whites: Double
     public var blacks: Double
+    public var texture: Double
+    public var clarity: Double
+    public var dehaze: Double
     public var temperature: Double?
     public var tint: Double?
     public var denoise: Double?
@@ -76,6 +80,7 @@ public struct Edit: Codable, Equatable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case exposure, highlights, shadows, whites, blacks
+        case texture, clarity, dehaze
         case temperature, tint, denoise, vibrance, saturation
         case curveRGB, curveRed, curveGreen, curveBlue, crop, cropAngle, rotation
     }
@@ -83,6 +88,7 @@ public struct Edit: Codable, Equatable, Sendable {
     public init(
         exposure: Double = 0, highlights: Double = 0, shadows: Double = 0,
         whites: Double = 0, blacks: Double = 0,
+        texture: Double = 0, clarity: Double = 0, dehaze: Double = 0,
         temperature: Double? = nil, tint: Double? = nil, denoise: Double? = nil,
         vibrance: Double = 0, saturation: Double = 0,
         curveRGB: [CurvePoint] = [], curveRed: [CurvePoint] = [],
@@ -94,6 +100,9 @@ public struct Edit: Codable, Equatable, Sendable {
         self.shadows = shadows
         self.whites = whites
         self.blacks = blacks
+        self.texture = texture
+        self.clarity = clarity
+        self.dehaze = dehaze
         self.temperature = temperature
         self.tint = tint
         self.denoise = denoise
@@ -115,6 +124,9 @@ public struct Edit: Codable, Equatable, Sendable {
         shadows = try container.decodeIfPresent(Double.self, forKey: .shadows) ?? 0
         whites = try container.decodeIfPresent(Double.self, forKey: .whites) ?? 0
         blacks = try container.decodeIfPresent(Double.self, forKey: .blacks) ?? 0
+        texture = try container.decodeIfPresent(Double.self, forKey: .texture) ?? 0
+        clarity = try container.decodeIfPresent(Double.self, forKey: .clarity) ?? 0
+        dehaze = try container.decodeIfPresent(Double.self, forKey: .dehaze) ?? 0
         temperature = try container.decodeIfPresent(Double.self, forKey: .temperature)
         tint = try container.decodeIfPresent(Double.self, forKey: .tint)
         denoise = try container.decodeIfPresent(Double.self, forKey: .denoise)
@@ -133,15 +145,19 @@ public struct Edit: Codable, Equatable, Sendable {
     /// the cache keys and sidecar JSON they already had.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        func encodeUnlessZero(_ value: Double, forKey key: CodingKeys) throws {
+            if value != 0 {
+                try container.encode(value, forKey: key)
+            }
+        }
         try container.encode(exposure, forKey: .exposure)
         try container.encode(highlights, forKey: .highlights)
         try container.encode(shadows, forKey: .shadows)
-        if whites != 0 {
-            try container.encode(whites, forKey: .whites)
-        }
-        if blacks != 0 {
-            try container.encode(blacks, forKey: .blacks)
-        }
+        try encodeUnlessZero(whites, forKey: .whites)
+        try encodeUnlessZero(blacks, forKey: .blacks)
+        try encodeUnlessZero(texture, forKey: .texture)
+        try encodeUnlessZero(clarity, forKey: .clarity)
+        try encodeUnlessZero(dehaze, forKey: .dehaze)
         try container.encodeIfPresent(temperature, forKey: .temperature)
         try container.encodeIfPresent(tint, forKey: .tint)
         try container.encodeIfPresent(denoise, forKey: .denoise)
@@ -152,9 +168,7 @@ public struct Edit: Codable, Equatable, Sendable {
         try container.encode(curveGreen, forKey: .curveGreen)
         try container.encode(curveBlue, forKey: .curveBlue)
         try container.encodeIfPresent(crop, forKey: .crop)
-        if cropAngle != 0 {
-            try container.encode(cropAngle, forKey: .cropAngle)
-        }
+        try encodeUnlessZero(cropAngle, forKey: .cropAngle)
         if rotation != 0 {
             try container.encode(rotation, forKey: .rotation)
         }

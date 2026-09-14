@@ -82,6 +82,7 @@ func image(_ url: URL) throws -> ImageFile {
 
     let edit = Edit(
         exposure: 1.5, highlights: -42, shadows: 18, whites: 30, blacks: -20,
+        texture: 15, clarity: 22, dehaze: -8,
         temperature: 5600, tint: 12, denoise: 25, vibrance: 10, saturation: -5,
         curveRGB: [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.6), CurvePoint(x: 1, y: 1)],
         curveRed: [CurvePoint(x: 0, y: 0.1), CurvePoint(x: 1, y: 0.9)])
@@ -93,6 +94,9 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(read.shadows == 18)
     #expect(read.whites == 30)
     #expect(read.blacks == -20)
+    #expect(read.texture == 15)
+    #expect(read.clarity == 22)
+    #expect(read.dehaze == -8)
     #expect(read.temperature == 5600)
     #expect(read.tint == 12)
     #expect(read.denoise == 25)
@@ -439,7 +443,7 @@ func image(_ url: URL) throws -> ImageFile {
 
     try XMP.writeRating(3, file: try image(jpg), tool: .shared)
     let edit = Edit(
-        exposure: 0.5, shadows: 25, whites: -15, blacks: 40,
+        exposure: 0.5, shadows: 25, whites: -15, blacks: 40, dehaze: 35,
         temperature: 30, tint: -10, saturation: 15,
         curveRGB: [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.25, y: 0.2), CurvePoint(x: 1, y: 1)])
     try XMP.writeEdit(edit, file: try image(jpg), tool: .shared)
@@ -450,6 +454,7 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(read.shadows == 25)
     #expect(read.whites == -15)
     #expect(read.blacks == 40)
+    #expect(read.dehaze == 35)
     #expect(read.temperature == 30)
     #expect(read.tint == -10)
     #expect(read.saturation == 15)

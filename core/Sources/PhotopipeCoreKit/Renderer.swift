@@ -225,6 +225,9 @@ public final class Renderer {
             }
         }
 
+        if edit.dehaze != 0 {
+            image = Presence.dehaze(image, amount: edit.dehaze)
+        }
         if let lut = ToneLUT.samples(for: edit) {
             image = image.applyingFilter(
                 "CIColorCurves",
@@ -233,6 +236,9 @@ public final class Renderer {
                     "inputCurvesDomain": CIVector(x: 0, y: 1),
                     "inputColorSpace": curveColorSpace,
                 ])
+        }
+        if edit.texture != 0 || edit.clarity != 0 {
+            image = Presence.localContrast(image, texture: edit.texture, clarity: edit.clarity)
         }
         if edit.vibrance != 0 {
             image = image.applyingFilter(

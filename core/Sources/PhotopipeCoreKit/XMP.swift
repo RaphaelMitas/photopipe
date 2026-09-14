@@ -86,26 +86,47 @@ public enum XMP {
             }
     }
 
-    static func parseEdit(_ text: String, isRaw: Bool, baseOrientation: Int = 1) -> Edit {
+    /// One view over a sidecar's text and an embedded file's metadata, so the
+    /// crs tag mapping lives once.
+    private struct Tags {
+        let scalar: (String) -> Double?
+        let curve: (String) -> [CurvePoint]
+        let hasCrop: Bool?
+    }
+
+    /// Lightroom's crop-reset keeps the Crop* values and flips HasCrop to
+    /// False, so HasCrop wins when present.
+    private static func edit(from tags: Tags, isRaw: Bool, rotation: Int) -> Edit {
         Edit(
-            exposure: parseDouble("Exposure2012", in: text) ?? 0,
-            highlights: parseDouble("Highlights2012", in: text) ?? 0,
-            shadows: parseDouble("Shadows2012", in: text) ?? 0,
-            whites: parseDouble("Whites2012", in: text) ?? 0,
-            blacks: parseDouble("Blacks2012", in: text) ?? 0,
-            temperature: parseDouble(isRaw ? "Temperature" : "IncrementalTemperature", in: text),
-            tint: parseDouble(isRaw ? "Tint" : "IncrementalTint", in: text),
-            denoise: isRaw ? parseDouble("LuminanceSmoothing", in: text) : nil,
-            vibrance: parseDouble("Vibrance", in: text) ?? 0,
-            saturation: parseDouble("Saturation", in: text) ?? 0,
-            curveRGB: parseCurve("ToneCurvePV2012", in: text),
-            curveRed: parseCurve("ToneCurvePV2012Red", in: text),
-            curveGreen: parseCurve("ToneCurvePV2012Green", in: text),
-            curveBlue: parseCurve("ToneCurvePV2012Blue", in: text),
-            crop: parseHasCrop(in: text) == false
-                ? nil : cropRect { parseDouble("Crop\($0)", in: text) },
-            cropAngle: parseHasCrop(in: text) == false
-                ? 0 : parseDouble("CropAngle", in: text) ?? 0,
+            exposure: tags.scalar("Exposure2012") ?? 0,
+            highlights: tags.scalar("Highlights2012") ?? 0,
+            shadows: tags.scalar("Shadows2012") ?? 0,
+            whites: tags.scalar("Whites2012") ?? 0,
+            blacks: tags.scalar("Blacks2012") ?? 0,
+            texture: tags.scalar("Texture") ?? 0,
+            clarity: tags.scalar("Clarity2012") ?? 0,
+            dehaze: tags.scalar("Dehaze") ?? 0,
+            temperature: tags.scalar(isRaw ? "Temperature" : "IncrementalTemperature"),
+            tint: tags.scalar(isRaw ? "Tint" : "IncrementalTint"),
+            denoise: isRaw ? tags.scalar("LuminanceSmoothing") : nil,
+            vibrance: tags.scalar("Vibrance") ?? 0,
+            saturation: tags.scalar("Saturation") ?? 0,
+            curveRGB: tags.curve("ToneCurvePV2012"),
+            curveRed: tags.curve("ToneCurvePV2012Red"),
+            curveGreen: tags.curve("ToneCurvePV2012Green"),
+            curveBlue: tags.curve("ToneCurvePV2012Blue"),
+            crop: tags.hasCrop == false ? nil : cropRect { tags.scalar("Crop\($0)") },
+            cropAngle: tags.hasCrop == false ? 0 : tags.scalar("CropAngle") ?? 0,
+            rotation: rotation)
+    }
+
+    static func parseEdit(_ text: String, isRaw: Bool, baseOrientation: Int = 1) -> Edit {
+        edit(
+            from: Tags(
+                scalar: { parseDouble($0, in: text) },
+                curve: { parseCurve($0, in: text) },
+                hasCrop: parseHasCrop(in: text)),
+            isRaw: isRaw,
             rotation: rotation(fromXMP: parseOrientation(in: text), base: baseOrientation))
     }
 
@@ -143,8 +164,6 @@ public enum XMP {
             .flatMap(Int.init)
     }
 
-    /// Lightroom's crop-reset keeps the Crop* values and flips HasCrop to
-    /// False, so HasCrop wins when present.
     private static func cropRect(_ value: (String) -> Double?) -> CropRect? {
         guard let left = value("Left"), let top = value("Top"),
             let right = value("Right"), let bottom = value("Bottom"),
@@ -255,23 +274,12 @@ public enum XMP {
             }
             return true
         }
-        let edit = Edit(
-            exposure: scalars["Exposure2012"] ?? 0,
-            highlights: scalars["Highlights2012"] ?? 0,
-            shadows: scalars["Shadows2012"] ?? 0,
-            whites: scalars["Whites2012"] ?? 0,
-            blacks: scalars["Blacks2012"] ?? 0,
-            temperature: scalars[isRaw ? "Temperature" : "IncrementalTemperature"],
-            tint: scalars[isRaw ? "Tint" : "IncrementalTint"],
-            denoise: isRaw ? scalars["LuminanceSmoothing"] : nil,
-            vibrance: scalars["Vibrance"] ?? 0,
-            saturation: scalars["Saturation"] ?? 0,
-            curveRGB: curves["ToneCurvePV2012"] ?? [],
-            curveRed: curves["ToneCurvePV2012Red"] ?? [],
-            curveGreen: curves["ToneCurvePV2012Green"] ?? [],
-            curveBlue: curves["ToneCurvePV2012Blue"] ?? [],
-            crop: hasCrop == false ? nil : cropRect { scalars["Crop\($0)"] },
-            cropAngle: hasCrop == false ? 0 : scalars["CropAngle"] ?? 0,
+        let edit = edit(
+            from: Tags(
+                scalar: { scalars[$0] },
+                curve: { curves[$0] ?? [] },
+                hasCrop: hasCrop),
+            isRaw: isRaw,
             rotation: rotation(
                 fromXMP: embeddedXMPOrientation(at: url),
                 base: baseOrientation(at: url) ?? 1))
@@ -365,6 +373,9 @@ public enum XMP {
         integerScalar("Shadows2012", edit.shadows)
         integerScalar("Whites2012", edit.whites)
         integerScalar("Blacks2012", edit.blacks)
+        integerScalar("Texture", edit.texture)
+        integerScalar("Clarity2012", edit.clarity)
+        integerScalar("Dehaze", edit.dehaze)
         // exiftool's name for crs:Temperature is ColorTemperature.
         let temperatureTag = file.isRaw ? "ColorTemperature" : "IncrementalTemperature"
         let tintTag = file.isRaw ? "Tint" : "IncrementalTint"
