@@ -10,19 +10,8 @@ import {
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import { ProjectFields } from "@/components/ProjectFields";
-import {
-  canSaveProject,
-  dateInFolderDefault,
-  type ProjectDraft,
-  projectRequest,
-} from "@/lib/projectFolder";
+import type { ProjectDraft } from "@/lib/project";
 import { useCreateProject } from "@/lib/queries";
-
-function today(): string {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-}
 
 type Props = {
   open: boolean;
@@ -53,12 +42,7 @@ function NewProjectForm({
   onCancel: () => void;
   onCreated: (shoot: string) => void;
 }) {
-  const [draft, setDraft] = useState<ProjectDraft>(() => ({
-    name: "",
-    day: today(),
-    dateInFolder: dateInFolderDefault.read(),
-    notes: "",
-  }));
+  const [draft, setDraft] = useState<ProjectDraft>({ name: "", notes: "" });
   const create = useCreateProject();
 
   return (
@@ -66,9 +50,10 @@ function NewProjectForm({
       className="flex flex-col gap-4"
       onSubmit={(event) => {
         event.preventDefault();
-        create.mutate(projectRequest(draft), {
-          onSuccess: (result) => onCreated(result.shoot),
-        });
+        create.mutate(
+          { name: draft.name.trim(), notes: draft.notes },
+          { onSuccess: (result) => onCreated(result.shoot) },
+        );
       }}
     >
       <DialogHeader>
@@ -87,7 +72,7 @@ function NewProjectForm({
         <Button
           type="submit"
           data-testid="create-project"
-          disabled={!canSaveProject(draft) || create.isPending}
+          disabled={!draft.name.trim() || create.isPending}
         >
           {create.isPending && <Loader2 className="animate-spin" />}
           Create

@@ -81,7 +81,6 @@ public struct Shoot: Codable, Equatable, Sendable {
     public let name: String
     public let path: String
     public let day: String?
-    public let project: String
     public let imageCount: Int
     public let notes: String
     public let cover: String?
@@ -95,12 +94,6 @@ public func isDay(_ value: String) -> Bool {
     value.wholeMatch(of: /[0-9]{4}-[0-9]{2}-[0-9]{2}/) != nil
 }
 
-public func parseShootName(_ name: String) -> (day: String, project: String)? {
-    let pattern = /^([0-9]{4}-[0-9]{2}-[0-9]{2})_(.+)$/
-    guard let match = name.wholeMatch(of: pattern) else { return nil }
-    return (String(match.1), String(match.2))
-}
-
 public func makeShoot(
     name: String, path: String, images: [ImageFile], notes: String, day: String?, cover: String?
 ) -> Shoot {
@@ -112,7 +105,6 @@ public func makeShoot(
         name: name,
         path: path,
         day: day.flatMap { isDay($0) ? $0 : nil },
-        project: parseShootName(name)?.project ?? name,
         imageCount: images.count,
         notes: notes,
         cover: cover,

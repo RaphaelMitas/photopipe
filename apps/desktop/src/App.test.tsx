@@ -46,7 +46,6 @@ const SHOOT = {
   name: "2026-07-12_zell",
   path: "/r/2026-07-12_zell",
   day: "2026-07-12",
-  project: "zell",
   imageCount: 4,
   notes: "",
   cover: null,

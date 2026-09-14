@@ -39,14 +39,13 @@ live under the ⓘ in the sidebar footer.
 ## How it works
 
 A project is a folder in your library with photos in it. Its date, notes and
-cover live in a `photopipe.json` inside it. A `YYYY-MM-DD_` prefix on the
-folder name is optional; the app shows the name without it, and the first scan
-copies the date into that file, creating it if needed. Whatever image files
-sit inside the folder, in subfolders or not, are its photos, shown as one flat
-set:
+cover live in a `photopipe.json` inside it; the folder name is just a name. In
+a project's settings the date field suggests the first photo's date, which you
+can change or clear. Whatever image files sit inside the folder, in subfolders
+or not, are its photos, shown as one flat set:
 
 ```
-2026-07-12_zell/
+zell/
 ├── DSC00832.ARW
 ├── kirche/DSC00938.ARW
 └── party/DSC01204.jpg

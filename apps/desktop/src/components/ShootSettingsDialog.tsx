@@ -7,6 +7,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@photopipe/ui/components/dialog";
+import { Input } from "@photopipe/ui/components/input";
 import { Label } from "@photopipe/ui/components/label";
 import { Skeleton } from "@photopipe/ui/components/skeleton";
 import { cn } from "@photopipe/ui/lib/utils";
@@ -14,12 +15,13 @@ import { Check } from "lucide-react";
 import { useRef, useState } from "react";
 import { ProjectFields } from "@/components/ProjectFields";
 import { fileSrc, type ImageFile, type Shoot } from "@/lib/core";
+import type { ProjectDraft } from "@/lib/project";
 import {
-  canSaveProject,
-  type ProjectDraft,
-  projectRequest,
-} from "@/lib/projectFolder";
-import { useImages, useThumbnail, useUpdateProject } from "@/lib/queries";
+  useCaptureDate,
+  useImages,
+  useThumbnail,
+  useUpdateProject,
+} from "@/lib/queries";
 
 function CoverChoice({
   image,
@@ -60,6 +62,40 @@ function CoverChoice({
         </span>
       )}
     </button>
+  );
+}
+
+/// Empty until you focus it, then it suggests the first photo's capture date;
+/// a manual value or a clear is left alone.
+function ProjectDateField({
+  day,
+  firstPhotoPath,
+  onChange,
+}: {
+  day: string;
+  firstPhotoPath: string | undefined;
+  onChange: (day: string) => void;
+}) {
+  const suggested = useRef(false);
+  const capture = useCaptureDate();
+  const prefill = async () => {
+    if (day !== "" || suggested.current || !firstPhotoPath) return;
+    suggested.current = true;
+    const result = await capture.mutateAsync(firstPhotoPath);
+    if (result.day) onChange(result.day);
+  };
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor="project-day">Date</Label>
+      <Input
+        id="project-day"
+        data-testid="project-day"
+        type="date"
+        value={day}
+        onFocus={prefill}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
   );
 }
 
@@ -112,12 +148,11 @@ function ShootSettingsForm({
 }) {
   const images = useImages(shoot.name);
   const update = useUpdateProject();
-  const [draft, setDraft] = useState<ProjectDraft>(() => ({
-    name: shoot.project,
-    day: shoot.day ?? "",
-    dateInFolder: shoot.name !== shoot.project,
+  const [draft, setDraft] = useState<ProjectDraft>({
+    name: shoot.name,
     notes: shoot.notes,
-  }));
+  });
+  const [day, setDay] = useState(shoot.day ?? "");
   const [cover, setCover] = useState(shoot.cover);
 
   return (
@@ -126,7 +161,13 @@ function ShootSettingsForm({
       onSubmit={(event) => {
         event.preventDefault();
         update.mutate(
-          { shoot: shoot.name, cover, ...projectRequest(draft) },
+          {
+            shoot: shoot.name,
+            name: draft.name.trim(),
+            day: day || null,
+            notes: draft.notes,
+            cover,
+          },
           { onSuccess: (result) => onSaved(result.shoot) },
         );
       }}
@@ -134,11 +175,21 @@ function ShootSettingsForm({
       <DialogHeader>
         <DialogTitle className="font-heading">Project settings</DialogTitle>
         <DialogDescription>
-          Changing the folder name moves it; the rest is metadata.
+          The name renames the folder; the rest is metadata.
         </DialogDescription>
       </DialogHeader>
 
-      <ProjectFields draft={draft} onChange={setDraft} />
+      <ProjectFields
+        draft={draft}
+        onChange={setDraft}
+        dateSlot={
+          <ProjectDateField
+            day={day}
+            firstPhotoPath={images.data?.[0]?.path}
+            onChange={setDay}
+          />
+        }
+      />
 
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
@@ -183,7 +234,7 @@ function ShootSettingsForm({
         <Button
           type="submit"
           data-testid="save-shoot-settings"
-          disabled={!canSaveProject(draft) || update.isPending}
+          disabled={!draft.name.trim() || update.isPending}
         >
           Save
         </Button>

@@ -3,6 +3,7 @@ import Foundation
 /// `photopipe.json`: per-project metadata only; workflow state lives in the files themselves.
 public struct ProjectFile: Codable, Equatable, Sendable {
     public var notes: String
+    /// YYYY-MM-DD, or nil when undated.
     public var day: String?
     /// Rel path of the cover image; nil means "use the first one".
     public var cover: String?
@@ -14,9 +15,7 @@ public struct ProjectFile: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case notes, cover
-        // older builds know only "created" and would drop "day"
-        case day = "created"
+        case notes, day, cover
     }
 
     public init(from decoder: Decoder) throws {

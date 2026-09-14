@@ -13,6 +13,7 @@ public final class LibraryService: @unchecked Sendable {
         case invalidProjectName(String)
         case invalidProjectDay(String)
         case projectExists(String)
+        case unreadableProjectFile(String)
         case unknownExport(String)
     }
 
@@ -432,22 +433,17 @@ public final class LibraryService: @unchecked Sendable {
         return (settled.edit, status().generation)
     }
 
-    static func checkDay(_ day: String?) throws {
-        if let day, !isDay(day) { throw ServiceError.invalidProjectDay(day) }
-    }
-
-    static func projectFolder(name: String, day: String?, dateInFolder: Bool) throws -> String {
+    /// A folder name, not a date; the date is metadata. Rejects separators,
+    /// a leading dot (hidden from the scan) and control characters.
+    static func projectFolder(name: String) throws -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let scalars = trimmed.unicodeScalars
         guard !trimmed.isEmpty, !scalars.contains("/"), !scalars.contains(":"),
-            scalars.first != ".", !scalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F }),
-            parseShootName(trimmed) == nil
+            scalars.first != ".", !scalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F })
         else {
             throw ServiceError.invalidProjectName(name)
         }
-        try checkDay(day)
-        guard dateInFolder, let day else { return trimmed }
-        return "\(day)_\(trimmed)"
+        return trimmed
     }
 
     static func freeProjectURL(root: String, folder: String) throws -> URL {
@@ -458,20 +454,21 @@ public final class LibraryService: @unchecked Sendable {
         return url
     }
 
+    /// Renames the folder only when the name changes; the date, notes and cover
+    /// are metadata. Moves first, writes second, and undoes the move if the
+    /// write fails. Refuses when an existing file cannot be read, so a save
+    /// never lands defaults on top of a file it could not parse.
     public func updateProject(
-        shoot shootName: String, name: String, day: String?, dateInFolder: Bool, notes: String,
-        cover: String?
+        shoot shootName: String, name: String, day: String?, notes: String, cover: String?
     ) throws -> (shoot: String, generation: Int) {
         let shoot = try self.shoot(named: shootName)
         let source = URL(fileURLWithPath: shoot.path)
-        try Self.checkDay(day)
+        if day != nil, day.map(isDay) != true { throw ServiceError.invalidProjectDay(day ?? "") }
+        guard ProjectFile.read(inShoot: shoot.path) != nil else {
+            throw ServiceError.unreadableProjectFile(shoot.name)
+        }
 
-        // A folder named outside the app may break the rules; validate only a name that changes.
-        let requested = dateInFolder ? day.map { "\($0)_\(name)" } ?? name : name
-        let folder =
-            requested == shoot.name
-            ? shoot.name
-            : try Self.projectFolder(name: name, day: day, dateInFolder: dateInFolder)
+        let folder = try Self.projectFolder(name: name)
         var path = source
         if folder != shoot.name {
             path = try Self.freeProjectURL(
@@ -491,7 +488,7 @@ public final class LibraryService: @unchecked Sendable {
         return (folder, status().generation)
     }
 
-    public func createProject(name: String, day: String?, dateInFolder: Bool, notes: String)
+    public func createProject(name: String, notes: String)
         throws -> (shoot: String, path: String, generation: Int)
     {
         lock.lock()
@@ -499,13 +496,21 @@ public final class LibraryService: @unchecked Sendable {
         lock.unlock()
         guard let currentRoot else { throw ServiceError.noRoot }
 
-        let folder = try Self.projectFolder(name: name, day: day, dateInFolder: dateInFolder)
+        let folder = try Self.projectFolder(name: name)
         let path = try Self.freeProjectURL(root: currentRoot, folder: folder)
         try FileManager.default.createDirectory(at: path, withIntermediateDirectories: false)
-        try ProjectFile(notes: notes, day: day).write(inShoot: path.path)
+        try ProjectFile(notes: notes).write(inShoot: path.path)
 
         rescanNow()
         return (folder, path.path, status().generation)
+    }
+
+    /// The capture day of a photo for the settings date picker to suggest,
+    /// from EXIF, then the file's modification date. nil only when neither
+    /// is readable.
+    public func captureDate(path: String) throws -> String? {
+        let canonical = try pathsUnderRoot([path])[0]
+        return Dimensions.captureDay(at: URL(fileURLWithPath: canonical))
     }
 
     public func startImport(shoot shootName: String, paths: [String]) throws

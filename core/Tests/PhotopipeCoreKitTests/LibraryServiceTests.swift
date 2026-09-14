@@ -27,7 +27,8 @@ private func tempIndexPath() -> String {
     #expect(summary.files == 4)
 
     let shoots = service.listShoots()
-    #expect(shoots.map(\.name) == ["2026-08-01_beach", "2026-07-12_zell"])
+    // Both undated, so they sort by name.
+    #expect(shoots.map(\.name) == ["2026-07-12_zell", "2026-08-01_beach"])
     let images = try service.listImages(shoot: "2026-07-12_zell")
     #expect(images.map(\.rel) == ["DSC001.ARW", "DSC001.jpg", "selects/DSC002.ARW"])
 }

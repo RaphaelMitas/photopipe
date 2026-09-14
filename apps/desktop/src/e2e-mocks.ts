@@ -5,7 +5,6 @@ import {
   identityEdit,
   type Shoot,
 } from "./lib/core";
-import { type ProjectRequest, projectFolder } from "./lib/projectFolder";
 import type { ExportProgress } from "./lib/queries";
 import { makeImage } from "./lib/test-image";
 
@@ -64,7 +63,6 @@ const shoots: Shoot[] = [
     name: "2026-07-12_zell",
     path: "/fake/2026-07-12_zell",
     day: "2026-07-12",
-    project: "zell",
     imageCount: zellImages.length,
     notes: "Golden hour at the river",
     cover: null,
@@ -75,7 +73,6 @@ const shoots: Shoot[] = [
     name: "misc",
     path: "/fake/misc",
     day: null,
-    project: "misc",
     imageCount: 1,
     notes: "",
     cover: null,
@@ -86,7 +83,6 @@ const shoots: Shoot[] = [
     name: "2026-08-01_dolomites",
     path: "/fake/2026-08-01_dolomites",
     day: "2026-08-01",
-    project: "dolomites",
     imageCount: 200,
     notes: "Two days above Cortina",
     cover: null,
@@ -99,20 +95,13 @@ const emptyShoots = new Set<string>();
 
 function projectFields(
   params: Record<string, unknown>,
-): Pick<Shoot, "name" | "path" | "day" | "project" | "notes"> {
-  const request: ProjectRequest = {
-    name: String(params.name),
-    day: typeof params.day === "string" ? params.day : null,
-    dateInFolder: params.dateInFolder === true,
-    notes: String(params.notes),
-  };
-  const name = projectFolder(request);
+): Pick<Shoot, "name" | "path" | "day" | "notes"> {
+  const name = String(params.name).trim();
   return {
     name,
     path: `/fake/${name}`,
-    day: request.day,
-    project: request.name.trim(),
-    notes: request.notes,
+    day: typeof params.day === "string" ? params.day : null,
+    notes: String(params.notes),
   };
 }
 
@@ -313,14 +302,10 @@ export const E2E_HANDLERS: Record<
     const shoot = shoots.find((s) => s.name === params.shoot);
     if (!shoot) throw `unknown_shoot: ${String(params.shoot)}`;
     const fields = projectFields(params);
-    const requested =
-      params.dateInFolder === true && fields.day
-        ? `${fields.day}_${String(params.name)}`
-        : String(params.name);
-    if (requested === shoot.name) {
-      fields.name = shoot.name;
-      fields.path = shoot.path;
-    } else if (shoots.some((existing) => existing.name === fields.name)) {
+    if (
+      fields.name !== shoot.name &&
+      shoots.some((existing) => existing.name === fields.name)
+    ) {
       throw `project_exists: ${fields.name}`;
     }
     Object.assign(shoot, fields);
@@ -331,6 +316,7 @@ export const E2E_HANDLERS: Record<
     shoot.coverPath = match?.path ?? imagesFor(shoot.name)[0]?.path ?? null;
     return { shoot: shoot.name, generation: 1 };
   },
+  captureDate: () => ({ day: "2026-07-12" }),
   status: () => ({
     generation: 1,
     root: "/fake",

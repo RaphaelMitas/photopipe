@@ -275,14 +275,12 @@ test("a new project is created from the library and opens empty", async ({
 
   await page.getByTestId("new-project").click();
   await page.getByTestId("project-name").fill("riverside");
-  await page.getByTestId("project-day").fill("2026-09-09");
   await page.getByTestId("project-notes").fill("client wants 12 finals");
-  await expect(page.getByTestId("folder-preview")).toHaveText(
-    "2026-09-09_riverside",
-  );
+  // New project takes a name only; the date is set later from a photo.
+  await expect(page.getByTestId("project-day")).toHaveCount(0);
   await page.getByTestId("create-project").click();
 
-  await expect(page.getByText(/Created 2026-09-09_riverside/)).toBeVisible();
+  await expect(page.getByText(/Created riverside/)).toBeVisible();
   // The fresh project opens empty; folders are the user's own business.
   await expect(page.getByTestId("browser-empty")).toContainText(
     "subfolders are fine",
@@ -296,31 +294,6 @@ test("a new project is created from the library and opens empty", async ({
   ).toBeVisible();
 });
 
-test("leaving the date out of the folder can be remembered as the default", async ({
-  page,
-}) => {
-  await page.goto("/");
-  await page.getByTestId("root-input").fill("/fake");
-  await page.getByTestId("root-submit").click();
-
-  await page.getByTestId("new-project").click();
-  await page.getByTestId("project-name").fill("riverside");
-  await expect(page.getByTestId("remember-default")).toHaveCount(0);
-  await page.getByTestId("date-in-folder").click();
-  await expect(page.getByTestId("folder-preview")).toHaveText("riverside");
-  await expect(page.getByTestId("remember-default")).toBeVisible();
-  await page.getByTestId("remember-default-yes").click();
-  await expect(page.getByTestId("remember-default")).toHaveCount(0);
-  await page.getByTestId("create-project").click();
-  await expect(page.getByText(/Created riverside/)).toBeVisible();
-
-  await page.getByTestId("back-to-shoots").click();
-  await page.getByTestId("new-project").click();
-  await page.getByTestId("project-name").fill("next");
-  await expect(page.getByTestId("folder-preview")).toHaveText("next");
-  await expect(page.getByTestId("remember-default")).toHaveCount(0);
-});
-
 test("library cards show a cover and open project settings", async ({
   page,
 }) => {
@@ -332,28 +305,36 @@ test("library cards show a cover and open project settings", async ({
   await expect(page.getByTestId("shoot-cover").first()).toBeVisible();
 
   await page.getByTestId("shoot-settings-2026-07-12_zell").click();
-  await expect(page.getByTestId("project-name")).toHaveValue("zell");
+  await expect(page.getByTestId("project-name")).toHaveValue("2026-07-12_zell");
   await expect(page.getByTestId("project-day")).toHaveValue("2026-07-12");
   await expect(page.getByTestId("project-notes")).toHaveValue(
     "Golden hour at the river",
   );
-
-  await expect(page.getByTestId("folder-preview")).toHaveText(
-    "2026-07-12_zell",
-  );
   await page.getByTestId("project-name").fill("zell-revisited");
-  await expect(page.getByTestId("folder-preview")).toHaveText(
-    "2026-07-12_zell-revisited",
-  );
 
   const covers = page.getByTestId("cover-choice");
   await covers.nth(1).click();
   await expect(covers.nth(1)).toHaveAttribute("data-chosen", "true");
 
   await page.getByTestId("save-shoot-settings").click();
-  await expect(
-    page.getByText(/Renamed to 2026-07-12_zell-revisited/),
-  ).toBeVisible();
+  await expect(page.getByText(/Renamed to zell-revisited/)).toBeVisible();
+});
+
+test("the date field suggests the first photo's date, and is editable", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByTestId("root-input").fill("/fake");
+  await page.getByTestId("root-submit").click();
+
+  // misc has no date; focusing the empty field fills it from the first photo.
+  await page.getByTestId("shoot-settings-misc").click();
+  await expect(page.getByTestId("project-day")).toHaveValue("");
+  await page.getByTestId("project-day").focus();
+  await expect(page.getByTestId("project-day")).toHaveValue("2026-07-12");
+  await page.getByTestId("project-day").fill("2026-01-02");
+  await page.getByTestId("save-shoot-settings").click();
+  await expect(page.getByTestId("shoot-settings-misc")).toBeVisible();
 });
 
 test("a library that is still indexing says so and holds edits back", async ({

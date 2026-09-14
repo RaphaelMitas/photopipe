@@ -23,7 +23,6 @@ import {
   type Shoot,
   type StatusResult,
 } from "./core";
-import type { ProjectRequest } from "./projectFolder";
 import { useRawDecoderVersion } from "./rawDecoder";
 import type { ViewportRequest } from "./zoom";
 
@@ -520,9 +519,13 @@ export function useUpdateProject() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["write", "updateProject"],
-    mutationFn: (
-      vars: ProjectRequest & { shoot: string; cover: string | null },
-    ) =>
+    mutationFn: (vars: {
+      shoot: string;
+      name: string;
+      day: string | null;
+      notes: string;
+      cover: string | null;
+    }) =>
       coreRequest<{ shoot: string; generation: number }>("updateProject", vars),
     onSuccess: (result, vars) => {
       if (result.shoot !== vars.shoot) {
@@ -703,7 +706,7 @@ export function useCreateProject() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["write", "createProject"],
-    mutationFn: (vars: ProjectRequest) =>
+    mutationFn: (vars: { name: string; notes: string }) =>
       coreRequest<CreateProjectResult>("createProject", vars),
     onSuccess: (result) => {
       toast.success(`Created ${result.shoot}`);
@@ -715,6 +718,13 @@ export function useCreateProject() {
         description: String(error),
       });
     },
+  });
+}
+
+export function useCaptureDate() {
+  return useMutation({
+    mutationFn: (path: string) =>
+      coreRequest<{ day: string | null }>("captureDate", { path }),
   });
 }
 
