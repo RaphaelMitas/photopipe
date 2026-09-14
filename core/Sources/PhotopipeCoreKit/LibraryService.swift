@@ -433,8 +433,7 @@ public final class LibraryService: @unchecked Sendable {
         return (settled.edit, status().generation)
     }
 
-    /// A folder name, not a date; the date is metadata. Rejects separators,
-    /// a leading dot (hidden from the scan) and control characters.
+    /// A leading dot is refused because the scan would hide the folder.
     static func projectFolder(name: String) throws -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let scalars = trimmed.unicodeScalars
@@ -454,10 +453,6 @@ public final class LibraryService: @unchecked Sendable {
         return url
     }
 
-    /// Renames the folder only when the name changes; the date, notes and cover
-    /// are metadata. Moves first, writes second, and undoes the move if the
-    /// write fails. Refuses when an existing file cannot be read, so a save
-    /// never lands defaults on top of a file it could not parse.
     public func updateProject(
         shoot shootName: String, name: String, day: String?, notes: String, cover: String?
     ) throws -> (shoot: String, generation: Int) {
@@ -505,9 +500,6 @@ public final class LibraryService: @unchecked Sendable {
         return (folder, path.path, status().generation)
     }
 
-    /// The capture day of a photo for the settings date picker to suggest,
-    /// from EXIF, then the file's modification date. nil only when neither
-    /// is readable.
     public func captureDate(path: String) throws -> String? {
         let canonical = try pathsUnderRoot([path])[0]
         return Dimensions.captureDay(at: URL(fileURLWithPath: canonical))

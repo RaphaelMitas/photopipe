@@ -2,7 +2,8 @@ import { Input } from "@photopipe/ui/components/input";
 import { Label } from "@photopipe/ui/components/label";
 import { Textarea } from "@photopipe/ui/components/textarea";
 import type { ReactNode } from "react";
-import type { ProjectDraft } from "@/lib/project";
+
+export type ProjectDraft = { name: string; notes: string };
 
 export function ProjectFields({
   draft,

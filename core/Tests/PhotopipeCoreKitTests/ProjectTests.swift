@@ -73,7 +73,6 @@ private func writeJPEG(at url: URL, dateTimeOriginal: String?) {
     _ = try service.setRoot(path: dir.path, indexPath: nil)
 
     _ = try service.createProject(name: "dup", notes: "")
-    // A date-looking name is now just a folder name and is allowed.
     _ = try service.createProject(name: "2026-01-01_gala", notes: "")
     for bad in ["dup", "   ", "a/b", "a:b", ".hidden", ".\u{301}hidden", "line\nbreak", ""] {
         #expect(throws: LibraryService.ServiceError.self) {
@@ -85,13 +84,11 @@ private func writeJPEG(at url: URL, dateTimeOriginal: String?) {
             == ["dup", "2026-01-01_gala"])
 }
 
-// MARK: - The file is the only home for the date
+// MARK: - Reading the date
 
 @Test func theDateComesOnlyFromTheFile() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
-    // A folder whose name looks like the old convention is just a name; its
-    // date is whatever the file says, and a broken file is left untouched.
     try makeProjectFolder(dir, "2026-07-12_zell", json: #"{"notes":"n","day":"2026-07-13"}"#)
     try makeProjectFolder(dir, "plain", json: #"{"notes":"kept","day":"2026-01-01"}"#)
     try makeProjectFolder(dir, "undated", json: #"{"notes":"","cover":"a.jpg"}"#)
@@ -102,7 +99,6 @@ private func writeJPEG(at url: URL, dateTimeOriginal: String?) {
     #expect(byName["2026-07-12_zell"]?.day == "2026-07-13")
     #expect(byName["plain"]?.day == "2026-01-01")
     #expect(byName["undated"]?.day == nil)
-    // The prefix is never copied into the file, and a broken file is not rewritten.
     #expect(byName["2026-06-06_corrupt"]?.day == nil)
     #expect(
         try String(contentsOf: ProjectFile.url(inShoot: corrupt.path), encoding: .utf8)
@@ -113,9 +109,7 @@ private func writeJPEG(at url: URL, dateTimeOriginal: String?) {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
 
-    // Missing → defaults.
     #expect(ProjectFile.read(inShoot: dir.path) == ProjectFile())
-    // Present but unreadable → nil, so a save refuses rather than clobbering it.
     try Data("{not json".utf8).write(to: ProjectFile.url(inShoot: dir.path))
     #expect(ProjectFile.read(inShoot: dir.path) == nil)
     // A missing or null notes key is not "broken"; the cover survives.
@@ -170,7 +164,6 @@ private func writeJPEG(at url: URL, dateTimeOriginal: String?) {
     #expect(ProjectFile.read(inShoot: moved.path)?.day == "2026-09-09")
     #expect(service.listShoots().map(\.name) == ["after"])
 
-    // Renaming onto an existing project is refused, not a silent merge.
     try makeProjectFolder(dir, "taken", json: "{}")
     service.rescanNow()
     #expect(throws: LibraryService.ServiceError.self) {
@@ -187,7 +180,6 @@ private func writeJPEG(at url: URL, dateTimeOriginal: String?) {
     let service = makeService(in: dir)
     _ = try service.setRoot(path: dir.path, indexPath: nil)
 
-    // A file that will not decode is refused, so a save cannot land defaults on it.
     try makeProjectFolder(dir, "broken", json: #"{"notes":"precious","c"#)
     try Data("x".utf8).write(
         to: dir.appendingPathComponent("broken").appendingPathComponent("DSC1.ARW"))
@@ -200,7 +192,7 @@ private func writeJPEG(at url: URL, dateTimeOriginal: String?) {
             contentsOf: ProjectFile.url(inShoot: dir.appendingPathComponent("broken").path),
             encoding: .utf8) == #"{"notes":"precious","c"#)
 
-    // A move that succeeds but a write that fails leaves the folder where it was.
+    // read-only folder: the rename in the parent succeeds, the write inside it fails
     let locked = try makeProjectFolder(dir, "locked", json: "{}")
     try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: locked.path)
     defer {
@@ -266,7 +258,10 @@ private func writeJPEG(at url: URL, dateTimeOriginal: String?) {
     writeJPEG(at: withExif, dateTimeOriginal: "2026:07:12 08:30:00")
     #expect(Dimensions.captureDay(at: withExif) == "2026-07-12")
 
-    // No EXIF stamp: fall back to the file's modification day.
+    let deadClock = dir.appendingPathComponent("dead.jpg")
+    writeJPEG(at: deadClock, dateTimeOriginal: "0000:00:00 00:00:00")
+    #expect(Dimensions.captureDay(at: deadClock) != "0000-00-00")
+
     let noExif = dir.appendingPathComponent("plain.txt")
     try Data("x".utf8).write(to: noExif)
     var comps = DateComponents()

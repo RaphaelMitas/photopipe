@@ -4,9 +4,13 @@ import ImageIO
 public enum Dimensions {
     public static let fallback = (width: 3000, height: 2000)
 
+    static func properties(at url: URL) -> [CFString: Any]? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+    }
+
     public static func read(at url: URL) -> (width: Int, height: Int)? {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-            let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+        guard let props = properties(at: url),
             let width = props[kCGImagePropertyPixelWidth] as? Int,
             let height = props[kCGImagePropertyPixelHeight] as? Int,
             width > 0, height > 0
@@ -15,21 +19,16 @@ public enum Dimensions {
         return orientation >= 5 ? (height, width) : (width, height)
     }
 
-    /// EXIF capture day as YYYY-MM-DD, else the file's modification day, else
-    /// nil. EXIF stamps read "yyyy:MM:dd HH:mm:ss"; only the date half is kept.
     public static func captureDay(at url: URL) -> String? {
-        if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-            let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
-        {
+        if let props = properties(at: url) {
             let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any]
             let tiff = props[kCGImagePropertyTIFFDictionary] as? [CFString: Any]
             let stamp =
                 (exif?[kCGImagePropertyExifDateTimeOriginal] as? String)
                 ?? (exif?[kCGImagePropertyExifDateTimeDigitized] as? String)
                 ?? (tiff?[kCGImagePropertyTIFFDateTime] as? String)
-            if let date = stamp?.prefix(10).replacingOccurrences(of: ":", with: "-"),
-                date.wholeMatch(of: /[0-9]{4}-[0-9]{2}-[0-9]{2}/) != nil
-            {
+            // EXIF stamps are "yyyy:MM:dd HH:mm:ss"
+            if let date = stamp?.prefix(10).replacingOccurrences(of: ":", with: "-"), isDay(date) {
                 return date
             }
         }

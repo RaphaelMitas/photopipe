@@ -1,4 +1,5 @@
 import { Button } from "@photopipe/ui/components/button";
+import { Calendar } from "@photopipe/ui/components/calendar";
 import {
   Dialog,
   DialogContent,
@@ -7,15 +8,24 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@photopipe/ui/components/dialog";
-import { Input } from "@photopipe/ui/components/input";
 import { Label } from "@photopipe/ui/components/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@photopipe/ui/components/popover";
 import { Skeleton } from "@photopipe/ui/components/skeleton";
 import { cn } from "@photopipe/ui/lib/utils";
-import { Check } from "lucide-react";
-import { useRef, useState } from "react";
-import { ProjectFields } from "@/components/ProjectFields";
+import { CalendarIcon, Check } from "lucide-react";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { type ProjectDraft, ProjectFields } from "@/components/ProjectFields";
 import { fileSrc, type ImageFile, type Shoot } from "@/lib/core";
-import type { ProjectDraft } from "@/lib/project";
 import {
   useCaptureDate,
   useImages,
@@ -65,8 +75,17 @@ function CoverChoice({
   );
 }
 
-/// Empty until you focus it, then it suggests the first photo's capture date;
-/// a manual value or a clear is left alone.
+const fromDay = (day: string) => {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
+const toDay = (date: Date) =>
+  [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+
 function ProjectDateField({
   day,
   firstPhotoPath,
@@ -74,27 +93,69 @@ function ProjectDateField({
 }: {
   day: string;
   firstPhotoPath: string | undefined;
-  onChange: (day: string) => void;
+  onChange: Dispatch<SetStateAction<string>>;
 }) {
-  const suggested = useRef(false);
-  const capture = useCaptureDate();
-  const prefill = async () => {
-    if (day !== "" || suggested.current || !firstPhotoPath) return;
+  const [open, setOpen] = useState(false);
+  // suggest once, and only for a project that opened undated; a clear stays cleared
+  const suggested = useRef(day !== "");
+  const { mutate: suggest } = useCaptureDate();
+  const selected = day ? fromDay(day) : undefined;
+  useEffect(() => {
+    if (!open || suggested.current || !firstPhotoPath) return;
     suggested.current = true;
-    const result = await capture.mutateAsync(firstPhotoPath);
-    if (result.day) onChange(result.day);
-  };
+    suggest(firstPhotoPath, {
+      onSuccess: ({ day }) => day && onChange((current) => current || day),
+    });
+  }, [open, firstPhotoPath, suggest, onChange]);
   return (
     <div className="space-y-1.5">
       <Label htmlFor="project-day">Date</Label>
-      <Input
-        id="project-day"
-        data-testid="project-day"
-        type="date"
-        value={day}
-        onFocus={prefill}
-        onChange={(event) => onChange(event.target.value)}
-      />
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            id="project-day"
+            type="button"
+            variant="outline"
+            data-testid="project-day"
+            data-day={day}
+            className="w-44 justify-start font-normal"
+          >
+            <CalendarIcon className="text-muted-foreground" />
+            {selected ? (
+              selected.toLocaleDateString(undefined, { dateStyle: "medium" })
+            ) : (
+              <span className="text-muted-foreground">Pick a date</span>
+            )}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start">
+          <Calendar
+            key={day}
+            mode="single"
+            selected={selected}
+            defaultMonth={selected}
+            onSelect={(date) => {
+              onChange(date ? toDay(date) : "");
+              setOpen(false);
+            }}
+          />
+          {day && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-testid="project-day-clear"
+              onClick={() => {
+                onChange("");
+                setOpen(false);
+              }}
+              className="mx-3 mb-3 text-muted-foreground"
+            >
+              Clear
+            </Button>
+          )}
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }

@@ -76,6 +76,9 @@ func makeTree(_ layout: [String: [String]]) throws -> URL {
     #expect(!isDay("2026-7-12"))
     #expect(!isDay("random"))
     #expect(!isDay("2026-07-12_zell"))
+    #expect(!isDay("0000-00-00"))
+    #expect(!isDay("2026-13-45"))
+    #expect(!isDay("2024-02-30"))
 }
 
 // MARK: - Scanning real directories
@@ -112,7 +115,6 @@ func makeTree(_ layout: [String: [String]]) throws -> URL {
 }
 
 @Test func scanSortsNewestDayFirstUndatedLast() throws {
-    // The date is metadata, not the folder name: the sort reads photopipe.json.
     let root = try makeTree([
         "old": ["a.ARW"],
         "new": ["b.ARW"],

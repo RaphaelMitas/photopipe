@@ -91,7 +91,11 @@ public struct Shoot: Codable, Equatable, Sendable {
 }
 
 public func isDay(_ value: String) -> Bool {
-    value.wholeMatch(of: /[0-9]{4}-[0-9]{2}-[0-9]{2}/) != nil
+    guard value.wholeMatch(of: /[0-9]{4}-[0-9]{2}-[0-9]{2}/) != nil else { return false }
+    let n = value.split(separator: "-").compactMap { Int($0) }
+    var parts = DateComponents(year: n[0], month: n[1], day: n[2])
+    parts.calendar = Calendar(identifier: .gregorian)
+    return parts.isValidDate
 }
 
 public func makeShoot(

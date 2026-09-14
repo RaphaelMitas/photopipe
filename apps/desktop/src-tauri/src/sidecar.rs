@@ -504,7 +504,6 @@ mod tests {
             return;
         };
         let root = temp_tree("list", &["DSC00001.ARW", "DSC00002.ARW", "DSC00003.JPG"]);
-        // The date is metadata, not the folder name: it comes from photopipe.json.
         std::fs::write(
             root.join("2026-01-01_cargotest").join("photopipe.json"),
             br#"{"day":"2026-05-05","notes":""}"#,

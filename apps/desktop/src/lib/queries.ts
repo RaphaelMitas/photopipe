@@ -725,6 +725,11 @@ export function useCaptureDate() {
   return useMutation({
     mutationFn: (path: string) =>
       coreRequest<{ day: string | null }>("captureDate", { path }),
+    onError: (error) => {
+      toast.error("Could not read the photo's date", {
+        description: String(error),
+      });
+    },
   });
 }
 

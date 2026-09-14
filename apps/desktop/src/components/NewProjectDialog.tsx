@@ -9,8 +9,7 @@ import {
 } from "@photopipe/ui/components/dialog";
 import { Loader2 } from "lucide-react";
 import { useState } from "react";
-import { ProjectFields } from "@/components/ProjectFields";
-import type { ProjectDraft } from "@/lib/project";
+import { type ProjectDraft, ProjectFields } from "@/components/ProjectFields";
 import { useCreateProject } from "@/lib/queries";
 
 type Props = {

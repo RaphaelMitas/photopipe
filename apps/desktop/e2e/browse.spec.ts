@@ -276,7 +276,6 @@ test("a new project is created from the library and opens empty", async ({
   await page.getByTestId("new-project").click();
   await page.getByTestId("project-name").fill("riverside");
   await page.getByTestId("project-notes").fill("client wants 12 finals");
-  // New project takes a name only; the date is set later from a photo.
   await expect(page.getByTestId("project-day")).toHaveCount(0);
   await page.getByTestId("create-project").click();
 
@@ -306,7 +305,10 @@ test("library cards show a cover and open project settings", async ({
 
   await page.getByTestId("shoot-settings-2026-07-12_zell").click();
   await expect(page.getByTestId("project-name")).toHaveValue("2026-07-12_zell");
-  await expect(page.getByTestId("project-day")).toHaveValue("2026-07-12");
+  await expect(page.getByTestId("project-day")).toHaveAttribute(
+    "data-day",
+    "2026-07-12",
+  );
   await expect(page.getByTestId("project-notes")).toHaveValue(
     "Golden hour at the river",
   );
@@ -327,14 +329,30 @@ test("the date field suggests the first photo's date, and is editable", async ({
   await page.getByTestId("root-input").fill("/fake");
   await page.getByTestId("root-submit").click();
 
-  // misc has no date; focusing the empty field fills it from the first photo.
   await page.getByTestId("shoot-settings-misc").click();
-  await expect(page.getByTestId("project-day")).toHaveValue("");
-  await page.getByTestId("project-day").focus();
-  await expect(page.getByTestId("project-day")).toHaveValue("2026-07-12");
-  await page.getByTestId("project-day").fill("2026-01-02");
+  const dateField = page.getByTestId("project-day");
+  await expect(dateField).toHaveAttribute("data-day", "");
+  await dateField.click();
+  await expect(dateField).toHaveAttribute("data-day", "2026-07-12");
+  await page.getByRole("button", { name: /July 2nd, 2026/ }).click();
+  await expect(dateField).toHaveAttribute("data-day", "2026-07-02");
+  await dateField.click();
+  await page.getByTestId("project-day-clear").click();
+  await expect(dateField).toHaveAttribute("data-day", "");
+  await dateField.click();
+  await expect(page.getByRole("grid")).toBeVisible();
+  await expect(dateField).toHaveAttribute("data-day", "");
+  await page.keyboard.press("Escape");
   await page.getByTestId("save-shoot-settings").click();
   await expect(page.getByTestId("shoot-settings-misc")).toBeVisible();
+
+  // A project that opened dated is never re-suggested after a clear.
+  await page.getByTestId("shoot-settings-2026-07-12_zell").click();
+  await dateField.click();
+  await page.getByTestId("project-day-clear").click();
+  await dateField.click();
+  await expect(page.getByRole("grid")).toBeVisible();
+  await expect(dateField).toHaveAttribute("data-day", "");
 });
 
 test("a library that is still indexing says so and holds edits back", async ({
