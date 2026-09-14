@@ -38,11 +38,12 @@ live under the ⓘ in the sidebar footer.
 
 ## How it works
 
-A project is a folder in your library. Its date and notes live in a small
-`photopipe.json` inside it. A `YYYY-MM-DD_` prefix on the folder name is
-optional and just part of the name; folders that already carry one get the
-date copied into the file on first scan. Whatever image files sit inside it —
-in subfolders or not — are its photos, shown as one flat set:
+A project is a folder in your library with photos in it. Its date, notes and
+cover live in a `photopipe.json` inside it. A `YYYY-MM-DD_` prefix on the
+folder name is optional; the app shows the name without it, and the first scan
+copies the date into that file, creating it if needed. Whatever image files
+sit inside the folder, in subfolders or not, are its photos, shown as one flat
+set:
 
 ```
 2026-07-12_zell/

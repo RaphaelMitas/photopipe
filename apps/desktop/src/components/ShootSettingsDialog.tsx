@@ -11,12 +11,11 @@ import { Label } from "@photopipe/ui/components/label";
 import { Skeleton } from "@photopipe/ui/components/skeleton";
 import { cn } from "@photopipe/ui/lib/utils";
 import { Check } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ProjectFields } from "@/components/ProjectFields";
 import { fileSrc, type ImageFile, type Shoot } from "@/lib/core";
 import {
   canSaveProject,
-  dateInFolderDefault,
   type ProjectDraft,
   projectRequest,
 } from "@/lib/projectFolder";
@@ -77,12 +76,15 @@ export function ShootSettingsDialog({
   shoot,
   onSaved,
 }: Props) {
+  const last = useRef(shoot);
+  if (shoot) last.current = shoot;
+  const shown = open ? shoot : last.current;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
-        {shoot ? (
+        {shown ? (
           <ShootSettingsForm
-            shoot={shoot}
+            shoot={shown}
             onCancel={() => onOpenChange(false)}
             onSaved={onSaved}
           />
@@ -113,9 +115,7 @@ function ShootSettingsForm({
   const [draft, setDraft] = useState<ProjectDraft>(() => ({
     name: shoot.project,
     day: shoot.day ?? "",
-    dateInFolder: shoot.day
-      ? shoot.name !== shoot.project
-      : dateInFolderDefault.read(),
+    dateInFolder: shoot.name !== shoot.project,
     notes: shoot.notes,
   }));
   const [cover, setCover] = useState(shoot.cover);

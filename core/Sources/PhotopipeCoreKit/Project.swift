@@ -3,7 +3,6 @@ import Foundation
 /// `photopipe.json`: per-project metadata only; workflow state lives in the files themselves.
 public struct ProjectFile: Codable, Equatable, Sendable {
     public var notes: String
-    /// Written as `created` on disk so older builds round-trip it instead of dropping it.
     public var day: String?
     /// Rel path of the cover image; nil means "use the first one".
     public var cover: String?
@@ -16,7 +15,15 @@ public struct ProjectFile: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case notes, cover
+        // older builds know only "created" and would drop "day"
         case day = "created"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        day = try container.decodeIfPresent(String.self, forKey: .day)
+        cover = try container.decodeIfPresent(String.self, forKey: .cover)
     }
 
     public static let fileName = "photopipe.json"
@@ -25,13 +32,13 @@ public struct ProjectFile: Codable, Equatable, Sendable {
         URL(fileURLWithPath: shootPath).appendingPathComponent(fileName)
     }
 
-    /// Missing or corrupt → defaults. Losing this file costs notes and the
-    /// date, never the library.
-    public static func read(inShoot shootPath: String) -> ProjectFile {
-        guard let data = try? Data(contentsOf: url(inShoot: shootPath)),
-            let decoded = try? JSONDecoder().decode(ProjectFile.self, from: data)
-        else { return ProjectFile() }
-        return decoded
+    /// Missing → defaults. nil only when a file is there but cannot be read,
+    /// so callers know not to write over it.
+    public static func read(inShoot shootPath: String) -> ProjectFile? {
+        let url = url(inShoot: shootPath)
+        guard FileManager.default.fileExists(atPath: url.path) else { return ProjectFile() }
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(ProjectFile.self, from: data)
     }
 
     public func write(inShoot shootPath: String) throws {

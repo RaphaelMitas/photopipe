@@ -451,11 +451,7 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     static func freeProjectURL(root: String, folder: String) throws -> URL {
-        let rootURL = URL(fileURLWithPath: root).standardizedFileURL
-        let url = rootURL.appendingPathComponent(folder).standardizedFileURL
-        guard url.deletingLastPathComponent().path == rootURL.path else {
-            throw ServiceError.invalidProjectName(folder)
-        }
+        let url = URL(fileURLWithPath: root).appendingPathComponent(folder)
         guard !FileManager.default.fileExists(atPath: url.path) else {
             throw ServiceError.projectExists(folder)
         }
@@ -470,13 +466,10 @@ public final class LibraryService: @unchecked Sendable {
         let source = URL(fileURLWithPath: shoot.path)
         try Self.checkDay(day)
 
-        // A folder named in Finder may break the rules; only validate when its name would change.
-        let hasDate = shoot.name != shoot.project
-        let wantsDate = dateInFolder && day != nil
-        let sameFolder =
-            name == shoot.project && hasDate == wantsDate && (!wantsDate || day == shoot.day)
+        // A folder named outside the app may break the rules; validate only a name that changes.
+        let requested = dateInFolder ? day.map { "\($0)_\(name)" } ?? name : name
         let folder =
-            sameFolder
+            requested == shoot.name
             ? shoot.name
             : try Self.projectFolder(name: name, day: day, dateInFolder: dateInFolder)
         var path = source

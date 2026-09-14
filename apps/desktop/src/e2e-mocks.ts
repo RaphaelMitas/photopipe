@@ -312,7 +312,18 @@ export const E2E_HANDLERS: Record<
   updateProject: (params) => {
     const shoot = shoots.find((s) => s.name === params.shoot);
     if (!shoot) throw `unknown_shoot: ${String(params.shoot)}`;
-    Object.assign(shoot, projectFields(params));
+    const fields = projectFields(params);
+    const requested =
+      params.dateInFolder === true && fields.day
+        ? `${fields.day}_${String(params.name)}`
+        : String(params.name);
+    if (requested === shoot.name) {
+      fields.name = shoot.name;
+      fields.path = shoot.path;
+    } else if (shoots.some((existing) => existing.name === fields.name)) {
+      throw `project_exists: ${fields.name}`;
+    }
+    Object.assign(shoot, fields);
     shoot.cover = typeof params.cover === "string" ? params.cover : null;
     const match = imagesFor(shoot.name).find(
       (entry) => entry.rel === shoot.cover,
