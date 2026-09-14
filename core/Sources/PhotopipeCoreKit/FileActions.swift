@@ -53,7 +53,7 @@ public enum FileActions {
     public static func zipDirectory(at dir: URL, to destination: String) throws {
         let fm = FileManager.default
         let dest = URL(fileURLWithPath: destination)
-        // A save panel grants only the chosen path, so the temp zip goes to the destination volume's replacement directory, not beside it.
+        // A save panel grants the chosen path, not the folder around it.
         let scratch = try fm.url(
             for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: dest,
             create: true)

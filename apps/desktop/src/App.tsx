@@ -200,7 +200,7 @@ export default function App() {
           connectRoot(roots[0].path);
           return;
         }
-        // Kept until the shell has the folder, or an unplugged drive loses it.
+        // A failed migration keeps the keys, so an unplugged drive gets another try.
         const legacy = localStorage.getItem(LEGACY_ROOT_KEY);
         if (roots.length === 0 && legacy && (await connectRoot(legacy))) {
           localStorage.removeItem(LEGACY_ROOT_KEY);

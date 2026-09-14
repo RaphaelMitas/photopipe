@@ -8,6 +8,7 @@
 	<string>52U823A4VX</string>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
+	<!-- Not for the app: WKWebView will not start its processes without it. -->
 	<key>com.apple.security.network.client</key>
 	<true/>
 	<key>com.apple.security.files.user-selected.read-write</key>

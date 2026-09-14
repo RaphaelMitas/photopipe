@@ -338,6 +338,9 @@ jobs:
     needs: [check]
     if: (needs.check.outputs.is-release == 'true' || needs.check.outputs.submit == 'true') && needs.check.outputs.mas == 'true'
     runs-on: macos-15
+    # Pinned so a repo-setting change cannot hand the fastlane gems a write token.
+    permissions:
+      contents: read
     env:
       APP: apps/desktop/src-tauri/target/release/bundle/macos/Photopipe.app
     steps:

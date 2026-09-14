@@ -52,6 +52,7 @@ print("\n".join(sorted(plistlib.loads(raw))) if raw else "")'
     grep -qx "$key" <<<"$APP_KEYS" || fail "app is missing entitlement $key"
   done
   CORE_KEYS=$(entitlement_keys "$APP/Contents/MacOS/photopipe-core")
+  # Exact match: inherit only takes effect when the child carries nothing else.
   if [ "$CORE_KEYS" != $'com.apple.security.app-sandbox\ncom.apple.security.inherit' ]; then
     fail "core must carry exactly app-sandbox and inherit, has: $(tr '\n' ' ' <<<"$CORE_KEYS")"
   fi

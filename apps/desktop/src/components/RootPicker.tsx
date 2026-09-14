@@ -78,6 +78,7 @@ export function RootPicker({ error, busy, onPick }: Props) {
                     disabled={busy}
                     data-testid="recent-root"
                     data-status={root.status}
+                    // Broken needs a fresh grant, and only the panel gives one.
                     onClick={() =>
                       onPick(root.status === "broken" ? undefined : root.path)
                     }

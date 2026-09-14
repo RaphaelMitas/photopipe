@@ -12,8 +12,7 @@ use objc2_foundation::{
 };
 use serde::Serialize;
 
-/// Also what the root commands hand the UI, so `Failed` carries what the store or core said.
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", content = "message", rename_all = "lowercase")]
 pub enum Failure {
     Unplugged(String),
@@ -60,13 +59,16 @@ pub fn mint(path: &str) -> Result<Vec<u8>, Failure> {
     })
 }
 
-pub struct Resolved {
+/// A folder this process can read and write until it exits. The scope is
+/// never stopped: stopping it would also pull it from under the core.
+pub struct Live {
+    #[allow(dead_code)]
     url: Retained<NSURL>,
     pub path: String,
-    pub stale: bool,
+    pub bookmark: Vec<u8>,
 }
 
-pub fn resolve(bookmark: &[u8]) -> Result<Resolved, Failure> {
+pub fn activate(bookmark: &[u8]) -> Result<Live, Failure> {
     let data = NSData::with_bytes(bookmark);
     let mut stale = Bool::NO;
     let url = unsafe {
@@ -85,38 +87,19 @@ pub fn resolve(bookmark: &[u8]) -> Result<Resolved, Failure> {
         .path()
         .map(|path| path.to_string())
         .ok_or_else(|| Failure::Broken("bookmark resolved to no path".into()))?;
-    Ok(Resolved {
+    if !unsafe { url.startAccessingSecurityScopedResource() } {
+        return Err(Failure::Denied(format!("macOS refused access to {path}")));
+    }
+    let bookmark = if stale.as_bool() {
+        mint_url(&url).unwrap_or_else(|_| bookmark.to_vec())
+    } else {
+        bookmark.to_vec()
+    };
+    Ok(Live {
         url,
         path,
-        stale: stale.as_bool(),
+        bookmark,
     })
-}
-
-impl Resolved {
-    pub fn start_access(self) -> Result<Access, Failure> {
-        if unsafe { self.url.startAccessingSecurityScopedResource() } {
-            Ok(Access(self.url))
-        } else {
-            Err(Failure::Denied(format!(
-                "macOS refused access to {}",
-                self.path
-            )))
-        }
-    }
-}
-
-pub struct Access(Retained<NSURL>);
-
-impl Access {
-    pub fn mint(&self) -> Result<Vec<u8>, Failure> {
-        mint_url(&self.0)
-    }
-}
-
-impl Drop for Access {
-    fn drop(&mut self) {
-        unsafe { self.0.stopAccessingSecurityScopedResource() }
-    }
 }
 
 #[cfg(test)]
@@ -124,19 +107,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mint_resolve_and_start_access_round_trip() {
+    fn mint_then_activate_round_trips() {
         let dir = std::env::temp_dir().join(format!("photopipe-bookmark-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let bookmark = mint(dir.to_str().unwrap()).unwrap();
-        let resolved = resolve(&bookmark).unwrap();
-        assert!(!resolved.stale);
+        let live = activate(&mint(dir.to_str().unwrap()).unwrap()).unwrap();
         assert_eq!(
-            std::fs::canonicalize(&resolved.path).unwrap(),
+            std::fs::canonicalize(&live.path).unwrap(),
             std::fs::canonicalize(&dir).unwrap()
         );
-        let access = resolved.start_access().unwrap();
-        assert!(!access.mint().unwrap().is_empty());
-        drop(access);
+        assert!(!live.bookmark.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -147,13 +126,13 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let bookmark = mint(dir.to_str().unwrap()).unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
-        assert!(matches!(resolve(&bookmark), Err(Failure::Unplugged(_))));
+        assert!(matches!(activate(&bookmark), Err(Failure::Unplugged(_))));
         assert!(matches!(
             mint("/nonexistent/photopipe"),
             Err(Failure::Missing(_))
         ));
         assert!(matches!(
-            resolve(b"not a bookmark"),
+            activate(b"not a bookmark"),
             Err(Failure::Broken(_))
         ));
     }

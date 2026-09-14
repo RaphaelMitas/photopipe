@@ -12,12 +12,12 @@ vi.mock("@/lib/roots", () => ({
 
 function renderPicker(props: Partial<Parameters<typeof RootPicker>[0]> = {}) {
   const onPick = vi.fn();
-  render(
+  const view = render(
     <QueryClientProvider client={new QueryClient()}>
       <RootPicker onPick={onPick} {...props} />
     </QueryClientProvider>,
   );
-  return onPick;
+  return { onPick, unmount: view.unmount };
 }
 
 afterEach(cleanup);
@@ -31,7 +31,7 @@ describe("RootPicker", () => {
       { path: "/v/ok", status: "ok" },
       { path: "/v/broken", status: "broken" },
     ];
-    const onPick = renderPicker();
+    const { onPick } = renderPicker();
     const entries = await screen.findAllByTestId("recent-root");
     expect(entries).toHaveLength(2);
     expect(entries[1]).toHaveTextContent("choose it again");
@@ -65,14 +65,9 @@ describe("RootPicker", () => {
   });
 
   it("explains an unplugged drive and shows other failures verbatim", () => {
-    const { unmount } = render(
-      <QueryClientProvider client={new QueryClient()}>
-        <RootPicker
-          onPick={vi.fn()}
-          error={{ kind: "unplugged", message: "no such file" }}
-        />
-      </QueryClientProvider>,
-    );
+    const { unmount } = renderPicker({
+      error: { kind: "unplugged", message: "no such file" },
+    });
     expect(screen.getByTestId("root-error")).toHaveTextContent(
       "Connect the drive",
     );

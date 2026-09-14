@@ -151,12 +151,16 @@ Metadata goes first because it can be re-sent and a binary cannot, so a
 retry only repeats idempotent steps.
 
 Sandbox consent works in two halves. The Rust shell owns it: the folder
-picker returns a security-scoped bookmark, the shell stores it and starts
-access, and the store entitlements (`files.user-selected.read-write`,
-`files.bookmarks.app-scope`) belong to the app alone. The core carries only
-`app-sandbox` and `inherit` and shares the shell's sandbox, so a grant the
-shell receives while the core is already running (open and save panels,
-drops) reaches the core too; spawn order does not matter. exiftool, spawned
+picker returns a security-scoped bookmark, the shell keeps it in
+`NSUserDefaults` and starts access, and the store entitlements
+(`files.user-selected.read-write`, `files.bookmarks.app-scope`) belong to
+the app alone. Access is never stopped for the life of the process, because
+the core carries only `app-sandbox` and `inherit` and shares the shell's
+sandbox: a grant the shell receives while the core is already running (open
+and save panels, drops) reaches the core too, and a scope the shell stopped
+would vanish from under a running export. Spawn order does not matter.
+`bundle.macOS.entitlements` in `mas.conf.json` only matters for a local
+signed build; the release job signs by hand with the same file. exiftool, spawned
 by the core through `/usr/bin/perl` from `Contents/Resources`, inherits the
 same view. Nothing under `Contents/MacOS` may be unsigned, which is why
 exiftool's Perl tree stays under `Resources`. A save panel grants one path,
