@@ -150,8 +150,8 @@ tagged commit for the store alone and leaves the DMG release untouched.
 Metadata goes first because it can be re-sent and a binary cannot, so a
 retry only repeats idempotent steps.
 
-Sandbox consent works in two halves. The Rust shell owns it: the folder
-picker returns a security-scoped bookmark, the shell keeps it in
+Sandbox consent works in two halves. The Rust shell owns it: it shows the
+folder panel, mints a security-scoped bookmark from the grant, keeps it in
 `NSUserDefaults` and starts access, and the store entitlements
 (`files.user-selected.read-write`, `files.bookmarks.app-scope`) belong to
 the app alone. Access is never stopped for the life of the process, because
@@ -159,6 +159,10 @@ the core carries only `app-sandbox` and `inherit` and shares the shell's
 sandbox: a grant the shell receives while the core is already running (open
 and save panels, drops) reaches the core too, and a scope the shell stopped
 would vanish from under a running export. Spawn order does not matter.
+Before every listing the shell re-checks each folder, so an ejected drive
+shows as unplugged and a renamed folder follows its bookmark. The old
+localStorage root migrates into the list on first launch; the old recent
+roots are dropped, the shell keeps its own five.
 `bundle.macOS.entitlements` in `mas.conf.json` only matters for a local
 signed build; the release job signs by hand with the same file. exiftool, spawned
 by the core through `/usr/bin/perl` from `Contents/Resources`, inherits the

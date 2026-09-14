@@ -3,58 +3,47 @@ use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2::AllocAnyThread;
 use objc2_foundation::{NSString, NSUserDefaults};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use std::collections::HashSet;
+use std::path::Path;
 use std::sync::Mutex;
 
 const KEY: &str = "roots";
 const KEEP: usize = 5;
 
-#[derive(Serialize, Deserialize)]
-struct Stored {
-    path: String,
-    bookmark: Vec<u8>,
-}
-
 struct Entry {
-    path: String,
-    bookmark: Vec<u8>,
-    state: Result<Live, Failure>,
+    live: Live,
+    failure: Option<Failure>,
 }
 
 impl Entry {
-    fn from_stored(stored: Stored) -> Self {
-        let mut entry = Entry {
-            path: stored.path,
-            bookmark: stored.bookmark,
-            state: Err(Failure::Broken("not activated".into())),
+    fn activate(mut live: Live) -> Self {
+        let failure = match bookmark::activate(&live.bookmark) {
+            Ok(fresh) => {
+                live = fresh;
+                None
+            }
+            Err(failure) => Some(failure),
         };
-        let _ = entry.activate();
-        entry
+        Entry { live, failure }
     }
 
-    fn activate(&mut self) -> Result<String, Failure> {
-        match bookmark::activate(&self.bookmark) {
-            Ok(live) => {
-                self.path = live.path.clone();
-                self.bookmark = live.bookmark.clone();
-                self.state = Ok(live);
-                Ok(self.path.clone())
-            }
-            Err(failure) => {
-                self.state = Err(failure.clone());
-                Err(failure)
-            }
+    /// A live folder may have been ejected or renamed since; a failed one may be back.
+    fn refresh(&mut self) -> Result<Live, Failure> {
+        if self.failure.is_some() || !Path::new(&self.live.path).is_dir() {
+            *self = Entry::activate(self.live.clone());
         }
+        self.failure.clone().map_or(Ok(self.live.clone()), Err)
     }
 }
 
+#[derive(Serialize)]
 pub struct Listing {
     pub path: String,
     pub status: &'static str,
 }
 
-/// The folders this process may enter, newest first, held for its lifetime.
-/// cfprefsd owns the file; the shell only ever sees this list.
+/// Remembered folders, newest first.
 pub struct Roots {
     suite: Option<String>,
     entries: Mutex<Vec<Entry>>,
@@ -66,12 +55,13 @@ impl Roots {
             suite: suite.map(str::to_owned),
             entries: Mutex::new(Vec::new()),
         };
-        let stored: Vec<Stored> = roots
+        // only a change to Live makes this unparseable; starting empty beats refusing to launch
+        let stored: Vec<Live> = roots
             .defaults()
             .stringForKey(&NSString::from_str(KEY))
             .and_then(|json| serde_json::from_str(&json.to_string()).ok())
             .unwrap_or_default();
-        *roots.entries.lock().unwrap() = stored.into_iter().map(Entry::from_stored).collect();
+        *roots.entries.lock().unwrap() = stored.into_iter().map(Entry::activate).collect();
         roots
     }
 
@@ -87,13 +77,7 @@ impl Roots {
     }
 
     fn write(&self, entries: &[Entry]) {
-        let stored: Vec<Stored> = entries
-            .iter()
-            .map(|entry| Stored {
-                path: entry.path.clone(),
-                bookmark: entry.bookmark.clone(),
-            })
-            .collect();
+        let stored: Vec<&Live> = entries.iter().map(|entry| &entry.live).collect();
         let json = NSString::from_str(&serde_json::to_string(&stored).expect("roots json"));
         let object: &AnyObject = &json;
         unsafe {
@@ -103,51 +87,40 @@ impl Roots {
     }
 
     pub fn list(&self) -> Vec<Listing> {
-        self.entries
-            .lock()
-            .unwrap()
+        let mut entries = self.entries.lock().unwrap();
+        let mut seen = HashSet::new();
+        entries.retain_mut(|entry| {
+            let _ = entry.refresh();
+            seen.insert(entry.live.path.clone())
+        });
+        self.write(&entries);
+        entries
             .iter()
             .map(|entry| Listing {
-                path: entry.path.clone(),
-                status: match &entry.state {
-                    Ok(_) => "ok",
-                    Err(Failure::Unplugged(_)) => "unplugged",
-                    Err(_) => "broken",
+                path: entry.live.path.clone(),
+                status: match &entry.failure {
+                    None => "ok",
+                    Some(Failure::Unplugged(_)) => "unplugged",
+                    Some(_) => "broken",
                 },
             })
             .collect()
     }
 
-    /// The path the folder has now, for a remembered root; unplugged and
-    /// broken ones are tried again in case the drive came back.
-    pub fn reopen(&self, path: &str) -> Option<Result<String, Failure>> {
+    pub fn reopen(&self, path: &str) -> Option<Result<Live, Failure>> {
         let mut entries = self.entries.lock().unwrap();
-        let entry = entries.iter_mut().find(|entry| entry.path == path)?;
-        Some(match &entry.state {
-            Ok(live) => Ok(live.path.clone()),
-            Err(_) => entry.activate(),
-        })
-    }
-
-    /// Newest first is what the next launch opens.
-    pub fn promote(&self, path: &str) {
-        let mut entries = self.entries.lock().unwrap();
-        if let Some(index) = entries.iter().position(|entry| entry.path == path) {
-            let entry = entries.remove(index);
-            entries.insert(0, entry);
-        }
-        self.write(&entries);
+        let entry = entries.iter_mut().find(|entry| entry.live.path == path)?;
+        Some(entry.refresh())
     }
 
     pub fn adopt(&self, live: Live) {
         let mut entries = self.entries.lock().unwrap();
-        entries.retain(|entry| entry.path != live.path);
+        entries.retain(|entry| entry.live.path != live.path);
         entries.insert(
             0,
             Entry {
-                path: live.path.clone(),
-                bookmark: live.bookmark.clone(),
-                state: Ok(live),
+                live,
+                failure: None,
             },
         );
         entries.truncate(KEEP);
@@ -156,7 +129,7 @@ impl Roots {
 
     pub fn forget(&self, path: &str) {
         let mut entries = self.entries.lock().unwrap();
-        entries.retain(|entry| entry.path != path);
+        entries.retain(|entry| entry.live.path != path);
         self.write(&entries);
     }
 }
@@ -166,20 +139,26 @@ mod tests {
     use super::*;
 
     fn suite(tag: &str) -> String {
-        let suite = format!("net.photopipe.desktop.tests.{tag}.{}", std::process::id());
+        let suite = format!("net.photopipe.desktop.tests.{tag}");
         NSUserDefaults::standardUserDefaults()
             .removePersistentDomainForName(&NSString::from_str(&suite));
         suite
     }
 
     fn folder(tag: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("photopipe-roots-{tag}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("photopipe-roots-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
 
     fn live(dir: &std::path::Path) -> Live {
         bookmark::activate(&bookmark::mint(dir.to_str().unwrap()).unwrap()).unwrap()
+    }
+
+    fn same(a: &str, b: &std::path::Path) -> bool {
+        std::fs::canonicalize(a).unwrap() == std::fs::canonicalize(b).unwrap()
     }
 
     #[test]
@@ -194,12 +173,9 @@ mod tests {
         let listed = reloaded.list();
         assert_eq!(listed.len(), 2);
         assert_eq!(listed[0].status, "ok");
-        assert_eq!(
-            std::fs::canonicalize(&listed[0].path).unwrap(),
-            std::fs::canonicalize(&new).unwrap()
-        );
-        assert!(reloaded.reopen(&listed[1].path).unwrap().is_ok());
-        reloaded.promote(&listed[1].path);
+        assert!(same(&listed[0].path, &new));
+        let reopened = reloaded.reopen(&listed[1].path).unwrap().unwrap();
+        reloaded.adopt(reopened);
         assert_eq!(Roots::load(Some(&suite)).list()[0].path, listed[1].path);
 
         reloaded.forget(&listed[1].path);
@@ -218,6 +194,7 @@ mod tests {
         let roots = Roots::load(Some(&suite));
         roots.adopt(live(&dir));
         std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(roots.list()[0].status, "unplugged");
 
         let reloaded = Roots::load(Some(&suite));
         let path = reloaded.list()[0].path.clone();
@@ -226,13 +203,32 @@ mod tests {
             reloaded.reopen(&path),
             Some(Err(Failure::Unplugged(_)))
         ));
-        assert_eq!(reloaded.list()[0].status, "unplugged");
         assert!(reloaded.reopen("/never/stored").is_none());
 
         std::fs::create_dir_all(&dir).unwrap();
         assert!(reloaded.reopen(&path).unwrap().is_ok());
         assert_eq!(reloaded.list()[0].status, "ok");
         let _ = std::fs::remove_dir_all(&dir);
+        NSUserDefaults::standardUserDefaults()
+            .removePersistentDomainForName(&NSString::from_str(&suite));
+    }
+
+    #[test]
+    fn a_renamed_folder_follows_its_bookmark_and_collapses_with_its_new_name() {
+        let suite = suite("renamed");
+        let before = folder("before");
+        let after = before.with_file_name("photopipe-roots-after");
+        let _ = std::fs::remove_dir_all(&after);
+        let roots = Roots::load(Some(&suite));
+        roots.adopt(live(&before));
+        std::fs::rename(&before, &after).unwrap();
+        roots.adopt(live(&after));
+
+        let listed = roots.list();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].status, "ok");
+        assert!(same(&listed[0].path, &after));
+        let _ = std::fs::remove_dir_all(&after);
         NSUserDefaults::standardUserDefaults()
             .removePersistentDomainForName(&NSString::from_str(&suite));
     }

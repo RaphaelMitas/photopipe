@@ -681,7 +681,7 @@ export default function App() {
       onOpenChange={setSettingsOpen}
       autoScore={autoScore}
       onAutoScore={changeAutoScore}
-      updaterAvailable={updater.available}
+      updaterEnabled={updater.enabled}
       onCheckUpdates={checkForUpdates}
     />
   );

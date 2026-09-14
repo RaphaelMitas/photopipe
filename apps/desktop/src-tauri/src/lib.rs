@@ -3,7 +3,7 @@ mod roots;
 mod sidecar;
 
 use bookmark::Failure;
-use roots::Roots;
+use roots::{Listing, Roots};
 use serde::Serialize;
 use sidecar::Sidecar;
 use std::sync::Arc;
@@ -29,32 +29,30 @@ async fn core_request(
 }
 
 #[derive(Serialize)]
-struct RootListing {
-    path: String,
-    status: &'static str,
-}
-
-#[derive(Serialize)]
 struct OpenedRoot {
     path: String,
     #[serde(flatten)]
     result: serde_json::Value,
 }
 
-#[tauri::command]
-fn list_roots(roots: State<'_, Arc<Roots>>) -> Vec<RootListing> {
-    roots
-        .list()
-        .into_iter()
-        .map(|entry| RootListing {
-            path: entry.path,
-            status: entry.status,
-        })
-        .collect()
+/// Resolving a bookmark can stall on a slow volume, so it never runs where the
+/// UI would wait.
+async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, Failure> + Send + 'static,
+) -> Result<T, Failure> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|e| Failure::Failed(format!("roots task panicked: {e}")))?
 }
 
-/// No path shows the folder panel. A bare path that is not remembered gets a
-/// bookmark minted, which works unsandboxed and fails cleanly under the sandbox.
+#[tauri::command]
+async fn list_roots(roots: State<'_, Arc<Roots>>) -> Result<Vec<Listing>, Failure> {
+    let roots = Arc::clone(&roots);
+    blocking(move || Ok(roots.list())).await
+}
+
+/// No path shows the folder panel. Minting for a bare path only works under
+/// the sandbox if the panel just granted it.
 #[tauri::command]
 async fn open_root(
     app: AppHandle,
@@ -64,7 +62,7 @@ async fn open_root(
 ) -> Result<Option<OpenedRoot>, Failure> {
     let sidecar = Arc::clone(&sidecar);
     let roots = Arc::clone(&roots);
-    tauri::async_runtime::spawn_blocking(move || {
+    blocking(move || {
         let path = match path {
             Some(path) => path,
             None => {
@@ -83,31 +81,29 @@ async fn open_root(
                     .into_owned()
             }
         };
-        let (path, fresh) = match roots.reopen(&path) {
-            Some(Ok(path)) => (path, None),
+        let live = match roots.reopen(&path) {
+            Some(Ok(live)) => live,
+            // the drive is gone, not the grant; keep "connect the drive" over "no folder at"
             Some(Err(failure @ Failure::Unplugged(_))) => return Err(failure),
-            Some(Err(failure)) => match bookmark::mint(&path) {
-                Ok(bookmark) => (path, Some(bookmark)),
-                Err(_) => return Err(failure),
-            },
-            None => (path.clone(), Some(bookmark::mint(&path)?)),
+            Some(Err(failure)) => bookmark::activate(&bookmark::mint(&path).map_err(|_| failure)?)?,
+            None => bookmark::activate(&bookmark::mint(&path)?)?,
         };
-        let live = fresh.map(|bookmark| bookmark::activate(&bookmark)).transpose()?;
-        let path = live.as_ref().map_or(path, |live| live.path.clone());
+        let path = live.path.clone();
         let result = sidecar.request("setRoot", Some(serde_json::json!({ "path": path })))?;
-        match live {
-            Some(live) => roots.adopt(live),
-            None => roots.promote(&path),
-        }
+        roots.adopt(live);
         Ok(Some(OpenedRoot { path, result }))
     })
     .await
-    .map_err(|e| Failure::Failed(format!("roots task panicked: {e}")))?
 }
 
 #[tauri::command]
-fn forget_root(roots: State<'_, Arc<Roots>>, path: String) {
-    roots.forget(&path);
+async fn forget_root(roots: State<'_, Arc<Roots>>, path: String) -> Result<(), Failure> {
+    let roots = Arc::clone(&roots);
+    blocking(move || {
+        roots.forget(&path);
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command]

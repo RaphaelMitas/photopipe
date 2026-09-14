@@ -410,7 +410,6 @@ jobs:
           echo "APP_IDENTITY=$APP_IDENTITY" >> $GITHUB_ENV
           echo "INSTALLER_IDENTITY=$INSTALLER_IDENTITY" >> $GITHUB_ENV
 
-      # Raw codesign, unlike Xcode, does not inject the identity keys the embedded profile needs, so entitlements.mas.plist carries them.
       - name: Sign
         env:
           MAS_PROVISIONING_PROFILE: ${{ secrets.MAS_PROVISIONING_PROFILE }}

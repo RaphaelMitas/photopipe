@@ -195,7 +195,8 @@ export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
     if (wanted && stored && stored.status !== "ok") {
       throw { kind: stored.status, message: `${stored.status}: ${path}` };
     }
-    if (path === "/nonexistent") throw "root_not_found: /nonexistent";
+    if (path === "/nonexistent")
+      throw { kind: "missing", message: "no folder at /nonexistent" };
     roots = [
       { path, status: "ok" },
       ...roots.filter((root) => root.path !== path),

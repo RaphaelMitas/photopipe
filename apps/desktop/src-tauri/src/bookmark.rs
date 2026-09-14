@@ -1,8 +1,6 @@
-//! Security-scoped bookmarks. Under the sandbox a path is not a credential:
-//! the folder panel grants access to this process for this session, and the
-//! bookmark is the only thing that gets it back next launch.
+//! Under the sandbox a panel grant lasts one session; the bookmark brings it
+//! back next launch.
 
-use objc2::rc::Retained;
 use objc2::runtime::Bool;
 use objc2::AllocAnyThread;
 use objc2_foundation::{
@@ -10,7 +8,7 @@ use objc2_foundation::{
     NSFileReadNoSuchFileError, NSString, NSURLBookmarkCreationOptions,
     NSURLBookmarkResolutionOptions, NSURL,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", content = "message", rename_all = "lowercase")]
@@ -60,10 +58,9 @@ pub fn mint(path: &str) -> Result<Vec<u8>, Failure> {
 }
 
 /// A folder this process can read and write until it exits. The scope is
-/// never stopped: stopping it would also pull it from under the core.
+/// never stopped: the core inherits it and would lose it too.
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Live {
-    #[allow(dead_code)]
-    url: Retained<NSURL>,
     pub path: String,
     pub bookmark: Vec<u8>,
 }
@@ -95,11 +92,7 @@ pub fn activate(bookmark: &[u8]) -> Result<Live, Failure> {
     } else {
         bookmark.to_vec()
     };
-    Ok(Live {
-        url,
-        path,
-        bookmark,
-    })
+    Ok(Live { path, bookmark })
 }
 
 #[cfg(test)]
