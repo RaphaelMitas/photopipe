@@ -16,6 +16,7 @@ import {
 } from "@photopipe/ui/components/popover";
 import { cn } from "@photopipe/ui/lib/utils";
 import { FolderOpen, History, Redo2, Undo2 } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { fileName } from "@/lib/fileName";
 import { type HistoryEntry, historyLabel, useHistory } from "@/lib/history";
 
@@ -47,6 +48,17 @@ function HistoryRow({
   const steps = Math.abs(cursor - position);
   const undone = position > cursor;
   const current = steps === 0;
+  const button = useRef<HTMLButtonElement>(null);
+  const opening = useRef(true);
+  // in the middle when the popover opens, then only kept in view as ⌘Z moves it
+  useEffect(() => {
+    if (current) {
+      button.current?.scrollIntoView({
+        block: opening.current ? "center" : "nearest",
+      });
+    }
+    opening.current = false;
+  }, [current]);
   const hint = `${undone ? "Redo to here" : "Back to here"} · ${steps} ${
     steps === 1 ? "step" : "steps"
   }`;
@@ -58,6 +70,7 @@ function HistoryRow({
       className={cn("text-left hover:bg-muted", undone && "opacity-40")}
     >
       <button
+        ref={button}
         type="button"
         data-testid={
           position === 0 ? "history-row-origin" : `history-row-${position - 1}`

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { openZell } from "./open-shoot";
+import { openShoot, openZell } from "./open-shoot";
 
 async function rate(
   page: import("@playwright/test").Page,
@@ -484,6 +484,26 @@ test("a jump across several steps lands every photo where stepping would", async
   await expect(
     page.locator("[data-path='DSC00832.jpg']").getByTestId("thumb-rating"),
   ).toHaveText("5");
+});
+
+test("the history opens on the state you are in, not at the top", async ({
+  page,
+}) => {
+  await openShoot(page, "2026-08-01_dolomites");
+  await page.getByTestId("thumb").first().click();
+  for (let photo = 0; photo < 30; photo++) {
+    await page.keyboard.press(String((photo % 5) + 1));
+    await page.keyboard.press("ArrowRight");
+  }
+  for (let step = 0; step < 15; step++) {
+    await page.keyboard.press("ControlOrMeta+z");
+  }
+
+  await page.getByTestId("history-toggle").click();
+  const current = page.getByTestId("history-row-14");
+  await expect(current).toHaveAttribute("aria-current", "true");
+  await expect(current).toBeInViewport();
+  await expect(page.getByTestId("history-row-29")).not.toBeInViewport();
 });
 
 test("trashing a photo takes its steps out of the history", async ({
