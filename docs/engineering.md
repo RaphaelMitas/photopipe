@@ -118,7 +118,10 @@ Secrets: `APPLE_CERTIFICATE` (base64 .p12), `APPLE_CERTIFICATE_PASSWORD`,
 `TAP_DISPATCH_TOKEN`. The tap step is guarded, so a release succeeds without
 the last one.
 
-The App Store build is a second job, `mas`, that runs alongside the DMG release
+The App Store build ships as `net.photopipe.app`, a platform-neutral id an iOS
+app can share one store record with; the DMG stays `net.photopipe.desktop`, so
+the two keep separate preferences and a switcher picks their folder once more.
+It is a second job, `mas`, that runs alongside the DMG release
 and needs six more secrets: `MAS_CERTIFICATE` (base64 .p12 holding both an
 Apple Distribution and a Mac Installer Distribution identity),
 `MAS_CERTIFICATE_PASSWORD`, `MAS_PROVISIONING_PROFILE` (base64 Mac App Store

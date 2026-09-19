@@ -4,7 +4,7 @@
 <dict>
 	<!-- Raw codesign does not inject these from the profile the way Xcode does. -->
 	<key>com.apple.application-identifier</key>
-	<string>52U823A4VX.net.photopipe.desktop</string>
+	<string>52U823A4VX.net.photopipe.app</string>
 	<key>com.apple.developer.team-identifier</key>
 	<string>52U823A4VX</string>
 	<key>com.apple.security.app-sandbox</key>

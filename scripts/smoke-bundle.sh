@@ -51,6 +51,9 @@ print("\n".join(sorted(plistlib.loads(raw))) if raw else "")'
     com.apple.security.files.bookmarks.app-scope; do
     grep -qx "$key" <<<"$APP_KEYS" || fail "app is missing entitlement $key"
   done
+  BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Contents/Info.plist")
+  codesign -d --entitlements - --xml "$APP" 2>/dev/null | grep -q ">[A-Z0-9]*\.$BUNDLE_ID<" \
+    || fail "application-identifier does not match the bundle id $BUNDLE_ID"
   CORE_KEYS=$(entitlement_keys "$APP/Contents/MacOS/photopipe-core")
   # Exact match: inherit only takes effect when the child carries nothing else.
   if [ "$CORE_KEYS" != $'com.apple.security.app-sandbox\ncom.apple.security.inherit' ]; then
