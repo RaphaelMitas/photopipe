@@ -584,12 +584,12 @@ export default function App() {
   // Before the write, so you are on the photo when the step lands.
   const showPhoto = useCallback(
     (entry: HistoryEntry) => {
-      const present = entry.paths.filter((path) =>
-        cachedImage(queryClient, openShoot, path),
-      );
-      if (present.length === 0) return;
+      const present = (path: string) =>
+        cachedImage(queryClient, openShoot, path) !== undefined;
       setCurrentPath((current) =>
-        current && present.includes(current) ? current : present[0],
+        current && entry.paths.includes(current)
+          ? current
+          : (entry.paths.find(present) ?? current),
       );
       setRevealed((count) => count + 1);
     },

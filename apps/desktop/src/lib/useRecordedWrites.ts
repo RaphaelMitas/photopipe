@@ -64,8 +64,10 @@ export function useRecordedWrites(shoot: string | null) {
         batch.then((result) => {
           if (result.written === 0) throw new Error("nothing pasted");
         });
-      const among = (all: EditWrite[], left: string[]) =>
-        pasteEdits(all.filter((write) => left.includes(write.path)));
+      const among = (all: EditWrite[], left: string[]) => {
+        const kept = new Set(left);
+        return pasteEdits(all.filter((write) => kept.has(write.path)));
+      };
       const batch = pasteEdits(writes);
       // Recorded up front: ⌘Z during a long paste has to mean this paste.
       void pushHistory({
