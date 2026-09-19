@@ -261,7 +261,7 @@ public enum XMP {
             guard let name = CGImageMetadataTagCopyName(tag) as String? else { return true }
             let namespace = CGImageMetadataTagCopyNamespace(tag) as String?
             let value = CGImageMetadataTagCopyValue(tag)
-            if name == "Rating" && namespace == "http://ns.adobe.com/xap/1.0/" {
+            if name == "Rating" && namespace == TagWrite.Namespace.xmp.uri {
                 if let text = value as? String { rating = Int(text) }
                 if let number = value as? Int { rating = number }
             }
@@ -346,7 +346,7 @@ public enum XMP {
         return read
     }
 
-    struct TagWrite: Equatable {
+    struct TagWrite {
         enum Namespace: CaseIterable {
             case xmp, crs, tiff
 
@@ -367,7 +367,7 @@ public enum XMP {
             }
         }
 
-        enum Value: Equatable {
+        enum Value {
             case scalar(String)
             case list([String])
             case remove
@@ -394,12 +394,11 @@ public enum XMP {
                 tag.namespace == .crs && tag.name == "Temperature"
                 ? "ColorTemperature" : isOrientation ? "Orientation#" : tag.name
             let target = "-\(group):\(name)="
-            // repeated `=` replaces the list; `+=` appends to the EXISTING items,
-            // growing the sidecar on every write until exiftool crawls
             let args =
                 switch tag.value {
                 case .remove: [target]
                 case .scalar(let value): ["\(target)\(value)"]
+                // repeated `=` replaces the list; `+=` would append to the existing items on every write
                 case .list(let items): items.map { "\(target)\($0)" }
                 }
             guard isOrientation, let exifOrientationPin else { return args }
@@ -473,7 +472,6 @@ public enum XMP {
         realScalar("CropBottom", edit.crop?.bottom)
         realScalar("CropAngle", nonZero(edit.cropAngle))
         tags.append(TagWrite(.crs, "HasCrop", edit.hasCropComponent ? .scalar("True") : .remove))
-        // Absolute, like Lightroom writes it.
         // An unreadable base can default to 1 only for sidecars: guessing one
         // for an embedded file would burn it into the photo's real EXIF.
         let fileURL = URL(fileURLWithPath: file.path)
@@ -496,6 +494,7 @@ public enum XMP {
             guard let base else {
                 throw XMPError.unreadableOrientation(file.path)
             }
+            // Lightroom writes the absolute value, not a delta
             let absolute = absoluteOrientation(
                 rotation: edit.normalizedRotation, base: base)
             tags.append(TagWrite(.tiff, "Orientation", .scalar("\(absolute)")))

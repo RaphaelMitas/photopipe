@@ -4,13 +4,13 @@ import Testing
 @testable import PhotopipeCoreKit
 
 private let fixtures = URL(fileURLWithPath: #filePath)
-    .deletingLastPathComponent()  // Tests/PhotopipeCoreKitTests
-    .deletingLastPathComponent()  // Tests
-    .deletingLastPathComponent()  // core
-    .deletingLastPathComponent()  // repo root
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
     .appendingPathComponent("fixtures/sidecars")
 
-/// What another tool would read, minus what describes the file rather than its metadata.
+// the oracle: what another tool reads back
 private func exiftoolDump(_ url: URL) throws -> String {
     let json = try ExifTool.shared.execute(["-q", "-j", "-G1", "-struct", "-a", url.path])
     let parsed = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[String: Any]]
@@ -42,24 +42,17 @@ private struct Writers {
         }
     }
 
-    func image(_ raw: URL) throws -> ImageFile {
-        let attrs = try FileManager.default.attributesOfItem(atPath: raw.path)
-        return ImageFile(
-            path: raw.path, rel: raw.lastPathComponent, ext: raw.pathExtension,
-            size: (attrs[.size] as? Int64) ?? 0, mtime: 0)
-    }
-
     func write(_ rating: Int) throws {
-        try XMP.writeRating(rating, file: image(exiftool), tool: .shared)
+        try XMP.writeRating(rating, file: try image(exiftool), tool: .shared)
         try XMPTextWriter.write(
             XMP.ratingTags(rating), to: XMP.sidecarURL(forImagePath: text.path),
             clearing: rating == 0)
     }
 
     func write(_ edit: Edit) throws {
-        try XMP.writeEdit(edit, file: image(exiftool), tool: .shared)
+        try XMP.writeEdit(edit, file: try image(exiftool), tool: .shared)
         try XMPTextWriter.write(
-            XMP.editTags(edit, file: image(text)).tags,
+            XMP.editTags(edit, file: try image(text)).tags,
             to: XMP.sidecarURL(forImagePath: text.path), clearing: edit.isIdentity)
     }
 
@@ -118,11 +111,11 @@ func textWriterMatchesExifTool(fixture: String?) throws {
     let writers = try Writers(in: dir, fixture: "lightroom-masks")
 
     try writers.write(fullEdit)
-    try XMP.writeEdit(changedEdit, file: writers.image(writers.exiftool), tool: .shared)
-    try XMP.writeEdit(changedEdit, file: writers.image(writers.text), tool: .shared)
+    try XMP.writeEdit(changedEdit, file: image(writers.exiftool), tool: .shared)
+    try XMP.writeEdit(changedEdit, file: image(writers.text), tool: .shared)
     try writers.write(3)
     try writers.expectEqual("text, exiftool, text")
-    #expect(XMP.readRating(file: try writers.image(writers.text)) == 3)
+    #expect(XMP.readRating(file: try image(writers.text)) == 3)
 }
 
 @Test func textWriterLeavesNestedMaskTagsAlone() throws {
@@ -140,6 +133,63 @@ func textWriterMatchesExifTool(fixture: String?) throws {
         <rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>
          <rdf:Description rdf:about='' xmlns:raw='http://ns.adobe.com/camera-raw-settings/1.0/'
           raw:Exposure2012='0.5'/>
+        </rdf:RDF>
+        </x:xmpmeta>
+        """
+    #expect(throws: XMPTextWriter.WriteError.self) {
+        try XMPTextWriter.apply(XMP.ratingTags(3), to: Array(foreign.utf8))
+    }
+}
+
+@Test func textWriterEditReadsBackFromLightroomSidecar() throws {
+    let dir = scratchDir("xmp-text")
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let raw = try Writers(in: dir, fixture: "lightroom-masks").text
+    let edit = Edit(
+        exposure: 0.5,
+        curveRGB: [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.4, y: 0.6), CurvePoint(x: 1, y: 1)],
+        curveBlue: [CurvePoint(x: 0, y: 0.2), CurvePoint(x: 1, y: 0.8)])
+    try XMPTextWriter.write(
+        XMP.editTags(edit, file: try image(raw)).tags,
+        to: XMP.sidecarURL(forImagePath: raw.path), clearing: false)
+    let read = XMP.readEdit(file: try image(raw))
+    #expect(read.curveRGB == edit.curveRGB)
+    #expect(read.curveBlue == edit.curveBlue)
+}
+
+@Test func textWriterLeavesUnreadableSidecarAlone() throws {
+    let dir = scratchDir("xmp-text")
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let sidecar = XMP.sidecarURL(
+        forImagePath: try Writers(in: dir, fixture: "lightroom-masks").text.path)
+    let original = try Data(contentsOf: sidecar)
+    try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: sidecar.path)
+    #expect(throws: (any Error).self) {
+        try XMPTextWriter.write(XMP.ratingTags(3), to: sidecar, clearing: false)
+    }
+    try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: sidecar.path)
+    #expect(try Data(contentsOf: sidecar) == original)
+}
+
+@Test func textWriterRatingReadsBackFromSingleQuotedAttribute() throws {
+    let compact = """
+        <x:xmpmeta xmlns:x='adobe:ns:meta/'>
+        <rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>
+         <rdf:Description rdf:about='' xmlns:xmp='http://ns.adobe.com/xap/1.0/' xmp:Rating='3'/>
+        </rdf:RDF>
+        </x:xmpmeta>
+        """
+    let written = try XMPTextWriter.apply(XMP.ratingTags(5), to: Array(compact.utf8))
+    #expect(XMP.parseRating(String(decoding: written, as: UTF8.self)) == 5)
+}
+
+@Test func textWriterRefusesForeignPrefixOnChildElement() throws {
+    let foreign = """
+        <x:xmpmeta xmlns:x='adobe:ns:meta/'>
+        <rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>
+         <rdf:Description rdf:about=''>
+          <raw:Exposure2012 xmlns:raw='http://ns.adobe.com/camera-raw-settings/1.0/'>0.5</raw:Exposure2012>
+         </rdf:Description>
         </rdf:RDF>
         </x:xmpmeta>
         """

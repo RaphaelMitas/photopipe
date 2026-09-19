@@ -25,7 +25,12 @@ enum XMPTextWriter {
     static func write(_ tags: [XMP.TagWrite], to sidecar: URL, clearing: Bool) throws {
         writeLock.lock()
         defer { writeLock.unlock() }
-        let existing = try? Data(contentsOf: sidecar)
+        let existing: Data?
+        do {
+            existing = try Data(contentsOf: sidecar)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            existing = nil
+        }
         if existing == nil && clearing { return }
         let bytes = try apply(tags, to: existing.map(Array.init) ?? Array(freshSidecar.utf8))
         try Data(bytes).write(to: sidecar, options: .atomic)
@@ -42,6 +47,7 @@ enum XMPTextWriter {
 
     private struct Attribute {
         let name: String
+        let range: Range<Int>
         let withLeadingSpace: Range<Int>
         let value: Range<Int>
     }
@@ -52,13 +58,13 @@ enum XMPTextWriter {
         let isEnd: Bool
         let isSelfClosing: Bool
         let attributes: [Attribute]
+
+        var attributeInsertionPoint: Int { range.upperBound - (isSelfClosing ? 2 : 1) }
     }
 
     private struct ChildElement {
         let name: String
         let range: Range<Int>
-        /// nil when the element nests others or carries attributes
-        let text: Range<Int>?
     }
 
     /// An `rdf:Description` directly under `rdf:RDF`. Lightroom nests more of
@@ -69,9 +75,15 @@ enum XMPTextWriter {
         let children: [ChildElement]
     }
 
+    private enum PrefixScope {
+        case aboveDescriptions
+        case description(Int)
+        case nested
+    }
+
     private struct Document {
         var descriptions: [Description] = []
-        var prefixes: [(prefix: String, uri: String, description: Int?)] = []
+        var prefixes: [(prefix: String, uri: String, scope: PrefixScope)] = []
         var rdfEnd: Tag?
     }
 
@@ -148,8 +160,8 @@ enum XMPTextWriter {
                 }
                 attributes.append(
                     Attribute(
-                        name: attribute, withLeadingSpace: spaceStart..<valueEnd + 1,
-                        value: valueStart..<valueEnd))
+                        name: attribute, range: attributeStart..<valueEnd + 1,
+                        withLeadingSpace: spaceStart..<valueEnd + 1, value: valueStart..<valueEnd))
                 index = valueEnd + 1
             }
             guard index < bytes.count else { throw WriteError.malformed("unterminated <\(name)") }
@@ -166,38 +178,38 @@ enum XMPTextWriter {
         var document = Document()
         var stack: [Tag] = []
         var open: (start: Tag, children: [ChildElement], depth: Int)?
-        var child: (start: Tag, nests: Bool)?
+        var child: Tag?
 
-        func notePrefixes(_ tag: Tag, description: Int?) {
+        func notePrefixes(_ tag: Tag, scope: PrefixScope) {
             for attribute in tag.attributes where attribute.name.hasPrefix("xmlns:") {
                 document.prefixes.append(
                     (
                         String(attribute.name.dropFirst("xmlns:".count)),
-                        String(decoding: bytes[attribute.value], as: UTF8.self), description
+                        String(decoding: bytes[attribute.value], as: UTF8.self), scope
                     ))
             }
         }
 
         for tag in try scanTags(bytes) {
             guard tag.isEnd else {
-                if tag.name == "rdf:Description", stack.last?.name == "rdf:RDF" {
-                    notePrefixes(tag, description: document.descriptions.count)
+                if tag.name == "rdf:Description", stack.last?.name == "rdf:RDF", open == nil {
+                    notePrefixes(tag, scope: .description(document.descriptions.count))
                     if tag.isSelfClosing {
                         document.descriptions.append(Description(start: tag, end: nil, children: []))
                     } else {
                         open = (tag, [], stack.count)
                     }
                 } else if let current = open {
-                    if stack.count > current.depth + 1 {
-                        child?.nests = true
-                    } else if tag.isSelfClosing {
-                        open?.children.append(
-                            ChildElement(name: tag.name, range: tag.range, text: nil))
-                    } else {
-                        child = (tag, false)
+                    notePrefixes(tag, scope: .nested)
+                    if stack.count == current.depth + 1 {
+                        if tag.isSelfClosing {
+                            open?.children.append(ChildElement(name: tag.name, range: tag.range))
+                        } else {
+                            child = tag
+                        }
                     }
                 } else {
-                    notePrefixes(tag, description: nil)
+                    notePrefixes(tag, scope: .aboveDescriptions)
                 }
                 if !tag.isSelfClosing { stack.append(tag) }
                 continue
@@ -208,13 +220,9 @@ enum XMPTextWriter {
             if tag.name == "rdf:RDF" { document.rdfEnd = tag }
             guard let current = open else { continue }
             if stack.count == current.depth + 1, let started = child {
-                let isSimple = !started.nests && started.start.attributes.isEmpty
                 open?.children.append(
                     ChildElement(
-                        name: started.start.name,
-                        range: started.start.range.lowerBound..<tag.range.upperBound,
-                        text: isSimple
-                            ? started.start.range.upperBound..<tag.range.lowerBound : nil))
+                        name: started.name, range: started.range.lowerBound..<tag.range.upperBound))
                 child = nil
             } else if stack.count == current.depth {
                 document.descriptions.append(
@@ -237,12 +245,11 @@ enum XMPTextWriter {
         }
     }
 
-    private static func escaped(_ text: String) -> [UInt8] {
-        Array(
-            text.replacingOccurrences(of: "&", with: "&amp;")
-                .replacingOccurrences(of: "<", with: "&lt;")
-                .replacingOccurrences(of: ">", with: "&gt;")
-                .replacingOccurrences(of: "\"", with: "&quot;").utf8)
+    private static func escaped(_ text: String) -> String {
+        text.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
     }
 
     private static func withLeadingIndent(_ range: Range<Int>, in bytes: [UInt8]) -> Range<Int> {
@@ -252,18 +259,23 @@ enum XMPTextWriter {
         return start..<range.upperBound
     }
 
-    private static func removeOne(_ name: String, from bytes: inout [UInt8]) throws -> Bool {
-        for description in try parse(bytes).descriptions {
-            if let attribute = description.start.attributes.first(where: { $0.name == name }) {
-                bytes.removeSubrange(attribute.withLeadingSpace)
-                return true
+    private struct Occurrence {
+        let range: Range<Int>
+        let withLeadingSpace: Range<Int>
+        let isAttribute: Bool
+    }
+
+    private static func occurrences(of name: String, in bytes: [UInt8]) throws -> [Occurrence] {
+        try parse(bytes).descriptions.flatMap { description in
+            description.start.attributes.filter { $0.name == name }.map {
+                Occurrence(range: $0.range, withLeadingSpace: $0.withLeadingSpace, isAttribute: true)
             }
-            if let element = description.children.first(where: { $0.name == name }) {
-                bytes.removeSubrange(withLeadingIndent(element.range, in: bytes))
-                return true
-            }
+                + description.children.filter { $0.name == name }.map {
+                    Occurrence(
+                        range: $0.range, withLeadingSpace: withLeadingIndent($0.range, in: bytes),
+                        isAttribute: false)
+                }
         }
-        return false
     }
 
     private static func insertionTarget(
@@ -278,58 +290,62 @@ enum XMPTextWriter {
                 at: rdfEnd.range.lowerBound)
             document = try parse(bytes)
         }
-        if let declared = document.prefixes.first(where: { $0.prefix == namespace.prefix }) {
-            return document.descriptions[declared.description ?? 0]
+        for declared in document.prefixes where declared.prefix == namespace.prefix {
+            switch declared.scope {
+            case .aboveDescriptions: return document.descriptions[0]
+            case .description(let index): return document.descriptions[index]
+            case .nested: continue
+            }
         }
-        let start = document.descriptions[0].start
         bytes.insert(
             contentsOf: Array(" xmlns:\(namespace.prefix)=\"\(namespace.uri)\"".utf8),
-            at: start.range.upperBound - (start.isSelfClosing ? 2 : 1))
+            at: document.descriptions[0].start.attributeInsertionPoint)
         return try parse(bytes).descriptions[0]
     }
 
     private static func apply(_ tag: XMP.TagWrite, to bytes: inout [UInt8]) throws {
         let name = "\(tag.namespace.prefix):\(tag.name)"
-        switch tag.value {
-        case .remove:
-            while try removeOne(name, from: &bytes) {}
-        case .scalar(let value):
-            for description in try parse(bytes).descriptions {
-                if let attribute = description.start.attributes.first(where: { $0.name == name }) {
-                    bytes.replaceSubrange(attribute.value, with: escaped(value))
-                    return
-                }
-                if let element = description.children.first(where: { $0.name == name }) {
-                    if let text = element.text {
-                        bytes.replaceSubrange(text, with: escaped(value))
-                    } else {
-                        bytes.replaceSubrange(
-                            element.range,
-                            with: Array("<\(name)>".utf8) + escaped(value)
-                                + Array("</\(name)>".utf8))
-                    }
-                    return
-                }
+        // double quotes: the regex reader in XMP.swift matches nothing else
+        let (attribute, element): (String?, String?) =
+            switch tag.value {
+            case .remove: (nil, nil)
+            case .scalar(let value):
+                ("\(name)=\"\(escaped(value))\"", "<\(name)>\(escaped(value))</\(name)>")
+            case .list(let items):
+                (
+                    nil,
+                    "<\(name)><rdf:Seq>"
+                        + items.map { "<rdf:li>\(escaped($0))</rdf:li>" }.joined()
+                        + "</rdf:Seq></\(name)>"
+                )
             }
+
+        // the first occurrence is rewritten where it stands: moving a curve
+        // behind crs:Look lets the first-match reader find the look's curve
+        let found = try occurrences(of: name, in: bytes)
+        for duplicate in found.dropFirst().reversed() {
+            bytes.removeSubrange(duplicate.withLeadingSpace)
+        }
+        if let first = found.first {
+            if let inPlace = first.isAttribute ? attribute : element {
+                bytes.replaceSubrange(first.range, with: Array(inPlace.utf8))
+                return
+            }
+            bytes.removeSubrange(first.withLeadingSpace)
+        }
+
+        if let attribute {
             let start = try insertionTarget(for: tag.namespace, in: &bytes).start
-            // double quotes: the regex reader in XMP.swift matches nothing else
-            bytes.insert(
-                contentsOf: Array(" \(name)=\"".utf8) + escaped(value) + Array("\"".utf8),
-                at: start.range.upperBound - (start.isSelfClosing ? 2 : 1))
-        case .list(let items):
-            while try removeOne(name, from: &bytes) {}
+            bytes.insert(contentsOf: Array(" \(attribute)".utf8), at: start.attributeInsertionPoint)
+        } else if let element {
             let description = try insertionTarget(for: tag.namespace, in: &bytes)
-            let element =
-                Array("<\(name)><rdf:Seq>".utf8)
-                + items.flatMap { Array("<rdf:li>".utf8) + escaped($0) + Array("</rdf:li>".utf8) }
-                + Array("</rdf:Seq></\(name)>\n".utf8)
             if let end = description.end {
-                bytes.insert(contentsOf: element, at: end.range.lowerBound)
+                bytes.insert(contentsOf: Array("\(element)\n".utf8), at: end.range.lowerBound)
             } else {
-                let selfClose = description.start.range.upperBound - 2..<description.start.range.upperBound
+                let start = description.start
                 bytes.replaceSubrange(
-                    selfClose,
-                    with: Array(">\n".utf8) + element + Array("</rdf:Description>".utf8))
+                    start.attributeInsertionPoint..<start.range.upperBound,
+                    with: Array(">\n\(element)\n</rdf:Description>".utf8))
             }
         }
     }
