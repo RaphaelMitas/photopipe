@@ -127,6 +127,10 @@ private let fixtureCases: [(name: String, points: [CurvePoint])] = [
     let json = String(decoding: try JSONEncoder().encode(Edit(exposure: 1)), as: UTF8.self)
     #expect(!json.contains("crop"))
     #expect(!json.contains("rotation"))
+    #expect(!json.contains("dehaze"), "presence sliders at rest keep the old cache key")
+    let hazy = try JSONDecoder().decode(Edit.self, from: JSONEncoder().encode(Edit(dehaze: 30)))
+    #expect(hazy.dehaze == 30)
+    #expect(!hazy.isIdentity)
 
     let turned = try JSONDecoder().decode(Edit.self, from: JSONEncoder().encode(Edit(rotation: 90)))
     #expect(turned.rotation == 90)

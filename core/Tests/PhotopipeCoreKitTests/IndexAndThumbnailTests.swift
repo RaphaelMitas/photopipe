@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import ImageIO
+import SQLite3
 import Testing
 import UniformTypeIdentifiers
 
@@ -70,6 +71,66 @@ private let sampleFiles: [String: [ImageFile]] = [
     let path = tempFile("index.sqlite")
     defer { try? FileManager.default.removeItem(atPath: path) }
     #expect(try SQLiteIndex(path: path).load() == nil)
+}
+
+@Test func schemaBumpDropsParsedRowsButKeepsScores() throws {
+    let path = tempFile("index.sqlite")
+    defer { try? FileManager.default.removeItem(atPath: path) }
+
+    let index = try SQLiteIndex(path: path)
+    try index.save(root: "/r", filesByShoot: sampleFiles)
+    let row = ScoreRow(score: 0.4, mtime: 1, size: 5, version: 1)
+    try index.saveScores([("/r/misc/a.dng", row)])
+
+    var db: OpaquePointer?
+    #expect(sqlite3_open(path, &db) == SQLITE_OK)
+    #expect(sqlite3_exec(db, "UPDATE meta SET value = '1' WHERE key = 'schema'", nil, nil, nil) == SQLITE_OK)
+    sqlite3_close(db)
+
+    let reopened = try SQLiteIndex(path: path)
+    #expect(try reopened.load() == nil, "rows parsed by an older reader are re-read")
+    #expect(try reopened.loadScores()["/r/misc/a.dng"] == row, "scores are still valid")
+}
+
+@Test func schemaBumpReplacesAnOlderTableLayout() throws {
+    let path = tempFile("index.sqlite")
+    defer { try? FileManager.default.removeItem(atPath: path) }
+
+    // v0.2's six-column table, which today's insert cannot write into
+    var db: OpaquePointer?
+    #expect(sqlite3_open(path, &db) == SQLITE_OK)
+    #expect(
+        sqlite3_exec(
+            db,
+            """
+            CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            CREATE TABLE files (path TEXT PRIMARY KEY, shoot TEXT NOT NULL, rel TEXT NOT NULL,
+                ext TEXT NOT NULL, size INTEGER NOT NULL, mtime REAL NOT NULL);
+            INSERT INTO meta VALUES ('schema', '2');
+            """, nil, nil, nil) == SQLITE_OK)
+    sqlite3_close(db)
+
+    let index = try SQLiteIndex(path: path)
+    try index.save(root: "/r", filesByShoot: sampleFiles)
+    #expect(try index.load()?.filesByShoot.count == 2)
+}
+
+@Test func rowsEnrichedByAnotherSchemaReadAsUnparsed() throws {
+    let path = tempFile("index.sqlite")
+    defer { try? FileManager.default.removeItem(atPath: path) }
+
+    let index = try SQLiteIndex(path: path)
+    let enriched = sampleFiles.mapValues { $0.map { $0.with(enriched: true) } }
+    try index.save(root: "/r", filesByShoot: enriched)
+    #expect(try index.load()?.filesByShoot["misc"]?.first?.enriched == true)
+
+    var db: OpaquePointer?
+    #expect(sqlite3_open(path, &db) == SQLITE_OK)
+    #expect(sqlite3_exec(db, "UPDATE files SET enriched = 1", nil, nil, nil) == SQLITE_OK)
+    sqlite3_close(db)
+    #expect(
+        try index.load()?.filesByShoot["misc"]?.first?.enriched == false,
+        "an older build's flag must not pass for this parser's work")
 }
 
 @Test func corruptIndexFileIsRecreatedNotFatal() throws {

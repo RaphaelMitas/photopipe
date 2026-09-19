@@ -510,6 +510,11 @@ mod tests {
             return;
         };
         let root = temp_tree("list", &["DSC00001.ARW", "DSC00002.ARW", "DSC00003.JPG"]);
+        std::fs::write(
+            root.join("2026-01-01_cargotest").join("photopipe.json"),
+            br#"{"day":"2026-05-05","notes":""}"#,
+        )
+        .unwrap();
         let sidecar = Sidecar::new(bin);
         let set = set_root(&sidecar, &root);
         assert_eq!(set["shoots"], 1);
@@ -519,8 +524,7 @@ mod tests {
         let list = shoots["shoots"].as_array().expect("shoots array");
         assert_eq!(list.len(), 1);
         assert_eq!(list[0]["name"], "2026-01-01_cargotest");
-        assert_eq!(list[0]["day"], "2026-01-01");
-        assert_eq!(list[0]["project"], "cargotest");
+        assert_eq!(list[0]["day"], "2026-05-05");
         assert_eq!(list[0]["imageCount"], 3);
 
         sidecar.shutdown();

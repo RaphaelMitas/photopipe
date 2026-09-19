@@ -13,9 +13,8 @@ public final class SQLiteIndex: @unchecked Sendable {
     private var db: OpaquePointer?
     private let path: String
 
-    // 4: the sidecar parser learned whites/blacks, so rows read without them
-    // must be re-parsed, not carried forward and written back over the tags
-    private static let schemaVersion = 4
+    // bump when the sidecar parser learns a tag, or stale rows get written back over it
+    private static let schemaVersion = 5
 
     public init(path: String) throws {
         self.path = path
@@ -45,9 +44,15 @@ public final class SQLiteIndex: @unchecked Sendable {
         // corrupt: the recovery path below deletes it, and that would throw away
         // every score ever computed.
         sqlite3_busy_timeout(db, 3000)
+        try exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        let stored = try scalarInt("SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schema'")
+        // scores took minutes per shoot and survive a parser change; the files
+        // table goes whole, since an older layout would not take today's rows
+        if let stored, stored != Self.schemaVersion {
+            try exec("DROP TABLE IF EXISTS files; DELETE FROM meta")
+        }
         try exec(
             """
-            CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS files (
                 path TEXT PRIMARY KEY,
                 shoot TEXT NOT NULL,
@@ -71,14 +76,6 @@ public final class SQLiteIndex: @unchecked Sendable {
                 version INTEGER NOT NULL
             );
             """)
-        let stored = try scalarInt("SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schema'")
-        if let stored, stored != Self.schemaVersion {
-            sqlite3_close(db)
-            db = nil
-            try? FileManager.default.removeItem(atPath: path)
-            try open()
-            return
-        }
         try exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema', '\(Self.schemaVersion)')")
         try exec("SELECT count(*) FROM files")
     }
@@ -163,7 +160,8 @@ public final class SQLiteIndex: @unchecked Sendable {
                 }
                 sqlite3_bind_int64(statement, 9, Int64(file.width))
                 sqlite3_bind_int64(statement, 10, Int64(file.height))
-                sqlite3_bind_int64(statement, 11, file.enriched ? 1 : 0)
+                // a row another build writes carries its own version, so it reads as unparsed
+                sqlite3_bind_int64(statement, 11, file.enriched ? Int64(Self.schemaVersion) : 0)
                 sqlite3_bind_double(statement, 12, file.sidecarMtime)
                 guard sqlite3_step(statement) == SQLITE_DONE else {
                     throw IndexError.exec(String(cString: sqlite3_errmsg(db)))
@@ -218,7 +216,7 @@ public final class SQLiteIndex: @unchecked Sendable {
                 edit: edit ?? .identity,
                 width: Int(sqlite3_column_int64(statement, 8)),
                 height: Int(sqlite3_column_int64(statement, 9)),
-                enriched: sqlite3_column_int64(statement, 10) == 1,
+                enriched: sqlite3_column_int64(statement, 10) == Self.schemaVersion,
                 sidecarMtime: sqlite3_column_double(statement, 11))
             filesByShoot[String(cString: shootText), default: []].append(record)
         }

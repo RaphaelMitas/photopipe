@@ -82,6 +82,7 @@ func image(_ url: URL) throws -> ImageFile {
 
     let edit = Edit(
         exposure: 1.5, highlights: -42, shadows: 18, whites: 30, blacks: -20,
+        texture: 15, clarity: 22, dehaze: -8,
         temperature: 5600, tint: 12, denoise: 25, vibrance: 10, saturation: -5,
         curveRGB: [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.6), CurvePoint(x: 1, y: 1)],
         curveRed: [CurvePoint(x: 0, y: 0.1), CurvePoint(x: 1, y: 0.9)])
@@ -93,6 +94,9 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(read.shadows == 18)
     #expect(read.whites == 30)
     #expect(read.blacks == -20)
+    #expect(read.texture == 15)
+    #expect(read.clarity == 22)
+    #expect(read.dehaze == -8)
     #expect(read.temperature == 5600)
     #expect(read.tint == 12)
     #expect(read.denoise == 25)
@@ -168,6 +172,56 @@ func image(_ url: URL) throws -> ImageFile {
     let active = XMP.parseEdit(sidecar.replacingOccurrences(of: "\"False\"", with: "\"True\""), isRaw: true)
     #expect(active.crop == CropRect(left: 0.1, top: 0.1, right: 0.9, bottom: 0.9))
     #expect(active.cropAngle == 2.5)
+}
+
+@Test func straightCurveFromAnotherToolReadsAsNoCurve() {
+    let sidecar = """
+        <x:xmpmeta><rdf:Description><crs:ToneCurvePV2012><rdf:Seq>
+        <rdf:li>0, 0</rdf:li><rdf:li>255, 255</rdf:li>
+        </rdf:Seq></crs:ToneCurvePV2012><crs:ToneCurvePV2012Red><rdf:Seq>
+        <rdf:li>0, 10</rdf:li><rdf:li>255, 255</rdf:li>
+        </rdf:Seq></crs:ToneCurvePV2012Red></rdf:Description></x:xmpmeta>
+        """
+    let edit = XMP.parseEdit(sidecar, isRaw: true)
+    #expect(edit.curveRGB.isEmpty, "a straight curve is the same edit as no curve")
+    #expect(edit.curveRed.count == 2)
+}
+
+@Test func hugeCurvePointsNeitherPoisonNorTrap() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00009.ARW")
+    try Data("fake".utf8).write(to: arw)
+
+    let overflow = String(repeating: "9", count: 400)
+    let sidecar = """
+        <x:xmpmeta><rdf:Description><crs:ToneCurvePV2012><rdf:Seq>
+        <rdf:li>0, 0</rdf:li><rdf:li>\(overflow), 255</rdf:li>
+        </rdf:Seq></crs:ToneCurvePV2012></rdf:Description></x:xmpmeta>
+        """
+    #expect(XMP.parseEdit(sidecar, isRaw: true).curveRGB.isEmpty, "an infinite point is dropped")
+
+    // finite but far past Int.max, as IPC can send it
+    let huge = Edit(curveRGB: [CurvePoint(x: 0, y: 0.2), CurvePoint(x: 1e30, y: 1)])
+    try XMP.writeEdit(huge, file: try image(arw), tool: .shared)
+    #expect(XMP.readEdit(file: try image(arw)).curveRGB.last == CurvePoint(x: 1, y: 1))
+}
+
+@Test func nonFiniteEmbeddedCurvePointsAreDropped() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let jpg = dir.appendingPathComponent("DSC00011.JPG")
+    try writeGrayJPEG(to: jpg)
+    try ExifTool.shared.write([
+        "-overwrite_original",
+        "-XMP-crs:ToneCurvePV2012=0, 0", "-XMP-crs:ToneCurvePV2012=nan, nan",
+        "-XMP-crs:ToneCurvePV2012=inf, 0", "-XMP-crs:ToneCurvePV2012=128, 160",
+        "-XMP-crs:ToneCurvePV2012=255, 255", jpg.path,
+    ])
+
+    let edit = XMP.readEdit(file: try image(jpg))
+    #expect(edit.curveRGB.count == 3, "nan and inf are dropped, the rest stays")
+    #expect(throws: Never.self) { try JSONEncoder().encode(edit) }
 }
 
 @Test func hostileCropValuesAreRejectedOnParse() {
@@ -439,7 +493,7 @@ func image(_ url: URL) throws -> ImageFile {
 
     try XMP.writeRating(3, file: try image(jpg), tool: .shared)
     let edit = Edit(
-        exposure: 0.5, shadows: 25, whites: -15, blacks: 40,
+        exposure: 0.5, shadows: 25, whites: -15, blacks: 40, dehaze: 12.5,
         temperature: 30, tint: -10, saturation: 15,
         curveRGB: [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.25, y: 0.2), CurvePoint(x: 1, y: 1)])
     try XMP.writeEdit(edit, file: try image(jpg), tool: .shared)
@@ -450,6 +504,7 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(read.shadows == 25)
     #expect(read.whites == -15)
     #expect(read.blacks == 40)
+    #expect(read.dehaze == 12.5, "Dehaze is a real tag, so a foreign fraction survives")
     #expect(read.temperature == 30)
     #expect(read.tint == -10)
     #expect(read.saturation == 15)

@@ -33,6 +33,7 @@ describe("normalizeImage", () => {
     const edit = normalizeImage(image).edit;
     expect(edit.whites).toBe(0);
     expect(edit.blacks).toBe(0);
+    expect(edit.dehaze).toBe(0);
     expect(edit.curveRGB).toEqual([]);
     expect(isIdentityEdit(edit)).toBe(true);
     expect(editKey(edit)).toBe(editKey(identityEdit));

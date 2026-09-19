@@ -1,4 +1,5 @@
 import { Button } from "@photopipe/ui/components/button";
+import { Calendar } from "@photopipe/ui/components/calendar";
 import {
   Dialog,
   DialogContent,
@@ -7,17 +8,27 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@photopipe/ui/components/dialog";
-import { Input } from "@photopipe/ui/components/input";
 import { Label } from "@photopipe/ui/components/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@photopipe/ui/components/popover";
 import { Skeleton } from "@photopipe/ui/components/skeleton";
-import { Textarea } from "@photopipe/ui/components/textarea";
 import { cn } from "@photopipe/ui/lib/utils";
-import { Check } from "lucide-react";
-import { useEffect, useState } from "react";
+import { CalendarIcon, Check } from "lucide-react";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { type ProjectDraft, ProjectFields } from "@/components/ProjectFields";
 import { fileSrc, type ImageFile, type Shoot } from "@/lib/core";
 import {
+  useCaptureDate,
   useImages,
-  useRenameProject,
   useThumbnail,
   useUpdateProject,
 } from "@/lib/queries";
@@ -64,155 +75,231 @@ function CoverChoice({
   );
 }
 
+const fromDay = (day: string) => {
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y, m - 1, d);
+};
+const toDay = (date: Date) =>
+  [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+
+function ProjectDateField({
+  day,
+  firstPhotoPath,
+  onChange,
+}: {
+  day: string;
+  firstPhotoPath: string | undefined;
+  onChange: Dispatch<SetStateAction<string>>;
+}) {
+  const [open, setOpen] = useState(false);
+  // suggest once, and only for a project that opened undated; a clear stays cleared
+  const suggested = useRef(day !== "");
+  const { mutate: suggest } = useCaptureDate();
+  const selected = day ? fromDay(day) : undefined;
+  useEffect(() => {
+    if (!open || suggested.current || !firstPhotoPath) return;
+    suggested.current = true;
+    suggest(firstPhotoPath, {
+      onSuccess: ({ day }) => day && onChange((current) => current || day),
+    });
+  }, [open, firstPhotoPath, suggest, onChange]);
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor="project-day">Date</Label>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            id="project-day"
+            type="button"
+            variant="outline"
+            data-testid="project-day"
+            data-day={day}
+            className="w-44 justify-start font-normal"
+          >
+            <CalendarIcon className="text-muted-foreground" />
+            {selected ? (
+              selected.toLocaleDateString(undefined, { dateStyle: "medium" })
+            ) : (
+              <span className="text-muted-foreground">Pick a date</span>
+            )}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start">
+          <Calendar
+            key={day}
+            mode="single"
+            selected={selected}
+            defaultMonth={selected}
+            onSelect={(date) => {
+              onChange(date ? toDay(date) : "");
+              setOpen(false);
+            }}
+          />
+          {day && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-testid="project-day-clear"
+              onClick={() => {
+                onChange("");
+                setOpen(false);
+              }}
+              className="mx-3 mb-3 text-muted-foreground"
+            >
+              Clear
+            </Button>
+          )}
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   shoot: Shoot | undefined;
-  onRenamed: (shoot: string) => void;
+  onSaved: (shoot: string) => void;
 };
 
 export function ShootSettingsDialog({
-  open: isOpen,
+  open,
   onOpenChange,
   shoot,
-  onRenamed,
+  onSaved,
 }: Props) {
-  const images = useImages(isOpen && shoot ? shoot.name : null);
-  const update = useUpdateProject();
-  const rename = useRenameProject();
-
-  const [name, setName] = useState("");
-  const [day, setDay] = useState("");
-  const [notes, setNotes] = useState("");
-  const [cover, setCover] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isOpen || !shoot) return;
-    setName(shoot.project ?? shoot.name);
-    setDay(shoot.day ?? "");
-    setNotes(shoot.notes);
-    setCover(shoot.cover);
-  }, [isOpen, shoot]);
-
-  if (!shoot) return null;
-
-  const renames =
-    day !== "" && (name !== (shoot.project ?? shoot.name) || day !== shoot.day);
-
-  const submit = async () => {
-    await update.mutateAsync({ shoot: shoot.name, notes, cover });
-    if (renames) {
-      const result = await rename.mutateAsync({
-        shoot: shoot.name,
-        day,
-        name,
-      });
-      onRenamed(result.shoot);
-    }
-    onOpenChange(false);
-  };
-
+  const last = useRef(shoot);
+  if (shoot) last.current = shoot;
+  const shown = open ? shoot : last.current;
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="font-heading">Project settings</DialogTitle>
-          <DialogDescription>
-            Name and date rename the folder; the rest is metadata.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="flex flex-col gap-4">
-          <div className="flex gap-3">
-            <div className="flex-1 space-y-1.5">
-              <Label htmlFor="shoot-name">Project</Label>
-              <Input
-                id="shoot-name"
-                data-testid="shoot-name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="shoot-day">Date</Label>
-              <Input
-                id="shoot-day"
-                data-testid="shoot-day"
-                type="date"
-                value={day}
-                onChange={(event) => setDay(event.target.value)}
-              />
-            </div>
-          </div>
-          {renames && (
-            <p
-              data-testid="rename-preview"
-              className="font-mono text-[10px] text-muted-foreground"
-            >
-              Folder becomes {day}_{name}
-            </p>
-          )}
-
-          <div className="space-y-1.5">
-            <Label htmlFor="shoot-notes">Notes</Label>
-            <Textarea
-              id="shoot-notes"
-              data-testid="shoot-notes"
-              rows={2}
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <Label>Cover</Label>
-              {cover && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  data-testid="cover-clear"
-                  onClick={() => setCover(null)}
-                  className="h-6 text-[10px] text-muted-foreground"
-                >
-                  Use the first photo
-                </Button>
-              )}
-            </div>
-            {images.data && images.data.length > 0 ? (
-              <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
-                {images.data.map((image) => (
-                  <CoverChoice
-                    key={image.path}
-                    image={image}
-                    chosen={cover === image.rel}
-                    onChoose={() =>
-                      setCover(cover === image.rel ? null : image.rel)
-                    }
-                  />
-                ))}
-              </div>
-            ) : (
-              <p className="text-muted-foreground text-xs">
-                No photos yet. The cover appears once this project has some.
-              </p>
-            )}
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            data-testid="save-shoot-settings"
-            disabled={update.isPending || rename.isPending}
-            onClick={submit}
-          >
-            Save
-          </Button>
-        </DialogFooter>
+        {shown ? (
+          <ShootSettingsForm
+            shoot={shown}
+            onCancel={() => onOpenChange(false)}
+            onSaved={onSaved}
+          />
+        ) : (
+          <DialogHeader>
+            <DialogTitle className="font-heading">Project settings</DialogTitle>
+            <DialogDescription>
+              This project is no longer in the library.
+            </DialogDescription>
+          </DialogHeader>
+        )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ShootSettingsForm({
+  shoot,
+  onCancel,
+  onSaved,
+}: {
+  shoot: Shoot;
+  onCancel: () => void;
+  onSaved: (shoot: string) => void;
+}) {
+  const images = useImages(shoot.name);
+  const update = useUpdateProject();
+  const [draft, setDraft] = useState<ProjectDraft>({
+    name: shoot.name,
+    notes: shoot.notes,
+  });
+  const [day, setDay] = useState(shoot.day ?? "");
+  const [cover, setCover] = useState(shoot.cover);
+
+  return (
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        update.mutate(
+          {
+            shoot: shoot.name,
+            name: draft.name.trim(),
+            day: day || null,
+            notes: draft.notes,
+            cover,
+          },
+          { onSuccess: (result) => onSaved(result.shoot) },
+        );
+      }}
+    >
+      <DialogHeader>
+        <DialogTitle className="font-heading">Project settings</DialogTitle>
+        <DialogDescription>
+          The name renames the folder; the rest is metadata.
+        </DialogDescription>
+      </DialogHeader>
+
+      <ProjectFields
+        draft={draft}
+        onChange={setDraft}
+        dateSlot={
+          <ProjectDateField
+            day={day}
+            firstPhotoPath={images.data?.[0]?.path}
+            onChange={setDay}
+          />
+        }
+      />
+
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <Label>Cover</Label>
+          {cover && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-testid="cover-clear"
+              onClick={() => setCover(null)}
+              className="h-6 text-[10px] text-muted-foreground"
+            >
+              Use the first photo
+            </Button>
+          )}
+        </div>
+        {images.data && images.data.length > 0 ? (
+          <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
+            {images.data.map((image) => (
+              <CoverChoice
+                key={image.path}
+                image={image}
+                chosen={cover === image.rel}
+                onChoose={() =>
+                  setCover(cover === image.rel ? null : image.rel)
+                }
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="text-muted-foreground text-xs">
+            No photos yet. The cover appears once this project has some.
+          </p>
+        )}
+      </div>
+
+      <DialogFooter>
+        <Button type="button" variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          data-testid="save-shoot-settings"
+          disabled={!draft.name.trim() || update.isPending}
+        >
+          Save
+        </Button>
+      </DialogFooter>
+    </form>
   );
 }

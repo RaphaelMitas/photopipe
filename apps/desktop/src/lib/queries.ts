@@ -522,35 +522,22 @@ export function useUpdateProject() {
     mutationKey: ["write", "updateProject"],
     mutationFn: (vars: {
       shoot: string;
-      notes?: string;
-      cover?: string | null;
-    }) => coreRequest<{ generation: number }>("updateProject", vars),
-    onSuccess: () => {
+      name: string;
+      day: string | null;
+      notes: string;
+      cover: string | null;
+    }) =>
+      coreRequest<{ shoot: string; generation: number }>("updateProject", vars),
+    onSuccess: (result, vars) => {
+      if (result.shoot !== vars.shoot) {
+        toast.success(`Renamed to ${result.shoot}`);
+        queryClient.invalidateQueries({ queryKey: ["images"] });
+      }
       queryClient.invalidateQueries({ queryKey: ["shoots"] });
       queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
     },
     onError: (error) => {
       toast.error("Could not save the project", { description: String(error) });
-    },
-  });
-}
-
-export function useRenameProject() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationKey: ["write", "renameProject"],
-    mutationFn: (vars: { shoot: string; day: string; name: string }) =>
-      coreRequest<{ shoot: string; generation: number }>("renameProject", vars),
-    onSuccess: (result) => {
-      toast.success(`Renamed to ${result.shoot}`);
-      queryClient.invalidateQueries({ queryKey: ["shoots"] });
-      queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
-      queryClient.invalidateQueries({ queryKey: ["images"] });
-    },
-    onError: (error) => {
-      toast.error("Could not rename the project", {
-        description: String(error),
-      });
     },
   });
 }
@@ -720,7 +707,7 @@ export function useCreateProject() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["write", "createProject"],
-    mutationFn: (vars: { day: string; name: string; notes: string }) =>
+    mutationFn: (vars: { name: string; notes: string }) =>
       coreRequest<CreateProjectResult>("createProject", vars),
     onSuccess: (result) => {
       toast.success(`Created ${result.shoot}`);
@@ -729,6 +716,18 @@ export function useCreateProject() {
     },
     onError: (error) => {
       toast.error("Could not create the project", {
+        description: String(error),
+      });
+    },
+  });
+}
+
+export function useCaptureDate() {
+  return useMutation({
+    mutationFn: (path: string) =>
+      coreRequest<{ day: string | null }>("captureDate", { path }),
+    onError: (error) => {
+      toast.error("Could not read the photo's date", {
         description: String(error),
       });
     },

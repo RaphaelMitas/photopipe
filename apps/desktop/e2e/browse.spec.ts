@@ -275,11 +275,11 @@ test("a new project is created from the library and opens empty", async ({
 
   await page.getByTestId("new-project").click();
   await page.getByTestId("project-name").fill("riverside");
-  await page.getByTestId("project-day").fill("2026-09-09");
   await page.getByTestId("project-notes").fill("client wants 12 finals");
+  await expect(page.getByTestId("project-day")).toHaveCount(0);
   await page.getByTestId("create-project").click();
 
-  await expect(page.getByText(/Created 2026-09-09_riverside/)).toBeVisible();
+  await expect(page.getByText(/Created riverside/)).toBeVisible();
   // The fresh project opens empty; folders are the user's own business.
   await expect(page.getByTestId("browser-empty")).toContainText(
     "subfolders are fine",
@@ -304,27 +304,55 @@ test("library cards show a cover and open project settings", async ({
   await expect(page.getByTestId("shoot-cover").first()).toBeVisible();
 
   await page.getByTestId("shoot-settings-2026-07-12_zell").click();
-  await expect(page.getByTestId("shoot-name")).toHaveValue("zell");
-  await expect(page.getByTestId("shoot-day")).toHaveValue("2026-07-12");
-  await expect(page.getByTestId("shoot-notes")).toHaveValue(
+  await expect(page.getByTestId("project-name")).toHaveValue("2026-07-12_zell");
+  await expect(page.getByTestId("project-day")).toHaveAttribute(
+    "data-day",
+    "2026-07-12",
+  );
+  await expect(page.getByTestId("project-notes")).toHaveValue(
     "Golden hour at the river",
   );
-
-  // Picking a cover, and the rename preview appearing only on a real change.
-  await expect(page.getByTestId("rename-preview")).toHaveCount(0);
-  await page.getByTestId("shoot-name").fill("zell-revisited");
-  await expect(page.getByTestId("rename-preview")).toContainText(
-    "2026-07-12_zell-revisited",
-  );
+  await page.getByTestId("project-name").fill("zell-revisited");
 
   const covers = page.getByTestId("cover-choice");
   await covers.nth(1).click();
   await expect(covers.nth(1)).toHaveAttribute("data-chosen", "true");
 
   await page.getByTestId("save-shoot-settings").click();
-  await expect(
-    page.getByText(/Renamed to 2026-07-12_zell-revisited/),
-  ).toBeVisible();
+  await expect(page.getByText(/Renamed to zell-revisited/)).toBeVisible();
+});
+
+test("the date field suggests the first photo's date, and is editable", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByTestId("root-input").fill("/fake");
+  await page.getByTestId("root-submit").click();
+
+  await page.getByTestId("shoot-settings-misc").click();
+  const dateField = page.getByTestId("project-day");
+  await expect(dateField).toHaveAttribute("data-day", "");
+  await dateField.click();
+  await expect(dateField).toHaveAttribute("data-day", "2026-07-12");
+  await page.getByRole("button", { name: /July 2nd, 2026/ }).click();
+  await expect(dateField).toHaveAttribute("data-day", "2026-07-02");
+  await dateField.click();
+  await page.getByTestId("project-day-clear").click();
+  await expect(dateField).toHaveAttribute("data-day", "");
+  await dateField.click();
+  await expect(page.getByRole("grid")).toBeVisible();
+  await expect(dateField).toHaveAttribute("data-day", "");
+  await page.keyboard.press("Escape");
+  await page.getByTestId("save-shoot-settings").click();
+  await expect(page.getByTestId("shoot-settings-misc")).toBeVisible();
+
+  // A project that opened dated is never re-suggested after a clear.
+  await page.getByTestId("shoot-settings-2026-07-12_zell").click();
+  await dateField.click();
+  await page.getByTestId("project-day-clear").click();
+  await dateField.click();
+  await expect(page.getByRole("grid")).toBeVisible();
+  await expect(dateField).toHaveAttribute("data-day", "");
 });
 
 test("a library that is still indexing says so and holds edits back", async ({

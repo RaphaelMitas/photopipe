@@ -81,7 +81,6 @@ public struct Shoot: Codable, Equatable, Sendable {
     public let name: String
     public let path: String
     public let day: String?
-    public let project: String?
     public let imageCount: Int
     public let notes: String
     public let cover: String?
@@ -91,16 +90,17 @@ public struct Shoot: Codable, Equatable, Sendable {
     public let indexed: Bool
 }
 
-public func parseShootName(_ name: String) -> (day: String, project: String)? {
-    let pattern = /^(\d{4}-\d{2}-\d{2})_(.+)$/
-    guard let match = name.wholeMatch(of: pattern) else { return nil }
-    return (String(match.1), String(match.2))
+public func isDay(_ value: String) -> Bool {
+    guard value.wholeMatch(of: /[0-9]{4}-[0-9]{2}-[0-9]{2}/) != nil else { return false }
+    let n = value.split(separator: "-").compactMap { Int($0) }
+    var parts = DateComponents(year: n[0], month: n[1], day: n[2])
+    parts.calendar = Calendar(identifier: .gregorian)
+    return parts.isValidDate
 }
 
 public func makeShoot(
-    name: String, path: String, images: [ImageFile], notes: String = "", cover: String? = nil
+    name: String, path: String, images: [ImageFile], notes: String, day: String?, cover: String?
 ) -> Shoot {
-    let parsed = parseShootName(name)
     let chosen =
         cover.flatMap { rel in
             images.first { $0.rel.lowercased() == rel.lowercased() }
@@ -108,8 +108,7 @@ public func makeShoot(
     return Shoot(
         name: name,
         path: path,
-        day: parsed?.day,
-        project: parsed?.project,
+        day: day.flatMap { isDay($0) ? $0 : nil },
         imageCount: images.count,
         notes: notes,
         cover: cover,
