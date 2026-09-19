@@ -281,6 +281,27 @@ export function xmpWritesInFlight(
   );
 }
 
+export function cachedImage(
+  queryClient: QueryClient,
+  shoot: string | null,
+  path: string,
+) {
+  return queryClient
+    .getQueryData<ImageFile[]>(["images", shoot])
+    ?.find((image) => image.path === path);
+}
+
+function patchImage(
+  queryClient: QueryClient,
+  shoot: string | null,
+  path: string,
+  patch: Partial<ImageFile>,
+) {
+  queryClient.setQueryData<ImageFile[]>(["images", shoot], (old) =>
+    old?.map((image) => (image.path === path ? { ...image, ...patch } : image)),
+  );
+}
+
 export function useSetRating(shoot: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -291,17 +312,14 @@ export function useSetRating(shoot: string | null) {
       ),
     onMutate: async ({ path, rating }) => {
       await queryClient.cancelQueries({ queryKey: ["images", shoot] });
-      const previous = queryClient.getQueryData<ImageFile[]>(["images", shoot]);
-      queryClient.setQueryData<ImageFile[]>(["images", shoot], (old) =>
-        old?.map((image) =>
-          image.path === path ? { ...image, rating } : image,
-        ),
-      );
+      const previous = cachedImage(queryClient, shoot, path)?.rating;
+      patchImage(queryClient, shoot, path, { rating });
       return { previous };
     },
+    // Per path, like edits: a whole-list snapshot would take other writes down.
     onError: (error, vars, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(["images", shoot], context.previous);
+      if (context?.previous !== undefined) {
+        patchImage(queryClient, shoot, vars.path, { rating: context.previous });
       }
       toast.error(`Rating ${fileName(vars.path)} failed`, {
         description: String(error),
@@ -416,9 +434,7 @@ export function usePasteEdits(shoot: string | null) {
         while (next < writes.length) {
           const write = writes[next++];
           // Edited by hand since the batch started: that value is newer.
-          const live = currentEdits(queryClient, target, [write.path]).get(
-            write.path,
-          );
+          const live = cachedImage(queryClient, target, write.path)?.edit;
           if (live && editKey(live) !== editKey(write.edit)) {
             overtaken += 1;
             continue;

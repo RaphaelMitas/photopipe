@@ -10,10 +10,8 @@ export function useDebouncedEdit(
   const [draft, setDraft] = useState<EditDraft>(null);
   const timer = useRef<number | null>(null);
   const pending = useRef<EditDraft>(null);
-  // `commit` closes over a react-query mutation and so changes identity every
-  // render; read it through a ref so `flush` can stay referentially stable —
-  // otherwise the unmount effect below would re-run its cleanup every render
-  // and collapse the debounce into a write per tick.
+  // A caller may pass a fresh closure every render; through a ref `flush` stays
+  // stable and the unmount effect below does not turn into a write per tick.
   const commitRef = useRef(commit);
   commitRef.current = commit;
 

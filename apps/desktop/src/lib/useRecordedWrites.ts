@@ -1,10 +1,11 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { ClipboardPaste, Star } from "lucide-react";
 import { useCallback, useRef } from "react";
-import { type Edit, editKey, type ImageFile, isRawFile } from "./core";
+import { type Edit, editKey, isRawFile } from "./core";
 import { describeEdit } from "./describeEdit";
 import { type HistoryAction, pushHistory } from "./history";
 import {
+  cachedImage,
   type EditWrite,
   type PasteResult,
   usePasteEdits,
@@ -22,10 +23,7 @@ export function useRecordedWrites(shoot: string | null) {
   live.current = { setRating, setEdit, pasteEdits };
 
   const cached = useCallback(
-    (path: string) =>
-      queryClient
-        .getQueryData<ImageFile[]>(["images", shoot])
-        ?.find((image) => image.path === path),
+    (path: string) => cachedImage(queryClient, shoot, path),
     [queryClient, shoot],
   );
 
