@@ -9,11 +9,6 @@ platform :mac do
     )
   end
 
-  desc "Check the pkg against App Store Connect without uploading it"
-  lane :validate do
-    deliver(pkg: ENV.fetch("PKG"), verify_only: true, skip_metadata: true, skip_screenshots: true)
-  end
-
   desc "Upload the listing text and screenshots, then the pkg to TestFlight"
   lane :submit do
     # Metadata first: it can be re-sent, a binary already uploaded under this build number cannot.

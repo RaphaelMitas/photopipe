@@ -143,15 +143,16 @@ DMG, inside-out, with `entitlements.mas.inherit.plist` on the core and
 pkg. `scripts/smoke-bundle.sh --mas` checks the entitlements, the missing
 updater and the pkg rules the store enforces, and does not drive the core: a
 binary entitled `app-sandbox` + `inherit` only launches under a sandboxed
-parent. Every release validates the pkg against App Store Connect through
-fastlane (pinned by `Gemfile.lock`); the listing (text from
-`fastlane/metadata/en-US`, screenshots copied from `docs/screenshots`, whose
-2560x1600 is one of the Mac sizes deliver accepts) and then the TestFlight
-upload only happen on
-`gh workflow run release.yml -f submit_to_app_store=true`, which rebuilds the
-tagged commit for the store alone and leaves the DMG release untouched.
-Metadata goes first because it can be re-sent and a binary cannot, so a
-retry only repeats idempotent steps.
+parent. Every release then uploads through fastlane (pinned by
+`Gemfile.lock`): first the listing (text from `fastlane/metadata/en-US`,
+screenshots copied from `docs/screenshots`, whose 2560x1600 is one of the Mac
+sizes deliver accepts), then the pkg to TestFlight. Attaching the build to
+the version and sending it to review stays a manual step in App Store
+Connect. The store build number is the workflow run number, not the semver,
+because App Store Connect refuses a number it has seen and a retry ships the
+same version. `gh workflow run release.yml -f submit_to_app_store=true`
+redoes only the store upload from the tagged commit and leaves the DMG
+release untouched.
 
 Sandbox consent works in two halves. The Rust shell owns it: it shows the
 folder panel, mints a security-scoped bookmark from the grant, keeps it in

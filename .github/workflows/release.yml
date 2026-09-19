@@ -4,8 +4,9 @@ name: Release
 # a tag. When it does not, a release PR from `pnpm release` just landed, so
 # this tags the commit and ships it. workflow_dispatch re-runs the release for
 # the current version even if the tag exists, for retrying a failed run.
-# With submit_to_app_store it skips the DMG release and builds the already
-# tagged commit for App Store Connect alone.
+# Every release also uploads the App Store build to TestFlight. With
+# submit_to_app_store it skips the DMG release and redoes only that upload,
+# from the already tagged commit.
 on:
   push:
     branches: [main]
@@ -334,7 +335,7 @@ jobs:
 
   # Skipped without the store secrets, so a release still succeeds before they exist.
   mas:
-    name: Build, sign, validate for the App Store
+    name: Build, sign, upload to the App Store
     needs: [check]
     if: (needs.check.outputs.is-release == 'true' || needs.check.outputs.submit == 'true') && needs.check.outputs.mas == 'true'
     runs-on: macos-15
@@ -415,6 +416,8 @@ jobs:
           MAS_PROVISIONING_PROFILE: ${{ secrets.MAS_PROVISIONING_PROFILE }}
         run: |
           echo "$MAS_PROVISIONING_PROFILE" | base64 --decode > "$APP/Contents/embedded.provisionprofile"
+          # App Store Connect refuses a build number it has seen, so a retry of the same version needs a new one.
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" "$APP/Contents/Info.plist"
           codesign --force --timestamp \
             --entitlements apps/desktop/src-tauri/entitlements.mas.inherit.plist \
             --sign "$APP_IDENTITY" "$APP/Contents/MacOS/photopipe-core"
@@ -448,22 +451,13 @@ jobs:
           ruby-version: "3.3"
           bundler-cache: true
 
-      - name: Validate against App Store Connect
-        env:
-          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
-        run: bundle exec fastlane mac validate
-
       # deliver wants one folder per locale; the README shots are the real UI at a Mac size.
       - name: Stage the store screenshots
-        if: needs.check.outputs.submit == 'true'
         run: |
           mkdir -p fastlane/screenshots/en-US
           cp docs/screenshots/*.png fastlane/screenshots/en-US/
 
       - name: Upload to TestFlight and App Store Connect
-        if: needs.check.outputs.submit == 'true'
         env:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
