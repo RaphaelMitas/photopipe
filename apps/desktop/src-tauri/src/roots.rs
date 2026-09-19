@@ -64,9 +64,14 @@ impl Roots {
             .stringForKey(&NSString::from_str(KEY))
             .and_then(|json| serde_json::from_str(&json.to_string()).ok())
             .unwrap_or_default();
+        // resolving a bookmark can stall on a slow volume, so launch leaves it to the first listing
+        let pending = |live| Entry {
+            live,
+            failure: Some(Failure::Broken("not activated yet".into())),
+        };
         Roots {
             defaults,
-            entries: Mutex::new(stored.into_iter().map(Entry::activate).collect()),
+            entries: Mutex::new(stored.into_iter().map(pending).collect()),
         }
     }
 
@@ -86,7 +91,7 @@ impl Roots {
         for entry in entries.iter_mut() {
             let _ = entry.refresh();
         }
-        // a renamed folder can refresh onto a path another entry already holds
+        // a renamed folder can refresh onto a path another entry holds; keep the working one
         let working: HashSet<String> = entries
             .iter()
             .filter(|entry| entry.failure.is_none())
@@ -97,6 +102,7 @@ impl Roots {
             (entry.failure.is_none() || !working.contains(&entry.live.path))
                 && seen.insert(entry.live.path.clone())
         });
+        // writing an unchanged list would wipe an unparseable value or another instance's roots
         if entries.iter().map(|entry| &entry.live).ne(before.iter()) {
             self.write(&entries);
         }
@@ -116,7 +122,12 @@ impl Roots {
     pub fn reopen(&self, path: &str) -> Option<Result<Live, Failure>> {
         let mut entries = self.entries.lock().unwrap();
         let entry = entries.iter_mut().find(|entry| entry.live.path == path)?;
-        Some(entry.refresh())
+        let before = entry.live.clone();
+        let result = entry.refresh();
+        if entry.live != before {
+            self.write(&entries);
+        }
+        Some(result)
     }
 
     pub fn adopt(&self, live: Live) {
@@ -234,6 +245,24 @@ mod tests {
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].status, "ok");
         assert!(same(&listed[0].path, &after));
+        let _ = std::fs::remove_dir_all(&after);
+        NSUserDefaults::standardUserDefaults()
+            .removePersistentDomainForName(&NSString::from_str(&suite));
+    }
+
+    #[test]
+    fn a_folder_renamed_while_closed_is_saved_under_its_new_name() {
+        let suite = suite("closed");
+        let before = folder("closed");
+        let after = before.with_file_name("photopipe-roots-closed-after");
+        let _ = std::fs::remove_dir_all(&after);
+        Roots::load(Some(&suite)).adopt(live(&before));
+        std::fs::rename(&before, &after).unwrap();
+
+        let listed = Roots::load(Some(&suite)).list();
+        assert!(same(&listed[0].path, &after));
+        let stored = Roots::load(Some(&suite));
+        assert_eq!(stored.entries.lock().unwrap()[0].live.path, listed[0].path);
         let _ = std::fs::remove_dir_all(&after);
         NSUserDefaults::standardUserDefaults()
             .removePersistentDomainForName(&NSString::from_str(&suite));
