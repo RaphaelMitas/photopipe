@@ -11,52 +11,35 @@ import {
   Thermometer,
 } from "lucide-react";
 import { type Edit, editKey, isIdentityEdit } from "./core";
+import {
+  COLOR_SLIDERS,
+  PRESENCE_SLIDERS,
+  type SliderSpec,
+  signed,
+  TONE_SLIDERS,
+} from "./editSliders";
 
 type Description = { icon: LucideIcon; label: string; detail?: string };
 
-const signed = (value: number, digits = 0) =>
-  `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
-
-type SliderKey =
-  | "highlights"
-  | "shadows"
-  | "whites"
-  | "blacks"
-  | "texture"
-  | "clarity"
-  | "dehaze"
-  | "tint"
-  | "denoise"
-  | "vibrance"
-  | "saturation";
-
-const SLIDERS: [SliderKey, LucideIcon, string][] = [
-  ["highlights", Contrast, "Highlights"],
-  ["shadows", Contrast, "Shadows"],
-  ["whites", Contrast, "Whites"],
-  ["blacks", Contrast, "Blacks"],
-  ["texture", Sparkles, "Texture"],
-  ["clarity", Sparkles, "Clarity"],
-  ["dehaze", Sparkles, "Dehaze"],
-  ["tint", Thermometer, "Tint"],
-  ["denoise", Sparkles, "Denoise"],
-  ["vibrance", Droplet, "Vibrance"],
-  ["saturation", Droplet, "Saturation"],
+const SLIDER_GROUPS: [SliderSpec[], LucideIcon][] = [
+  [TONE_SLIDERS, Contrast],
+  [PRESENCE_SLIDERS, Sparkles],
+  [COLOR_SLIDERS, Droplet],
 ];
 
-const CURVES: ["curveRGB" | "curveRed" | "curveGreen" | "curveBlue", string][] =
-  [
-    ["curveRGB", "RGB"],
-    ["curveRed", "Red"],
-    ["curveGreen", "Green"],
-    ["curveBlue", "Blue"],
-  ];
+const CURVES = [
+  ["curveRGB", "RGB"],
+  ["curveRed", "Red"],
+  ["curveGreen", "Green"],
+  ["curveBlue", "Blue"],
+] as const;
 
-const FRAMING: (keyof Edit)[] = ["crop", "cropAngle", "rotation"];
+const FRAMING = ["crop", "cropAngle", "rotation"] as const;
+
+const orReset = (value: number | null | undefined, format = signed) =>
+  value == null ? "reset" : format(value);
 
 export function describeEdit(before: Edit, after: Edit): Description {
-  if (isIdentityEdit(after)) return { icon: RotateCcw, label: "Reset all" };
-
   const changed = (key: keyof Edit) =>
     editKey({ ...before, [key]: after[key] }) !== editKey(before);
   const found: Description[] = [];
@@ -68,23 +51,32 @@ export function describeEdit(before: Edit, after: Edit): Description {
       detail: signed(after.exposure, 2),
     });
   }
+  for (const [sliders, icon] of SLIDER_GROUPS) {
+    for (const { key, label } of sliders) {
+      if (changed(key)) found.push({ icon, label, detail: signed(after[key]) });
+    }
+  }
   if (changed("temperature")) {
     found.push({
       icon: Thermometer,
       label: "Temperature",
-      detail:
-        after.temperature == null
-          ? "reset"
-          : String(Math.round(after.temperature)),
+      detail: orReset(after.temperature, (kelvin) =>
+        String(Math.round(kelvin)),
+      ),
     });
   }
-  for (const [key, icon, label] of SLIDERS) {
-    if (!changed(key)) continue;
-    const value = after[key];
+  if (changed("tint")) {
     found.push({
-      icon,
-      label,
-      detail: value == null ? "reset" : signed(value),
+      icon: Thermometer,
+      label: "Tint",
+      detail: orReset(after.tint),
+    });
+  }
+  if (changed("denoise")) {
+    found.push({
+      icon: Sparkles,
+      label: "Denoise",
+      detail: orReset(after.denoise),
     });
   }
   for (const [key, channel] of CURVES) {
@@ -100,6 +92,7 @@ export function describeEdit(before: Edit, after: Edit): Description {
   }
 
   if (found.length === 1) return found[0];
+  if (isIdentityEdit(after)) return { icon: RotateCcw, label: "Reset all" };
   return {
     icon: SlidersHorizontal,
     label: "Edit",

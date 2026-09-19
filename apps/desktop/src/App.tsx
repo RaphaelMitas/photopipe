@@ -61,6 +61,7 @@ import {
 import { type EditClipboard, pasteEdit } from "@/lib/editClipboard";
 import {
   clearHistory,
+  forgetHistoryPaths,
   type HistoryEntry,
   jumpHistory,
   redoHistory,
@@ -519,7 +520,7 @@ export default function App() {
         toast.error("Pasting settings failed", { id: "clipboard" });
         return;
       }
-      if (result.written === 0) return;
+      if (result.written.length === 0) return;
       const notes = [
         notReady > 0 ? `${notReady} not read yet` : null,
         unchanged > 0 ? `${unchanged} already matched` : null,
@@ -529,8 +530,8 @@ export default function App() {
           : null,
       ].filter(Boolean);
       toast.success(
-        `Pasted settings onto ${result.written} ${
-          result.written === 1 ? "photo" : "photos"
+        `Pasted settings onto ${result.written.length} ${
+          result.written.length === 1 ? "photo" : "photos"
         }`,
         { description: notes.length > 0 ? notes.join(" · ") : undefined },
       );
@@ -539,29 +540,43 @@ export default function App() {
   );
 
   const [historyOpen, setHistoryOpen] = useState(false);
-  const showStep = useCallback((entry: HistoryEntry | null, verb?: string) => {
-    if (!entry) return;
+  const modalOpen = newProject || shootSettings !== null || settingsOpen;
+  const [revealed, setRevealed] = useState(0);
+  // Before the write, so you are on the photo when the step lands.
+  const showPhoto = useCallback((entry: HistoryEntry) => {
     setCurrentPath((current) =>
       current && entry.paths.includes(current)
         ? current
         : (entry.paths[0] ?? current),
     );
-    if (verb) toast(`${verb} ${historyLabel(entry)}`, { id: "history" });
+    setRevealed((count) => count + 1);
   }, []);
   const undo = useCallback(() => {
     flushEdit();
-    void undoHistory().then((entry) => showStep(entry, "Undid"));
-  }, [flushEdit, showStep]);
+    void undoHistory(showPhoto).then(
+      (entry) =>
+        entry && toast(`Undid ${historyLabel(entry)}`, { id: "history" }),
+    );
+  }, [flushEdit, showPhoto]);
   const redo = useCallback(() => {
     flushEdit();
-    void redoHistory().then((entry) => showStep(entry, "Redid"));
-  }, [flushEdit, showStep]);
+    void redoHistory(showPhoto).then(
+      (entry) =>
+        entry && toast(`Redid ${historyLabel(entry)}`, { id: "history" }),
+    );
+  }, [flushEdit, showPhoto]);
   const jump = useCallback(
-    (cursor: number) => {
+    (cursor: number, entry?: HistoryEntry) => {
       flushEdit();
-      void jumpHistory(cursor).then((entry) => showStep(entry));
+      if (entry) showPhoto(entry);
+      void jumpHistory(cursor).then((steps) => {
+        if (steps === 0) return;
+        toast(`Moved ${steps} ${steps === 1 ? "step" : "steps"} in history`, {
+          id: "history",
+        });
+      });
     },
-    [flushEdit, showStep],
+    [flushEdit, showPhoto],
   );
 
   useEffect(() => {
@@ -598,12 +613,12 @@ export default function App() {
           event.preventDefault();
           pasteSettings(pasteTargets);
         }
-        if (key === "z" && !cropping) {
+        if (key === "z" && !cropping && !modalOpen) {
           event.preventDefault();
           if (event.shiftKey) redo();
           else undo();
         }
-        if (key === "y" && openShoot) {
+        if (key === "y" && openShoot && !cropping && !modalOpen) {
           event.preventDefault();
           setHistoryOpen((open) => !open);
         }
@@ -639,6 +654,7 @@ export default function App() {
     pasteSettings,
     undo,
     redo,
+    modalOpen,
   ]);
 
   const changeRatingStars = (stars: number) => {
@@ -700,7 +716,10 @@ export default function App() {
         shoot={shoots.data?.find((s) => s.name === shootSettings)}
         onSaved={(saved) => {
           setShootSettings(null);
-          if (openShoot === shootSettings) setOpenShoot(saved);
+          if (openShoot !== shootSettings) return;
+          // a rename moves the folder out from under every recorded path
+          if (saved !== openShoot) clearHistory();
+          setOpenShoot(saved);
         }}
       />
       <NewProjectDialog
@@ -745,9 +764,10 @@ export default function App() {
             showInfo={showInfo}
             onShowInfo={toggleShowInfo}
             rootPath={rootState.path}
-            onChangeRoot={() =>
-              setRootState({ kind: "picking", error: null, busy: false })
-            }
+            onChangeRoot={() => {
+              clearHistory();
+              setRootState({ kind: "picking", error: null, busy: false });
+            }}
             onSettings={() => setSettingsOpen(true)}
           />
         )}
@@ -846,9 +866,12 @@ export default function App() {
             onReveal={() =>
               reveal.mutate(selectedImages.map((image) => image.path))
             }
-            onDelete={() =>
-              trash.mutate(selectedImages.map((image) => image.path))
-            }
+            onDelete={() => {
+              const paths = selectedImages.map((image) => image.path);
+              trash.mutate(paths, {
+                onSuccess: () => void forgetHistoryPaths(paths),
+              });
+            }}
             onClear={selection.clear}
           />
           <div className="flex min-h-0 flex-1">
@@ -871,6 +894,7 @@ export default function App() {
                 onShootSettings={setShootSettings}
                 filterActive={filterActive}
                 focusPath={focusPath}
+                revealed={revealed}
                 inLoupe={inLoupe}
                 loupeImages={loupeImages}
                 loupeIndex={loupeIndex}
@@ -900,7 +924,9 @@ export default function App() {
               <EditSidebar
                 image={loupeImage}
                 edit={loupeEdit}
-                onChange={(edit) => changeEdit(loupeImage, edit, true)}
+                onChange={(edit, dragging) =>
+                  changeEdit(loupeImage, edit, dragging)
+                }
                 onCommit={flushEdit}
                 cropDraft={cropDraft}
                 onCropDraft={setCropDraft}
@@ -970,6 +996,7 @@ type ContentProps = {
   onShootSettings: (shoot: string) => void;
   filterActive: boolean;
   focusPath: string | null;
+  revealed: number;
   inLoupe: boolean;
   loupeImages: ImageFile[];
   loupeIndex: number;
@@ -1006,6 +1033,7 @@ function Content({
   onShootSettings,
   filterActive,
   focusPath,
+  revealed,
   inLoupe,
   loupeImages,
   loupeIndex,
@@ -1097,6 +1125,8 @@ function Content({
         <div className="min-h-0 flex-1">
           {view === "grid" ? (
             <ImageGrid
+              // the grid only scrolls to its focus on mount
+              key={revealed}
               images={filteredImages}
               onOpen={onOpenLoupe}
               showInfo={showInfo}
@@ -1107,6 +1137,7 @@ function Content({
             />
           ) : (
             <ImageList
+              key={revealed}
               images={filteredImages}
               selected={selection.selected}
               selectMode={selectMode}

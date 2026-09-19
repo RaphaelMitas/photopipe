@@ -381,7 +381,7 @@ describe("EditSidebar", () => {
     const { onChange, onClose } = renderEditSidebar(editWith(0.25));
     expect(screen.getByText("+0.25")).toBeVisible();
     fireEvent.click(screen.getByTestId("exposure-reset"));
-    expect(onChange).toHaveBeenCalledWith(editWith(0));
+    expect(onChange).toHaveBeenCalledWith(editWith(0), false);
     fireEvent.click(screen.getByTestId("edit-close"));
     expect(onClose).toHaveBeenCalled();
   });
@@ -398,7 +398,7 @@ describe("EditSidebar", () => {
       ],
     });
     fireEvent.click(screen.getByTestId("edit-reset-all"));
-    expect(onChange).toHaveBeenCalledWith(identityEdit);
+    expect(onChange).toHaveBeenCalledWith(identityEdit, false);
 
     cleanup();
     renderEditSidebar(identityEdit);

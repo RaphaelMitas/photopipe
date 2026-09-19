@@ -404,6 +404,9 @@ test("a slider drag is one history entry, and undo walks back to its photo", asy
   for (const dx of [10, 20, 30, 40]) {
     await page.mouse.move(box.x + box.width / 2 + dx, y);
   }
+  // Held still for longer than the keyboard debounce: nothing is saved yet.
+  await page.waitForTimeout(700);
+  await expect(page.getByTestId("history-undo")).toBeDisabled();
   await page.mouse.up();
   await expect(page.getByTestId("history-undo")).toBeEnabled();
 
@@ -428,6 +431,26 @@ test("a slider drag is one history entry, and undo walks back to its photo", asy
   await page.keyboard.press("ControlOrMeta+z");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.ARW");
   await expect(thumb).toHaveAttribute("aria-valuenow", "0");
+});
+
+test("arrow keys on a slider save their last step as one entry", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("thumb").first().click();
+
+  const thumb = page.getByTestId("exposure").getByRole("slider");
+  await thumb.focus();
+  for (let press = 0; press < 3; press++) {
+    await page.keyboard.press("ArrowRight");
+  }
+  await expect(page.getByTestId("history-undo")).toBeEnabled();
+
+  await page.getByTestId("history-toggle").click();
+  await expect(page.getByTestId("history-row-0")).toContainText(
+    "Exposure +0.15",
+  );
+  await expect(page.getByTestId("history-row-1")).toHaveCount(0);
 });
 
 test("zooming renders the visible slice and drops it again on fit", async ({

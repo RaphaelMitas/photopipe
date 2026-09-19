@@ -16,14 +16,7 @@ import {
   RotateCcw,
   X,
 } from "lucide-react";
-import {
-  createContext,
-  type ReactNode,
-  useContext,
-  useDeferredValue,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useDeferredValue, useRef, useState } from "react";
 import {
   type Edit,
   type ImageFile,
@@ -32,6 +25,13 @@ import {
   isRawFile,
 } from "@/lib/core";
 import { isIdentityCurve } from "@/lib/curve";
+import {
+  COLOR_SLIDERS,
+  PRESENCE_SLIDERS,
+  type SliderSpec,
+  signed,
+  TONE_SLIDERS,
+} from "@/lib/editSliders";
 import { useRaw9Availability, useRawDefaults, useRender } from "@/lib/queries";
 import {
   setRawDecoderVersion,
@@ -56,8 +56,6 @@ type Props = {
   edit: Edit;
   onChange: (edit: Edit) => void;
 } & CropProps;
-
-const CommitContext = createContext<() => void>(() => {});
 
 function Row({
   label,
@@ -84,7 +82,6 @@ function Row({
   onValue: (value: number) => void;
   onReset: () => void;
 }) {
-  const commit = useContext(CommitContext);
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
@@ -94,10 +91,7 @@ function Row({
           variant="ghost"
           size="icon"
           data-testid={`${testid}-reset`}
-          onClick={() => {
-            onReset();
-            commit();
-          }}
+          onClick={onReset}
           title={resetTitle}
           className="size-5 text-muted-foreground"
         >
@@ -111,7 +105,6 @@ function Row({
         step={step}
         value={[value]}
         onValueChange={([next]) => onValue(next)}
-        onValueCommit={commit}
         trackClassName={cn("data-horizontal:h-1.5", trackClassName)}
         rangeClassName="bg-transparent"
         className="**:data-[slot=slider-thumb]:h-3 **:data-[slot=slider-thumb]:w-3"
@@ -119,52 +112,6 @@ function Row({
     </div>
   );
 }
-
-type SliderSpec = {
-  key: keyof Pick<
-    Edit,
-    | "highlights"
-    | "shadows"
-    | "whites"
-    | "blacks"
-    | "texture"
-    | "clarity"
-    | "dehaze"
-    | "vibrance"
-    | "saturation"
-  >;
-  label: string;
-  short: string;
-  trackClassName?: string;
-};
-
-const TONE_SLIDERS: SliderSpec[] = [
-  { key: "highlights", label: "Highlights", short: "hl" },
-  { key: "shadows", label: "Shadows", short: "sh" },
-  { key: "whites", label: "Whites", short: "wh" },
-  { key: "blacks", label: "Blacks", short: "bl" },
-];
-
-const PRESENCE_SLIDERS: SliderSpec[] = [
-  { key: "texture", label: "Texture", short: "tex" },
-  { key: "clarity", label: "Clarity", short: "cl" },
-  { key: "dehaze", label: "Dehaze", short: "dh" },
-];
-
-const COLOR_SLIDERS: SliderSpec[] = [
-  {
-    key: "vibrance",
-    label: "Vibrance",
-    short: "vib",
-    trackClassName: "bg-gradient-to-r from-zinc-500/60 to-teal-400/70",
-  },
-  {
-    key: "saturation",
-    label: "Saturation",
-    short: "sat",
-    trackClassName: "bg-gradient-to-r from-zinc-500/60 to-orange-400/70",
-  },
-];
 
 function SliderRows({
   sliders,
@@ -192,9 +139,6 @@ function SliderRows({
     />
   ));
 }
-
-const signed = (value: number, digits = 0) =>
-  `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
 
 const sliderSummary = (edit: Edit, sliders: SliderSpec[]): string[] =>
   sliders
@@ -300,7 +244,6 @@ export function EditPanel({
   onApplyCrop,
   onCancelCrop,
 }: Props) {
-  const commit = useContext(CommitContext);
   const raw = isRawFile(image);
   const rawDefaults = useRawDefaults(raw ? image : undefined);
   // deferred like the Loupe's request, so both resolve to the same query
@@ -352,12 +295,7 @@ export function EditPanel({
         )}
       >
         <Group id="tone" title="Tone" summary={toneSummary(edit)}>
-          <CurveEditor
-            edit={edit}
-            imageSrc={render.data}
-            onChange={set}
-            onCommit={commit}
-          />
+          <CurveEditor edit={edit} imageSrc={render.data} onChange={set} />
           <Row
             label="Exposure"
             value={edit.exposure}
@@ -539,7 +477,8 @@ export function EditSidebar({
   onCopySettings,
   onPasteSettings,
   onClose,
-}: Props & {
+}: Omit<Props, "onChange"> & {
+  onChange: (edit: Edit, dragging: boolean) => void;
   onCommit: () => void;
   canPaste: boolean;
   onCopySettings: () => void;
@@ -548,9 +487,25 @@ export function EditSidebar({
 }) {
   const cropping = cropDraft !== null;
   const quickSwitch = useRawDecoderQuickSwitch();
+  // A held pointer is a drag: its value is saved once, when the pointer lets go.
+  const pointerDown = useRef(false);
+  const hold = () => {
+    pointerDown.current = true;
+    const release = () => {
+      pointerDown.current = false;
+      onCommit();
+      window.removeEventListener("pointerup", release);
+      window.removeEventListener("pointercancel", release);
+    };
+    // on window: a pointer that went down here can come up anywhere
+    window.addEventListener("pointerup", release);
+    window.addEventListener("pointercancel", release);
+  };
+  const change = (next: Edit) => onChange(next, pointerDown.current);
   return (
     <div
       data-testid="edit-sidebar"
+      onPointerDownCapture={hold}
       className="flex w-64 shrink-0 flex-col border-border border-l bg-sidebar"
     >
       <div className="flex items-center gap-1 border-border border-b px-3 py-2">
@@ -585,10 +540,7 @@ export function EditSidebar({
           variant="ghost"
           size="sm"
           data-testid="edit-reset-all"
-          onClick={() => {
-            onChange({ ...identityEdit });
-            onCommit();
-          }}
+          onClick={() => change({ ...identityEdit })}
           disabled={isIdentityEdit(edit) || cropping}
           title="Reset all edits"
           className="h-6 px-1.5 text-[10px] text-muted-foreground"
@@ -610,18 +562,16 @@ export function EditSidebar({
       </div>
       <div className="flex-1 overflow-y-auto p-3">
         {image.enriched ? (
-          <CommitContext value={onCommit}>
-            <EditPanel
-              image={image}
-              edit={edit}
-              onChange={onChange}
-              cropDraft={cropDraft}
-              onCropDraft={onCropDraft}
-              onEnterCrop={onEnterCrop}
-              onApplyCrop={onApplyCrop}
-              onCancelCrop={onCancelCrop}
-            />
-          </CommitContext>
+          <EditPanel
+            image={image}
+            edit={edit}
+            onChange={change}
+            cropDraft={cropDraft}
+            onCropDraft={onCropDraft}
+            onEnterCrop={onEnterCrop}
+            onApplyCrop={onApplyCrop}
+            onCancelCrop={onCancelCrop}
+          />
         ) : (
           <p
             data-testid="edit-not-indexed"

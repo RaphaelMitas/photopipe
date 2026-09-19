@@ -14,6 +14,7 @@ import {
   type Edit,
   type ExportFormat,
   editKey,
+  fileName,
   type ImageFile,
   isRawFile,
   normalizeImage,
@@ -285,7 +286,9 @@ export function useSetRating(shoot: string | null) {
   return useMutation({
     mutationKey: SET_RATING_KEY,
     mutationFn: ({ path, rating }: { path: string; rating: number }) =>
-      coreRequest<SetRatingResult>("setRating", { shoot, path, rating }),
+      writeInOrder(path, () =>
+        coreRequest<SetRatingResult>("setRating", { shoot, path, rating }),
+      ),
     onMutate: async ({ path, rating }) => {
       await queryClient.cancelQueries({ queryKey: ["images", shoot] });
       const previous = queryClient.getQueryData<ImageFile[]>(["images", shoot]);
@@ -300,7 +303,7 @@ export function useSetRating(shoot: string | null) {
       if (context?.previous) {
         queryClient.setQueryData(["images", shoot], context.previous);
       }
-      toast.error(`Rating ${vars.path.split("/").pop()} failed`, {
+      toast.error(`Rating ${fileName(vars.path)} failed`, {
         description: String(error),
       });
     },
@@ -329,7 +332,7 @@ function patchEdits(
   );
 }
 
-export function currentEdits(
+function currentEdits(
   queryClient: QueryClient,
   shoot: string | null,
   paths: string[],
@@ -377,7 +380,7 @@ export function useSetEdit(shoot: string | null) {
     },
     onError: (error, vars, context) => {
       if (context?.previous) patchEdits(queryClient, shoot, context.previous);
-      toast.error(`Saving edits for ${vars.path.split("/").pop()} failed`, {
+      toast.error(`Saving edits for ${fileName(vars.path)} failed`, {
         description: String(error),
       });
     },
@@ -390,7 +393,7 @@ export function useSetEdit(shoot: string | null) {
 }
 
 export type PasteResult = {
-  written: number;
+  written: string[];
   failed: string[];
   overtaken: number;
 };
@@ -406,6 +409,7 @@ export function usePasteEdits(shoot: string | null) {
     mutationKey: SET_EDIT_KEY,
     mutationFn: async (writes: EditWrite[]): Promise<PasteResult> => {
       const target = shoot;
+      const written: string[] = [];
       const failed: string[] = [];
       let overtaken = 0;
       let next = 0;
@@ -422,6 +426,7 @@ export function usePasteEdits(shoot: string | null) {
           }
           try {
             await writeEdit(target, write);
+            written.push(write.path);
           } catch {
             failed.push(write.path);
           }
@@ -433,11 +438,7 @@ export function usePasteEdits(shoot: string | null) {
           worker,
         ),
       );
-      return {
-        written: writes.length - failed.length - overtaken,
-        failed,
-        overtaken,
-      };
+      return { written, failed, overtaken };
     },
     // A long paste outlives its shoot, and react-query hands a running
     // mutation the latest options — so the shoot travels in the context.

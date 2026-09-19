@@ -3,9 +3,8 @@ import { ClipboardPaste, Star } from "lucide-react";
 import { useCallback, useRef } from "react";
 import { type Edit, editKey, type ImageFile } from "./core";
 import { describeEdit } from "./describeEdit";
-import { pushHistory } from "./history";
+import { type HistoryAction, historyEpoch, pushHistory } from "./history";
 import {
-  currentEdits,
   type EditWrite,
   type PasteResult,
   usePasteEdits,
@@ -22,65 +21,97 @@ export function useRecordedWrites(shoot: string | null) {
   const live = useRef({ setRating, setEdit, pasteEdits });
   live.current = { setRating, setEdit, pasteEdits };
 
+  const cached = useCallback(
+    (path: string) =>
+      queryClient
+        .getQueryData<ImageFile[]>(["images", shoot])
+        ?.find((image) => image.path === path),
+    [queryClient, shoot],
+  );
+
   const rate = useCallback(
     (path: string, rating: number) => {
-      const before = queryClient
-        .getQueryData<ImageFile[]>(["images", shoot])
-        ?.find((image) => image.path === path)?.rating;
-      if (before === undefined || before === rating) return;
+      const image = cached(path);
+      if (!image || image.rating === rating) return;
       const write = (value: number) =>
         live.current.setRating.mutateAsync({ path, rating: value });
-      void write(rating).catch(() => {});
-      pushHistory({
+      record(write, image.rating, rating, {
         icon: Star,
         label: "Rating",
         detail: rating === 0 ? "cleared" : "★".repeat(rating),
         paths: [path],
-        undo: () => write(before),
-        redo: () => write(rating),
+        // before the core has read the file, the old rating is a placeholder
+        undoable: image.enriched,
       });
     },
-    [queryClient, shoot],
+    [cached],
   );
 
   const writeEdit = useCallback(
     (path: string, edit: Edit) => {
-      const before = currentEdits(queryClient, shoot, [path]).get(path);
+      const before = cached(path)?.edit;
       if (!before || editKey(before) === editKey(edit)) return;
       const write = (value: Edit) =>
         live.current.setEdit.mutateAsync({ path, edit: value });
-      void write(edit).catch(() => {});
-      pushHistory({
+      record(write, before, edit, {
         ...describeEdit(before, edit),
         paths: [path],
-        undo: () => write(before),
-        redo: () => write(edit),
+        undoable: true,
       });
     },
-    [queryClient, shoot],
+    [cached],
   );
 
   const paste = useCallback(
     async (writes: EditWrite[]): Promise<PasteResult> => {
-      const paths = writes.map((write) => write.path);
-      const before = currentEdits(queryClient, shoot, paths);
+      const since = historyEpoch();
+      const before = new Map(
+        writes.map(({ path }) => [path, cached(path)?.edit]),
+      );
       const result = await live.current.pasteEdits.mutateAsync(writes);
-      if (result.written === 0) return result;
-      const previous = writes.flatMap(({ path }) => {
+      // Photos the batch skipped or failed on never took the paste.
+      const written = new Set(result.written);
+      const pasted = writes.filter((write) => written.has(write.path));
+      const previous = pasted.flatMap(({ path }) => {
         const edit = before.get(path);
         return edit ? [{ path, edit }] : [];
       });
-      pushHistory({
-        icon: ClipboardPaste,
-        label: "Paste settings",
-        paths,
-        undo: () => live.current.pasteEdits.mutateAsync(previous),
-        redo: () => live.current.pasteEdits.mutateAsync(writes),
-      });
+      if (previous.length === 0) return result;
+      void pushHistory(
+        {
+          icon: ClipboardPaste,
+          label: "Paste settings",
+          paths: previous.map((write) => write.path),
+          undo: () => live.current.pasteEdits.mutateAsync(previous),
+          redo: () => live.current.pasteEdits.mutateAsync(pasted),
+        },
+        since,
+      );
       return result;
     },
-    [queryClient, shoot],
+    [cached],
   );
 
   return { rate, writeEdit, paste };
+}
+
+function record<T>(
+  write: (value: T) => Promise<unknown>,
+  before: T,
+  after: T,
+  {
+    undoable,
+    ...action
+  }: Omit<HistoryAction, "undo" | "redo"> & {
+    undoable: boolean;
+  },
+) {
+  // the mutation's onError already rolls back and toasts
+  void write(after).catch(() => {});
+  if (!undoable) return;
+  void pushHistory({
+    ...action,
+    undo: () => write(before),
+    redo: () => write(after),
+  });
 }

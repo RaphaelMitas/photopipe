@@ -119,7 +119,7 @@ export function HistoryControls({
   disabled: boolean;
   onUndo: () => void;
   onRedo: () => void;
-  onJump: (cursor: number) => void;
+  onJump: (cursor: number, entry?: HistoryEntry) => void;
 }) {
   const { entries, cursor } = useHistory();
   const [scope, setScope] = useState<Scope>("all");
@@ -168,6 +168,7 @@ export function HistoryControls({
             size="icon-sm"
             variant="secondary"
             data-testid="history-toggle"
+            disabled={disabled}
             title="Show history (⌘Y)"
             className={cn("size-7", open && "text-primary")}
           >
@@ -205,7 +206,7 @@ export function HistoryControls({
                 current={index === cursor - 1}
                 undone={index >= cursor}
                 testid={`history-row-${index}`}
-                onClick={() => onJump(index + 1)}
+                onClick={() => onJump(index + 1, entry)}
               />
             ))}
             {scope === "all" && (
