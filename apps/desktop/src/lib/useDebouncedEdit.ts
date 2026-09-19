@@ -34,13 +34,14 @@ export function useDebouncedEdit(
     if (next) commitRef.current(next.path, next.edit);
   }, [cancel]);
 
+  // A drag holds its value until the pointer lets go and the caller flushes.
   const scrub = useCallback(
-    (path: string, edit: Edit) => {
+    (path: string, edit: Edit, dragging = false) => {
       if (pending.current && pending.current.path !== path) flush();
       setDraft({ path, edit });
       pending.current = { path, edit };
       if (timer.current !== null) clearTimeout(timer.current);
-      timer.current = window.setTimeout(flush, delayMs);
+      timer.current = dragging ? null : window.setTimeout(flush, delayMs);
     },
     [flush, delayMs],
   );

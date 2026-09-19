@@ -108,9 +108,10 @@ type Props = {
   edit: Edit;
   imageSrc?: string;
   onChange: (partial: Partial<Edit>) => void;
+  onCommit: () => void;
 };
 
-export function CurveEditor({ edit, imageSrc, onChange }: Props) {
+export function CurveEditor({ edit, imageSrc, onChange, onCommit }: Props) {
   const [channel, setChannel] = useState<CurveChannel>("rgb");
   const svgRef = useRef<SVGSVGElement | null>(null);
   const dragIndex = useRef<number | null>(null);
@@ -162,6 +163,7 @@ export function CurveEditor({ edit, imageSrc, onChange }: Props) {
 
   const onPointerUp = () => {
     dragIndex.current = null;
+    onCommit();
   };
 
   const onDoubleClick = (event: React.MouseEvent) => {
@@ -178,6 +180,7 @@ export function CurveEditor({ edit, imageSrc, onChange }: Props) {
     if (index === -1) return;
     dragIndex.current = null;
     emit(points.filter((_, i) => i !== index));
+    onCommit();
   };
 
   return (
@@ -205,7 +208,10 @@ export function CurveEditor({ edit, imageSrc, onChange }: Props) {
           variant="ghost"
           size="icon"
           data-testid="curve-reset"
-          onClick={() => onChange({ [active.key]: [] })}
+          onClick={() => {
+            onChange({ [active.key]: [] });
+            onCommit();
+          }}
           disabled={isIdentityCurve(edit[active.key])}
           title="Reset curve"
           className="size-6 text-muted-foreground"

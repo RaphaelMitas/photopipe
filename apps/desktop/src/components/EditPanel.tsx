@@ -16,7 +16,14 @@ import {
   RotateCcw,
   X,
 } from "lucide-react";
-import { type ReactNode, useDeferredValue, useRef, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useDeferredValue,
+  useRef,
+  useState,
+} from "react";
 import {
   type Edit,
   type ImageFile,
@@ -50,6 +57,8 @@ type Props = {
   onChange: (edit: Edit) => void;
 } & CropProps;
 
+const CommitContext = createContext<() => void>(() => {});
+
 function Row({
   label,
   value,
@@ -75,6 +84,7 @@ function Row({
   onValue: (value: number) => void;
   onReset: () => void;
 }) {
+  const commit = useContext(CommitContext);
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
@@ -84,7 +94,10 @@ function Row({
           variant="ghost"
           size="icon"
           data-testid={`${testid}-reset`}
-          onClick={onReset}
+          onClick={() => {
+            onReset();
+            commit();
+          }}
           title={resetTitle}
           className="size-5 text-muted-foreground"
         >
@@ -98,6 +111,7 @@ function Row({
         step={step}
         value={[value]}
         onValueChange={([next]) => onValue(next)}
+        onValueCommit={commit}
         trackClassName={cn("data-horizontal:h-1.5", trackClassName)}
         rangeClassName="bg-transparent"
         className="**:data-[slot=slider-thumb]:h-3 **:data-[slot=slider-thumb]:w-3"
@@ -286,6 +300,7 @@ export function EditPanel({
   onApplyCrop,
   onCancelCrop,
 }: Props) {
+  const commit = useContext(CommitContext);
   const raw = isRawFile(image);
   const rawDefaults = useRawDefaults(raw ? image : undefined);
   // deferred like the Loupe's request, so both resolve to the same query
@@ -337,7 +352,12 @@ export function EditPanel({
         )}
       >
         <Group id="tone" title="Tone" summary={toneSummary(edit)}>
-          <CurveEditor edit={edit} imageSrc={render.data} onChange={set} />
+          <CurveEditor
+            edit={edit}
+            imageSrc={render.data}
+            onChange={set}
+            onCommit={commit}
+          />
           <Row
             label="Exposure"
             value={edit.exposure}
@@ -509,6 +529,7 @@ export function EditSidebar({
   image,
   edit,
   onChange,
+  onCommit,
   cropDraft,
   onCropDraft,
   onEnterCrop,
@@ -519,6 +540,7 @@ export function EditSidebar({
   onPasteSettings,
   onClose,
 }: Props & {
+  onCommit: () => void;
   canPaste: boolean;
   onCopySettings: () => void;
   onPasteSettings: () => void;
@@ -563,7 +585,10 @@ export function EditSidebar({
           variant="ghost"
           size="sm"
           data-testid="edit-reset-all"
-          onClick={() => onChange({ ...identityEdit })}
+          onClick={() => {
+            onChange({ ...identityEdit });
+            onCommit();
+          }}
           disabled={isIdentityEdit(edit) || cropping}
           title="Reset all edits"
           className="h-6 px-1.5 text-[10px] text-muted-foreground"
@@ -585,16 +610,18 @@ export function EditSidebar({
       </div>
       <div className="flex-1 overflow-y-auto p-3">
         {image.enriched ? (
-          <EditPanel
-            image={image}
-            edit={edit}
-            onChange={onChange}
-            cropDraft={cropDraft}
-            onCropDraft={onCropDraft}
-            onEnterCrop={onEnterCrop}
-            onApplyCrop={onApplyCrop}
-            onCancelCrop={onCancelCrop}
-          />
+          <CommitContext value={onCommit}>
+            <EditPanel
+              image={image}
+              edit={edit}
+              onChange={onChange}
+              cropDraft={cropDraft}
+              onCropDraft={onCropDraft}
+              onEnterCrop={onEnterCrop}
+              onApplyCrop={onApplyCrop}
+              onCancelCrop={onCancelCrop}
+            />
+          </CommitContext>
         ) : (
           <p
             data-testid="edit-not-indexed"

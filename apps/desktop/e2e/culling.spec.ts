@@ -348,7 +348,7 @@ test("exposure is per photo and survives leaving and returning", async ({
   ).toHaveText("+0.5 EV");
 });
 
-test("a look copied off one photo lands on a selection, and undo takes it back", async ({
+test("a look copied off one photo lands on a selection, and history takes it back", async ({
   page,
 }) => {
   await openZell(page);
@@ -374,10 +374,60 @@ test("a look copied off one photo lands on a selection, and undo takes it back",
     ).toHaveText("+0.5 EV");
   }
 
-  await page.getByRole("button", { name: "Undo" }).click();
+  const pasted = page
+    .locator("[data-path='DSC00832.ARW']")
+    .getByTestId("thumb-edited");
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(pasted).toHaveCount(0);
+
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect(pasted).toHaveText("+0.5 EV");
+
+  await page.getByTestId("history-toggle").click();
+  await page.getByTestId("history-row-origin").click();
+  await expect(pasted).toHaveCount(0);
+});
+
+test("a slider drag is one history entry, and undo walks back to its photo", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("thumb").first().click();
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.ARW");
+
+  const thumb = page.getByTestId("exposure").getByRole("slider");
+  const box = await thumb.boundingBox();
+  if (!box) throw new Error("no exposure slider");
+  const y = box.y + box.height / 2;
+  await page.mouse.move(box.x + box.width / 2, y);
+  await page.mouse.down();
+  for (const dx of [10, 20, 30, 40]) {
+    await page.mouse.move(box.x + box.width / 2 + dx, y);
+  }
+  await page.mouse.up();
+  await expect(page.getByTestId("history-undo")).toBeEnabled();
+
+  await page
+    .getByTestId("filmstrip")
+    .locator("[data-path='abends/DSC00943.ARW']")
+    .click();
+  await page.getByTestId("star-3").click();
+
+  await page.getByTestId("history-toggle").click();
   await expect(
-    page.locator("[data-path='DSC00832.ARW']").getByTestId("thumb-edited"),
-  ).toHaveCount(0);
+    page.getByTestId("history-popover").getByRole("listitem"),
+  ).toHaveCount(3);
+  await expect(page.getByTestId("history-row-0")).toContainText("Exposure");
+  await expect(page.getByTestId("history-row-1")).toContainText("Rating ★★★");
+  await page.keyboard.press("Escape");
+
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(page.getByTestId("loupe-name")).toHaveText(
+    "abends/DSC00943.ARW",
+  );
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.ARW");
+  await expect(thumb).toHaveAttribute("aria-valuenow", "0");
 });
 
 test("zooming renders the visible slice and drops it again on fit", async ({

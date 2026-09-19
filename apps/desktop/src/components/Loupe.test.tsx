@@ -288,6 +288,7 @@ describe("EditSidebar", () => {
             image={makeImages()[1]}
             edit={edit}
             onChange={onChange}
+            onCommit={vi.fn()}
             cropDraft={cropDraft}
             onCropDraft={onCropDraft}
             onEnterCrop={onEnterCrop}

@@ -329,7 +329,7 @@ function patchEdits(
   );
 }
 
-function currentEdits(
+export function currentEdits(
   queryClient: QueryClient,
   shoot: string | null,
   paths: string[],

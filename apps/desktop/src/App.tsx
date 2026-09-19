@@ -30,6 +30,7 @@ import {
   exportLabel,
 } from "@/components/ExportDrawer";
 import type { FilmstripMode } from "@/components/Filmstrip";
+import { HistoryControls, historyLabel } from "@/components/HistoryControls";
 import { ImageGrid } from "@/components/ImageGrid";
 import { ImageList } from "@/components/ImageList";
 import { IndexingStatus } from "@/components/IndexingStatus";
@@ -50,6 +51,7 @@ import {
   coreRequest,
   type Edit,
   editKey,
+  fileName,
   type ImageFile,
   identityEdit,
   isIdentityEdit,
@@ -57,6 +59,13 @@ import {
   type SetRootResult,
 } from "@/lib/core";
 import { type EditClipboard, pasteEdit } from "@/lib/editClipboard";
+import {
+  clearHistory,
+  type HistoryEntry,
+  jumpHistory,
+  redoHistory,
+  undoHistory,
+} from "@/lib/history";
 import { betterThan, scoreRanks } from "@/lib/instinct";
 import { heldOrder } from "@/lib/loupeWalk";
 import {
@@ -66,17 +75,15 @@ import {
   useExportJobs,
   useImages,
   useLibrarySync,
-  usePasteEdits,
   useReveal,
   useScoring,
-  useSetEdit,
-  useSetRating,
   useShoots,
   useTrash,
 } from "@/lib/queries";
 import { useSelection } from "@/lib/selection";
 import { browserOrder, type SortKey } from "@/lib/sort";
 import { useDebouncedEdit } from "@/lib/useDebouncedEdit";
+import { useRecordedWrites } from "@/lib/useRecordedWrites";
 import { useUpdater } from "@/lib/useUpdater";
 
 const ROOT_KEY = "photopipe.root";
@@ -94,8 +101,6 @@ const isTyping = (target: EventTarget | null) =>
   (target.isContentEditable ||
     target.tagName === "INPUT" ||
     target.tagName === "TEXTAREA");
-
-const fileName = (path: string) => path.split("/").pop() ?? path;
 
 type RootState =
   | { kind: "picking"; error: string | null; busy: boolean }
@@ -200,9 +205,7 @@ export default function App() {
     openShoot,
     ready && autoScore,
   );
-  const setRating = useSetRating(openShoot);
-  const setEdit = useSetEdit(openShoot);
-  const pasteEdits = usePasteEdits(openShoot);
+  const writes = useRecordedWrites(openShoot);
   const reveal = useReveal();
   const trash = useTrash(openShoot);
   const exports = useExportJobs();
@@ -255,10 +258,7 @@ export default function App() {
     scrub: scrubEdit,
     flush: flushEdit,
     cancel: cancelEdit,
-  } = useDebouncedEdit(
-    (path, edit) => setEdit.mutate({ path, edit }),
-    EDIT_COMMIT_MS,
-  );
+  } = useDebouncedEdit(writes.writeEdit, EDIT_COMMIT_MS);
   // Before the core has read the file, an edit is relative to a blank
   // placeholder and would erase the real one.
   const readable = useCallback((image: ImageFile) => {
@@ -271,9 +271,9 @@ export default function App() {
       editDraft?.path === image.path ? editDraft.edit : image.edit,
     [editDraft],
   );
-  const changeEdit = (image: ImageFile, edit: Edit) => {
+  const changeEdit = (image: ImageFile, edit: Edit, dragging = false) => {
     if (!readable(image)) return;
-    scrubEdit(image.path, edit);
+    scrubEdit(image.path, edit, dragging);
   };
 
   const installBlocked = exports.running
@@ -474,30 +474,6 @@ export default function App() {
     [editOf, readable],
   );
 
-  // Both change identity every render; the shortcut effect reads them as refs.
-  const pasteMutation = useRef(pasteEdits);
-  pasteMutation.current = pasteEdits;
-  const liveImages = useRef(allImages);
-  liveImages.current = allImages;
-
-  // Skip photos edited or pasted over since: that value is newer than the undo.
-  const undoPaste = useCallback(
-    (pasted: EditWrite[], previous: EditWrite[]) => {
-      const restore = previous.filter((write, index) => {
-        const live = liveImages.current.find(
-          (image) => image.path === write.path,
-        )?.edit;
-        return live && editKey(live) === editKey(pasted[index].edit);
-      });
-      if (restore.length === 0) {
-        toast("Those photos have changed since", { id: "clipboard" });
-        return;
-      }
-      pasteMutation.current.mutate(restore);
-    },
-    [],
-  );
-
   const pasteSettings = useCallback(
     async (targets: ImageFile[]) => {
       if (!clipboard) {
@@ -509,8 +485,7 @@ export default function App() {
         return;
       }
       const ready = targets.filter((image) => image.enriched);
-      const writes: EditWrite[] = [];
-      const previous: EditWrite[] = [];
+      const pasted: EditWrite[] = [];
       let keptWhiteBalance = 0;
       for (const image of ready) {
         const current = editOf(image);
@@ -523,13 +498,11 @@ export default function App() {
         ) {
           keptWhiteBalance += 1;
         }
-        writes.push({ path: image.path, edit: next });
-        // Undo restores what is on disk, not the draft the paste discards.
-        previous.push({ path: image.path, edit: image.edit });
+        pasted.push({ path: image.path, edit: next });
       }
       const notReady = targets.length - ready.length;
-      const unchanged = ready.length - writes.length;
-      if (writes.length === 0) {
+      const unchanged = ready.length - pasted.length;
+      if (pasted.length === 0) {
         toast(
           ready.length === 0
             ? "Still reading those photos' existing edits"
@@ -538,12 +511,10 @@ export default function App() {
         );
         return;
       }
-      if (editDraft && writes.some((write) => write.path === editDraft.path)) {
+      if (editDraft && pasted.some((write) => write.path === editDraft.path)) {
         cancelEdit();
       }
-      const result = await pasteMutation.current
-        .mutateAsync(writes)
-        .catch(() => null);
+      const result = await writes.paste(pasted).catch(() => null);
       if (!result) {
         toast.error("Pasting settings failed", { id: "clipboard" });
         return;
@@ -561,13 +532,36 @@ export default function App() {
         `Pasted settings onto ${result.written} ${
           result.written === 1 ? "photo" : "photos"
         }`,
-        {
-          description: notes.length > 0 ? notes.join(" · ") : undefined,
-          action: { label: "Undo", onClick: () => undoPaste(writes, previous) },
-        },
+        { description: notes.length > 0 ? notes.join(" · ") : undefined },
       );
     },
-    [clipboard, editDraft, editOf, cancelEdit, undoPaste],
+    [clipboard, editDraft, editOf, cancelEdit, writes.paste],
+  );
+
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const showStep = useCallback((entry: HistoryEntry | null, verb?: string) => {
+    if (!entry) return;
+    setCurrentPath((current) =>
+      current && entry.paths.includes(current)
+        ? current
+        : (entry.paths[0] ?? current),
+    );
+    if (verb) toast(`${verb} ${historyLabel(entry)}`, { id: "history" });
+  }, []);
+  const undo = useCallback(() => {
+    flushEdit();
+    void undoHistory().then((entry) => showStep(entry, "Undid"));
+  }, [flushEdit, showStep]);
+  const redo = useCallback(() => {
+    flushEdit();
+    void redoHistory().then((entry) => showStep(entry, "Redid"));
+  }, [flushEdit, showStep]);
+  const jump = useCallback(
+    (cursor: number) => {
+      flushEdit();
+      void jumpHistory(cursor).then((entry) => showStep(entry));
+    },
+    [flushEdit, showStep],
   );
 
   useEffect(() => {
@@ -592,7 +586,7 @@ export default function App() {
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
-      if (isTyping(event.target)) return;
+      if (isTyping(event.target) || event.defaultPrevented) return;
       if (event.metaKey || event.ctrlKey) {
         // Case-insensitive, so the Lightroom pair ⌘⇧C/⌘⇧V lands here too.
         const key = event.key.toLowerCase();
@@ -603,6 +597,15 @@ export default function App() {
         if (key === "v" && !cropping) {
           event.preventDefault();
           pasteSettings(pasteTargets);
+        }
+        if (key === "z" && !cropping) {
+          event.preventDefault();
+          if (event.shiftKey) redo();
+          else undo();
+        }
+        if (key === "y" && openShoot) {
+          event.preventDefault();
+          setHistoryOpen((open) => !open);
         }
         if (event.key === "a" && !loupeOpen) {
           event.preventDefault();
@@ -634,6 +637,8 @@ export default function App() {
     copySettings,
     pasteTargets,
     pasteSettings,
+    undo,
+    redo,
   ]);
 
   const changeRatingStars = (stars: number) => {
@@ -643,6 +648,7 @@ export default function App() {
 
   const enterShoot = (shoot: string | null) => {
     flushEdit();
+    clearHistory();
     setOpenShoot(shoot);
     setCurrentPath(null);
     setLoupeOpen(false);
@@ -720,7 +726,7 @@ export default function App() {
             onRatingOp={setRatingOp}
             ratingStars={ratingStars}
             onRatingStars={changeRatingStars}
-            onRate={(path, rating) => setRating.mutate({ path, rating })}
+            onRate={writes.rate}
             onBackToGrid={() => (cropping ? cancelCrop() : setLoupeOpen(false))}
           />
         ) : (
@@ -787,6 +793,18 @@ export default function App() {
                   </>
                 )}
               </Button>
+            )}
+            {openShoot && (
+              <HistoryControls
+                shoot={openShoot}
+                currentPath={currentPath}
+                open={historyOpen}
+                onOpenChange={setHistoryOpen}
+                disabled={cropping}
+                onUndo={undo}
+                onRedo={redo}
+                onJump={jump}
+              />
             )}
             {inLoupe && (
               <Button
@@ -869,7 +887,7 @@ export default function App() {
                   setCurrentPath(loupeImages[next]?.path ?? null)
                 }
                 onCloseLoupe={() => setLoupeOpen(false)}
-                onRate={(path, rating) => setRating.mutate({ path, rating })}
+                onRate={writes.rate}
                 onOpenLoupe={(index) => {
                   // A new visit walks the browser's order as it stands now.
                   held.current = NO_HELD;
@@ -882,7 +900,8 @@ export default function App() {
               <EditSidebar
                 image={loupeImage}
                 edit={loupeEdit}
-                onChange={(edit) => changeEdit(loupeImage, edit)}
+                onChange={(edit) => changeEdit(loupeImage, edit, true)}
+                onCommit={flushEdit}
                 cropDraft={cropDraft}
                 onCropDraft={setCropDraft}
                 onEnterCrop={() =>

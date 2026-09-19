@@ -105,7 +105,7 @@ normalized against its own turned frame and means something different on a
 photo of another shape. White balance is Kelvin on raw and incremental
 elsewhere, so it only crosses between photos of the same kind and the toast
 says when it was left behind. There is no scope dialog: paste takes
-everything it can, every time, and the toast offers Undo.
+everything it can, every time, and ⌘Z takes it back.
 
 ## Activity, not toasts
 

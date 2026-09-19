@@ -177,6 +177,8 @@ export function Loupe({
     if (!image) return;
     const handler = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
+      // an open popover has already spent this Escape on closing itself
+      if (event.defaultPrevented) return;
       const target = event.target as HTMLElement | null;
       if (
         event.key.startsWith("Arrow") &&
