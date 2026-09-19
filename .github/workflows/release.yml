@@ -505,20 +505,9 @@ jobs:
           APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
           APP_VERSION: ${{ needs.check.outputs.version }}
           BUILD_NUMBER: ${{ needs.mas.outputs.build }}
-          # Secrets, not files: the repo is public and this is a phone number.
-          REVIEW_FIRST_NAME: ${{ secrets.REVIEW_FIRST_NAME }}
-          REVIEW_LAST_NAME: ${{ secrets.REVIEW_LAST_NAME }}
-          REVIEW_PHONE: ${{ secrets.REVIEW_PHONE }}
-          REVIEW_EMAIL: ${{ secrets.REVIEW_EMAIL }}
           # sync_screenshots sits behind this switch, and deliver only checks it once it reaches the screenshots.
           FASTLANE_ENABLE_BETA_DELIVER_SYNC_SCREENSHOTS: "true"
         run: |
-          for required in REVIEW_FIRST_NAME REVIEW_LAST_NAME REVIEW_PHONE REVIEW_EMAIL; do
-            if [ -z "${!required}" ]; then
-              echo "::error::$required is not set. Apple needs a review contact; see docs/engineering.md."
-              exit 1
-            fi
-          done
           set -o pipefail
           for attempt in $(seq 1 12); do
             if bundle exec fastlane mac review 2>&1 | tee deliver.log; then

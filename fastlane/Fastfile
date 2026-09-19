@@ -24,14 +24,6 @@ platform :mac do
       app_version: ENV.fetch("APP_VERSION"),
       build_number: ENV.fetch("BUILD_NUMBER"),
       skip_binary_upload: true,
-      # deliver crashes with "No data" on a first version that has no review contact, so it creates one
-      app_review_information: {
-        first_name: ENV.fetch("REVIEW_FIRST_NAME"),
-        last_name: ENV.fetch("REVIEW_LAST_NAME"),
-        phone_number: ENV.fetch("REVIEW_PHONE"),
-        email_address: ENV.fetch("REVIEW_EMAIL"),
-        notes: "Photopipe opens on a folder picker. Choose any folder that holds a few JPEG or raw photos. There is no account and no sign-in."
-      },
       # overwrite re-uploads before App Store Connect has indexed the last set and doubles every shot
       sync_screenshots: true,
       submit_for_review: true,
