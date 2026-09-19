@@ -473,9 +473,8 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Not the tag: the listing and the lanes are not part of the binary, so a retry picks up a fix to them.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ needs.check.outputs.ref }}
 
       - name: Refuse to send a placeholder listing to review
         run: |
