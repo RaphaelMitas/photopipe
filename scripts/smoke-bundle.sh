@@ -61,6 +61,8 @@ print("\n".join(sorted(plistlib.loads(raw))) if raw else "")'
   fi
   echo "  entitlements: app sandboxed with bookmarks, core inherits"
 
+  /usr/libexec/PlistBuddy -c "Print :LSApplicationCategoryType" "$APP/Contents/Info.plist" >/dev/null 2>&1 \
+    || fail "Info.plist has no LSApplicationCategoryType; App Store Connect refuses the upload without one"
   [ -f "$APP/Contents/embedded.provisionprofile" ] || fail "no embedded.provisionprofile; the identity entitlements need one"
 
   EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP/Contents/Info.plist")

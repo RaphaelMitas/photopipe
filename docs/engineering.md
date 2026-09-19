@@ -126,7 +126,10 @@ and needs six more secrets: `MAS_CERTIFICATE` (base64 .p12 holding both an
 Apple Distribution and a Mac Installer Distribution identity),
 `MAS_CERTIFICATE_PASSWORD`, `MAS_PROVISIONING_PROFILE` (base64 Mac App Store
 profile), `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID` and
-`APP_STORE_CONNECT_KEY` (the .p8 contents). Without `MAS_CERTIFICATE` the job
+`APP_STORE_CONNECT_KEY` (the .p8 contents). Make the two certificates from
+separate signing requests: when they share a private key, Keychain Access
+says "Export 2 items" and writes one, and the pair has to be merged with
+`openssl pkcs12 -export` instead. Without `MAS_CERTIFICATE` the job
 is skipped and the release still succeeds. The job builds
 
 ```bash
