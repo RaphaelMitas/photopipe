@@ -514,7 +514,7 @@ jobs:
               exit 0
             fi
             # Only a build Apple is still processing is worth waiting out; anything else fails the same way again.
-            if ! grep -qiE "couldn'?t find build|could not find build|no build|build.*not.*(found|ready)|timed? ?out.*(build|processing)" deliver.log; then
+            if ! grep -qiE "build number.*does not exist|couldn'?t find build|could not find build|no build|build.*not.*(found|ready)|timed? ?out.*(build|processing)" deliver.log; then
               echo "::error::deliver failed for a reason other than build processing."
               exit 1
             fi
