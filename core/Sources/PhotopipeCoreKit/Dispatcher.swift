@@ -55,7 +55,7 @@ public final class Dispatcher {
             "setEdit", "rawDefaults", "status", "reveal", "trash", "decoderSupport",
             "decoderAvailability", "exportFiles",
             "exportStatus", "cancelExport",
-            "createProject", "importFiles", "updateProject", "renameProject",
+            "createProject", "importFiles", "updateProject", "captureDate",
             "scoreShoot", "scoreStatus":
             return .respond(libraryResponse(request))
         default:
@@ -269,15 +269,14 @@ public final class Dispatcher {
                     : try library.cancelExport(id: id)
                 return .success(id: request.id, result: Self.exportProgress(job))
             case "createProject":
-                guard let day = request.params?["day"]?.stringValue,
-                    let name = request.params?["name"]?.stringValue
+                guard let name = request.params?["name"]?.stringValue,
+                    let notes = request.params?["notes"]?.stringValue
                 else {
                     return .failure(
-                        id: request.id, code: "invalid_params", message: "day and name required")
+                        id: request.id, code: "invalid_params",
+                        message: "name and notes required")
                 }
-                let result = try library.createProject(
-                    day: day, name: name,
-                    notes: request.params?["notes"]?.stringValue ?? "")
+                let result = try library.createProject(name: name, notes: notes)
                 return .success(
                     id: request.id,
                     result: .object([
@@ -296,33 +295,32 @@ public final class Dispatcher {
                 let job = try library.startImport(shoot: shoot, paths: paths)
                 return .success(id: request.id, result: Self.exportProgress(job))
             case "updateProject":
-                guard let shoot = request.params?["shoot"]?.stringValue else {
-                    return .failure(
-                        id: request.id, code: "invalid_params", message: "shoot required")
-                }
-                let coverParam = request.params?["cover"]
-                let generation = try library.updateProject(
-                    shoot: shoot,
-                    notes: request.params?["notes"]?.stringValue,
-                    cover: coverParam.map { $0.stringValue })
-                return .success(
-                    id: request.id,
-                    result: .object(["generation": .number(Double(generation))]))
-            case "renameProject":
                 guard let shoot = request.params?["shoot"]?.stringValue,
-                    let day = request.params?["day"]?.stringValue,
-                    let name = request.params?["name"]?.stringValue
+                    let name = request.params?["name"]?.stringValue,
+                    let notes = request.params?["notes"]?.stringValue
                 else {
                     return .failure(
                         id: request.id, code: "invalid_params",
-                        message: "shoot, day and name required")
+                        message: "shoot, name and notes required")
                 }
-                let renamed = try library.renameProject(shoot: shoot, day: day, name: name)
+                let updated = try library.updateProject(
+                    shoot: shoot, name: name, day: request.params?["day"]?.stringValue,
+                    notes: notes, cover: request.params?["cover"]?.stringValue)
                 return .success(
                     id: request.id,
                     result: .object([
-                        "shoot": .string(renamed.shoot),
-                        "generation": .number(Double(renamed.generation)),
+                        "shoot": .string(updated.shoot),
+                        "generation": .number(Double(updated.generation)),
+                    ]))
+            case "captureDate":
+                guard let path = request.params?["path"]?.stringValue else {
+                    return .failure(
+                        id: request.id, code: "invalid_params", message: "path required")
+                }
+                return .success(
+                    id: request.id,
+                    result: .object([
+                        "day": try library.captureDate(path: path).map(JSONValue.string) ?? .null
                     ]))
             case "status":
                 let status = library.status(since: request.params?["since"]?.intValue)
@@ -365,6 +363,10 @@ public final class Dispatcher {
         } catch LibraryService.ServiceError.projectExists(let folder) {
             return .failure(
                 id: request.id, code: "project_exists", message: "\(folder) already exists")
+        } catch LibraryService.ServiceError.unreadableProjectFile(let shoot) {
+            return .failure(
+                id: request.id, code: "unreadable_project_file",
+                message: "\(shoot) has a photopipe.json that could not be read")
         } catch FileActions.ActionError.noFiles {
             return .failure(id: request.id, code: "no_files", message: "nothing selected")
         } catch FileActions.ActionError.openFailed(let output) {

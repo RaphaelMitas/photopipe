@@ -63,7 +63,6 @@ const shoots: Shoot[] = [
     name: "2026-07-12_zell",
     path: "/fake/2026-07-12_zell",
     day: "2026-07-12",
-    project: "zell",
     imageCount: zellImages.length,
     notes: "Golden hour at the river",
     cover: null,
@@ -74,7 +73,6 @@ const shoots: Shoot[] = [
     name: "misc",
     path: "/fake/misc",
     day: null,
-    project: null,
     imageCount: 1,
     notes: "",
     cover: null,
@@ -85,7 +83,6 @@ const shoots: Shoot[] = [
     name: "2026-08-01_dolomites",
     path: "/fake/2026-08-01_dolomites",
     day: "2026-08-01",
-    project: "dolomites",
     imageCount: 200,
     notes: "Two days above Cortina",
     cover: null,
@@ -95,6 +92,18 @@ const shoots: Shoot[] = [
 ];
 
 const emptyShoots = new Set<string>();
+
+function projectFields(
+  params: Record<string, unknown>,
+): Pick<Shoot, "name" | "path" | "day" | "notes"> {
+  const name = String(params.name).trim();
+  return {
+    name,
+    path: `/fake/${name}`,
+    day: typeof params.day === "string" ? params.day : null,
+    notes: String(params.notes),
+  };
+}
 
 /// `?indexing=1` holds the library in the state it has right after a cold
 /// start: every file listed, none of its metadata read yet.
@@ -275,48 +284,39 @@ export const E2E_HANDLERS: Record<
       false,
     ),
   createProject: (params) => {
-    const shoot = `${String(params.day)}_${String(params.name)}`;
-    if (shoots.some((existing) => existing.name === shoot)) {
-      throw `project_exists: ${shoot}`;
+    const fields = projectFields(params);
+    if (shoots.some((existing) => existing.name === fields.name)) {
+      throw `project_exists: ${fields.name}`;
     }
     shoots.unshift({
-      name: shoot,
-      path: `/fake/${shoot}`,
-      day: String(params.day),
-      project: String(params.name),
+      ...fields,
       imageCount: 0,
-      notes: String(params.notes ?? ""),
       cover: null,
       coverPath: null,
       indexed: true,
     });
-    emptyShoots.add(shoot);
-    return { shoot, path: `/fake/${shoot}`, generation: 1 };
+    emptyShoots.add(fields.name);
+    return { shoot: fields.name, path: fields.path, generation: 1 };
   },
   updateProject: (params) => {
     const shoot = shoots.find((s) => s.name === params.shoot);
-    if (shoot) {
-      if (params.notes !== undefined) shoot.notes = String(params.notes);
-      if ("cover" in params) {
-        shoot.cover = (params.cover as string | null) ?? null;
-        const match = imagesFor(shoot.name).find(
-          (entry) => entry.rel === shoot.cover,
-        );
-        shoot.coverPath = match?.path ?? imagesFor(shoot.name)[0]?.path ?? null;
-      }
+    if (!shoot) throw `unknown_shoot: ${String(params.shoot)}`;
+    const fields = projectFields(params);
+    if (
+      fields.name !== shoot.name &&
+      shoots.some((existing) => existing.name === fields.name)
+    ) {
+      throw `project_exists: ${fields.name}`;
     }
-    return { generation: 1 };
+    Object.assign(shoot, fields);
+    shoot.cover = typeof params.cover === "string" ? params.cover : null;
+    const match = imagesFor(shoot.name).find(
+      (entry) => entry.rel === shoot.cover,
+    );
+    shoot.coverPath = match?.path ?? imagesFor(shoot.name)[0]?.path ?? null;
+    return { shoot: shoot.name, generation: 1 };
   },
-  renameProject: (params) => {
-    const shoot = shoots.find((s) => s.name === params.shoot);
-    const renamed = `${String(params.day)}_${String(params.name)}`;
-    if (shoot) {
-      shoot.name = renamed;
-      shoot.day = String(params.day);
-      shoot.project = String(params.name);
-    }
-    return { shoot: renamed, generation: 1 };
-  },
+  captureDate: () => ({ day: "2026-07-12" }),
   status: () => ({
     generation: 1,
     root: "/fake",

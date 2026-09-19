@@ -13,6 +13,7 @@ public final class LibraryService: @unchecked Sendable {
         case invalidProjectName(String)
         case invalidProjectDay(String)
         case projectExists(String)
+        case unreadableProjectFile(String)
         case unknownExport(String)
     }
 
@@ -432,91 +433,82 @@ public final class LibraryService: @unchecked Sendable {
         return (settled.edit, status().generation)
     }
 
-    static func projectFolder(day: String, name: String) throws -> String {
+    /// A leading dot is refused because the scan would hide the folder.
+    static func projectFolder(name: String) throws -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.contains("/"), !trimmed.contains(":") else {
+        let scalars = trimmed.unicodeScalars
+        guard !trimmed.isEmpty, !scalars.contains("/"), !scalars.contains(":"),
+            scalars.first != ".", !scalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F })
+        else {
             throw ServiceError.invalidProjectName(name)
         }
-        let folder = "\(day)_\(trimmed)"
-        guard !folder.contains("/"), !folder.contains(":"), parseShootName(folder) != nil else {
-            throw ServiceError.invalidProjectDay(day)
-        }
-        return folder
+        return trimmed
     }
 
-    static func projectURL(root: String, day: String, name: String) throws -> (
-        folder: String, url: URL
-    ) {
-        let folder = try projectFolder(day: day, name: name)
-        let rootURL = URL(fileURLWithPath: root).standardizedFileURL
-        let url = rootURL.appendingPathComponent(folder).standardizedFileURL
-        guard url.deletingLastPathComponent().path == rootURL.path else {
-            throw ServiceError.invalidProjectDay(day)
-        }
-        return (folder, url)
-    }
-
-    public func updateProject(shoot shootName: String, notes: String?, cover: String??) throws
-        -> Int
-    {
-        let path = try shootPath(shootName)
-        var file = ProjectFile.read(inShoot: path)
-        if let notes { file.notes = notes }
-        if let cover { file.cover = cover }
-        try file.write(inShoot: path)
-        rescanNow()
-        return status().generation
-    }
-
-    public func renameProject(shoot shootName: String, day: String, name: String) throws -> (
-        shoot: String, generation: Int
-    ) {
-        let path = try shootPath(shootName)
-        lock.lock()
-        let currentRoot = root
-        lock.unlock()
-        guard let currentRoot else { throw ServiceError.noRoot }
-
-        let (folder, destination) = try Self.projectURL(
-            root: currentRoot, day: day, name: name)
-        guard folder != shootName else { return (shootName, status().generation) }
-
-        guard !FileManager.default.fileExists(atPath: destination.path) else {
+    static func freeProjectURL(root: String, folder: String) throws -> URL {
+        let url = URL(fileURLWithPath: root).appendingPathComponent(folder)
+        guard !FileManager.default.fileExists(atPath: url.path) else {
             throw ServiceError.projectExists(folder)
         }
-        try FileManager.default.moveItem(at: URL(fileURLWithPath: path), to: destination)
+        return url
+    }
 
-        var file = ProjectFile.read(inShoot: destination.path)
-        file.created = day
-        try? file.write(inShoot: destination.path)
+    public func updateProject(
+        shoot shootName: String, name: String, day: String?, notes: String, cover: String?
+    ) throws -> (shoot: String, generation: Int) {
+        let shoot = try self.shoot(named: shootName)
+        let source = URL(fileURLWithPath: shoot.path)
+        if day != nil, day.map(isDay) != true { throw ServiceError.invalidProjectDay(day ?? "") }
+        guard ProjectFile.read(inShoot: shoot.path) != nil else {
+            throw ServiceError.unreadableProjectFile(shoot.name)
+        }
+
+        let folder = try Self.projectFolder(name: name)
+        var path = source
+        if folder != shoot.name {
+            path = try Self.freeProjectURL(
+                root: source.deletingLastPathComponent().path, folder: folder)
+            try FileManager.default.moveItem(at: source, to: path)
+        }
+
+        do {
+            try ProjectFile(notes: notes, day: day, cover: cover).write(inShoot: path.path)
+        } catch {
+            if path != source { try? FileManager.default.moveItem(at: path, to: source) }
+            rescanNow()
+            throw error
+        }
 
         rescanNow()
         return (folder, status().generation)
     }
 
-    public func createProject(day: String, name: String, notes: String) throws -> (
-        shoot: String, path: String, generation: Int
-    ) {
+    public func createProject(name: String, notes: String)
+        throws -> (shoot: String, path: String, generation: Int)
+    {
         lock.lock()
         let currentRoot = root
         lock.unlock()
         guard let currentRoot else { throw ServiceError.noRoot }
 
-        let (folder, path) = try Self.projectURL(root: currentRoot, day: day, name: name)
-        guard !FileManager.default.fileExists(atPath: path.path) else {
-            throw ServiceError.projectExists(folder)
-        }
-        try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
-        try ProjectFile(notes: notes, created: day).write(inShoot: path.path)
+        let folder = try Self.projectFolder(name: name)
+        let path = try Self.freeProjectURL(root: currentRoot, folder: folder)
+        try FileManager.default.createDirectory(at: path, withIntermediateDirectories: false)
+        try ProjectFile(notes: notes).write(inShoot: path.path)
 
         rescanNow()
         return (folder, path.path, status().generation)
     }
 
+    public func captureDate(path: String) throws -> String? {
+        let canonical = try pathsUnderRoot([path])[0]
+        return Dimensions.captureDay(at: URL(fileURLWithPath: canonical))
+    }
+
     public func startImport(shoot shootName: String, paths: [String]) throws
         -> Exporter.Progress
     {
-        let shootPath = try self.shootPath(shootName)
+        let shootPath = try shoot(named: shootName).path
         let images = paths.filter(isImagePath)
         guard !images.isEmpty else { throw FileActions.ActionError.noFiles }
 
@@ -639,12 +631,12 @@ public final class LibraryService: @unchecked Sendable {
         }
     }
 
-    private func shootPath(_ shootName: String) throws -> String {
+    private func shoot(named shootName: String) throws -> Shoot {
         lock.lock()
-        let path = snapshot.shoots.first { $0.name == shootName }?.path
+        let shoot = snapshot.shoots.first { $0.name == shootName }
         lock.unlock()
-        guard let path else { throw ServiceError.unknownShoot(shootName) }
-        return path
+        guard let shoot else { throw ServiceError.unknownShoot(shootName) }
+        return shoot
     }
 
     public func reveal(paths: [String]) throws {
