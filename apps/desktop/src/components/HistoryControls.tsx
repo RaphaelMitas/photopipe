@@ -58,7 +58,7 @@ function HistoryRow({
   return (
     <Item
       asChild
-      size="xs"
+      size="2xs"
       variant={current ? "muted" : "default"}
       className={cn("text-left hover:bg-muted", undone && "opacity-40")}
     >
