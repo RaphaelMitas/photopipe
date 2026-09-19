@@ -14,6 +14,7 @@ import { type Edit, editKey, isIdentityEdit } from "./core";
 import { CURVE_CHANNELS, isIdentityCurve } from "./curve";
 import {
   COLOR_SLIDERS,
+  kelvin,
   PRESENCE_SLIDERS,
   type SliderSpec,
   signed,
@@ -39,7 +40,6 @@ export function describeEdit(
     editKey({ ...before, [key]: after[key] }) !== editKey(before);
   const orReset = (value: number | null | undefined, format = signed) =>
     value == null ? "reset" : format(value);
-  const kelvin = (value: number) => `${Math.round(value)} K`;
   const scalars: [keyof Edit, LucideIcon, string, string][] = [
     ["exposure", Sun, "Exposure", signed(after.exposure, 2)],
     [
@@ -49,7 +49,7 @@ export function describeEdit(
       orReset(after.temperature, raw ? kelvin : signed),
     ],
     ["tint", Thermometer, "Tint", orReset(after.tint)],
-    ["denoise", Sparkles, "Denoise", orReset(after.denoise)],
+    ["denoise", Sparkles, "Denoise", orReset(after.denoise, String)],
   ];
   const found: Description[] = [];
 

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Edit } from "./core";
 
+// a context menu or a lost window can swallow the pointerup
+const RELEASES = ["pointerup", "pointercancel", "contextmenu", "blur"];
+
 export type EditDraft = { path: string; edit: Edit } | null;
 
 export function useDebouncedEdit(
@@ -36,10 +39,13 @@ export function useDebouncedEdit(
   const held = useRef(false);
   const hold = useCallback(() => {
     held.current = true;
-  }, []);
-  const release = useCallback(() => {
-    held.current = false;
-    flush();
+    const release = () => {
+      held.current = false;
+      flush();
+      for (const type of RELEASES) window.removeEventListener(type, release);
+    };
+    // on window: a pointer that went down in the panel can come up anywhere
+    for (const type of RELEASES) window.addEventListener(type, release);
   }, [flush]);
 
   const scrub = useCallback(
@@ -55,5 +61,5 @@ export function useDebouncedEdit(
 
   useEffect(() => () => flush(), [flush]);
 
-  return { draft, scrub, flush, cancel, hold, release };
+  return { draft, scrub, flush, cancel, hold };
 }

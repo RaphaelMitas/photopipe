@@ -31,7 +31,7 @@ import {
   exportLabel,
 } from "@/components/ExportDrawer";
 import type { FilmstripMode } from "@/components/Filmstrip";
-import { HistoryControls, historyLabel } from "@/components/HistoryControls";
+import { HistoryControls } from "@/components/HistoryControls";
 import { ImageGrid } from "@/components/ImageGrid";
 import { ImageList } from "@/components/ImageList";
 import { IndexingStatus } from "@/components/IndexingStatus";
@@ -63,12 +63,14 @@ import {
   forgetHistoryPaths,
   type HistoryDirection,
   type HistoryEntry,
+  historyLabel,
   jumpHistory,
   stepHistory,
 } from "@/lib/history";
 import { betterThan, scoreRanks } from "@/lib/instinct";
 import { heldOrder } from "@/lib/loupeWalk";
 import {
+  cachedImage,
   type EditWrite,
   jobStatus,
   type ScoreProgress,
@@ -296,7 +298,6 @@ export default function App() {
     flush: flushEdit,
     cancel: cancelEdit,
     hold: holdEdit,
-    release: releaseEdit,
   } = useDebouncedEdit(writes.writeEdit, EDIT_COMMIT_MS);
   // Before the core has read the file, an edit is relative to a blank
   // placeholder and would erase the real one.
@@ -580,19 +581,20 @@ export default function App() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const modalOpen = newProject || shootSettings !== null || settingsOpen;
   const [revealed, setRevealed] = useState(0);
-  const liveImages = useRef(allImages);
-  liveImages.current = allImages;
   // Before the write, so you are on the photo when the step lands.
-  const showPhoto = useCallback((entry: HistoryEntry) => {
-    const present = entry.paths.filter((path) =>
-      liveImages.current.some((image) => image.path === path),
-    );
-    if (present.length === 0) return;
-    setCurrentPath((current) =>
-      current && present.includes(current) ? current : present[0],
-    );
-    setRevealed((count) => count + 1);
-  }, []);
+  const showPhoto = useCallback(
+    (entry: HistoryEntry) => {
+      const present = entry.paths.filter((path) =>
+        cachedImage(queryClient, openShoot, path),
+      );
+      if (present.length === 0) return;
+      setCurrentPath((current) =>
+        current && present.includes(current) ? current : present[0],
+      );
+      setRevealed((count) => count + 1);
+    },
+    [queryClient, openShoot],
+  );
   const travel = useCallback(
     (direction: HistoryDirection) => {
       flushEdit();
@@ -964,7 +966,6 @@ export default function App() {
                 edit={loupeEdit}
                 onChange={(edit) => changeEdit(loupeImage, edit)}
                 onHold={holdEdit}
-                onRelease={releaseEdit}
                 cropDraft={cropDraft}
                 onCropDraft={setCropDraft}
                 onEnterCrop={() =>

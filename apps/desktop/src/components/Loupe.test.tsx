@@ -289,7 +289,6 @@ describe("EditSidebar", () => {
             edit={edit}
             onChange={onChange}
             onHold={vi.fn()}
-            onRelease={vi.fn()}
             cropDraft={cropDraft}
             onCropDraft={onCropDraft}
             onEnterCrop={onEnterCrop}

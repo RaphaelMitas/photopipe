@@ -17,17 +17,12 @@ import {
 import { cn } from "@photopipe/ui/lib/utils";
 import { FolderOpen, History, Redo2, Undo2 } from "lucide-react";
 import { fileName } from "@/lib/fileName";
-import { type HistoryEntry, useHistory } from "@/lib/history";
+import { type HistoryEntry, historyLabel, useHistory } from "@/lib/history";
 
-const target = (entry: HistoryEntry) => {
-  if (entry.paths.length === 0) return "project";
-  return entry.paths.length === 1
+const target = (entry: HistoryEntry) =>
+  entry.paths.length === 1
     ? fileName(entry.paths[0])
     : `${entry.paths.length} photos`;
-};
-
-export const historyLabel = (entry: HistoryEntry) =>
-  [entry.label, entry.detail].filter(Boolean).join(" ");
 
 const clock = (at: number) =>
   new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });

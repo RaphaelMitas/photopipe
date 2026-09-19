@@ -40,7 +40,7 @@ describe("useDebouncedEdit", () => {
     act(() => vi.advanceTimersByTime(5000));
     expect(commit).not.toHaveBeenCalled();
 
-    act(() => result.current.release());
+    act(() => void window.dispatchEvent(new Event("pointerup")));
     expect(commit).toHaveBeenCalledExactlyOnceWith("/r/a.arw", editWith(1));
     vi.useRealTimers();
   });

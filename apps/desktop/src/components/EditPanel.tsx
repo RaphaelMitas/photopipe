@@ -27,6 +27,7 @@ import {
 import { CURVE_CHANNELS, isIdentityCurve } from "@/lib/curve";
 import {
   COLOR_SLIDERS,
+  kelvin,
   PRESENCE_SLIDERS,
   type SliderSpec,
   signed,
@@ -169,9 +170,7 @@ const colorSummary = (edit: Edit, raw: boolean): string | null => {
   const parts: string[] = [];
   if (edit.temperature != null) {
     parts.push(
-      raw
-        ? `${Math.round(edit.temperature)} K`
-        : `temp ${signed(edit.temperature)}`,
+      raw ? kelvin(edit.temperature) : `temp ${signed(edit.temperature)}`,
     );
   }
   if (edit.tint != null) parts.push(`tint ${signed(edit.tint)}`);
@@ -319,7 +318,7 @@ export function EditPanel({
             <Row
               label="Temp"
               value={temperature}
-              display={`${Math.round(temperature)} K`}
+              display={kelvin(temperature)}
               min={2000}
               max={12000}
               step={50}
@@ -458,15 +457,11 @@ function DecoderStrip() {
   );
 }
 
-// a context menu or a lost window can swallow the pointerup
-const RELEASES = ["pointerup", "pointercancel", "contextmenu", "blur"];
-
 export function EditSidebar({
   image,
   edit,
   onChange,
   onHold,
-  onRelease,
   cropDraft,
   onCropDraft,
   onEnterCrop,
@@ -478,7 +473,6 @@ export function EditSidebar({
   onClose,
 }: Props & {
   onHold: () => void;
-  onRelease: () => void;
   canPaste: boolean;
   onCopySettings: () => void;
   onPasteSettings: () => void;
@@ -486,20 +480,10 @@ export function EditSidebar({
 }) {
   const cropping = cropDraft !== null;
   const quickSwitch = useRawDecoderQuickSwitch();
-  const hold = (event: React.PointerEvent) => {
-    if (event.button !== 0) return;
-    onHold();
-    const release = () => {
-      onRelease();
-      for (const type of RELEASES) window.removeEventListener(type, release);
-    };
-    // on window: a pointer that went down here can come up anywhere
-    for (const type of RELEASES) window.addEventListener(type, release);
-  };
   return (
     <div
       data-testid="edit-sidebar"
-      onPointerDownCapture={hold}
+      onPointerDownCapture={(event) => event.button === 0 && onHold()}
       className="flex w-64 shrink-0 flex-col border-border border-l bg-sidebar"
     >
       <div className="flex items-center gap-1 border-border border-b px-3 py-2">

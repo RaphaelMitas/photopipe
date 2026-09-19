@@ -15,6 +15,9 @@ export type HistoryAction = {
 export type HistoryEntry = HistoryAction & { id: number; at: number };
 export type HistoryDirection = "undo" | "redo";
 
+export const historyLabel = (entry: HistoryEntry) =>
+  [entry.label, entry.detail].filter(Boolean).join(" ");
+
 // cursor counts applied entries; everything from entries[cursor] on is undone
 type HistoryState = { entries: HistoryEntry[]; cursor: number };
 

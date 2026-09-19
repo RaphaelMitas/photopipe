@@ -48,3 +48,5 @@ export const COLOR_SLIDERS: SliderSpec[] = [
 
 export const signed = (value: number, digits = 0) =>
   `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
+
+export const kelvin = (value: number) => `${Math.round(value)} K`;
