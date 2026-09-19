@@ -1,13 +1,18 @@
 import type { LucideIcon } from "lucide-react";
 import { useSyncExternalStore } from "react";
 
+// Entries put their values into a channel, and a channel writes what it holds
+// as one batch: a jump over a thousand ratings is one write per photo.
+export type HistoryChannel = { flush: () => Promise<unknown> };
+
 export type HistoryAction = {
   icon: LucideIcon;
   label: string;
   detail?: string;
   paths: string[];
-  undo: (remainingPaths: string[]) => Promise<unknown>;
-  redo: (remainingPaths: string[]) => Promise<unknown>;
+  channel: HistoryChannel;
+  // absolute values, so a batch and a step-by-step replay end the same
+  stage: (direction: HistoryDirection, path: string) => void;
   // the write that made the entry: undo waits for it, its failure drops the entry
   written?: Promise<unknown>;
 };
@@ -97,49 +102,56 @@ export function forgetHistoryPaths(paths: string[]) {
 }
 
 type OnStart = (entry: HistoryEntry) => void;
+type Asked = { pushes: number; clears: number };
 
-// `asked` is the timeline the step was aimed at: acting again calls it off.
-async function step(
-  direction: HistoryDirection,
-  asked: { pushes: number; clears: number },
-  onStart?: OnStart,
-): Promise<HistoryEntry | null> {
+// `asked` is the timeline the move was aimed at: acting again calls it off.
+async function travel(target: number, asked: Asked, onStart?: OnStart) {
   const stale = () => asked.pushes !== pushes || asked.clears !== clears;
-  const index = direction === "undo" ? state.cursor - 1 : state.cursor;
-  const entry = state.entries[index];
-  if (!entry || stale()) return null;
-  onStart?.(entry);
-  try {
-    await entry.written;
-    if (stale()) return null;
-    await entry[direction](entry.paths);
-  } catch {
-    // a step that cannot run would block everything under it
-    drop(entry.id);
-    return null;
+  if (stale() || target < 0 || target > state.entries.length) return [];
+  const direction = target < state.cursor ? "undo" : "redo";
+  const run =
+    direction === "undo"
+      ? state.entries.slice(target, state.cursor).reverse()
+      : state.entries.slice(state.cursor, target);
+  if (run.length === 0) return [];
+  onStart?.(run[0]);
+
+  const written = await Promise.allSettled(run.map((entry) => entry.written));
+  if (stale()) return [];
+  const unwritten = run.filter((_, i) => written[i].status === "rejected");
+  if (unwritten.length > 0) {
+    rewrite((entry) => (unwritten.includes(entry) ? null : entry));
+    return [];
   }
-  if (asked.clears !== clears) return null;
-  setState({
-    ...state,
-    cursor: direction === "undo" ? index : index + 1,
-  });
-  return entry;
+
+  // in travel order, so the value a replay would write last is the one staged last
+  for (const entry of run) {
+    for (const path of entry.paths) entry.stage(direction, path);
+  }
+  const channels = new Set(run.map((entry) => entry.channel));
+  const flushed = await Promise.allSettled(
+    Array.from(channels, (channel) => channel.flush()),
+  );
+  if (flushed.some((result) => result.status === "rejected")) {
+    // a step that cannot run would block everything under it
+    if (run.length === 1) drop(run[0].id);
+    return [];
+  }
+  if (asked.clears !== clears) return [];
+  setState({ ...state, cursor: target });
+  return run;
 }
 
 export function stepHistory(direction: HistoryDirection, onStart?: OnStart) {
   const asked = { pushes, clears };
-  return enqueue(() => step(direction, asked, onStart));
+  return enqueue(async () => {
+    const target = state.cursor + (direction === "undo" ? -1 : 1);
+    const [entry = null] = await travel(target, asked, onStart);
+    return entry;
+  });
 }
 
 export function jumpHistory(cursor: number) {
   const asked = { pushes, clears };
-  return enqueue(async () => {
-    let steps = 0;
-    while (state.cursor !== cursor) {
-      const moved = await step(state.cursor > cursor ? "undo" : "redo", asked);
-      if (!moved) break;
-      steps += 1;
-    }
-    return steps;
-  });
+  return enqueue(async () => (await travel(cursor, asked)).length);
 }

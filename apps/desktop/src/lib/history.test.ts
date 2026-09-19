@@ -10,48 +10,64 @@ import {
   stepHistory,
 } from "./history";
 
-let value = 0;
+let disk = new Map<string, number>();
+let flushes: Map<string, number>[] = [];
+let failing = false;
+let holdFlush: Promise<void> | null = null;
+
+const staged = new Map<string, number>();
+const channel = {
+  flush: async () => {
+    const values = new Map(staged);
+    staged.clear();
+    await holdFlush;
+    if (failing) throw new Error("disk");
+    flushes.push(values);
+    for (const [path, value] of values) disk.set(path, value);
+  },
+};
 
 const push = (action: Partial<HistoryAction>) =>
   pushHistory({
     icon: Star,
     label: "step",
     paths: [],
-    undo: async () => {},
-    redo: async () => {},
+    channel,
+    stage: () => {},
     ...action,
   });
 
-function set(next: number, path = "a.arw") {
-  const before = value;
-  value = next;
+function set(next: number, paths = ["a.arw"]) {
+  const before = new Map(paths.map((path) => [path, disk.get(path) ?? 0]));
+  for (const path of paths) disk.set(path, next);
   void push({
     label: `set ${next}`,
-    paths: [path],
-    undo: async () => {
-      value = before;
-    },
-    redo: async () => {
-      value = next;
-    },
+    paths,
+    stage: (direction, path) =>
+      staged.set(path, direction === "undo" ? (before.get(path) ?? 0) : next),
   });
 }
 
 const labels = () => historyState().entries.map((entry) => entry.label);
+const tick = () => new Promise((resolve) => setTimeout(resolve));
 
 describe("history", () => {
   beforeEach(() => {
     clearHistory();
-    value = 0;
+    disk = new Map();
+    flushes = [];
+    failing = false;
+    holdFlush = null;
+    staged.clear();
   });
 
   it("walks back and forward through what was done", async () => {
     set(1);
     set(2);
     await stepHistory("undo");
-    expect(value).toBe(1);
+    expect(disk.get("a.arw")).toBe(1);
     await stepHistory("redo");
-    expect(value).toBe(2);
+    expect(disk.get("a.arw")).toBe(2);
     expect(await stepHistory("redo")).toBeNull();
   });
 
@@ -64,8 +80,35 @@ describe("history", () => {
       stepHistory("undo"),
       stepHistory("undo"),
     ]);
-    expect(value).toBe(0);
+    expect(disk.get("a.arw")).toBe(0);
     expect(historyState().cursor).toBe(0);
+  });
+
+  it("jumps with one write per photo and lands where a replay would", async () => {
+    set(1, ["a.arw"]);
+    set(2, ["a.arw", "b.arw"]);
+    set(3, ["b.arw"]);
+    set(4, ["a.arw"]);
+    await jumpHistory(1);
+    expect(flushes).toEqual([
+      new Map([
+        ["a.arw", 1],
+        ["b.arw", 0],
+      ]),
+    ]);
+
+    const batched = new Map(disk);
+    await jumpHistory(4);
+    for (let cursor = 4; cursor > 1; cursor--) await stepHistory("undo");
+    expect(disk).toEqual(batched);
+
+    await jumpHistory(4);
+    expect(disk).toEqual(
+      new Map([
+        ["a.arw", 4],
+        ["b.arw", 3],
+      ]),
+    );
   });
 
   it("drops the undone entries when something new happens", async () => {
@@ -77,26 +120,25 @@ describe("history", () => {
     expect(labels()).toEqual(["set 1", "set 5"]);
   });
 
-  it("jumps across several entries in order", async () => {
+  it("drops a step that cannot run so it does not block the ones under it", async () => {
+    set(1);
+    set(2);
+    failing = true;
+    expect(await stepHistory("undo")).toBeNull();
+    failing = false;
+    await stepHistory("undo");
+    expect(disk.get("a.arw")).toBe(0);
+    expect(labels()).toEqual(["set 1"]);
+  });
+
+  it("leaves the timeline alone when a whole jump fails", async () => {
     set(1);
     set(2);
     set(3);
-    await jumpHistory(1);
-    expect(value).toBe(1);
-    await jumpHistory(3);
-    expect(value).toBe(3);
-  });
-
-  it("drops a step that cannot run so it does not block the ones under it", async () => {
-    set(1);
-    void push({
-      label: "fails",
-      undo: () => Promise.reject(new Error("disk")),
-    });
-    expect(await stepHistory("undo")).toBeNull();
-    await stepHistory("undo");
-    expect(value).toBe(0);
-    expect(labels()).toEqual(["set 1"]);
+    failing = true;
+    expect(await jumpHistory(0)).toBe(0);
+    expect(historyState().cursor).toBe(3);
+    expect(labels()).toEqual(["set 1", "set 2", "set 3"]);
   });
 
   it("drops an entry whose own write failed", async () => {
@@ -105,7 +147,7 @@ describe("history", () => {
       label: "never landed",
       written: Promise.reject(new Error("disk")),
     });
-    await jumpHistory(1);
+    await tick();
     expect(labels()).toEqual(["set 1"]);
     expect(historyState().cursor).toBe(1);
   });
@@ -114,84 +156,66 @@ describe("history", () => {
     set(1);
     set(2);
     set(3);
-    const first = stepHistory("undo");
-    const second = stepHistory("undo");
+    const waiting = [stepHistory("undo"), stepHistory("undo")];
     set(5);
-    await Promise.all([first, second]);
-    await jumpHistory(historyState().cursor);
-    expect(value).toBe(5);
+    await Promise.all(waiting);
+    await tick();
+    expect(disk.get("a.arw")).toBe(5);
     expect(labels()).toEqual(["set 1", "set 2", "set 3", "set 5"]);
   });
 
   it("keeps an action taken during an undo applied", async () => {
-    let finishUndo = () => {};
-    void push({
-      label: "slow",
-      undo: () =>
-        new Promise<void>((resolve) => {
-          finishUndo = resolve;
-        }),
+    set(1);
+    let finishFlush = () => {};
+    holdFlush = new Promise<void>((resolve) => {
+      finishFlush = resolve;
     });
     const undone = stepHistory("undo");
-    await new Promise((resolve) => setTimeout(resolve));
-    set(7);
-    finishUndo();
+    await tick();
+    holdFlush = null;
+    set(7, ["b.arw"]);
+    finishFlush();
     await undone;
-    await jumpHistory(1);
+    await tick();
     expect(labels()).toEqual(["set 7"]);
     expect(historyState().cursor).toBe(1);
   });
 
   it("calls off an undo that was still waiting for the entry's own write", async () => {
     let finishWrite = () => {};
-    let undone = false;
     await push({
       label: "long paste",
-      undo: async () => {
-        undone = true;
-      },
+      paths: ["a.arw"],
+      stage: (_direction, path) => staged.set(path, -1),
       written: new Promise<void>((resolve) => {
         finishWrite = resolve;
       }),
     });
     const step = stepHistory("undo");
-    await new Promise((resolve) => setTimeout(resolve));
+    await tick();
     set(9);
     finishWrite();
     expect(await step).toBeNull();
-    expect(undone).toBe(false);
-    expect(value).toBe(9);
+    expect(flushes).toEqual([]);
+    expect(disk.get("a.arw")).toBe(9);
   });
 
-  it("forgets trashed photos so they cannot block what is under them", async () => {
-    set(1, "kept.arw");
-    set(2, "trashed.arw");
-    set(3, "kept.arw");
+  it("forgets trashed photos and keeps the rest of a batch", async () => {
+    set(1, ["kept.arw"]);
+    set(2, ["trashed.arw"]);
+    set(3, ["kept.arw", "trashed.arw"]);
     await forgetHistoryPaths(["trashed.arw"]);
     expect(labels()).toEqual(["set 1", "set 3"]);
     expect(historyState().cursor).toBe(2);
+
+    await stepHistory("undo");
+    expect(flushes).toEqual([new Map([["kept.arw", 1]])]);
   });
 
   it("refuses an action whose push lands after the timeline was cleared", async () => {
-    const pushed = push({
-      label: "flushed while leaving the shoot",
-    });
+    const pushed = push({ label: "flushed while leaving the shoot" });
     clearHistory();
     await pushed;
     expect(historyState().entries).toEqual([]);
-  });
-
-  it("keeps the photos that are left when part of a batch is trashed", async () => {
-    const undone: string[][] = [];
-    await push({
-      label: "paste",
-      paths: ["a.arw", "b.arw"],
-      undo: async (paths) => {
-        undone.push(paths);
-      },
-    });
-    await forgetHistoryPaths(["a.arw"]);
-    await stepHistory("undo");
-    expect(undone).toEqual([["b.arw"]]);
   });
 });

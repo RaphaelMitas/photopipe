@@ -453,6 +453,39 @@ test("arrow keys on a slider save their last step as one entry", async ({
   await expect(page.getByTestId("history-row-1")).toHaveCount(0);
 });
 
+test("a jump across several steps lands every photo where stepping would", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("thumb").first().click();
+  const exposure = page.getByTestId("exposure").getByRole("slider");
+
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  await expect(exposure).toHaveAttribute("aria-valuenow", "0.5");
+  await page.getByTestId("star-1").click();
+  await page.keyboard.press("ArrowRight");
+  await page.getByTestId("star-5").click();
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowUp");
+  await expect(exposure).toHaveAttribute("aria-valuenow", "0.75");
+
+  await page.getByTestId("history-toggle").click();
+  await page.getByTestId("history-row-origin").click();
+  await expect(page.getByText(/Moved \d steps in history/)).toBeVisible();
+  await expect(exposure).toHaveAttribute("aria-valuenow", "0");
+  await expect(page.getByTestId("history-undo")).toBeDisabled();
+
+  // The newest row: how many entries the nudges became depends on the debounce.
+  await page.getByTestId("history-popover").getByRole("button").first().click();
+  await expect(exposure).toHaveAttribute("aria-valuenow", "0.75");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Back to grid" }).click();
+  await expect(
+    page.locator("[data-path='DSC00832.jpg']").getByTestId("thumb-rating"),
+  ).toHaveText("5");
+});
+
 test("trashing a photo takes its steps out of the history", async ({
   page,
 }) => {
