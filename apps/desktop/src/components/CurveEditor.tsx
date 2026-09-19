@@ -3,26 +3,13 @@ import { cn } from "@photopipe/ui/lib/utils";
 import { RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Edit } from "@/lib/core";
-import { type CurvePoint, isIdentityCurve, sampleCurve } from "@/lib/curve";
-
-export type CurveChannel = "rgb" | "red" | "green" | "blue";
-
-const CHANNELS: Array<{
-  channel: CurveChannel;
-  key: keyof Pick<Edit, "curveRGB" | "curveRed" | "curveGreen" | "curveBlue">;
-  dot: string;
-  stroke: string;
-}> = [
-  { channel: "rgb", key: "curveRGB", dot: "bg-orange-400", stroke: "#fb923c" },
-  { channel: "red", key: "curveRed", dot: "bg-red-500", stroke: "#ef4444" },
-  {
-    channel: "green",
-    key: "curveGreen",
-    dot: "bg-green-500",
-    stroke: "#22c55e",
-  },
-  { channel: "blue", key: "curveBlue", dot: "bg-blue-500", stroke: "#3b82f6" },
-];
+import {
+  CURVE_CHANNELS,
+  type CurveChannel,
+  type CurvePoint,
+  isIdentityCurve,
+  sampleCurve,
+} from "@/lib/curve";
 
 const W = 200;
 const H = 140;
@@ -115,7 +102,8 @@ export function CurveEditor({ edit, imageSrc, onChange }: Props) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const dragIndex = useRef<number | null>(null);
   const active =
-    CHANNELS.find((entry) => entry.channel === channel) ?? CHANNELS[0];
+    CURVE_CHANNELS.find((entry) => entry.channel === channel) ??
+    CURVE_CHANNELS[0];
   const points = materialized(edit[active.key]);
   const histogram = useHistogram(imageSrc);
 
@@ -183,7 +171,7 @@ export function CurveEditor({ edit, imageSrc, onChange }: Props) {
   return (
     <div data-testid="curve-editor" className="flex flex-col gap-1.5">
       <div className="flex items-center gap-1.5">
-        {CHANNELS.map((entry) => (
+        {CURVE_CHANNELS.map((entry) => (
           <button
             key={entry.channel}
             type="button"
@@ -197,7 +185,7 @@ export function CurveEditor({ edit, imageSrc, onChange }: Props) {
                 ? "opacity-100 ring-2 ring-white/40"
                 : "opacity-35 hover:opacity-70",
             )}
-            title={entry.channel === "rgb" ? "RGB" : entry.channel}
+            title={entry.label}
           />
         ))}
         <span className="flex-1" />

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { openZell } from "./open-shoot";
+import { openShoot, openZell } from "./open-shoot";
 
 async function rate(
   page: import("@playwright/test").Page,
@@ -348,7 +348,7 @@ test("exposure is per photo and survives leaving and returning", async ({
   ).toHaveText("+0.5 EV");
 });
 
-test("a look copied off one photo lands on a selection, and undo takes it back", async ({
+test("a look copied off one photo lands on a selection, and history takes it back", async ({
   page,
 }) => {
   await openZell(page);
@@ -374,10 +374,160 @@ test("a look copied off one photo lands on a selection, and undo takes it back",
     ).toHaveText("+0.5 EV");
   }
 
-  await page.getByRole("button", { name: "Undo" }).click();
+  const pasted = page
+    .locator("[data-path='DSC00832.ARW']")
+    .getByTestId("thumb-edited");
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(pasted).toHaveCount(0);
+
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect(pasted).toHaveText("+0.5 EV");
+
+  await page.getByTestId("history-toggle").click();
+  await page.getByTestId("history-row-origin").click();
+  await expect(pasted).toHaveCount(0);
+});
+
+test("a slider drag is one history entry, and undo walks back to its photo", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("thumb").first().click();
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.ARW");
+
+  const thumb = page.getByTestId("exposure").getByRole("slider");
+  const box = await thumb.boundingBox();
+  if (!box) throw new Error("no exposure slider");
+  const y = box.y + box.height / 2;
+  await page.mouse.move(box.x + box.width / 2, y);
+  await page.mouse.down();
+  for (const dx of [10, 20, 30, 40]) {
+    await page.mouse.move(box.x + box.width / 2 + dx, y);
+  }
+  // Held still for longer than the keyboard debounce: nothing is saved yet.
+  await page.waitForTimeout(700);
+  await expect(page.getByTestId("history-undo")).toBeDisabled();
+  await page.mouse.up();
+  await expect(page.getByTestId("history-undo")).toBeEnabled();
+
+  await page
+    .getByTestId("filmstrip")
+    .locator("[data-path='abends/DSC00943.ARW']")
+    .click();
+  await page.getByTestId("star-3").click();
+
+  await page.getByTestId("history-toggle").click();
   await expect(
-    page.locator("[data-path='DSC00832.ARW']").getByTestId("thumb-edited"),
-  ).toHaveCount(0);
+    page.getByTestId("history-popover").getByRole("button"),
+  ).toHaveCount(3);
+  await expect(page.getByTestId("history-row-0")).toContainText("Exposure");
+  await expect(page.getByTestId("history-row-1")).toContainText("Rating ★★★");
+  await page.keyboard.press("Escape");
+
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(page.getByTestId("loupe-name")).toHaveText(
+    "abends/DSC00943.ARW",
+  );
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.ARW");
+  await expect(thumb).toHaveAttribute("aria-valuenow", "0");
+});
+
+test("arrow keys on a slider save their last step as one entry", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("thumb").first().click();
+
+  const thumb = page.getByTestId("exposure").getByRole("slider");
+  await thumb.focus();
+  for (let press = 0; press < 3; press++) {
+    await page.keyboard.press("ArrowRight");
+  }
+  await expect(page.getByTestId("history-undo")).toBeEnabled();
+
+  await page.getByTestId("history-toggle").click();
+  await expect(page.getByTestId("history-row-0")).toContainText(
+    "Exposure +0.15",
+  );
+  await expect(page.getByTestId("history-row-1")).toHaveCount(0);
+});
+
+test("a jump across several steps lands every photo where stepping would", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("thumb").first().click();
+  const exposure = page.getByTestId("exposure").getByRole("slider");
+
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");
+  await expect(exposure).toHaveAttribute("aria-valuenow", "0.5");
+  await page.getByTestId("star-1").click();
+  await page.keyboard.press("ArrowRight");
+  await page.getByTestId("star-5").click();
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowUp");
+  await expect(exposure).toHaveAttribute("aria-valuenow", "0.75");
+
+  await page.getByTestId("history-toggle").click();
+  await page.getByTestId("history-row-origin").click();
+  await expect(page.getByText(/Moved \d steps in history/)).toBeVisible();
+  await expect(exposure).toHaveAttribute("aria-valuenow", "0");
+  await expect(page.getByTestId("history-undo")).toBeDisabled();
+
+  // The newest row: how many entries the nudges became depends on the debounce.
+  await page.getByTestId("history-popover").getByRole("button").first().click();
+  await expect(exposure).toHaveAttribute("aria-valuenow", "0.75");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Back to grid" }).click();
+  await expect(
+    page.locator("[data-path='DSC00832.jpg']").getByTestId("thumb-rating"),
+  ).toHaveText("5");
+});
+
+test("the history opens on the state you are in, not at the top", async ({
+  page,
+}) => {
+  await openShoot(page, "2026-08-01_dolomites");
+  await page.getByTestId("thumb").first().click();
+  for (let photo = 0; photo < 30; photo++) {
+    await page.keyboard.press(String((photo % 5) + 1));
+    await page.keyboard.press("ArrowRight");
+  }
+  for (let step = 0; step < 15; step++) {
+    await page.keyboard.press("ControlOrMeta+z");
+  }
+
+  await page.getByTestId("history-toggle").click();
+  const current = page.getByTestId("history-row-14");
+  await expect(current).toHaveAttribute("aria-current", "true");
+  await expect(current).toBeInViewport();
+  await expect(page.getByTestId("history-row-29")).not.toBeInViewport();
+});
+
+test("trashing a photo takes its steps out of the history", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("thumb").first().click();
+  await page.getByTestId("star-3").click();
+  await page
+    .getByTestId("filmstrip")
+    .locator("[data-path='abends/DSC00943.ARW']")
+    .click();
+  await page.getByTestId("star-2").click();
+  await page.keyboard.press("Escape");
+
+  await page
+    .locator("[data-path='abends/DSC00943.ARW']")
+    .click({ modifiers: ["ControlOrMeta"] });
+  await page.getByTestId("action-delete").click();
+  await expect(page.getByTestId("thumb")).toHaveCount(3);
+
+  await page.getByTestId("history-toggle").click();
+  await expect(page.getByTestId("history-row-0")).toContainText("DSC00832.ARW");
+  await expect(page.getByTestId("history-row-1")).toHaveCount(0);
 });
 
 test("zooming renders the visible slice and drops it again on fit", async ({

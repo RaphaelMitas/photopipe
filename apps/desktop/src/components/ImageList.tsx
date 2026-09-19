@@ -33,6 +33,7 @@ type Props = {
   onOpen?: (index: number) => void;
   emptyMessage: string;
   focusPath?: string | null;
+  revealed?: number;
   initialRect?: { width: number; height: number };
 };
 
@@ -44,6 +45,7 @@ export function ImageList({
   onOpen,
   emptyMessage,
   focusPath,
+  revealed,
   initialRect,
 }: Props) {
   const parentRef = useRef<HTMLDivElement>(null);
@@ -70,7 +72,7 @@ export function ImageList({
     [images, focusPath],
   );
 
-  useVirtualJump(virtualizer, focusIndex);
+  useVirtualJump(virtualizer, focusIndex, true, revealed);
 
   if (images.length === 0) {
     return (

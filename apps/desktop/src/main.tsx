@@ -42,7 +42,13 @@ async function prepare() {
 }
 
 prepare().then(() => {
-  const queryClient = new QueryClient();
+  // The core is a local process: being offline must not pause a write to disk.
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { networkMode: "always" },
+      mutations: { networkMode: "always" },
+    },
+  });
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <React.StrictMode>
       <QueryClientProvider client={queryClient}>

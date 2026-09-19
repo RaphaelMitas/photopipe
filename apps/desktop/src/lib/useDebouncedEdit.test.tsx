@@ -30,6 +30,21 @@ describe("useDebouncedEdit", () => {
     vi.useRealTimers();
   });
 
+  it("holds a drag until the pointer lets go", () => {
+    vi.useFakeTimers();
+    const commit = vi.fn();
+    const { result } = renderHook(() => useDebouncedEdit(commit, 400));
+
+    act(() => result.current.hold());
+    act(() => result.current.scrub("/r/a.arw", editWith(1)));
+    act(() => vi.advanceTimersByTime(5000));
+    expect(commit).not.toHaveBeenCalled();
+
+    act(() => void window.dispatchEvent(new Event("pointerup")));
+    expect(commit).toHaveBeenCalledExactlyOnceWith("/r/a.arw", editWith(1));
+    vi.useRealTimers();
+  });
+
   it("commits the previous photo when scrubbing a different one", () => {
     vi.useFakeTimers();
     const commit = vi.fn();

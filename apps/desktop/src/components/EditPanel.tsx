@@ -24,7 +24,15 @@ import {
   isIdentityEdit,
   isRawFile,
 } from "@/lib/core";
-import { isIdentityCurve } from "@/lib/curve";
+import { CURVE_CHANNELS, isIdentityCurve } from "@/lib/curve";
+import {
+  COLOR_SLIDERS,
+  kelvin,
+  PRESENCE_SLIDERS,
+  type SliderSpec,
+  signed,
+  TONE_SLIDERS,
+} from "@/lib/editSliders";
 import { useRaw9Availability, useRawDefaults, useRender } from "@/lib/queries";
 import {
   setRawDecoderVersion,
@@ -106,52 +114,6 @@ function Row({
   );
 }
 
-type SliderSpec = {
-  key: keyof Pick<
-    Edit,
-    | "highlights"
-    | "shadows"
-    | "whites"
-    | "blacks"
-    | "texture"
-    | "clarity"
-    | "dehaze"
-    | "vibrance"
-    | "saturation"
-  >;
-  label: string;
-  short: string;
-  trackClassName?: string;
-};
-
-const TONE_SLIDERS: SliderSpec[] = [
-  { key: "highlights", label: "Highlights", short: "hl" },
-  { key: "shadows", label: "Shadows", short: "sh" },
-  { key: "whites", label: "Whites", short: "wh" },
-  { key: "blacks", label: "Blacks", short: "bl" },
-];
-
-const PRESENCE_SLIDERS: SliderSpec[] = [
-  { key: "texture", label: "Texture", short: "tex" },
-  { key: "clarity", label: "Clarity", short: "cl" },
-  { key: "dehaze", label: "Dehaze", short: "dh" },
-];
-
-const COLOR_SLIDERS: SliderSpec[] = [
-  {
-    key: "vibrance",
-    label: "Vibrance",
-    short: "vib",
-    trackClassName: "bg-gradient-to-r from-zinc-500/60 to-teal-400/70",
-  },
-  {
-    key: "saturation",
-    label: "Saturation",
-    short: "sat",
-    trackClassName: "bg-gradient-to-r from-zinc-500/60 to-orange-400/70",
-  },
-];
-
 function SliderRows({
   sliders,
   edit,
@@ -179,9 +141,6 @@ function SliderRows({
   ));
 }
 
-const signed = (value: number, digits = 0) =>
-  `${value > 0 ? "+" : ""}${value.toFixed(digits)}`;
-
 const sliderSummary = (edit: Edit, sliders: SliderSpec[]): string[] =>
   sliders
     .filter(({ key }) => edit[key] !== 0)
@@ -202,13 +161,8 @@ const toneSummary = (edit: Edit): string | null => {
   const parts: string[] = [];
   if (edit.exposure !== 0) parts.push(`${signed(edit.exposure, 2)} ev`);
   parts.push(...sliderSummary(edit, TONE_SLIDERS));
-  const curves = [
-    edit.curveRGB,
-    edit.curveRed,
-    edit.curveGreen,
-    edit.curveBlue,
-  ];
-  if (curves.some((points) => !isIdentityCurve(points))) parts.push("curve");
+  if (CURVE_CHANNELS.some(({ key }) => !isIdentityCurve(edit[key])))
+    parts.push("curve");
   return joined(parts);
 };
 
@@ -216,9 +170,7 @@ const colorSummary = (edit: Edit, raw: boolean): string | null => {
   const parts: string[] = [];
   if (edit.temperature != null) {
     parts.push(
-      raw
-        ? `${Math.round(edit.temperature)} K`
-        : `temp ${signed(edit.temperature)}`,
+      raw ? kelvin(edit.temperature) : `temp ${signed(edit.temperature)}`,
     );
   }
   if (edit.tint != null) parts.push(`tint ${signed(edit.tint)}`);
@@ -366,7 +318,7 @@ export function EditPanel({
             <Row
               label="Temp"
               value={temperature}
-              display={`${Math.round(temperature)} K`}
+              display={kelvin(temperature)}
               min={2000}
               max={12000}
               step={50}
@@ -509,6 +461,7 @@ export function EditSidebar({
   image,
   edit,
   onChange,
+  onHold,
   cropDraft,
   onCropDraft,
   onEnterCrop,
@@ -519,6 +472,7 @@ export function EditSidebar({
   onPasteSettings,
   onClose,
 }: Props & {
+  onHold: () => void;
   canPaste: boolean;
   onCopySettings: () => void;
   onPasteSettings: () => void;
@@ -529,6 +483,7 @@ export function EditSidebar({
   return (
     <div
       data-testid="edit-sidebar"
+      onPointerDownCapture={(event) => event.button === 0 && onHold()}
       className="flex w-64 shrink-0 flex-col border-border border-l bg-sidebar"
     >
       <div className="flex items-center gap-1 border-border border-b px-3 py-2">

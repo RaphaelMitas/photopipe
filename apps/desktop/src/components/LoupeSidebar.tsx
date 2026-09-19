@@ -160,7 +160,7 @@ export function LoupeSidebar({
       <SidebarFooter>
         <p className="px-2 py-1 text-[10px] text-muted-foreground">
           ←→ navigate · 1–5 rate · 0 clear · ↑↓ exposure · pinch or double-click
-          zoom · r reset · e edit · ⌘C/⌘V settings · esc
+          zoom · r reset · e edit · ⌘C/⌘V settings · ⌘Z undo · esc
         </p>
       </SidebarFooter>
     </Sidebar>

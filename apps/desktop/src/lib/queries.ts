@@ -282,25 +282,44 @@ export function xmpWritesInFlight(
   );
 }
 
+export function cachedImage(
+  queryClient: QueryClient,
+  shoot: string | null,
+  path: string,
+) {
+  return queryClient
+    .getQueryData<ImageFile[]>(["images", shoot])
+    ?.find((image) => image.path === path);
+}
+
+function patchImage(
+  queryClient: QueryClient,
+  shoot: string | null,
+  path: string,
+  patch: Partial<ImageFile>,
+) {
+  queryClient.setQueryData<ImageFile[]>(["images", shoot], (old) =>
+    old?.map((image) => (image.path === path ? { ...image, ...patch } : image)),
+  );
+}
+
 export function useSetRating(shoot: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: SET_RATING_KEY,
     mutationFn: ({ path, rating }: { path: string; rating: number }) =>
-      coreRequest<SetRatingResult>("setRating", { shoot, path, rating }),
+      writeInOrder(path, () =>
+        coreRequest<SetRatingResult>("setRating", { shoot, path, rating }),
+      ),
     onMutate: async ({ path, rating }) => {
       await queryClient.cancelQueries({ queryKey: ["images", shoot] });
-      const previous = queryClient.getQueryData<ImageFile[]>(["images", shoot]);
-      queryClient.setQueryData<ImageFile[]>(["images", shoot], (old) =>
-        old?.map((image) =>
-          image.path === path ? { ...image, rating } : image,
-        ),
-      );
+      const previous = cachedImage(queryClient, shoot, path)?.rating;
+      patchImage(queryClient, shoot, path, { rating });
       return { previous };
     },
     onError: (error, vars, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(["images", shoot], context.previous);
+      if (context?.previous !== undefined) {
+        patchImage(queryClient, shoot, vars.path, { rating: context.previous });
       }
       toast.error(`Rating ${fileName(vars.path)} failed`, {
         description: String(error),
@@ -309,6 +328,59 @@ export function useSetRating(shoot: string | null) {
     onSettled: () => {
       if (queryClient.isMutating({ mutationKey: SET_RATING_KEY }) === 1) {
         queryClient.invalidateQueries({ queryKey: ["images", shoot] });
+      }
+    },
+  });
+}
+
+/// Many ratings as one mutation: undoing a long stretch of culling would
+/// otherwise patch, settle and refetch once per photo.
+export function useSetRatings(shoot: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: SET_RATING_KEY,
+    mutationFn: (ratings: Map<string, number>) => {
+      const target = shoot;
+      return writeBatch(
+        ratings,
+        (path, rating) =>
+          cachedImage(queryClient, target, path)?.rating === rating,
+        (path, rating) =>
+          writeInOrder(path, () =>
+            coreRequest<SetRatingResult>("setRating", {
+              shoot: target,
+              path,
+              rating,
+            }),
+          ),
+      );
+    },
+    onMutate: async (ratings) => {
+      await queryClient.cancelQueries({ queryKey: ["images", shoot] });
+      const previous = new Map<string, number>();
+      for (const [path, rating] of ratings) {
+        const before = cachedImage(queryClient, shoot, path)?.rating;
+        if (before !== undefined) previous.set(path, before);
+        patchImage(queryClient, shoot, path, { rating });
+      }
+      return { previous, shoot };
+    },
+    onSuccess: (result, _ratings, context) => {
+      for (const path of result.failed) {
+        const rating = context.previous.get(path);
+        if (rating !== undefined) {
+          patchImage(queryClient, context.shoot, path, { rating });
+        }
+      }
+      if (result.failed.length > 0) {
+        toast.error(`${result.failed.length} ratings could not be saved`);
+      }
+    },
+    onSettled: (_result, _error, _ratings, context) => {
+      if (queryClient.isMutating({ mutationKey: SET_RATING_KEY }) === 1) {
+        queryClient.invalidateQueries({
+          queryKey: ["images", context?.shoot ?? shoot],
+        });
       }
     },
   });
@@ -331,7 +403,7 @@ function patchEdits(
   );
 }
 
-function currentEdits(
+export function currentEdits(
   queryClient: QueryClient,
   shoot: string | null,
   paths: string[],
@@ -398,7 +470,39 @@ export type PasteResult = {
 };
 
 /// Enough to keep exiftool busy without starving renders and thumbnails.
-const PASTE_CONCURRENCY = 4;
+const BATCH_CONCURRENCY = 4;
+
+async function writeBatch<V>(
+  values: Map<string, V>,
+  isLive: (path: string, value: V) => boolean,
+  write: (path: string, value: V) => Promise<unknown>,
+): Promise<PasteResult> {
+  const queue = values.entries();
+  const failed: string[] = [];
+  let overtaken = 0;
+  const worker = async () => {
+    for (const [path, value] of queue) {
+      // Changed by hand since the batch started: that value is newer.
+      if (!isLive(path, value)) {
+        overtaken += 1;
+        continue;
+      }
+      try {
+        await write(path, value);
+      } catch {
+        failed.push(path);
+      }
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(BATCH_CONCURRENCY, values.size) }, worker),
+  );
+  return {
+    written: values.size - failed.length - overtaken,
+    failed,
+    overtaken,
+  };
+}
 
 /// One mutation for the batch, under the single-edit key so the library poller
 /// leaves the images cache alone until every write has settled.
@@ -406,40 +510,16 @@ export function usePasteEdits(shoot: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: SET_EDIT_KEY,
-    mutationFn: async (writes: EditWrite[]): Promise<PasteResult> => {
+    mutationFn: (writes: EditWrite[]) => {
       const target = shoot;
-      const failed: string[] = [];
-      let overtaken = 0;
-      let next = 0;
-      const worker = async () => {
-        while (next < writes.length) {
-          const write = writes[next++];
-          // Edited by hand since the batch started: that value is newer.
-          const live = currentEdits(queryClient, target, [write.path]).get(
-            write.path,
-          );
-          if (live && editKey(live) !== editKey(write.edit)) {
-            overtaken += 1;
-            continue;
-          }
-          try {
-            await writeEdit(target, write);
-          } catch {
-            failed.push(write.path);
-          }
-        }
-      };
-      await Promise.all(
-        Array.from(
-          { length: Math.min(PASTE_CONCURRENCY, writes.length) },
-          worker,
-        ),
+      return writeBatch(
+        new Map(writes.map((write) => [write.path, write.edit])),
+        (path, edit) => {
+          const live = cachedImage(queryClient, target, path)?.edit;
+          return !live || editKey(live) === editKey(edit);
+        },
+        (path, edit) => writeEdit(target, { path, edit }),
       );
-      return {
-        written: writes.length - failed.length - overtaken,
-        failed,
-        overtaken,
-      };
     },
     // A long paste outlives its shoot, and react-query hands a running
     // mutation the latest options — so the shoot travels in the context.

@@ -31,6 +31,7 @@ import {
   exportLabel,
 } from "@/components/ExportDrawer";
 import type { FilmstripMode } from "@/components/Filmstrip";
+import { HistoryControls } from "@/components/HistoryControls";
 import { ImageGrid } from "@/components/ImageGrid";
 import { ImageList } from "@/components/ImageList";
 import { IndexingStatus } from "@/components/IndexingStatus";
@@ -57,20 +58,27 @@ import {
 } from "@/lib/core";
 import { type EditClipboard, pasteEdit } from "@/lib/editClipboard";
 import { fileName } from "@/lib/fileName";
+import {
+  clearHistory,
+  forgetHistoryPaths,
+  type HistoryDirection,
+  type HistoryEntry,
+  historyLabel,
+  jumpHistory,
+  stepHistory,
+} from "@/lib/history";
 import { betterThan, scoreRanks } from "@/lib/instinct";
 import { heldOrder } from "@/lib/loupeWalk";
 import {
+  cachedImage,
   type EditWrite,
   jobStatus,
   type ScoreProgress,
   useExportJobs,
   useImages,
   useLibrarySync,
-  usePasteEdits,
   useReveal,
   useScoring,
-  useSetEdit,
-  useSetRating,
   useShoots,
   useTrash,
 } from "@/lib/queries";
@@ -78,6 +86,7 @@ import { openRoot, type RootError, rootsQuery, toRootError } from "@/lib/roots";
 import { useSelection } from "@/lib/selection";
 import { browserOrder, type SortKey } from "@/lib/sort";
 import { useDebouncedEdit } from "@/lib/useDebouncedEdit";
+import { useRecordedWrites } from "@/lib/useRecordedWrites";
 import { useUpdater } from "@/lib/useUpdater";
 
 const VIEW_KEY = "photopipe.view";
@@ -235,9 +244,7 @@ export default function App() {
     openShoot,
     ready && autoScore,
   );
-  const setRating = useSetRating(openShoot);
-  const setEdit = useSetEdit(openShoot);
-  const pasteEdits = usePasteEdits(openShoot);
+  const writes = useRecordedWrites(openShoot);
   const reveal = useReveal();
   const trash = useTrash(openShoot);
   const exports = useExportJobs();
@@ -290,10 +297,8 @@ export default function App() {
     scrub: scrubEdit,
     flush: flushEdit,
     cancel: cancelEdit,
-  } = useDebouncedEdit(
-    (path, edit) => setEdit.mutate({ path, edit }),
-    EDIT_COMMIT_MS,
-  );
+    hold: holdEdit,
+  } = useDebouncedEdit(writes.writeEdit, EDIT_COMMIT_MS);
   // Before the core has read the file, an edit is relative to a blank
   // placeholder and would erase the real one.
   const readable = useCallback((image: ImageFile) => {
@@ -509,30 +514,6 @@ export default function App() {
     [editOf, readable],
   );
 
-  // Both change identity every render; the shortcut effect reads them as refs.
-  const pasteMutation = useRef(pasteEdits);
-  pasteMutation.current = pasteEdits;
-  const liveImages = useRef(allImages);
-  liveImages.current = allImages;
-
-  // Skip photos edited or pasted over since: that value is newer than the undo.
-  const undoPaste = useCallback(
-    (pasted: EditWrite[], previous: EditWrite[]) => {
-      const restore = previous.filter((write, index) => {
-        const live = liveImages.current.find(
-          (image) => image.path === write.path,
-        )?.edit;
-        return live && editKey(live) === editKey(pasted[index].edit);
-      });
-      if (restore.length === 0) {
-        toast("Those photos have changed since", { id: "clipboard" });
-        return;
-      }
-      pasteMutation.current.mutate(restore);
-    },
-    [],
-  );
-
   const pasteSettings = useCallback(
     async (targets: ImageFile[]) => {
       if (!clipboard) {
@@ -544,8 +525,7 @@ export default function App() {
         return;
       }
       const ready = targets.filter((image) => image.enriched);
-      const writes: EditWrite[] = [];
-      const previous: EditWrite[] = [];
+      const pasted: EditWrite[] = [];
       let keptWhiteBalance = 0;
       for (const image of ready) {
         const current = editOf(image);
@@ -558,13 +538,11 @@ export default function App() {
         ) {
           keptWhiteBalance += 1;
         }
-        writes.push({ path: image.path, edit: next });
-        // Undo restores what is on disk, not the draft the paste discards.
-        previous.push({ path: image.path, edit: image.edit });
+        pasted.push({ path: image.path, edit: next });
       }
       const notReady = targets.length - ready.length;
-      const unchanged = ready.length - writes.length;
-      if (writes.length === 0) {
+      const unchanged = ready.length - pasted.length;
+      if (pasted.length === 0) {
         toast(
           ready.length === 0
             ? "Still reading those photos' existing edits"
@@ -573,12 +551,10 @@ export default function App() {
         );
         return;
       }
-      if (editDraft && writes.some((write) => write.path === editDraft.path)) {
+      if (editDraft && pasted.some((write) => write.path === editDraft.path)) {
         cancelEdit();
       }
-      const result = await pasteMutation.current
-        .mutateAsync(writes)
-        .catch(() => null);
+      const result = await writes.paste(pasted).catch(() => null);
       if (!result) {
         toast.error("Pasting settings failed", { id: "clipboard" });
         return;
@@ -596,13 +572,52 @@ export default function App() {
         `Pasted settings onto ${result.written} ${
           result.written === 1 ? "photo" : "photos"
         }`,
-        {
-          description: notes.length > 0 ? notes.join(" · ") : undefined,
-          action: { label: "Undo", onClick: () => undoPaste(writes, previous) },
-        },
+        { description: notes.length > 0 ? notes.join(" · ") : undefined },
       );
     },
-    [clipboard, editDraft, editOf, cancelEdit, undoPaste],
+    [clipboard, editDraft, editOf, cancelEdit, writes.paste],
+  );
+
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const modalOpen = newProject || shootSettings !== null || settingsOpen;
+  const [revealed, setRevealed] = useState(0);
+  // Before the write, so you are on the photo when the step lands.
+  const showPhoto = useCallback(
+    (entry: HistoryEntry) => {
+      const present = (path: string) =>
+        cachedImage(queryClient, openShoot, path) !== undefined;
+      setCurrentPath((current) =>
+        current && entry.paths.includes(current)
+          ? current
+          : (entry.paths.find(present) ?? current),
+      );
+      setRevealed((count) => count + 1);
+    },
+    [queryClient, openShoot],
+  );
+  const travel = useCallback(
+    (direction: HistoryDirection) => {
+      flushEdit();
+      void stepHistory(direction, showPhoto).then((entry) => {
+        if (!entry) return;
+        const verb = direction === "undo" ? "Undid" : "Redid";
+        toast(`${verb} ${historyLabel(entry)}`, { id: "history" });
+      });
+    },
+    [flushEdit, showPhoto],
+  );
+  const jump = useCallback(
+    (cursor: number, entry?: HistoryEntry) => {
+      flushEdit();
+      if (entry) showPhoto(entry);
+      void jumpHistory(cursor).then((steps) => {
+        if (steps === 0) return;
+        toast(`Moved ${steps} ${steps === 1 ? "step" : "steps"} in history`, {
+          id: "history",
+        });
+      });
+    },
+    [flushEdit, showPhoto],
   );
 
   useEffect(() => {
@@ -627,7 +642,7 @@ export default function App() {
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
-      if (isTyping(event.target)) return;
+      if (isTyping(event.target) || event.defaultPrevented) return;
       if (event.metaKey || event.ctrlKey) {
         // Case-insensitive, so the Lightroom pair ⌘⇧C/⌘⇧V lands here too.
         const key = event.key.toLowerCase();
@@ -638,6 +653,14 @@ export default function App() {
         if (key === "v" && !cropping) {
           event.preventDefault();
           pasteSettings(pasteTargets);
+        }
+        if (key === "z" && !cropping && !modalOpen) {
+          event.preventDefault();
+          travel(event.shiftKey ? "redo" : "undo");
+        }
+        if (key === "y" && openShoot && !cropping && !modalOpen) {
+          event.preventDefault();
+          setHistoryOpen((open) => !open);
         }
         if (event.key === "a" && !loupeOpen) {
           event.preventDefault();
@@ -669,6 +692,8 @@ export default function App() {
     copySettings,
     pasteTargets,
     pasteSettings,
+    travel,
+    modalOpen,
   ]);
 
   const changeRatingStars = (stars: number) => {
@@ -678,6 +703,7 @@ export default function App() {
 
   const enterShoot = (shoot: string | null) => {
     flushEdit();
+    clearHistory();
     setOpenShoot(shoot);
     setCurrentPath(null);
     setLoupeOpen(false);
@@ -729,7 +755,10 @@ export default function App() {
         shoot={shoots.data?.find((s) => s.name === shootSettings)}
         onSaved={(saved) => {
           setShootSettings(null);
-          if (openShoot === shootSettings) setOpenShoot(saved);
+          if (openShoot !== shootSettings) return;
+          // a rename moves the folder out from under every recorded path
+          if (saved !== openShoot) clearHistory();
+          setOpenShoot(saved);
         }}
       />
       <NewProjectDialog
@@ -755,7 +784,7 @@ export default function App() {
             onRatingOp={setRatingOp}
             ratingStars={ratingStars}
             onRatingStars={changeRatingStars}
-            onRate={(path, rating) => setRating.mutate({ path, rating })}
+            onRate={writes.rate}
             onBackToGrid={() => (cropping ? cancelCrop() : setLoupeOpen(false))}
           />
         ) : (
@@ -774,9 +803,10 @@ export default function App() {
             showInfo={showInfo}
             onShowInfo={toggleShowInfo}
             rootPath={rootState.path}
-            onChangeRoot={() =>
-              setRootState({ kind: "picking", error: null, busy: false })
-            }
+            onChangeRoot={() => {
+              clearHistory();
+              setRootState({ kind: "picking", error: null, busy: false });
+            }}
             onSettings={() => setSettingsOpen(true)}
           />
         )}
@@ -823,6 +853,17 @@ export default function App() {
                 )}
               </Button>
             )}
+            {openShoot && (
+              <HistoryControls
+                shoot={openShoot}
+                open={historyOpen}
+                onOpenChange={setHistoryOpen}
+                disabled={cropping}
+                onUndo={() => travel("undo")}
+                onRedo={() => travel("redo")}
+                onJump={jump}
+              />
+            )}
             {inLoupe && (
               <Button
                 size="sm"
@@ -863,9 +904,14 @@ export default function App() {
             onReveal={() =>
               reveal.mutate(selectedImages.map((image) => image.path))
             }
-            onDelete={() =>
-              trash.mutate(selectedImages.map((image) => image.path))
-            }
+            onDelete={() => {
+              const paths = selectedImages.map((image) => image.path);
+              // even a failed trash may have moved some of them
+              void trash
+                .mutateAsync(paths)
+                .catch(() => {})
+                .finally(() => forgetHistoryPaths(paths));
+            }}
             onClear={selection.clear}
           />
           <div className="flex min-h-0 flex-1">
@@ -888,6 +934,7 @@ export default function App() {
                 onShootSettings={setShootSettings}
                 filterActive={filterActive}
                 focusPath={focusPath}
+                revealed={revealed}
                 inLoupe={inLoupe}
                 loupeImages={loupeImages}
                 loupeIndex={loupeIndex}
@@ -904,7 +951,7 @@ export default function App() {
                   setCurrentPath(loupeImages[next]?.path ?? null)
                 }
                 onCloseLoupe={() => setLoupeOpen(false)}
-                onRate={(path, rating) => setRating.mutate({ path, rating })}
+                onRate={writes.rate}
                 onOpenLoupe={(index) => {
                   // A new visit walks the browser's order as it stands now.
                   held.current = NO_HELD;
@@ -918,6 +965,7 @@ export default function App() {
                 image={loupeImage}
                 edit={loupeEdit}
                 onChange={(edit) => changeEdit(loupeImage, edit)}
+                onHold={holdEdit}
                 cropDraft={cropDraft}
                 onCropDraft={setCropDraft}
                 onEnterCrop={() =>
@@ -986,6 +1034,7 @@ type ContentProps = {
   onShootSettings: (shoot: string) => void;
   filterActive: boolean;
   focusPath: string | null;
+  revealed: number;
   inLoupe: boolean;
   loupeImages: ImageFile[];
   loupeIndex: number;
@@ -1022,6 +1071,7 @@ function Content({
   onShootSettings,
   filterActive,
   focusPath,
+  revealed,
   inLoupe,
   loupeImages,
   loupeIndex,
@@ -1120,6 +1170,7 @@ function Content({
               selectMode={selectMode}
               onSelect={selection.click}
               focusPath={focusPath}
+              revealed={revealed}
             />
           ) : (
             <ImageList
@@ -1130,6 +1181,7 @@ function Content({
               onOpen={onOpenLoupe}
               emptyMessage={emptyMessage}
               focusPath={focusPath}
+              revealed={revealed}
             />
           )}
         </div>
