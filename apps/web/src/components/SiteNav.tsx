@@ -4,9 +4,9 @@ import { PhotopipeWordmark } from "@photopipe/ui/components/photopipe-wordmark";
 import { REPO } from "@/lib/release";
 
 const LINKS = [
-  { label: "Develop", href: "#develop" },
-  { label: "Instinct", href: "#instinct" },
-  { label: "Export", href: "#everything-else" },
+  { label: "Develop", href: "/#develop" },
+  { label: "Instinct", href: "/#instinct" },
+  { label: "Export", href: "/#everything-else" },
   { label: "GitHub", href: REPO },
 ];
 
