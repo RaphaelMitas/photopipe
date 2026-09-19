@@ -5,20 +5,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@photopipe/ui/components/popover";
-import { Segmented } from "@photopipe/ui/components/segmented";
 import { cn } from "@photopipe/ui/lib/utils";
-import {
-  FolderOpen,
-  History,
-  type LucideIcon,
-  Redo2,
-  Undo2,
-} from "lucide-react";
-import { useState } from "react";
+import { FolderOpen, History, Redo2, Undo2 } from "lucide-react";
 import { fileName } from "@/lib/fileName";
 import { type HistoryEntry, useHistory } from "@/lib/history";
-
-type Scope = "all" | "photo";
 
 const target = (entry: HistoryEntry) => {
   if (entry.paths.length === 0) return "project";
@@ -33,35 +23,35 @@ export const historyLabel = (entry: HistoryEntry) =>
 const clock = (at: number) =>
   new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-function HistoryRow({
-  icon: Icon,
-  label,
-  detail,
-  sub,
-  time,
-  steps,
-  undone,
-  testid,
-  onClick,
-}: {
-  icon: LucideIcon;
-  label: string;
-  detail?: string;
+type Row = Pick<HistoryEntry, "icon" | "label" | "detail"> & {
   sub: string;
   time?: string;
-  steps: number;
-  undone: boolean;
-  testid: string;
-  onClick: () => void;
+};
+
+// position counts the entries applied once you are on this row; the origin is 0
+function HistoryRow({
+  row: { icon: Icon, label, detail, sub, time },
+  position,
+  cursor,
+  onJump,
+}: {
+  row: Row;
+  position: number;
+  cursor: number;
+  onJump: () => void;
 }) {
+  const steps = Math.abs(cursor - position);
+  const undone = position > cursor;
   const current = steps === 0;
   return (
     <li>
       <button
         type="button"
-        data-testid={testid}
+        data-testid={
+          position === 0 ? "history-row-origin" : `history-row-${position - 1}`
+        }
         aria-current={current}
-        onClick={onClick}
+        onClick={onJump}
         className={cn(
           "group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-accent",
           current && "bg-primary/15 hover:bg-primary/15",
@@ -108,7 +98,6 @@ function HistoryRow({
 
 export function HistoryControls({
   shoot,
-  currentPath,
   open,
   onOpenChange,
   disabled,
@@ -117,7 +106,6 @@ export function HistoryControls({
   onJump,
 }: {
   shoot: string;
-  currentPath: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   disabled: boolean;
@@ -126,18 +114,8 @@ export function HistoryControls({
   onJump: (cursor: number, entry?: HistoryEntry) => void;
 }) {
   const { entries, cursor } = useHistory();
-  const [scope, setScope] = useState<Scope>("all");
   const undoable = entries[cursor - 1];
   const redoable = entries[cursor];
-  const rows = entries
-    .map((entry, index) => ({ entry, index }))
-    .filter(
-      ({ entry }) =>
-        scope === "all" ||
-        (currentPath !== null && entry.paths.includes(currentPath)),
-    )
-    .reverse();
-
   return (
     <ButtonGroup>
       <Button
@@ -184,46 +162,29 @@ export function HistoryControls({
           data-testid="history-popover"
           className="w-80 gap-1 rounded-2xl p-1.5"
         >
-          <div className="flex items-center gap-2 px-2 pt-1 pb-1.5">
-            <span className="font-medium text-sm">History</span>
-            <div className="ml-auto w-36">
-              <Segmented
-                value={scope}
-                options={[
-                  ["all", "All"],
-                  ["photo", "This photo"],
-                ]}
-                testid="history-scope"
-                onChange={setScope}
-              />
-            </div>
-          </div>
+          <span className="px-2 pt-1 pb-1.5 font-medium text-sm">History</span>
           <ul className="max-h-96 overflow-y-auto">
-            {rows.map(({ entry, index }) => (
-              <HistoryRow
-                key={entry.id}
-                icon={entry.icon}
-                label={entry.label}
-                detail={entry.detail}
-                sub={target(entry)}
-                time={clock(entry.at)}
-                steps={Math.abs(cursor - (index + 1))}
-                undone={index >= cursor}
-                testid={`history-row-${index}`}
-                onClick={() => onJump(index + 1, entry)}
-              />
-            ))}
-            {scope === "all" && (
-              <HistoryRow
-                icon={FolderOpen}
-                label={`Opened ${shoot}`}
-                sub="before any change"
-                steps={cursor}
-                undone={false}
-                testid="history-row-origin"
-                onClick={() => onJump(0)}
-              />
-            )}
+            {entries
+              .map((entry, index) => (
+                <HistoryRow
+                  key={entry.id}
+                  row={{ ...entry, sub: target(entry), time: clock(entry.at) }}
+                  position={index + 1}
+                  cursor={cursor}
+                  onJump={() => onJump(index + 1, entry)}
+                />
+              ))
+              .reverse()}
+            <HistoryRow
+              row={{
+                icon: FolderOpen,
+                label: `Opened ${shoot}`,
+                sub: "before any change",
+              }}
+              position={0}
+              cursor={cursor}
+              onJump={() => onJump(0)}
+            />
           </ul>
           <p className="border-border border-t px-2 pt-2 pb-1 text-[10px] text-muted-foreground">
             This session only · ⌘Z undo · ⇧⌘Z redo

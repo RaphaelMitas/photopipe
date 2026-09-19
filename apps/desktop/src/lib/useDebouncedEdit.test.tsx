@@ -35,11 +35,12 @@ describe("useDebouncedEdit", () => {
     const commit = vi.fn();
     const { result } = renderHook(() => useDebouncedEdit(commit, 400));
 
-    act(() => result.current.scrub("/r/a.arw", editWith(1), true));
+    act(() => result.current.hold());
+    act(() => result.current.scrub("/r/a.arw", editWith(1)));
     act(() => vi.advanceTimersByTime(5000));
     expect(commit).not.toHaveBeenCalled();
 
-    act(() => result.current.flush());
+    act(() => result.current.release());
     expect(commit).toHaveBeenCalledExactlyOnceWith("/r/a.arw", editWith(1));
     vi.useRealTimers();
   });

@@ -154,6 +154,30 @@ describe("history", () => {
     expect(historyState().cursor).toBe(1);
   });
 
+  it("calls off an undo that was still waiting for the entry's own write", async () => {
+    let finishWrite = () => {};
+    let undone = false;
+    await pushHistory({
+      icon: Star,
+      label: "long paste",
+      paths: [],
+      undo: async () => {
+        undone = true;
+      },
+      redo: async () => {},
+      written: new Promise<void>((resolve) => {
+        finishWrite = resolve;
+      }),
+    });
+    const step = stepHistory("undo");
+    await new Promise((resolve) => setTimeout(resolve));
+    set(9);
+    finishWrite();
+    expect(await step).toBeNull();
+    expect(undone).toBe(false);
+    expect(value).toBe(9);
+  });
+
   it("forgets trashed photos so they cannot block what is under them", async () => {
     set(1, "kept.arw");
     set(2, "trashed.arw");

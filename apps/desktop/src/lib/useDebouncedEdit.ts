@@ -32,19 +32,28 @@ export function useDebouncedEdit(
     if (next) commitRef.current(next.path, next.edit);
   }, [cancel]);
 
-  // A drag holds its value until the pointer lets go and the caller flushes.
+  // A drag saves once, on release; everything else saves at rest.
+  const held = useRef(false);
+  const hold = useCallback(() => {
+    held.current = true;
+  }, []);
+  const release = useCallback(() => {
+    held.current = false;
+    flush();
+  }, [flush]);
+
   const scrub = useCallback(
-    (path: string, edit: Edit, dragging = false) => {
+    (path: string, edit: Edit) => {
       if (pending.current && pending.current.path !== path) flush();
       setDraft({ path, edit });
       pending.current = { path, edit };
       if (timer.current !== null) clearTimeout(timer.current);
-      timer.current = dragging ? null : window.setTimeout(flush, delayMs);
+      timer.current = held.current ? null : window.setTimeout(flush, delayMs);
     },
     [flush, delayMs],
   );
 
   useEffect(() => () => flush(), [flush]);
 
-  return { draft, scrub, flush, cancel };
+  return { draft, scrub, flush, cancel, hold, release };
 }

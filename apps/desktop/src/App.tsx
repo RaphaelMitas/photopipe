@@ -295,6 +295,8 @@ export default function App() {
     scrub: scrubEdit,
     flush: flushEdit,
     cancel: cancelEdit,
+    hold: holdEdit,
+    release: releaseEdit,
   } = useDebouncedEdit(writes.writeEdit, EDIT_COMMIT_MS);
   // Before the core has read the file, an edit is relative to a blank
   // placeholder and would erase the real one.
@@ -308,9 +310,9 @@ export default function App() {
       editDraft?.path === image.path ? editDraft.edit : image.edit,
     [editDraft],
   );
-  const changeEdit = (image: ImageFile, edit: Edit, dragging = false) => {
+  const changeEdit = (image: ImageFile, edit: Edit) => {
     if (!readable(image)) return;
-    scrubEdit(image.path, edit, dragging);
+    scrubEdit(image.path, edit);
   };
 
   const installBlocked = exports.running
@@ -852,7 +854,6 @@ export default function App() {
             {openShoot && (
               <HistoryControls
                 shoot={openShoot}
-                currentPath={currentPath}
                 open={historyOpen}
                 onOpenChange={setHistoryOpen}
                 disabled={cropping}
@@ -961,10 +962,9 @@ export default function App() {
               <EditSidebar
                 image={loupeImage}
                 edit={loupeEdit}
-                onChange={(edit, dragging) =>
-                  changeEdit(loupeImage, edit, dragging)
-                }
-                onCommit={flushEdit}
+                onChange={(edit) => changeEdit(loupeImage, edit)}
+                onHold={holdEdit}
+                onRelease={releaseEdit}
                 cropDraft={cropDraft}
                 onCropDraft={setCropDraft}
                 onEnterCrop={() =>

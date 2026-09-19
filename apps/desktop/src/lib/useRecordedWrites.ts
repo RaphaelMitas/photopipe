@@ -1,11 +1,12 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { ClipboardPaste, Star } from "lucide-react";
-import { useCallback, useRef } from "react";
+import { useCallback } from "react";
 import { type Edit, editKey, isRawFile } from "./core";
 import { describeEdit } from "./describeEdit";
 import { type HistoryAction, pushHistory } from "./history";
 import {
   cachedImage,
+  currentEdits,
   type EditWrite,
   type PasteResult,
   usePasteEdits,
@@ -15,12 +16,10 @@ import {
 
 export function useRecordedWrites(shoot: string | null) {
   const queryClient = useQueryClient();
-  const setRating = useSetRating(shoot);
-  const setEdit = useSetEdit(shoot);
-  const pasteEdits = usePasteEdits(shoot);
-  // History entries outlive the render that made them.
-  const live = useRef({ setRating, setEdit, pasteEdits });
-  live.current = { setRating, setEdit, pasteEdits };
+  // stable across renders, so an entry can hold on to them
+  const { mutateAsync: setRating } = useSetRating(shoot);
+  const { mutateAsync: setEdit } = useSetEdit(shoot);
+  const { mutateAsync: pasteEdits } = usePasteEdits(shoot);
 
   const cached = useCallback(
     (path: string) => cachedImage(queryClient, shoot, path),
@@ -31,8 +30,7 @@ export function useRecordedWrites(shoot: string | null) {
     (path: string, rating: number) => {
       const image = cached(path);
       if (!image || image.rating === rating) return;
-      const write = (value: number) =>
-        live.current.setRating.mutateAsync({ path, rating: value });
+      const write = (value: number) => setRating({ path, rating: value });
       record(
         write,
         image.rating,
@@ -47,7 +45,7 @@ export function useRecordedWrites(shoot: string | null) {
         image.enriched,
       );
     },
-    [cached],
+    [cached, setRating],
   );
 
   const writeEdit = useCallback(
@@ -55,41 +53,45 @@ export function useRecordedWrites(shoot: string | null) {
       const image = cached(path);
       if (!image || editKey(image.edit) === editKey(edit)) return;
       const before = image.edit;
-      const write = (value: Edit) =>
-        live.current.setEdit.mutateAsync({ path, edit: value });
+      const write = (value: Edit) => setEdit({ path, edit: value });
       record(write, before, edit, {
         ...describeEdit(before, edit, isRawFile(image)),
         paths: [path],
       });
     },
-    [cached],
+    [cached, setEdit],
   );
 
   const paste = useCallback(
     (writes: EditWrite[]): Promise<PasteResult> => {
-      const previous = writes.flatMap(({ path }) => {
-        const edit = cached(path)?.edit;
-        return edit ? [{ path, edit }] : [];
-      });
+      const previous = Array.from(
+        currentEdits(
+          queryClient,
+          shoot,
+          writes.map((write) => write.path),
+        ),
+        ([path, edit]) => ({ path, edit }),
+      );
+      // The batch resolves even when every write failed; a step must not.
+      const landed = (batch: Promise<PasteResult>) =>
+        batch.then((result) => {
+          if (result.written === 0) throw new Error("nothing pasted");
+        });
       const among = (all: EditWrite[], paths: string[]) =>
-        all.filter((write) => paths.includes(write.path));
-      const batch = live.current.pasteEdits.mutateAsync(writes);
+        pasteEdits(all.filter((write) => paths.includes(write.path)));
+      const batch = pasteEdits(writes);
       // Recorded up front: ⌘Z during a long paste has to mean this paste.
       void pushHistory({
         icon: ClipboardPaste,
         label: "Paste settings",
         paths: writes.map((write) => write.path),
-        undo: (paths) =>
-          live.current.pasteEdits.mutateAsync(among(previous, paths)),
-        redo: (paths) =>
-          live.current.pasteEdits.mutateAsync(among(writes, paths)),
-        written: batch.then((result) => {
-          if (result.written === 0) throw new Error("nothing pasted");
-        }),
+        undo: (paths) => landed(among(previous, paths)),
+        redo: (paths) => landed(among(writes, paths)),
+        written: landed(batch),
       });
       return batch;
     },
-    [cached],
+    [queryClient, shoot, pasteEdits],
   );
 
   return { rate, writeEdit, paste };

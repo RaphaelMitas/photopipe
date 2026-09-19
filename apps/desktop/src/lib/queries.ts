@@ -317,7 +317,6 @@ export function useSetRating(shoot: string | null) {
       patchImage(queryClient, shoot, path, { rating });
       return { previous };
     },
-    // Per path, like edits: a whole-list snapshot would take other writes down.
     onError: (error, vars, context) => {
       if (context?.previous !== undefined) {
         patchImage(queryClient, shoot, vars.path, { rating: context.previous });
@@ -351,7 +350,7 @@ function patchEdits(
   );
 }
 
-function currentEdits(
+export function currentEdits(
   queryClient: QueryClient,
   shoot: string | null,
   paths: string[],

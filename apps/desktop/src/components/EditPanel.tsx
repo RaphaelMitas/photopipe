@@ -465,7 +465,8 @@ export function EditSidebar({
   image,
   edit,
   onChange,
-  onCommit,
+  onHold,
+  onRelease,
   cropDraft,
   onCropDraft,
   onEnterCrop,
@@ -475,9 +476,9 @@ export function EditSidebar({
   onCopySettings,
   onPasteSettings,
   onClose,
-}: Omit<Props, "onChange"> & {
-  onChange: (edit: Edit, dragging: boolean) => void;
-  onCommit: () => void;
+}: Props & {
+  onHold: () => void;
+  onRelease: () => void;
   canPaste: boolean;
   onCopySettings: () => void;
   onPasteSettings: () => void;
@@ -485,19 +486,16 @@ export function EditSidebar({
 }) {
   const cropping = cropDraft !== null;
   const quickSwitch = useRawDecoderQuickSwitch();
-  const pointerDown = useRef(false);
   const hold = (event: React.PointerEvent) => {
     if (event.button !== 0) return;
-    pointerDown.current = true;
+    onHold();
     const release = () => {
-      pointerDown.current = false;
-      onCommit();
+      onRelease();
       for (const type of RELEASES) window.removeEventListener(type, release);
     };
     // on window: a pointer that went down here can come up anywhere
     for (const type of RELEASES) window.addEventListener(type, release);
   };
-  const change = (next: Edit) => onChange(next, pointerDown.current);
   return (
     <div
       data-testid="edit-sidebar"
@@ -536,7 +534,7 @@ export function EditSidebar({
           variant="ghost"
           size="sm"
           data-testid="edit-reset-all"
-          onClick={() => change({ ...identityEdit })}
+          onClick={() => onChange({ ...identityEdit })}
           disabled={isIdentityEdit(edit) || cropping}
           title="Reset all edits"
           className="h-6 px-1.5 text-[10px] text-muted-foreground"
@@ -561,7 +559,7 @@ export function EditSidebar({
           <EditPanel
             image={image}
             edit={edit}
-            onChange={change}
+            onChange={onChange}
             cropDraft={cropDraft}
             onCropDraft={onCropDraft}
             onEnterCrop={onEnterCrop}

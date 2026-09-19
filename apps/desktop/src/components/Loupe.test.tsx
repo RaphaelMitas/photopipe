@@ -288,7 +288,8 @@ describe("EditSidebar", () => {
             image={makeImages()[1]}
             edit={edit}
             onChange={onChange}
-            onCommit={vi.fn()}
+            onHold={vi.fn()}
+            onRelease={vi.fn()}
             cropDraft={cropDraft}
             onCropDraft={onCropDraft}
             onEnterCrop={onEnterCrop}
@@ -381,7 +382,7 @@ describe("EditSidebar", () => {
     const { onChange, onClose } = renderEditSidebar(editWith(0.25));
     expect(screen.getByText("+0.25")).toBeVisible();
     fireEvent.click(screen.getByTestId("exposure-reset"));
-    expect(onChange).toHaveBeenCalledWith(editWith(0), false);
+    expect(onChange).toHaveBeenCalledWith(editWith(0));
     fireEvent.click(screen.getByTestId("edit-close"));
     expect(onClose).toHaveBeenCalled();
   });
@@ -398,7 +399,7 @@ describe("EditSidebar", () => {
       ],
     });
     fireEvent.click(screen.getByTestId("edit-reset-all"));
-    expect(onChange).toHaveBeenCalledWith(identityEdit, false);
+    expect(onChange).toHaveBeenCalledWith(identityEdit);
 
     cleanup();
     renderEditSidebar(identityEdit);
