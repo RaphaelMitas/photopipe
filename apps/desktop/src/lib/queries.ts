@@ -292,16 +292,27 @@ export function cachedImage(
     ?.find((image) => image.path === path);
 }
 
-function patchImage(
+/// Per path: a whole-list snapshot rolled back would take concurrent writes
+/// down with the failed one.
+function patchImages(
+  queryClient: QueryClient,
+  shoot: string | null,
+  patches: Map<string, Partial<ImageFile>>,
+) {
+  queryClient.setQueryData<ImageFile[]>(["images", shoot], (old) =>
+    old?.map((image) => {
+      const patch = patches.get(image.path);
+      return patch ? { ...image, ...patch } : image;
+    }),
+  );
+}
+
+const patchImage = (
   queryClient: QueryClient,
   shoot: string | null,
   path: string,
   patch: Partial<ImageFile>,
-) {
-  queryClient.setQueryData<ImageFile[]>(["images", shoot], (old) =>
-    old?.map((image) => (image.path === path ? { ...image, ...patch } : image)),
-  );
-}
+) => patchImages(queryClient, shoot, new Map([[path, patch]]));
 
 export function useSetRating(shoot: string | null) {
   const queryClient = useQueryClient();
@@ -326,61 +337,8 @@ export function useSetRating(shoot: string | null) {
       });
     },
     onSettled: () => {
-      if (queryClient.isMutating({ mutationKey: SET_RATING_KEY }) === 1) {
+      if (xmpWritesInFlight(queryClient) === 1) {
         queryClient.invalidateQueries({ queryKey: ["images", shoot] });
-      }
-    },
-  });
-}
-
-/// Many ratings as one mutation: undoing a long stretch of culling would
-/// otherwise patch, settle and refetch once per photo.
-export function useSetRatings(shoot: string | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationKey: SET_RATING_KEY,
-    mutationFn: (ratings: Map<string, number>) => {
-      const target = shoot;
-      return writeBatch(
-        ratings,
-        (path, rating) =>
-          cachedImage(queryClient, target, path)?.rating === rating,
-        (path, rating) =>
-          writeInOrder(path, () =>
-            coreRequest<SetRatingResult>("setRating", {
-              shoot: target,
-              path,
-              rating,
-            }),
-          ),
-      );
-    },
-    onMutate: async (ratings) => {
-      await queryClient.cancelQueries({ queryKey: ["images", shoot] });
-      const previous = new Map<string, number>();
-      for (const [path, rating] of ratings) {
-        const before = cachedImage(queryClient, shoot, path)?.rating;
-        if (before !== undefined) previous.set(path, before);
-        patchImage(queryClient, shoot, path, { rating });
-      }
-      return { previous, shoot };
-    },
-    onSuccess: (result, _ratings, context) => {
-      for (const path of result.failed) {
-        const rating = context.previous.get(path);
-        if (rating !== undefined) {
-          patchImage(queryClient, context.shoot, path, { rating });
-        }
-      }
-      if (result.failed.length > 0) {
-        toast.error(`${result.failed.length} ratings could not be saved`);
-      }
-    },
-    onSettled: (_result, _error, _ratings, context) => {
-      if (queryClient.isMutating({ mutationKey: SET_RATING_KEY }) === 1) {
-        queryClient.invalidateQueries({
-          queryKey: ["images", context?.shoot ?? shoot],
-        });
       }
     },
   });
@@ -388,20 +346,16 @@ export function useSetRatings(shoot: string | null) {
 
 export type EditWrite = { path: string; edit: Edit };
 
-/// Per path: a whole-list snapshot rolled back would take concurrent writes
-/// down with the failed one.
-function patchEdits(
+const patchEdits = (
   queryClient: QueryClient,
   shoot: string | null,
   edits: Map<string, Edit>,
-) {
-  queryClient.setQueryData<ImageFile[]>(["images", shoot], (old) =>
-    old?.map((image) => {
-      const edit = edits.get(image.path);
-      return edit ? { ...image, edit } : image;
-    }),
+) =>
+  patchImages(
+    queryClient,
+    shoot,
+    new Map(Array.from(edits, ([path, edit]) => [path, { edit }])),
   );
-}
 
 export function currentEdits(
   queryClient: QueryClient,
@@ -456,14 +410,14 @@ export function useSetEdit(shoot: string | null) {
       });
     },
     onSettled: () => {
-      if (queryClient.isMutating({ mutationKey: SET_EDIT_KEY }) === 1) {
+      if (xmpWritesInFlight(queryClient) === 1) {
         queryClient.invalidateQueries({ queryKey: ["images", shoot] });
       }
     },
   });
 }
 
-export type PasteResult = {
+export type BatchResult = {
   written: number;
   failed: string[];
   overtaken: number;
@@ -472,95 +426,121 @@ export type PasteResult = {
 /// Enough to keep exiftool busy without starving renders and thumbnails.
 const BATCH_CONCURRENCY = 4;
 
-async function writeBatch<V>(
-  values: Map<string, V>,
-  isLive: (path: string, value: V) => boolean,
-  write: (path: string, value: V) => Promise<unknown>,
-): Promise<PasteResult> {
-  const queue = values.entries();
-  const failed: string[] = [];
-  let overtaken = 0;
-  const worker = async () => {
-    for (const [path, value] of queue) {
-      // Changed by hand since the batch started: that value is newer.
-      if (!isLive(path, value)) {
-        overtaken += 1;
-        continue;
-      }
-      try {
-        await write(path, value);
-      } catch {
-        failed.push(path);
-      }
-    }
-  };
-  await Promise.all(
-    Array.from({ length: Math.min(BATCH_CONCURRENCY, values.size) }, worker),
-  );
-  return {
-    written: values.size - failed.length - overtaken,
-    failed,
-    overtaken,
-  };
-}
+type BatchField<I, V> = {
+  mutationKey: string[];
+  values: (input: I) => Map<string, V>;
+  of: (image: ImageFile) => V;
+  same: (a: V, b: V) => boolean;
+  patch: (value: V) => Partial<ImageFile>;
+  write: (shoot: string | null, path: string, value: V) => Promise<unknown>;
+  failedToast: (count: number) => string;
+};
 
-/// One mutation for the batch, under the single-edit key so the library poller
+/// One mutation for the batch, under the single-write key so the library poller
 /// leaves the images cache alone until every write has settled.
-export function usePasteEdits(shoot: string | null) {
+function useBatchWrite<I, V>(shoot: string | null, field: BatchField<I, V>) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationKey: SET_EDIT_KEY,
-    mutationFn: (writes: EditWrite[]) => {
+    mutationKey: field.mutationKey,
+    mutationFn: async (input: I): Promise<BatchResult> => {
+      // A long batch outlives its shoot, so it keeps the one it started with.
       const target = shoot;
-      return writeBatch(
-        new Map(writes.map((write) => [write.path, write.edit])),
-        (path, edit) => {
-          const live = cachedImage(queryClient, target, path)?.edit;
-          return !live || editKey(live) === editKey(edit);
-        },
-        (path, edit) => writeEdit(target, { path, edit }),
-      );
-    },
-    // A long paste outlives its shoot, and react-query hands a running
-    // mutation the latest options — so the shoot travels in the context.
-    onMutate: async (writes) => {
-      await queryClient.cancelQueries({ queryKey: ["images", shoot] });
-      const previous = currentEdits(
-        queryClient,
-        shoot,
-        writes.map((write) => write.path),
-      );
-      patchEdits(
-        queryClient,
-        shoot,
-        new Map(writes.map((write) => [write.path, write.edit])),
-      );
-      return { previous, shoot };
-    },
-    onSuccess: (result, _writes, context) => {
-      if (result.failed.length === 0) return;
-      const rollback = new Map<string, Edit>();
-      for (const path of result.failed) {
-        const edit = context?.previous.get(path);
-        if (edit) rollback.set(path, edit);
+      const values = field.values(input);
+      const live = (path: string) => {
+        const image = cachedImage(queryClient, target, path);
+        return image && field.of(image);
+      };
+      await queryClient.cancelQueries({ queryKey: ["images", target] });
+      const previous = new Map<string, V>();
+      const patches = new Map<string, Partial<ImageFile>>();
+      for (const [path, value] of values) {
+        const before = live(path);
+        if (before !== undefined) previous.set(path, before);
+        patches.set(path, field.patch(value));
       }
-      patchEdits(queryClient, context.shoot, rollback);
-      toast.error(
-        `${result.failed.length} ${
-          result.failed.length === 1 ? "photo" : "photos"
-        } kept the settings they had`,
-        { description: "Saving failed" },
+      patchImages(queryClient, target, patches);
+
+      const queue = values.entries();
+      const failed: string[] = [];
+      let overtaken = 0;
+      const worker = async () => {
+        for (const [path, value] of queue) {
+          // Changed by hand since the batch started: that value is newer. A
+          // refetch putting the old value back is not a hand change.
+          const now = live(path);
+          const before = previous.get(path);
+          const untouched =
+            now === undefined ||
+            field.same(now, value) ||
+            (before !== undefined && field.same(now, before));
+          if (!untouched) {
+            overtaken += 1;
+            continue;
+          }
+          try {
+            await field.write(target, path, value);
+          } catch {
+            failed.push(path);
+            if (before !== undefined) {
+              patchImage(queryClient, target, path, field.patch(before));
+            }
+          }
+        }
+      };
+      await Promise.all(
+        Array.from(
+          { length: Math.min(BATCH_CONCURRENCY, values.size) },
+          worker,
+        ),
       );
-    },
-    onSettled: (_result, _error, _writes, context) => {
-      if (queryClient.isMutating({ mutationKey: SET_EDIT_KEY }) === 1) {
-        queryClient.invalidateQueries({
-          queryKey: ["images", context?.shoot ?? shoot],
+      if (failed.length > 0) {
+        toast.error(field.failedToast(failed.length), {
+          description: "Saving failed",
         });
       }
+      if (xmpWritesInFlight(queryClient) === 1) {
+        queryClient.invalidateQueries({ queryKey: ["images", target] });
+      }
+      return {
+        written: values.size - failed.length - overtaken,
+        failed,
+        overtaken,
+      };
     },
   });
 }
+
+const photos = (count: number) =>
+  `${count} ${count === 1 ? "photo" : "photos"}`;
+
+export const usePasteEdits = (shoot: string | null) =>
+  useBatchWrite(shoot, {
+    mutationKey: SET_EDIT_KEY,
+    values: (edits: Map<string, Edit>) => edits,
+    of: (image) => image.edit,
+    same: (a, b) => editKey(a) === editKey(b),
+    patch: (edit) => ({ edit }),
+    write: (target, path, edit) => writeEdit(target, { path, edit }),
+    failedToast: (count) => `${photos(count)} kept the settings they had`,
+  });
+
+export const useSetRatings = (shoot: string | null) =>
+  useBatchWrite(shoot, {
+    mutationKey: SET_RATING_KEY,
+    values: (ratings: Map<string, number>) => ratings,
+    of: (image) => image.rating,
+    same: (a, b) => a === b,
+    patch: (rating) => ({ rating }),
+    write: (target, path, rating) =>
+      writeInOrder(path, () =>
+        coreRequest<SetRatingResult>("setRating", {
+          shoot: target,
+          path,
+          rating,
+        }),
+      ),
+    failedToast: (count) => `${photos(count)} kept the rating they had`,
+  });
 
 export function useReveal() {
   return useMutation({

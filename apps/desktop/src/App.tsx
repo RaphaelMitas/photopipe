@@ -607,10 +607,10 @@ export default function App() {
     [flushEdit, showPhoto],
   );
   const jump = useCallback(
-    (cursor: number, entry?: HistoryEntry) => {
+    (entry: HistoryEntry | null) => {
       flushEdit();
       if (entry) showPhoto(entry);
-      void jumpHistory(cursor).then((steps) => {
+      void jumpHistory(entry).then((steps) => {
         if (steps === 0) return;
         toast(`Moved ${steps} ${steps === 1 ? "step" : "steps"} in history`, {
           id: "history",

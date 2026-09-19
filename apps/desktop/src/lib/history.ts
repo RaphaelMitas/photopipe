@@ -1,21 +1,20 @@
 import type { LucideIcon } from "lucide-react";
 import { useSyncExternalStore } from "react";
 
-// Entries put their values into a channel, and a channel writes what it holds
-// as one batch: a jump over a thousand ratings is one write per photo.
-export type HistoryChannel = { flush: () => Promise<unknown> };
+type HistoryChannel = { flush: () => Promise<unknown> };
 
-export type HistoryAction = {
+type HistoryAction = {
   icon: LucideIcon;
   label: string;
   detail?: string;
   paths: string[];
   channel: HistoryChannel;
-  // absolute values, so a batch and a step-by-step replay end the same
   stage: (direction: HistoryDirection, path: string) => void;
   // the write that made the entry: undo waits for it, its failure drops the entry
   written?: Promise<unknown>;
 };
+
+export type Recorded = Omit<HistoryAction, "channel" | "stage">;
 
 export type HistoryEntry = HistoryAction & { id: number; at: number };
 export type HistoryDirection = "undo" | "redo";
@@ -69,8 +68,35 @@ function rewrite(keep: (entry: HistoryEntry) => HistoryEntry | null) {
 const drop = (id: number) =>
   rewrite((entry) => (entry.id === id ? null : entry));
 
+// A channel writes everything staged as one batch: a long jump is one write per
+// photo. Values are absolute, so a batch ends where a step-by-step replay would.
+export function historyChannel<V>(
+  write: (values: Map<string, V>) => Promise<unknown>,
+) {
+  let staged = new Map<string, V>();
+  const channel = {
+    flush: () => {
+      const values = staged;
+      staged = new Map();
+      return write(values);
+    },
+  };
+  return {
+    record(action: Recorded, undo: Map<string, V>, redo: Map<string, V>) {
+      return pushHistory({
+        ...action,
+        channel,
+        stage: (direction, path) => {
+          const value = (direction === "undo" ? undo : redo).get(path);
+          if (value !== undefined) staged.set(path, value);
+        },
+      });
+    },
+  };
+}
+
 // queued: pushed mid-undo it would land above the entry being undone
-export function pushHistory(action: HistoryAction) {
+function pushHistory(action: HistoryAction) {
   const entry = { ...action, id: nextId++, at: Date.now() };
   const clearsAtStart = clears;
   // steps still waiting were aimed at a timeline this action is about to change
@@ -151,7 +177,12 @@ export function stepHistory(direction: HistoryDirection, onStart?: OnStart) {
   });
 }
 
-export function jumpHistory(cursor: number) {
+// To an entry, not an index: rows can shift between the click and the move.
+export function jumpHistory(to: HistoryEntry | null) {
   const asked = { pushes, clears };
-  return enqueue(async () => (await travel(cursor, asked)).length);
+  return enqueue(async () => {
+    const index = to ? state.entries.findIndex(({ id }) => id === to.id) : -1;
+    if (to && index === -1) return 0;
+    return (await travel(index + 1, asked)).length;
+  });
 }

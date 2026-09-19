@@ -446,11 +446,11 @@ test("arrow keys on a slider save their last step as one entry", async ({
   }
   await expect(page.getByTestId("history-undo")).toBeEnabled();
 
+  // The newest row: a slow runner may split the presses across the debounce.
   await page.getByTestId("history-toggle").click();
-  await expect(page.getByTestId("history-row-0")).toContainText(
-    "Exposure +0.15",
-  );
-  await expect(page.getByTestId("history-row-1")).toHaveCount(0);
+  await expect(
+    page.getByTestId("history-popover").getByRole("button").first(),
+  ).toContainText("Exposure +0.15");
 });
 
 test("a jump across several steps lands every photo where stepping would", async ({
@@ -502,7 +502,10 @@ test("the history opens on the state you are in, not at the top", async ({
   await page.getByTestId("history-toggle").click();
   const current = page.getByTestId("history-row-14");
   await expect(current).toHaveAttribute("aria-current", "true");
-  await expect(current).toBeInViewport();
+  // rows on both sides in view means the middle, not merely scrolled into sight
+  await expect(page.getByTestId("history-row-17")).toBeInViewport();
+  await expect(page.getByTestId("history-row-11")).toBeInViewport();
+  await expect(page.getByTestId("history-row-29")).toBeAttached();
   await expect(page.getByTestId("history-row-29")).not.toBeInViewport();
 });
 

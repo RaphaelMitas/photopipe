@@ -3,10 +3,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   clearHistory,
   forgetHistoryPaths,
-  type HistoryAction,
+  historyChannel,
   historyState,
   jumpHistory,
-  pushHistory,
+  type Recorded,
   stepHistory,
 } from "./history";
 
@@ -15,41 +15,38 @@ let flushes: Map<string, number>[] = [];
 let failing = false;
 let holdFlush: Promise<void> | null = null;
 
-const staged = new Map<string, number>();
-const channel = {
-  flush: async () => {
-    const values = new Map(staged);
-    staged.clear();
-    await holdFlush;
-    if (failing) throw new Error("disk");
-    flushes.push(values);
-    for (const [path, value] of values) disk.set(path, value);
-  },
-};
+const channel = historyChannel(async (values: Map<string, number>) => {
+  await holdFlush;
+  if (failing) throw new Error("disk");
+  flushes.push(values);
+  for (const [path, value] of values) disk.set(path, value);
+});
 
-const push = (action: Partial<HistoryAction>) =>
-  pushHistory({
-    icon: Star,
-    label: "step",
-    paths: [],
-    channel,
-    stage: () => {},
-    ...action,
-  });
+const push = (action: Partial<Recorded>, undo = new Map(), redo = new Map()) =>
+  channel.record(
+    { icon: Star, label: "step", paths: [...undo.keys()], ...action },
+    undo,
+    redo,
+  );
 
 function set(next: number, paths = ["a.arw"]) {
   const before = new Map(paths.map((path) => [path, disk.get(path) ?? 0]));
   for (const path of paths) disk.set(path, next);
-  void push({
-    label: `set ${next}`,
-    paths,
-    stage: (direction, path) =>
-      staged.set(path, direction === "undo" ? (before.get(path) ?? 0) : next),
-  });
+  void push(
+    { label: `set ${next}` },
+    before,
+    new Map(paths.map((path) => [path, next])),
+  );
 }
 
 const labels = () => historyState().entries.map((entry) => entry.label);
 const tick = () => new Promise((resolve) => setTimeout(resolve));
+
+// after the queued pushes have landed, so the entry exists to jump to
+const jumpTo = async (applied: number) => {
+  await tick();
+  return jumpHistory(historyState().entries[applied - 1] ?? null);
+};
 
 describe("history", () => {
   beforeEach(() => {
@@ -58,7 +55,6 @@ describe("history", () => {
     flushes = [];
     failing = false;
     holdFlush = null;
-    staged.clear();
   });
 
   it("walks back and forward through what was done", async () => {
@@ -89,7 +85,7 @@ describe("history", () => {
     set(2, ["a.arw", "b.arw"]);
     set(3, ["b.arw"]);
     set(4, ["a.arw"]);
-    await jumpHistory(1);
+    await jumpTo(1);
     expect(flushes).toEqual([
       new Map([
         ["a.arw", 1],
@@ -98,11 +94,11 @@ describe("history", () => {
     ]);
 
     const batched = new Map(disk);
-    await jumpHistory(4);
+    await jumpTo(4);
     for (let cursor = 4; cursor > 1; cursor--) await stepHistory("undo");
     expect(disk).toEqual(batched);
 
-    await jumpHistory(4);
+    await jumpTo(4);
     expect(disk).toEqual(
       new Map([
         ["a.arw", 4],
@@ -136,7 +132,7 @@ describe("history", () => {
     set(2);
     set(3);
     failing = true;
-    expect(await jumpHistory(0)).toBe(0);
+    expect(await jumpTo(0)).toBe(0);
     expect(historyState().cursor).toBe(3);
     expect(labels()).toEqual(["set 1", "set 2", "set 3"]);
   });
@@ -183,14 +179,15 @@ describe("history", () => {
 
   it("calls off an undo that was still waiting for the entry's own write", async () => {
     let finishWrite = () => {};
-    await push({
-      label: "long paste",
-      paths: ["a.arw"],
-      stage: (_direction, path) => staged.set(path, -1),
-      written: new Promise<void>((resolve) => {
-        finishWrite = resolve;
-      }),
-    });
+    await push(
+      {
+        label: "long paste",
+        written: new Promise<void>((resolve) => {
+          finishWrite = resolve;
+        }),
+      },
+      new Map([["a.arw", -1]]),
+    );
     const step = stepHistory("undo");
     await tick();
     set(9);
