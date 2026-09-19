@@ -418,7 +418,7 @@ test("a slider drag is one history entry, and undo walks back to its photo", asy
 
   await page.getByTestId("history-toggle").click();
   await expect(
-    page.getByTestId("history-popover").getByRole("listitem"),
+    page.getByTestId("history-popover").getByRole("button"),
   ).toHaveCount(3);
   await expect(page.getByTestId("history-row-0")).toContainText("Exposure");
   await expect(page.getByTestId("history-row-1")).toContainText("Rating ★★★");

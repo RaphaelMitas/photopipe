@@ -1,6 +1,15 @@
 import { Button } from "@photopipe/ui/components/button";
 import { ButtonGroup } from "@photopipe/ui/components/button-group";
 import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from "@photopipe/ui/components/item";
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -44,7 +53,15 @@ function HistoryRow({
   const undone = position > cursor;
   const current = steps === 0;
   return (
-    <li>
+    <Item
+      asChild
+      size="xs"
+      className={cn(
+        "gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-accent",
+        current && "bg-primary/15 hover:bg-primary/15",
+        undone && "opacity-40",
+      )}
+    >
       <button
         type="button"
         data-testid={
@@ -52,47 +69,45 @@ function HistoryRow({
         }
         aria-current={current}
         onClick={onJump}
-        className={cn(
-          "group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-accent",
-          current && "bg-primary/15 hover:bg-primary/15",
-          undone && "opacity-40",
-        )}
       >
-        <span
+        <ItemMedia
+          variant="icon"
           className={cn(
-            "grid size-6.5 shrink-0 place-items-center rounded-md bg-accent text-muted-foreground",
+            "size-6.5 translate-y-0! self-center! rounded-md bg-accent text-muted-foreground [&_svg]:size-3.5!",
             current && "bg-primary text-primary-foreground",
           )}
         >
-          <Icon className="size-3.5" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate font-medium text-xs">
+          <Icon />
+        </ItemMedia>
+        <ItemContent className="min-w-0 gap-0!">
+          <ItemTitle className="text-xs">
             {label}{" "}
             <span className="font-mono font-normal text-muted-foreground">
               {detail}
             </span>
-          </span>
-          <span className="block truncate font-mono text-[10px] text-muted-foreground">
+          </ItemTitle>
+          <ItemDescription className="line-clamp-1 font-mono text-[10px]">
             {sub}
+          </ItemDescription>
+        </ItemContent>
+        <ItemActions className="text-[10px] text-muted-foreground">
+          <span
+            className={cn(
+              "font-mono",
+              current ? "text-primary" : "group-hover/item:hidden",
+            )}
+          >
+            {time}
           </span>
-        </span>
-        <span
-          className={cn(
-            "font-mono text-[10px] text-muted-foreground",
-            current ? "text-primary" : "group-hover:hidden",
+          {!current && (
+            <span className="hidden group-hover/item:inline">
+              {undone ? "Redo to here" : "Back to here"}
+              {steps > 1 && ` · ${steps} steps`}
+            </span>
           )}
-        >
-          {time}
-        </span>
-        {!current && (
-          <span className="hidden text-[10px] text-muted-foreground group-hover:inline">
-            {undone ? "Redo to here" : "Back to here"}
-            {steps > 1 && ` · ${steps} steps`}
-          </span>
-        )}
+        </ItemActions>
       </button>
-    </li>
+    </Item>
   );
 }
 
@@ -163,7 +178,7 @@ export function HistoryControls({
           className="w-80 gap-1 rounded-2xl p-1.5"
         >
           <span className="px-2 pt-1 pb-1.5 font-medium text-sm">History</span>
-          <ul className="max-h-96 overflow-y-auto">
+          <ItemGroup className="max-h-96 gap-0! overflow-y-auto">
             {entries
               .map((entry, index) => (
                 <HistoryRow
@@ -185,7 +200,7 @@ export function HistoryControls({
               cursor={cursor}
               onJump={() => onJump(0)}
             />
-          </ul>
+          </ItemGroup>
           <p className="border-border border-t px-2 pt-2 pb-1 text-[10px] text-muted-foreground">
             This session only · ⌘Z undo · ⇧⌘Z redo
           </p>
