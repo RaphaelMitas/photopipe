@@ -126,7 +126,10 @@ and needs six more secrets: `MAS_CERTIFICATE` (base64 .p12 holding both an
 Apple Distribution and a Mac Installer Distribution identity),
 `MAS_CERTIFICATE_PASSWORD`, `MAS_PROVISIONING_PROFILE` (base64 Mac App Store
 profile), `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID` and
-`APP_STORE_CONNECT_KEY` (the .p8 contents). Without `MAS_CERTIFICATE` the job
+`APP_STORE_CONNECT_KEY` (the .p8 contents). Make the two certificates from
+separate signing requests: when they share a private key, Keychain Access
+says "Export 2 items" and writes one, and the pair has to be merged with
+`openssl pkcs12 -export` instead. Without `MAS_CERTIFICATE` the job
 is skipped and the release still succeeds. The job builds
 
 ```bash
@@ -158,8 +161,10 @@ Store Connect refuses a number it has seen and a retry ships the same
 version. `gh workflow run release.yml -f submit_to_app_store=true` redoes
 only the store half from the tagged commit and leaves the DMG release
 untouched. What the API cannot set stays a one-time job in App Store
-Connect: price, category, age rating, the privacy questionnaire and the
-review contact.
+Connect: price, age rating, the privacy questionnaire and the review
+contact. Set the contact before the first submission: deliver crashes with
+"No data" on a version that has none, and it stays out of the repo because
+the repo is public.
 
 Sandbox consent works in two halves. The Rust shell owns it: it shows the
 folder panel, mints a security-scoped bookmark from the grant, keeps it in

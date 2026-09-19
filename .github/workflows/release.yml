@@ -473,9 +473,8 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Not the tag: the listing and the lanes are not part of the binary, so a retry picks up a fix to them.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ needs.check.outputs.ref }}
 
       - name: Refuse to send a placeholder listing to review
         run: |
@@ -515,7 +514,7 @@ jobs:
               exit 0
             fi
             # Only a build Apple is still processing is worth waiting out; anything else fails the same way again.
-            if ! grep -qiE "couldn'?t find build|could not find build|no build|build.*not.*(found|ready)|timed? ?out.*(build|processing)" deliver.log; then
+            if ! grep -qiE "build number.*does not exist|couldn'?t find build|could not find build|no build|build.*not.*(found|ready)|timed? ?out.*(build|processing)" deliver.log; then
               echo "::error::deliver failed for a reason other than build processing."
               exit 1
             fi
