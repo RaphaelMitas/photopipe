@@ -24,7 +24,7 @@ import {
   isIdentityEdit,
   isRawFile,
 } from "@/lib/core";
-import { isIdentityCurve } from "@/lib/curve";
+import { CURVE_CHANNELS, isIdentityCurve } from "@/lib/curve";
 import {
   COLOR_SLIDERS,
   PRESENCE_SLIDERS,
@@ -160,13 +160,8 @@ const toneSummary = (edit: Edit): string | null => {
   const parts: string[] = [];
   if (edit.exposure !== 0) parts.push(`${signed(edit.exposure, 2)} ev`);
   parts.push(...sliderSummary(edit, TONE_SLIDERS));
-  const curves = [
-    edit.curveRGB,
-    edit.curveRed,
-    edit.curveGreen,
-    edit.curveBlue,
-  ];
-  if (curves.some((points) => !isIdentityCurve(points))) parts.push("curve");
+  if (CURVE_CHANNELS.some(({ key }) => !isIdentityCurve(edit[key])))
+    parts.push("curve");
   return joined(parts);
 };
 
@@ -463,6 +458,9 @@ function DecoderStrip() {
   );
 }
 
+// a context menu or a lost window can swallow the pointerup
+const RELEASES = ["pointerup", "pointercancel", "contextmenu", "blur"];
+
 export function EditSidebar({
   image,
   edit,
@@ -487,19 +485,17 @@ export function EditSidebar({
 }) {
   const cropping = cropDraft !== null;
   const quickSwitch = useRawDecoderQuickSwitch();
-  // A held pointer is a drag: its value is saved once, when the pointer lets go.
   const pointerDown = useRef(false);
-  const hold = () => {
+  const hold = (event: React.PointerEvent) => {
+    if (event.button !== 0) return;
     pointerDown.current = true;
     const release = () => {
       pointerDown.current = false;
       onCommit();
-      window.removeEventListener("pointerup", release);
-      window.removeEventListener("pointercancel", release);
+      for (const type of RELEASES) window.removeEventListener(type, release);
     };
     // on window: a pointer that went down here can come up anywhere
-    window.addEventListener("pointerup", release);
-    window.addEventListener("pointercancel", release);
+    for (const type of RELEASES) window.addEventListener(type, release);
   };
   const change = (next: Edit) => onChange(next, pointerDown.current);
   return (

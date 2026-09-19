@@ -188,6 +188,7 @@ type Props = {
     modifiers: { meta: boolean; shift: boolean },
   ) => void;
   focusPath?: string | null;
+  revealed?: number;
   initialRect?: { width: number; height: number };
 };
 
@@ -199,6 +200,7 @@ export function ImageGrid({
   selectMode,
   onSelect,
   focusPath,
+  revealed,
   initialRect,
 }: Props) {
   const parentRef = useRef<HTMLDivElement>(null);
@@ -261,7 +263,7 @@ export function ImageGrid({
     virtualizer.measure();
   }, [rows]);
 
-  useVirtualJump(virtualizer, focusRow, measured);
+  useVirtualJump(virtualizer, focusRow, measured, revealed);
 
   return (
     <div

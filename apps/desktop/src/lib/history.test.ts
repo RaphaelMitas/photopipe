@@ -3,12 +3,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   clearHistory,
   forgetHistoryPaths,
-  historyEpoch,
   historyState,
   jumpHistory,
   pushHistory,
-  redoHistory,
-  undoHistory,
+  stepHistory,
 } from "./history";
 
 let value = 0;
@@ -38,18 +36,22 @@ describe("history", () => {
   it("walks back and forward through what was done", async () => {
     set(1);
     set(2);
-    await undoHistory();
+    await stepHistory("undo");
     expect(value).toBe(1);
-    await redoHistory();
+    await stepHistory("redo");
     expect(value).toBe(2);
-    expect(await redoHistory()).toBeNull();
+    expect(await stepHistory("redo")).toBeNull();
   });
 
   it("runs quick presses one after the other", async () => {
     set(1);
     set(2);
     set(3);
-    await Promise.all([undoHistory(), undoHistory(), undoHistory()]);
+    await Promise.all([
+      stepHistory("undo"),
+      stepHistory("undo"),
+      stepHistory("undo"),
+    ]);
     expect(value).toBe(0);
     expect(historyState().cursor).toBe(0);
   });
@@ -57,9 +59,9 @@ describe("history", () => {
   it("drops the undone entries when something new happens", async () => {
     set(1);
     set(2);
-    await undoHistory();
+    await stepHistory("undo");
     set(5);
-    await redoHistory();
+    await stepHistory("redo");
     expect(historyState().entries.map((entry) => entry.label)).toEqual([
       "set 1",
       "set 5",
@@ -76,7 +78,7 @@ describe("history", () => {
     expect(value).toBe(3);
   });
 
-  it("stays put when the write behind a step fails", async () => {
+  it("drops a step that cannot run so it does not block the ones under it", async () => {
     set(1);
     void pushHistory({
       icon: Star,
@@ -85,8 +87,47 @@ describe("history", () => {
       undo: () => Promise.reject(new Error("disk")),
       redo: async () => {},
     });
-    expect(await undoHistory()).toBeNull();
-    expect(historyState().cursor).toBe(2);
+    expect(await stepHistory("undo")).toBeNull();
+    await stepHistory("undo");
+    expect(value).toBe(0);
+    expect(historyState().entries.map((entry) => entry.label)).toEqual([
+      "set 1",
+    ]);
+  });
+
+  it("drops an entry whose own write failed", async () => {
+    set(1);
+    await pushHistory({
+      icon: Star,
+      label: "never landed",
+      paths: [],
+      undo: async () => {},
+      redo: async () => {},
+      written: Promise.reject(new Error("disk")),
+    });
+    await jumpHistory(1);
+    expect(historyState().entries.map((entry) => entry.label)).toEqual([
+      "set 1",
+    ]);
+    expect(historyState().cursor).toBe(1);
+  });
+
+  it("cancels the undos still waiting once you act again", async () => {
+    set(1);
+    set(2);
+    set(3);
+    const first = stepHistory("undo");
+    const second = stepHistory("undo");
+    set(5);
+    await Promise.all([first, second]);
+    await jumpHistory(historyState().cursor);
+    expect(value).toBe(5);
+    expect(historyState().entries.map((entry) => entry.label)).toEqual([
+      "set 1",
+      "set 2",
+      "set 3",
+      "set 5",
+    ]);
   });
 
   it("keeps an action taken during an undo applied", async () => {
@@ -101,7 +142,7 @@ describe("history", () => {
         }),
       redo: async () => {},
     });
-    const undone = undoHistory();
+    const undone = stepHistory("undo");
     await new Promise((resolve) => setTimeout(resolve));
     set(7);
     finishUndo();
@@ -125,19 +166,32 @@ describe("history", () => {
     expect(historyState().cursor).toBe(2);
   });
 
-  it("refuses an action that finishes after the timeline was cleared", async () => {
-    const since = historyEpoch();
+  it("refuses an action whose push lands after the timeline was cleared", async () => {
+    const pushed = pushHistory({
+      icon: Star,
+      label: "flushed while leaving the shoot",
+      paths: [],
+      undo: async () => {},
+      redo: async () => {},
+    });
     clearHistory();
-    await pushHistory(
-      {
-        icon: Star,
-        label: "late paste",
-        paths: [],
-        undo: async () => {},
-        redo: async () => {},
-      },
-      since,
-    );
+    await pushed;
     expect(historyState().entries).toEqual([]);
+  });
+
+  it("keeps the photos that are left when part of a batch is trashed", async () => {
+    const undone: string[][] = [];
+    await pushHistory({
+      icon: Star,
+      label: "paste",
+      paths: ["a.arw", "b.arw"],
+      undo: async (paths) => {
+        undone.push(paths);
+      },
+      redo: async () => {},
+    });
+    await forgetHistoryPaths(["a.arw"]);
+    await stepHistory("undo");
+    expect(undone).toEqual([["b.arw"]]);
   });
 });

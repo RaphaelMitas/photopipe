@@ -453,6 +453,30 @@ test("arrow keys on a slider save their last step as one entry", async ({
   await expect(page.getByTestId("history-row-1")).toHaveCount(0);
 });
 
+test("trashing a photo takes its steps out of the history", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("thumb").first().click();
+  await page.getByTestId("star-3").click();
+  await page
+    .getByTestId("filmstrip")
+    .locator("[data-path='abends/DSC00943.ARW']")
+    .click();
+  await page.getByTestId("star-2").click();
+  await page.keyboard.press("Escape");
+
+  await page
+    .locator("[data-path='abends/DSC00943.ARW']")
+    .click({ modifiers: ["ControlOrMeta"] });
+  await page.getByTestId("action-delete").click();
+  await expect(page.getByTestId("thumb")).toHaveCount(3);
+
+  await page.getByTestId("history-toggle").click();
+  await expect(page.getByTestId("history-row-0")).toContainText("DSC00832.ARW");
+  await expect(page.getByTestId("history-row-1")).toHaveCount(0);
+});
+
 test("zooming renders the visible slice and drops it again on fit", async ({
   page,
 }) => {

@@ -393,7 +393,7 @@ export function useSetEdit(shoot: string | null) {
 }
 
 export type PasteResult = {
-  written: string[];
+  written: number;
   failed: string[];
   overtaken: number;
 };
@@ -409,7 +409,6 @@ export function usePasteEdits(shoot: string | null) {
     mutationKey: SET_EDIT_KEY,
     mutationFn: async (writes: EditWrite[]): Promise<PasteResult> => {
       const target = shoot;
-      const written: string[] = [];
       const failed: string[] = [];
       let overtaken = 0;
       let next = 0;
@@ -426,7 +425,6 @@ export function usePasteEdits(shoot: string | null) {
           }
           try {
             await writeEdit(target, write);
-            written.push(write.path);
           } catch {
             failed.push(write.path);
           }
@@ -438,7 +436,11 @@ export function usePasteEdits(shoot: string | null) {
           worker,
         ),
       );
-      return { written, failed, overtaken };
+      return {
+        written: writes.length - failed.length - overtaken,
+        failed,
+        overtaken,
+      };
     },
     // A long paste outlives its shoot, and react-query hands a running
     // mutation the latest options — so the shoot travels in the context.

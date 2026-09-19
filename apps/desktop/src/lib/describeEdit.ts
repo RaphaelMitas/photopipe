@@ -11,6 +11,7 @@ import {
   Thermometer,
 } from "lucide-react";
 import { type Edit, editKey, isIdentityEdit } from "./core";
+import { CURVE_CHANNELS, isIdentityCurve } from "./curve";
 import {
   COLOR_SLIDERS,
   PRESENCE_SLIDERS,
@@ -27,64 +28,45 @@ const SLIDER_GROUPS: [SliderSpec[], LucideIcon][] = [
   [COLOR_SLIDERS, Droplet],
 ];
 
-const CURVES = [
-  ["curveRGB", "RGB"],
-  ["curveRed", "Red"],
-  ["curveGreen", "Green"],
-  ["curveBlue", "Blue"],
-] as const;
-
 const FRAMING = ["crop", "cropAngle", "rotation"] as const;
 
-const orReset = (value: number | null | undefined, format = signed) =>
-  value == null ? "reset" : format(value);
-
-export function describeEdit(before: Edit, after: Edit): Description {
+export function describeEdit(
+  before: Edit,
+  after: Edit,
+  raw: boolean,
+): Description {
   const changed = (key: keyof Edit) =>
     editKey({ ...before, [key]: after[key] }) !== editKey(before);
+  const orReset = (value: number | null | undefined, format = signed) =>
+    value == null ? "reset" : format(value);
+  const kelvin = (value: number) => `${Math.round(value)} K`;
+  const scalars: [keyof Edit, LucideIcon, string, string][] = [
+    ["exposure", Sun, "Exposure", signed(after.exposure, 2)],
+    [
+      "temperature",
+      Thermometer,
+      "Temperature",
+      orReset(after.temperature, raw ? kelvin : signed),
+    ],
+    ["tint", Thermometer, "Tint", orReset(after.tint)],
+    ["denoise", Sparkles, "Denoise", orReset(after.denoise)],
+  ];
   const found: Description[] = [];
 
-  if (changed("exposure")) {
-    found.push({
-      icon: Sun,
-      label: "Exposure",
-      detail: signed(after.exposure, 2),
-    });
+  for (const [key, icon, label, detail] of scalars) {
+    if (changed(key)) found.push({ icon, label, detail });
   }
   for (const [sliders, icon] of SLIDER_GROUPS) {
     for (const { key, label } of sliders) {
       if (changed(key)) found.push({ icon, label, detail: signed(after[key]) });
     }
   }
-  if (changed("temperature")) {
-    found.push({
-      icon: Thermometer,
-      label: "Temperature",
-      detail: orReset(after.temperature, (kelvin) =>
-        String(Math.round(kelvin)),
-      ),
-    });
-  }
-  if (changed("tint")) {
-    found.push({
-      icon: Thermometer,
-      label: "Tint",
-      detail: orReset(after.tint),
-    });
-  }
-  if (changed("denoise")) {
-    found.push({
-      icon: Sparkles,
-      label: "Denoise",
-      detail: orReset(after.denoise),
-    });
-  }
-  for (const [key, channel] of CURVES) {
+  for (const { key, label } of CURVE_CHANNELS) {
     if (!changed(key)) continue;
     found.push({
       icon: Spline,
       label: "Curve",
-      detail: after[key].length === 0 ? `${channel} reset` : channel,
+      detail: isIdentityCurve(after[key]) ? `${label} reset` : label,
     });
   }
   if (FRAMING.some(changed)) {

@@ -20,10 +20,12 @@ import { type HistoryEntry, useHistory } from "@/lib/history";
 
 type Scope = "all" | "photo";
 
-const target = (entry: HistoryEntry) =>
-  entry.paths.length === 1
+const target = (entry: HistoryEntry) => {
+  if (entry.paths.length === 0) return "project";
+  return entry.paths.length === 1
     ? fileName(entry.paths[0])
     : `${entry.paths.length} photos`;
+};
 
 export const historyLabel = (entry: HistoryEntry) =>
   [entry.label, entry.detail].filter(Boolean).join(" ");
@@ -37,7 +39,7 @@ function HistoryRow({
   detail,
   sub,
   time,
-  current,
+  steps,
   undone,
   testid,
   onClick,
@@ -47,11 +49,12 @@ function HistoryRow({
   detail?: string;
   sub: string;
   time?: string;
-  current: boolean;
+  steps: number;
   undone: boolean;
   testid: string;
   onClick: () => void;
 }) {
+  const current = steps === 0;
   return (
     <li>
       <button
@@ -95,6 +98,7 @@ function HistoryRow({
         {!current && (
           <span className="hidden text-[10px] text-muted-foreground group-hover:inline">
             {undone ? "Redo to here" : "Back to here"}
+            {steps > 1 && ` · ${steps} steps`}
           </span>
         )}
       </button>
@@ -203,7 +207,7 @@ export function HistoryControls({
                 detail={entry.detail}
                 sub={target(entry)}
                 time={clock(entry.at)}
-                current={index === cursor - 1}
+                steps={Math.abs(cursor - (index + 1))}
                 undone={index >= cursor}
                 testid={`history-row-${index}`}
                 onClick={() => onJump(index + 1, entry)}
@@ -214,7 +218,7 @@ export function HistoryControls({
                 icon={FolderOpen}
                 label={`Opened ${shoot}`}
                 sub="before any change"
-                current={cursor === 0}
+                steps={cursor}
                 undone={false}
                 testid="history-row-origin"
                 onClick={() => onJump(0)}

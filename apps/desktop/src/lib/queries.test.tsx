@@ -163,7 +163,7 @@ describe("usePasteEdits", () => {
 
     expect(written).not.toContain(last);
     expect(mutation.data?.overtaken).toBe(1);
-    expect(mutation.data?.written).toHaveLength(5);
+    expect(mutation.data?.written).toBe(5);
     expect(
       client.getQueryData<ImageFile[]>(["images", "shoot1"])?.[5].edit.exposure,
     ).toBe(-1);

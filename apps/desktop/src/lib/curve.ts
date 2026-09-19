@@ -1,4 +1,45 @@
+import type { Edit } from "./core";
+
 export type CurvePoint = { x: number; y: number };
+
+export type CurveChannel = "rgb" | "red" | "green" | "blue";
+
+export const CURVE_CHANNELS: {
+  channel: CurveChannel;
+  key: keyof Pick<Edit, "curveRGB" | "curveRed" | "curveGreen" | "curveBlue">;
+  label: string;
+  dot: string;
+  stroke: string;
+}[] = [
+  {
+    channel: "rgb",
+    key: "curveRGB",
+    label: "RGB",
+    dot: "bg-orange-400",
+    stroke: "#fb923c",
+  },
+  {
+    channel: "red",
+    key: "curveRed",
+    label: "Red",
+    dot: "bg-red-500",
+    stroke: "#ef4444",
+  },
+  {
+    channel: "green",
+    key: "curveGreen",
+    label: "Green",
+    dot: "bg-green-500",
+    stroke: "#22c55e",
+  },
+  {
+    channel: "blue",
+    key: "curveBlue",
+    label: "Blue",
+    dot: "bg-blue-500",
+    stroke: "#3b82f6",
+  },
+];
 
 const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1);
 
