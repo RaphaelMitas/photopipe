@@ -161,8 +161,11 @@ Store Connect refuses a number it has seen and a retry ships the same
 version. `gh workflow run release.yml -f submit_to_app_store=true` redoes
 only the store half from the tagged commit and leaves the DMG release
 untouched. What the API cannot set stays a one-time job in App Store
-Connect: price, category, age rating, the privacy questionnaire and the
-review contact.
+Connect: price, category, age rating and the privacy questionnaire. The
+review contact comes from four more secrets, `REVIEW_FIRST_NAME`,
+`REVIEW_LAST_NAME`, `REVIEW_PHONE` (with country code) and `REVIEW_EMAIL`,
+because deliver crashes on a first version that has none and the repo is
+public.
 
 Sandbox consent works in two halves. The Rust shell owns it: it shows the
 folder panel, mints a security-scoped bookmark from the grant, keeps it in
