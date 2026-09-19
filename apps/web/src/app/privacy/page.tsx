@@ -15,6 +15,7 @@ const SECTIONS = [
     body: [
       "Photopipe has no account, no telemetry and no crash reporting. It reads the folders you open and writes ratings, edits and exports back to your disk. Your photos never leave your Mac.",
       "The app makes one kind of network request. On launch, and when you pick Check for Updates, it asks GitHub whether a newer release exists. If you install the update, it downloads that from GitHub too. GitHub sees your IP address when this happens, as with any download.",
+      "The Mac App Store version makes no network requests at all. Apple delivers its updates.",
     ],
   },
   {
