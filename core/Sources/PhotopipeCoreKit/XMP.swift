@@ -184,6 +184,7 @@ public enum XMP {
 
     public enum XMPError: Error {
         case unreadableOrientation(String)
+        case embeddedWriteUnsupported(String)
     }
 
     /// The baseline the absolute tiff:Orientation is compared against.
@@ -260,7 +261,7 @@ public enum XMP {
             guard let name = CGImageMetadataTagCopyName(tag) as String? else { return true }
             let namespace = CGImageMetadataTagCopyNamespace(tag) as String?
             let value = CGImageMetadataTagCopyValue(tag)
-            if name == "Rating" && namespace == "http://ns.adobe.com/xap/1.0/" {
+            if name == "Rating" && namespace == TagWrite.Namespace.xmp.uri {
                 if let text = value as? String { rating = Int(text) }
                 if let number = value as? Int { rating = number }
             }
@@ -345,30 +346,100 @@ public enum XMP {
         return read
     }
 
+    struct TagWrite {
+        enum Namespace: CaseIterable {
+            case xmp, crs, tiff
+
+            var prefix: String {
+                switch self {
+                case .xmp: "xmp"
+                case .crs: "crs"
+                case .tiff: "tiff"
+                }
+            }
+
+            var uri: String {
+                switch self {
+                case .xmp: "http://ns.adobe.com/xap/1.0/"
+                case .crs: crsNamespace
+                case .tiff: "http://ns.adobe.com/tiff/1.0/"
+                }
+            }
+        }
+
+        enum Value {
+            case scalar(String)
+            case list([String])
+            case remove
+        }
+
+        let namespace: Namespace
+        let name: String
+        let value: Value
+
+        init(_ namespace: Namespace, _ name: String, _ value: Value) {
+            self.namespace = namespace
+            self.name = name
+            self.value = value
+        }
+    }
+
+    static func exiftoolArgs(_ tags: [TagWrite], exifOrientationPin: Int? = nil) -> [String] {
+        tags.flatMap { tag -> [String] in
+            let isOrientation = tag.namespace == .tiff && tag.name == "Orientation"
+            let group = tag.namespace == .xmp ? "XMP" : "XMP-\(tag.namespace.prefix)"
+            // exiftool's name for crs:Temperature is ColorTemperature;
+            // `#` keeps exiftool numeric for Orientation
+            let name =
+                tag.namespace == .crs && tag.name == "Temperature"
+                ? "ColorTemperature" : isOrientation ? "Orientation#" : tag.name
+            let target = "-\(group):\(name)="
+            let args =
+                switch tag.value {
+                case .remove: [target]
+                case .scalar(let value): ["\(target)\(value)"]
+                // repeated `=` replaces the list; `+=` would append to the existing items on every write
+                case .list(let items): items.map { "\(target)\($0)" }
+                }
+            guard isOrientation, let exifOrientationPin else { return args }
+            return args + ["-IFD0:Orientation#=\(exifOrientationPin)"]
+        }
+    }
+
+    static func ratingTags(_ rating: Int) -> [TagWrite] {
+        [TagWrite(.xmp, "Rating", rating == 0 ? .remove : .scalar("\(rating)"))]
+    }
+
     public static func writeRating(_ rating: Int, file: ImageFile, tool: ExifTool) throws {
-        let tagArg = rating == 0 ? "-XMP:Rating=" : "-XMP:Rating=\(rating)"
-        try write([tagArg], clearing: rating == 0, file: file, tool: tool)
+        try write(ratingTags(rating), clearing: rating == 0, file: file, tool: tool)
     }
 
     public static func writeEdit(_ edit: Edit, file: ImageFile, tool: ExifTool) throws {
-        var args: [String] = []
+        let (tags, exifOrientationPin) = try editTags(edit, file: file)
+        try write(
+            tags, exifOrientationPin: exifOrientationPin, clearing: edit.isIdentity,
+            file: file, tool: tool)
+    }
+
+    static func editTags(
+        _ edit: Edit, file: ImageFile
+    ) throws -> (tags: [TagWrite], exifOrientationPin: Int?) {
+        var tags: [TagWrite] = []
         // exiftool drops a "10.0" for these integer tags with only a warning
-        func integerScalar(_ tag: String, _ value: Double) {
-            args.append(value == 0 ? "-XMP-crs:\(tag)=" : "-XMP-crs:\(tag)=\(saneInt(value))")
+        func integerScalar(_ tag: String, _ value: Double?) {
+            tags.append(
+                TagWrite(.crs, tag, value.map { .scalar("\(saneInt($0))") } ?? .remove))
         }
-        // repeated `=` replaces the list; `+=` appends to the EXISTING items,
-        // growing the sidecar on every write until exiftool crawls
         func curve(_ tag: String, _ points: [CurvePoint]) {
             guard !Curve.isIdentity(points) else {
-                args.append("-XMP-crs:\(tag)=")
+                tags.append(TagWrite(.crs, tag, .remove))
                 return
             }
             // clamped to the unit square first: Int(1e30) traps
-            for point in Curve.normalized(points) {
-                let x = Int((point.x * 255).rounded())
-                let y = Int((point.y * 255).rounded())
-                args.append("-XMP-crs:\(tag)=\(x), \(y)")
+            let items = Curve.normalized(points).map { point in
+                "\(Int((point.x * 255).rounded())), \(Int((point.y * 255).rounded()))"
             }
+            tags.append(TagWrite(.crs, tag, .list(items)))
         }
         // Swift's Double interpolation switches to exponent form below 1e-4,
         // which Lightroom does not read back
@@ -378,48 +449,29 @@ public enum XMP {
             if text.hasSuffix(".") { text.removeLast() }
             return text
         }
-        func realScalar(_ tag: String, _ value: Double) {
-            args.append(value == 0 ? "-XMP-crs:\(tag)=" : "-XMP-crs:\(tag)=\(plainDecimal(value))")
+        func realScalar(_ tag: String, _ value: Double?) {
+            tags.append(TagWrite(.crs, tag, value.map { .scalar(plainDecimal($0)) } ?? .remove))
         }
-        realScalar("Exposure2012", edit.exposure)
-        integerScalar("Highlights2012", edit.highlights)
-        integerScalar("Shadows2012", edit.shadows)
-        integerScalar("Whites2012", edit.whites)
-        integerScalar("Blacks2012", edit.blacks)
-        integerScalar("Texture", edit.texture)
-        integerScalar("Clarity2012", edit.clarity)
-        realScalar("Dehaze", edit.dehaze)
-        // exiftool's name for crs:Temperature is ColorTemperature.
-        let temperatureTag = file.isRaw ? "ColorTemperature" : "IncrementalTemperature"
-        let tintTag = file.isRaw ? "Tint" : "IncrementalTint"
-        if let temperature = edit.temperature {
-            args.append("-XMP-crs:\(temperatureTag)=\(saneInt(temperature))")
-        } else {
-            args.append("-XMP-crs:\(temperatureTag)=")
-        }
-        if let tint = edit.tint {
-            args.append("-XMP-crs:\(tintTag)=\(saneInt(tint))")
-        } else {
-            args.append("-XMP-crs:\(tintTag)=")
-        }
-        if let denoise = edit.denoise, file.isRaw {
-            args.append("-XMP-crs:LuminanceSmoothing=\(saneInt(denoise))")
-        } else {
-            args.append("-XMP-crs:LuminanceSmoothing=")
-        }
-        integerScalar("Vibrance", edit.vibrance)
-        integerScalar("Saturation", edit.saturation)
-        for (tag, value) in [
-            ("Left", edit.crop?.left), ("Top", edit.crop?.top),
-            ("Right", edit.crop?.right), ("Bottom", edit.crop?.bottom),
-        ] {
-            args.append(
-                value.map { "-XMP-crs:Crop\(tag)=\(plainDecimal($0))" }
-                    ?? "-XMP-crs:Crop\(tag)=")
-        }
-        realScalar("CropAngle", edit.cropAngle)
-        args.append(edit.hasCropComponent ? "-XMP-crs:HasCrop=True" : "-XMP-crs:HasCrop=")
-        // Absolute, like Lightroom writes it; `#` keeps exiftool numeric here.
+        func nonZero(_ value: Double) -> Double? { value == 0 ? nil : value }
+        realScalar("Exposure2012", nonZero(edit.exposure))
+        integerScalar("Highlights2012", nonZero(edit.highlights))
+        integerScalar("Shadows2012", nonZero(edit.shadows))
+        integerScalar("Whites2012", nonZero(edit.whites))
+        integerScalar("Blacks2012", nonZero(edit.blacks))
+        integerScalar("Texture", nonZero(edit.texture))
+        integerScalar("Clarity2012", nonZero(edit.clarity))
+        realScalar("Dehaze", nonZero(edit.dehaze))
+        integerScalar(file.isRaw ? "Temperature" : "IncrementalTemperature", edit.temperature)
+        integerScalar(file.isRaw ? "Tint" : "IncrementalTint", edit.tint)
+        integerScalar("LuminanceSmoothing", file.isRaw ? edit.denoise : nil)
+        integerScalar("Vibrance", nonZero(edit.vibrance))
+        integerScalar("Saturation", nonZero(edit.saturation))
+        realScalar("CropLeft", edit.crop?.left)
+        realScalar("CropTop", edit.crop?.top)
+        realScalar("CropRight", edit.crop?.right)
+        realScalar("CropBottom", edit.crop?.bottom)
+        realScalar("CropAngle", nonZero(edit.cropAngle))
+        tags.append(TagWrite(.crs, "HasCrop", edit.hasCropComponent ? .scalar("True") : .remove))
         // An unreadable base can default to 1 only for sidecars: guessing one
         // for an embedded file would burn it into the photo's real EXIF.
         let fileURL = URL(fileURLWithPath: file.path)
@@ -431,34 +483,51 @@ public enum XMP {
                 contentsOf: sidecarURL(forImagePath: file.path), encoding: .utf8))
                 .flatMap { parseOrientation(in: $0) }
             : embeddedXMPOrientation(at: fileURL)
+        var exifOrientationPin: Int?
         if edit.normalizedRotation == 0 {
             // another tool's XMP value can be the only record of its turn, so
             // only write the base back when clearing a turn of our own
             if let currentXMP, let base, currentXMP != base {
-                args.append("-XMP-tiff:Orientation#=\(base)")
+                tags.append(TagWrite(.tiff, "Orientation", .scalar("\(base)")))
             }
         } else {
             guard let base else {
                 throw XMPError.unreadableOrientation(file.path)
             }
+            // Lightroom writes the absolute value, not a delta
             let absolute = absoluteOrientation(
                 rotation: edit.normalizedRotation, base: base)
-            args.append("-XMP-tiff:Orientation#=\(absolute)")
+            tags.append(TagWrite(.tiff, "Orientation", .scalar("\(absolute)")))
             if !file.usesSidecar {
                 // ImageIO folds this XMP value into the next read's merged
                 // orientation, reading the rotation back as zero. EXIF wins
                 // that merge, so pin the base there.
-                args.append("-IFD0:Orientation#=\(base)")
+                exifOrientationPin = base
             }
         }
         curve("ToneCurvePV2012", edit.curveRGB)
         curve("ToneCurvePV2012Red", edit.curveRed)
         curve("ToneCurvePV2012Green", edit.curveGreen)
         curve("ToneCurvePV2012Blue", edit.curveBlue)
-        try write(args, clearing: edit.isIdentity, file: file, tool: tool)
+        return (tags, exifOrientationPin)
     }
 
     private static func write(
+        _ tags: [TagWrite], exifOrientationPin: Int? = nil, clearing: Bool, file: ImageFile,
+        tool: ExifTool
+    ) throws {
+        #if os(macOS)
+            try writeWithExifTool(
+                exiftoolArgs(tags, exifOrientationPin: exifOrientationPin),
+                clearing: clearing, file: file, tool: tool)
+        #else
+            guard file.usesSidecar else { throw XMPError.embeddedWriteUnsupported(file.path) }
+            try XMPTextWriter.write(
+                tags, to: sidecarURL(forImagePath: file.path), clearing: clearing)
+        #endif
+    }
+
+    private static func writeWithExifTool(
         _ tagArgs: [String], clearing: Bool, file: ImageFile, tool: ExifTool
     ) throws {
         if file.usesSidecar {
