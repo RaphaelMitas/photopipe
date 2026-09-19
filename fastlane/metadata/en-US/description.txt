@@ -1,0 +1,27 @@
+Cull, edit and deliver a photo shoot without a catalogue. Photopipe reads the folders you already have and writes every decision back as standard XMP.
+
+CULL FAST
+• Full-bleed loupe, rate with 1 to 5, move with the arrow keys
+• Instinct score: every frame rated 0 to 100 on your Mac by Apple's aesthetics model, so the first pass is already done
+• Rating histogram that doubles as the filter
+
+A REAL RAW EDIT
+• Exposure, highlights, shadows, whites and blacks
+• White balance in true Kelvin on raw files, tint, vibrance and saturation
+• Texture, clarity and dehaze
+• Tone curves for RGB and each channel
+• Crop, straighten and rotate, non-destructive
+• Denoise on the Neural Engine
+• Copy a look from one photo and paste it onto the whole selection
+
+DELIVER
+• Originals byte for byte, or full-resolution JPEG with every edit baked in
+• Folder or zip, flat or mirroring your subfolders, never a silent overwrite
+• Export jobs stay visible, with errors you can still read minutes later
+
+YOUR FILES STAY YOURS
+• No catalogue, no import, no account, no telemetry
+• Ratings and edits travel as XMP sidecars that other photo apps read
+• Delete means the Trash, never an unlink
+
+Free and open source. Requires macOS 15 or later on Apple Silicon.

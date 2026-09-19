@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -11,6 +12,7 @@ export type UpdateState =
   | { kind: "error"; message: string };
 
 export type Updater = {
+  enabled: boolean;
   state: UpdateState;
   /// Both resolve with what happened, so the caller can report it in the toast
   /// it already opened rather than watching `state` change.
@@ -27,41 +29,51 @@ function message(error: unknown): string {
 }
 
 export function useUpdater(): Updater {
+  const [enabled, setEnabled] = useState(false);
   const [state, setState] = useState<UpdateState>({ kind: "idle" });
   const pending = useRef<Update | null>(null);
 
-  const run = useCallback(async (silent: boolean): Promise<UpdateState> => {
-    if (!updatable()) {
-      const blocked: UpdateState = {
-        kind: "error",
-        message: "Not a release build.",
-      };
-      if (!silent) setState(blocked);
-      return blocked;
-    }
-    try {
-      const update = await check();
-      await pending.current?.close();
-      pending.current = update;
-      const found: UpdateState = update
-        ? {
-            kind: "available",
-            version: update.version,
-            notes: update.body ?? "",
-          }
-        : { kind: "current" };
-      setState(found);
-      return found;
-    } catch (error) {
-      const failed: UpdateState = { kind: "error", message: message(error) };
-      if (!silent) setState(failed);
-      return failed;
-    }
+  useEffect(() => {
+    invoke<boolean>("updater_available").then(setEnabled, () =>
+      setEnabled(false),
+    );
   }, []);
 
+  const run = useCallback(
+    async (silent: boolean): Promise<UpdateState> => {
+      if (!enabled || !updatable()) {
+        const blocked: UpdateState = {
+          kind: "error",
+          message: "Not a release build.",
+        };
+        if (!silent) setState(blocked);
+        return blocked;
+      }
+      try {
+        const update = await check();
+        await pending.current?.close();
+        pending.current = update;
+        const found: UpdateState = update
+          ? {
+              kind: "available",
+              version: update.version,
+              notes: update.body ?? "",
+            }
+          : { kind: "current" };
+        setState(found);
+        return found;
+      } catch (error) {
+        const failed: UpdateState = { kind: "error", message: message(error) };
+        if (!silent) setState(failed);
+        return failed;
+      }
+    },
+    [enabled],
+  );
+
   useEffect(() => {
-    void run(true);
-  }, [run]);
+    if (enabled) void run(true);
+  }, [enabled, run]);
 
   const install = useCallback(async (): Promise<UpdateState> => {
     const update = pending.current;
@@ -96,5 +108,10 @@ export function useUpdater(): Updater {
     }
   }, []);
 
-  return { state, check: useCallback(() => run(false), [run]), install };
+  return {
+    enabled,
+    state,
+    check: useCallback(() => run(false), [run]),
+    install,
+  };
 }

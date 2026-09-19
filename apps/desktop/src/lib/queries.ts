@@ -6,6 +6,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -14,7 +15,6 @@ import {
   type Edit,
   type ExportFormat,
   editKey,
-  fileName,
   type ImageFile,
   isRawFile,
   normalizeImage,
@@ -24,6 +24,7 @@ import {
   type Shoot,
   type StatusResult,
 } from "./core";
+import { fileName } from "./fileName";
 import { useRawDecoderVersion } from "./rawDecoder";
 import type { ViewportRequest } from "./zoom";
 
@@ -502,8 +503,7 @@ export function usePasteEdits(shoot: string | null) {
 export function useReveal() {
   return useMutation({
     mutationKey: ["write", "reveal"],
-    mutationFn: (paths: string[]) =>
-      coreRequest<{ revealed: boolean }>("reveal", { paths }),
+    mutationFn: (paths: string[]) => revealItemInDir(paths),
     onError: (error) => {
       toast.error("Could not reveal in Finder", { description: String(error) });
     },

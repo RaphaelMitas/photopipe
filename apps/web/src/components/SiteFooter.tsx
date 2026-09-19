@@ -8,6 +8,7 @@ const LINKS = [
   { label: "Releases", href: `${REPO}/releases` },
   { label: "Design notes", href: `${REPO}/blob/main/docs/design.md` },
   { label: "Licence", href: `${REPO}/blob/main/LICENSE` },
+  { label: "Privacy", href: "/privacy" },
 ];
 
 export function SiteFooter() {

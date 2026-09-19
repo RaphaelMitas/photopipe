@@ -58,8 +58,6 @@ export const identityEdit: Edit = Object.freeze({
   rotation: 0,
 });
 
-export const fileName = (path: string) => path.split("/").pop() ?? path;
-
 export function isIdentityEdit(edit: Edit): boolean {
   return editKey(edit) === editKey(identityEdit);
 }

@@ -15,7 +15,7 @@ import {
   Undo2,
 } from "lucide-react";
 import { useState } from "react";
-import { fileName } from "@/lib/core";
+import { fileName } from "@/lib/fileName";
 import { type HistoryEntry, useHistory } from "@/lib/history";
 
 type Scope = "all" | "photo";
