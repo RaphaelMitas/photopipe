@@ -8,6 +8,7 @@ import {
   useRender,
   useSetEdit,
   useSetRating,
+  useSetRatings,
 } from "./queries";
 import { setRawDecoderVersion } from "./rawDecoder";
 import { makeImage } from "./test-image";
@@ -77,6 +78,55 @@ describe("useLibrarySync", () => {
   });
 });
 
+describe("useSetRatings", () => {
+  it("rolls back only the photo whose write failed and leaves a hand change alone", async () => {
+    const client = new QueryClient();
+    client.setQueryData<ImageFile[]>(
+      ["images", "shoot1"],
+      ["A", "B", "C"].map((name) => ({ ...image(name), rating: 1 })),
+    );
+    const release: (() => void)[] = [];
+    invoke.mockImplementation(async (_command, { params }) => {
+      await new Promise<void>((resolve) => release.push(resolve));
+      if (params.path.endsWith("B.ARW")) throw new Error("disk");
+      return {};
+    });
+    let ratings!: ReturnType<typeof useSetRatings>;
+    function Harness() {
+      ratings = useSetRatings("shoot1");
+      return null;
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>,
+    );
+
+    const paths = ["A", "B", "C", "D", "E"].map((n) => `/r/shoot1/${n}.ARW`);
+    client.setQueryData<ImageFile[]>(["images", "shoot1"], (old) => [
+      ...(old ?? []),
+      { ...image("D"), rating: 1 },
+      { ...image("E"), rating: 1 },
+    ]);
+    ratings.mutate(new Map(paths.map((path) => [path, 5])));
+    // Four workers hold A to D; E is still queued when it is rated by hand.
+    await waitFor(() => expect(release.length).toBe(4));
+    client.setQueryData<ImageFile[]>(["images", "shoot1"], (old) =>
+      old?.map((img) => (img.path === paths[4] ? { ...img, rating: 2 } : img)),
+    );
+    for (const go of release) go();
+
+    await waitFor(() => expect(ratings.isSuccess).toBe(true));
+    expect(ratings.data).toEqual({
+      written: 3,
+      failed: [paths[1]],
+      overtaken: 1,
+    });
+    const after = client.getQueryData<ImageFile[]>(["images", "shoot1"]);
+    expect(after?.map((img) => img.rating)).toEqual([5, 1, 5, 5, 2]);
+  });
+});
+
 describe("usePasteEdits", () => {
   it("keeps the pasted look and reverts only the photo whose write failed", async () => {
     const client = new QueryClient({
@@ -102,10 +152,12 @@ describe("usePasteEdits", () => {
     );
 
     const look: Edit = { ...identityEdit, exposure: 1.5 };
-    mutation.mutate([
-      { path: "/r/shoot1/A.ARW", edit: look },
-      { path: "/r/shoot1/B.ARW", edit: look },
-    ]);
+    mutation.mutate(
+      new Map([
+        ["/r/shoot1/A.ARW", look],
+        ["/r/shoot1/B.ARW", look],
+      ]),
+    );
 
     await waitFor(() => expect(mutation.isSuccess).toBe(true));
     const images = client.getQueryData<ImageFile[]>(["images", "shoot1"]);
@@ -143,7 +195,7 @@ describe("usePasteEdits", () => {
 
     const look: Edit = { ...identityEdit, exposure: 1.5 };
     mutation.mutate(
-      names.map((name) => ({ path: `/r/shoot1/${name}.ARW`, edit: look })),
+      new Map(names.map((name) => [`/r/shoot1/${name}.ARW`, look])),
     );
     // Four workers, six photos: F is still queued.
     await waitFor(() => expect(written.length).toBe(4));
@@ -206,9 +258,9 @@ describe("edit writes to one photo", () => {
       path: "/r/shoot1/A.ARW",
       edit: { ...identityEdit, exposure: 1 },
     });
-    paste.mutate([
-      { path: "/r/shoot1/A.ARW", edit: { ...identityEdit, exposure: 2 } },
-    ]);
+    paste.mutate(
+      new Map([["/r/shoot1/A.ARW", { ...identityEdit, exposure: 2 }]]),
+    );
 
     await waitFor(() => expect(gate.length).toBe(1));
     gate[0]({ edit: identityEdit, generation: 2 });

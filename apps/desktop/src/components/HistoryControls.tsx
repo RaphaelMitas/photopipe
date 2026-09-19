@@ -112,7 +112,7 @@ export function HistoryControls({
   disabled: boolean;
   onUndo: () => void;
   onRedo: () => void;
-  onJump: (cursor: number, entry?: HistoryEntry) => void;
+  onJump: (entry: HistoryEntry | null) => void;
 }) {
   const { entries, cursor } = useHistory();
   const undoable = entries[cursor - 1];
@@ -172,7 +172,7 @@ export function HistoryControls({
                   row={{ ...entry, sub: target(entry), time: clock(entry.at) }}
                   position={index + 1}
                   cursor={cursor}
-                  onJump={() => onJump(index + 1, entry)}
+                  onJump={() => onJump(entry)}
                 />
               ))
               .reverse()}
@@ -184,7 +184,7 @@ export function HistoryControls({
               }}
               position={0}
               cursor={cursor}
-              onJump={() => onJump(0)}
+              onJump={() => onJump(null)}
             />
           </ItemGroup>
           <p className="border-border border-t px-2 pt-2 pb-1 text-[10px] text-muted-foreground">

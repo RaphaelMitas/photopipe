@@ -3,60 +3,25 @@ import { ClipboardPaste, Star } from "lucide-react";
 import { useCallback, useMemo } from "react";
 import { type Edit, editKey, isRawFile } from "./core";
 import { describeEdit } from "./describeEdit";
+import { historyChannel } from "./history";
 import {
-  type HistoryAction,
-  type HistoryChannel,
-  pushHistory,
-} from "./history";
-import {
+  type BatchResult,
   cachedImage,
   currentEdits,
   type EditWrite,
-  type PasteResult,
   usePasteEdits,
   useSetEdit,
   useSetRating,
   useSetRatings,
 } from "./queries";
 
-type Channel<V> = HistoryChannel & { stage: (path: string, value: V) => void };
-
-function channel<V>(
-  write: (values: Map<string, V>) => Promise<PasteResult>,
-): Channel<V> {
-  let staged = new Map<string, V>();
-  return {
-    stage: (path, value) => staged.set(path, value),
-    flush: async () => {
-      const values = staged;
-      staged = new Map();
-      // The batch resolves even when every write failed; a step must not.
-      // Photos it skipped for a newer hand edit are not failures.
-      const result = await write(values);
-      if (result.written === 0 && result.failed.length > 0) {
-        throw new Error("nothing written");
-      }
-    },
-  };
-}
-
-type Recorded = Omit<HistoryAction, "channel" | "stage">;
-
-// `values` holds each photo's value before and after, keyed by direction
-function record<V>(
-  into: Channel<V>,
-  values: { undo: Map<string, V>; redo: Map<string, V> },
-  action: Recorded,
-) {
-  void pushHistory({
-    ...action,
-    channel: into,
-    stage: (direction, path) => {
-      const value = values[direction].get(path);
-      if (value !== undefined) into.stage(path, value);
-    },
+// a batch resolves even when every write failed; overtaken photos are not failures
+const landed = (batch: Promise<BatchResult>) =>
+  batch.then((result) => {
+    if (result.written === 0 && result.failed.length > 0) {
+      throw new Error("nothing written");
+    }
   });
-}
 
 export function useRecordedWrites(shoot: string | null) {
   const queryClient = useQueryClient();
@@ -66,12 +31,16 @@ export function useRecordedWrites(shoot: string | null) {
   const { mutateAsync: setEdit } = useSetEdit(shoot);
   const { mutateAsync: pasteEdits } = usePasteEdits(shoot);
 
-  const ratings = useMemo(() => channel(setRatings), [setRatings]);
+  const ratings = useMemo(
+    () =>
+      historyChannel((values: Map<string, number>) =>
+        landed(setRatings(values)),
+      ),
+    [setRatings],
+  );
   const edits = useMemo(
     () =>
-      channel((values: Map<string, Edit>) =>
-        pasteEdits(Array.from(values, ([path, edit]) => ({ path, edit }))),
-      ),
+      historyChannel((values: Map<string, Edit>) => landed(pasteEdits(values))),
     [pasteEdits],
   );
 
@@ -80,16 +49,11 @@ export function useRecordedWrites(shoot: string | null) {
       const image = cachedImage(queryClient, shoot, path);
       if (!image || image.rating === rating) return;
       const written = setRating({ path, rating });
-      // the mutation already rolled back and toasted; pushHistory drops the entry
+      // the mutation already rolled back and toasted; the channel drops the entry
       void written.catch(() => {});
       // before the core has read the file, the old rating is a placeholder
       if (!image.enriched) return;
-      record(
-        ratings,
-        {
-          undo: new Map([[path, image.rating]]),
-          redo: new Map([[path, rating]]),
-        },
+      void ratings.record(
         {
           icon: Star,
           label: "Rating",
@@ -97,6 +61,8 @@ export function useRecordedWrites(shoot: string | null) {
           paths: [path],
           written,
         },
+        new Map([[path, image.rating]]),
+        new Map([[path, rating]]),
       );
     },
     [queryClient, shoot, setRating, ratings],
@@ -108,38 +74,35 @@ export function useRecordedWrites(shoot: string | null) {
       if (!image || editKey(image.edit) === editKey(edit)) return;
       const written = setEdit({ path, edit });
       void written.catch(() => {});
-      record(
-        edits,
-        { undo: new Map([[path, image.edit]]), redo: new Map([[path, edit]]) },
+      void edits.record(
         {
           ...describeEdit(image.edit, edit, isRawFile(image)),
           paths: [path],
           written,
         },
+        new Map([[path, image.edit]]),
+        new Map([[path, edit]]),
       );
     },
     [queryClient, shoot, setEdit, edits],
   );
 
   const paste = useCallback(
-    (writes: EditWrite[]): Promise<PasteResult> => {
-      const paths = writes.map((write) => write.path);
-      const batch = pasteEdits(writes);
+    (writes: EditWrite[]): Promise<BatchResult> => {
+      const pasted = new Map(writes.map((write) => [write.path, write.edit]));
+      const batch = pasteEdits(pasted);
       // Recorded up front: ⌘Z during a long paste has to mean this paste.
-      record(
-        edits,
-        {
-          undo: currentEdits(queryClient, shoot, paths),
-          redo: new Map(writes.map((write) => [write.path, write.edit])),
-        },
+      void edits.record(
         {
           icon: ClipboardPaste,
           label: "Paste settings",
-          paths,
+          paths: [...pasted.keys()],
           written: batch.then((result) => {
             if (result.written === 0) throw new Error("nothing pasted");
           }),
         },
+        currentEdits(queryClient, shoot, [...pasted.keys()]),
+        pasted,
       );
       return batch;
     },
