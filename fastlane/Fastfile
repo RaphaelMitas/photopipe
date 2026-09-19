@@ -9,14 +9,29 @@ platform :mac do
     )
   end
 
-  desc "Upload the listing text and screenshots, then the pkg to TestFlight"
-  lane :submit do
-    # Metadata first: it can be re-sent, a binary already uploaded under this build number cannot.
-    deliver(app_version: ENV.fetch("APP_VERSION"), skip_binary_upload: true)
+  desc "Upload the pkg; Apple then processes it before it can be attached to a version"
+  lane :upload do
     upload_to_testflight(
       pkg: ENV.fetch("PKG"),
       app_platform: "osx",
       skip_waiting_for_build_processing: true
+    )
+  end
+
+  desc "Update the listing, attach the build and submit it for review"
+  lane :review do
+    deliver(
+      app_version: ENV.fetch("APP_VERSION"),
+      build_number: ENV.fetch("BUILD_NUMBER"),
+      skip_binary_upload: true,
+      # overwrite re-uploads before App Store Connect has indexed the last set and doubles every shot
+      sync_screenshots: true,
+      submit_for_review: true,
+      automatic_release: true,
+      # a version already waiting for review is frozen, so a newer release has to pull it first
+      reject_if_possible: true,
+      run_precheck_before_submit: false,
+      submission_information: { add_id_info_uses_idfa: false }
     )
   end
 end

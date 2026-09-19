@@ -143,16 +143,23 @@ DMG, inside-out, with `entitlements.mas.inherit.plist` on the core and
 pkg. `scripts/smoke-bundle.sh --mas` checks the entitlements, the missing
 updater and the pkg rules the store enforces, and does not drive the core: a
 binary entitled `app-sandbox` + `inherit` only launches under a sandboxed
-parent. Every release then uploads through fastlane (pinned by
-`Gemfile.lock`): first the listing (text from `fastlane/metadata/en-US`,
-screenshots copied from `docs/screenshots`, whose 2560x1600 is one of the Mac
-sizes deliver accepts), then the pkg to TestFlight. Attaching the build to
-the version and sending it to review stays a manual step in App Store
-Connect. The store build number is the workflow run number, not the semver,
-because App Store Connect refuses a number it has seen and a retry ships the
-same version. `gh workflow run release.yml -f submit_to_app_store=true`
-redoes only the store upload from the tagged commit and leaves the DMG
-release untouched.
+parent. Every release then goes all the way to review through fastlane
+(pinned by `Gemfile.lock`), so `pnpm release` needs no visit to App Store
+Connect. The macOS job uploads the pkg. A second job, `mas-review`, on a Linux
+runner because it mostly waits for Apple to process the upload, sends the
+listing (text from `fastlane/metadata/en-US`, screenshots copied from
+`docs/screenshots`, whose 2560x1600 is one of the Mac sizes deliver accepts),
+attaches the build and submits it for review with automatic release. It
+refuses to submit while the listing still says TODO or one of its URLs does
+not load; the build is in TestFlight by then, so nothing is lost. A version
+already waiting for review is pulled first, because Apple freezes it. The
+store build number is the workflow run number, not the semver, because App
+Store Connect refuses a number it has seen and a retry ships the same
+version. `gh workflow run release.yml -f submit_to_app_store=true` redoes
+only the store half from the tagged commit and leaves the DMG release
+untouched. What the API cannot set stays a one-time job in App Store
+Connect: price, category, age rating, the privacy questionnaire and the
+review contact.
 
 Sandbox consent works in two halves. The Rust shell owns it: it shows the
 folder panel, mints a security-scoped bookmark from the grant, keeps it in

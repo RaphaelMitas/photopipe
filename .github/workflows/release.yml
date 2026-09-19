@@ -4,9 +4,9 @@ name: Release
 # a tag. When it does not, a release PR from `pnpm release` just landed, so
 # this tags the commit and ships it. workflow_dispatch re-runs the release for
 # the current version even if the tag exists, for retrying a failed run.
-# Every release also uploads the App Store build to TestFlight. With
-# submit_to_app_store it skips the DMG release and redoes only that upload,
-# from the already tagged commit.
+# Every release also uploads the App Store build and submits it for review
+# with automatic release. With submit_to_app_store it skips the DMG release
+# and redoes only the store half, from the already tagged commit.
 on:
   push:
     branches: [main]
@@ -342,6 +342,8 @@ jobs:
     # Pinned so a repo-setting change cannot hand the fastlane gems a write token.
     permissions:
       contents: read
+    outputs:
+      build: ${{ steps.sign.outputs.build }}
     env:
       APP: apps/desktop/src-tauri/target/release/bundle/macos/Photopipe.app
     steps:
@@ -412,12 +414,15 @@ jobs:
           echo "INSTALLER_IDENTITY=$INSTALLER_IDENTITY" >> $GITHUB_ENV
 
       - name: Sign
+        id: sign
         env:
           MAS_PROVISIONING_PROFILE: ${{ secrets.MAS_PROVISIONING_PROFILE }}
         run: |
           echo "$MAS_PROVISIONING_PROFILE" | base64 --decode > "$APP/Contents/embedded.provisionprofile"
           # App Store Connect refuses a build number it has seen, so a retry of the same version needs a new one.
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" "$APP/Contents/Info.plist"
+          BUILD="$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "$APP/Contents/Info.plist"
+          echo "build=$BUILD" >> $GITHUB_OUTPUT
           codesign --force --timestamp \
             --entitlements apps/desktop/src-tauri/entitlements.mas.inherit.plist \
             --sign "$APP_IDENTITY" "$APP/Contents/MacOS/photopipe-core"
@@ -451,16 +456,71 @@ jobs:
           ruby-version: "3.3"
           bundler-cache: true
 
+      - name: Upload to App Store Connect
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+        run: bundle exec fastlane mac upload
+
+  # Apple processes an upload for a while before it can be attached to a
+  # version, and waiting is cheaper here than on a macOS runner.
+  mas-review:
+    name: Update the listing, submit for review
+    needs: [check, mas]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.check.outputs.ref }}
+
+      - name: Refuse to send a placeholder listing to review
+        run: |
+          if grep -rn "TODO" fastlane/metadata; then
+            echo "::error::The store listing still has placeholder text. The build is in TestFlight; fix the text and rerun with submit_to_app_store."
+            exit 1
+          fi
+          for url in privacy_url support_url marketing_url; do
+            curl -fsSL -o /dev/null "$(cat fastlane/metadata/en-US/$url.txt)" \
+              || { echo "::error::$url does not load, and review checks it."; exit 1; }
+          done
+
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
       # deliver wants one folder per locale; the README shots are the real UI at a Mac size.
       - name: Stage the store screenshots
         run: |
           mkdir -p fastlane/screenshots/en-US
           cp docs/screenshots/*.png fastlane/screenshots/en-US/
 
-      - name: Upload to TestFlight and App Store Connect
+      - name: Update the listing and submit for review
         env:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
           APP_VERSION: ${{ needs.check.outputs.version }}
-        run: bundle exec fastlane mac submit
+          BUILD_NUMBER: ${{ needs.mas.outputs.build }}
+          # sync_screenshots sits behind this switch, and deliver only checks it once it reaches the screenshots.
+          FASTLANE_ENABLE_BETA_DELIVER_SYNC_SCREENSHOTS: "true"
+        run: |
+          set -o pipefail
+          for attempt in $(seq 1 12); do
+            if bundle exec fastlane mac review 2>&1 | tee deliver.log; then
+              exit 0
+            fi
+            # Only a build Apple is still processing is worth waiting out; anything else fails the same way again.
+            if ! grep -qiE "couldn'?t find build|could not find build|no build|build.*not.*(found|ready)|timed? ?out.*(build|processing)" deliver.log; then
+              echo "::error::deliver failed for a reason other than build processing."
+              exit 1
+            fi
+            echo "Attempt $attempt: the build is still processing; retrying in 5 minutes."
+            sleep 300
+          done
+          echo "::error::The build was not ready after an hour."
+          exit 1
