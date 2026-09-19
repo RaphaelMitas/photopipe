@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "net.photopipe.app",
+  "plugins": {
+    "updater": null
+  },
+  "bundle": {
+    "macOS": {
+      "entitlements": "entitlements.mas.plist"
+    }
+  }
+}

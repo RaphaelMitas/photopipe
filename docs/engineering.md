@@ -118,6 +118,71 @@ Secrets: `APPLE_CERTIFICATE` (base64 .p12), `APPLE_CERTIFICATE_PASSWORD`,
 `TAP_DISPATCH_TOKEN`. The tap step is guarded, so a release succeeds without
 the last one.
 
+The App Store build ships as `net.photopipe.app`, a platform-neutral id an iOS
+app can share one store record with; the DMG stays `net.photopipe.desktop`, so
+the two keep separate preferences and a switcher picks their folder once more.
+It is a second job, `mas`, that runs alongside the DMG release
+and needs six more secrets: `MAS_CERTIFICATE` (base64 .p12 holding both an
+Apple Distribution and a Mac Installer Distribution identity),
+`MAS_CERTIFICATE_PASSWORD`, `MAS_PROVISIONING_PROFILE` (base64 Mac App Store
+profile), `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID` and
+`APP_STORE_CONNECT_KEY` (the .p8 contents). Without `MAS_CERTIFICATE` the job
+is skipped and the release still succeeds. The job builds
+
+```bash
+pnpm --filter desktop tauri build --bundles app --config src-tauri/mas.conf.json -- --no-default-features
+```
+
+which compiles the `updater` cargo feature out and merges `mas.conf.json`
+over `tauri.conf.json`: `plugins.updater` set to `null` removes the feed (the
+merge is RFC 7396). The updater and restart permissions are granted at
+runtime behind the same cargo feature, because `tauri-build` validates every
+file under `capabilities/` against the plugins compiled in. Signing is by hand as for the
+DMG, inside-out, with `entitlements.mas.inherit.plist` on the core and
+`entitlements.mas.plist` on the app, then `productbuild` wraps it in a signed
+pkg. `scripts/smoke-bundle.sh --mas` checks the entitlements, the missing
+updater and the pkg rules the store enforces, and does not drive the core: a
+binary entitled `app-sandbox` + `inherit` only launches under a sandboxed
+parent. Every release then goes all the way to review through fastlane
+(pinned by `Gemfile.lock`), so `pnpm release` needs no visit to App Store
+Connect. The macOS job uploads the pkg. A second job, `mas-review`, on a Linux
+runner because it mostly waits for Apple to process the upload, sends the
+listing (text from `fastlane/metadata/en-US`, screenshots copied from
+`docs/screenshots`, whose 2560x1600 is one of the Mac sizes deliver accepts),
+attaches the build and submits it for review with automatic release. It
+refuses to submit while the listing still says TODO or one of its URLs does
+not load; the build is in TestFlight by then, so nothing is lost. A version
+already waiting for review is pulled first, because Apple freezes it. The
+store build number is the workflow run number, not the semver, because App
+Store Connect refuses a number it has seen and a retry ships the same
+version. `gh workflow run release.yml -f submit_to_app_store=true` redoes
+only the store half from the tagged commit and leaves the DMG release
+untouched. What the API cannot set stays a one-time job in App Store
+Connect: price, category, age rating, the privacy questionnaire and the
+review contact.
+
+Sandbox consent works in two halves. The Rust shell owns it: it shows the
+folder panel, mints a security-scoped bookmark from the grant, keeps it in
+`NSUserDefaults` and starts access, and the store entitlements
+(`files.user-selected.read-write`, `files.bookmarks.app-scope`) belong to
+the app alone. Access is never stopped for the life of the process, because
+the core carries only `app-sandbox` and `inherit` and shares the shell's
+sandbox: a grant the shell receives while the core is already running (open
+and save panels, drops) reaches the core too, and a scope the shell stopped
+would vanish from under a running export. Spawn order does not matter.
+Before every listing the shell re-checks each folder, so an ejected drive
+shows as unplugged and a renamed folder follows its bookmark. The old
+localStorage root migrates into the list on first launch; the old recent
+roots are dropped, the shell keeps its own five.
+`bundle.macOS.entitlements` in `mas.conf.json` only matters for a local
+signed build; the release job signs by hand with the same file. exiftool, spawned
+by the core through `/usr/bin/perl` from `Contents/Resources`, inherits the
+same view. Nothing under `Contents/MacOS` may be unsigned, which is why
+exiftool's Perl tree stays under `Resources`. A save panel grants one path,
+so the zip export builds its archive in the destination volume's item
+replacement directory and renames it into place rather than writing a
+sibling beside the destination.
+
 Retry a failed release with `gh workflow run release.yml`. If the tag was
 already created, the retry checks out **that tag** and rebuilds it, rather
 than whatever main has become: shipping different code under a version

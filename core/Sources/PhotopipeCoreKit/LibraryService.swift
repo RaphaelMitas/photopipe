@@ -639,11 +639,6 @@ public final class LibraryService: @unchecked Sendable {
         return shoot
     }
 
-    public func reveal(paths: [String]) throws {
-        try FileActions.reveal(
-            paths: paths.map { URL(fileURLWithPath: $0).standardizedFileURL.path })
-    }
-
     public func trashImages(shoot shootName: String, paths: [String]) throws -> (
         files: Int, generation: Int
     ) {
