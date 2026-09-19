@@ -52,15 +52,15 @@ function HistoryRow({
   const steps = Math.abs(cursor - position);
   const undone = position > cursor;
   const current = steps === 0;
+  const hint = `${undone ? "Redo to here" : "Back to here"} · ${steps} ${
+    steps === 1 ? "step" : "steps"
+  }`;
   return (
     <Item
       asChild
       size="xs"
-      className={cn(
-        "gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-accent",
-        current && "bg-primary/15 hover:bg-primary/15",
-        undone && "opacity-40",
-      )}
+      variant={current ? "muted" : "default"}
+      className={cn("text-left hover:bg-muted", undone && "opacity-40")}
     >
       <button
         type="button"
@@ -68,43 +68,21 @@ function HistoryRow({
           position === 0 ? "history-row-origin" : `history-row-${position - 1}`
         }
         aria-current={current}
+        title={current ? undefined : hint}
         onClick={onJump}
       >
-        <ItemMedia
-          variant="icon"
-          className={cn(
-            "size-6.5 translate-y-0! self-center! rounded-md bg-accent text-muted-foreground [&_svg]:size-3.5!",
-            current && "bg-primary text-primary-foreground",
-          )}
-        >
+        <ItemMedia variant="icon" className={cn(current && "text-primary")}>
           <Icon />
         </ItemMedia>
-        <ItemContent className="min-w-0 gap-0!">
-          <ItemTitle className="text-xs">
+        <ItemContent>
+          <ItemTitle>
             {label}{" "}
-            <span className="font-mono font-normal text-muted-foreground">
-              {detail}
-            </span>
+            <span className="font-normal text-muted-foreground">{detail}</span>
           </ItemTitle>
-          <ItemDescription className="line-clamp-1 font-mono text-[10px]">
-            {sub}
-          </ItemDescription>
+          <ItemDescription>{sub}</ItemDescription>
         </ItemContent>
-        <ItemActions className="text-[10px] text-muted-foreground">
-          <span
-            className={cn(
-              "font-mono",
-              current ? "text-primary" : "group-hover/item:hidden",
-            )}
-          >
-            {time}
-          </span>
-          {!current && (
-            <span className="hidden group-hover/item:inline">
-              {undone ? "Redo to here" : "Back to here"}
-              {steps > 1 && ` · ${steps} steps`}
-            </span>
-          )}
+        <ItemActions className="text-muted-foreground text-xs">
+          {time}
         </ItemActions>
       </button>
     </Item>
@@ -178,7 +156,7 @@ export function HistoryControls({
           className="w-80 gap-1 rounded-2xl p-1.5"
         >
           <span className="px-2 pt-1 pb-1.5 font-medium text-sm">History</span>
-          <ItemGroup className="max-h-96 gap-0! overflow-y-auto">
+          <ItemGroup className="max-h-96 overflow-y-auto">
             {entries
               .map((entry, index) => (
                 <HistoryRow
