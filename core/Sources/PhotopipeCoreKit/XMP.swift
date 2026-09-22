@@ -180,8 +180,6 @@ public enum XMP {
         return rect
     }
 
-    private static let crsNamespace = "http://ns.adobe.com/camera-raw-settings/1.0/"
-
     public enum XMPError: Error {
         case unreadableOrientation(String)
         case embeddedWriteUnsupported(String)
@@ -265,7 +263,7 @@ public enum XMP {
                 if let text = value as? String { rating = Int(text) }
                 if let number = value as? Int { rating = number }
             }
-            guard namespace == crsNamespace else { return true }
+            guard namespace == TagWrite.Namespace.crs.uri else { return true }
             if name.hasPrefix("ToneCurvePV2012") {
                 curves[name] = curvePoints(fromMetadataValue: value)
             } else if name == "HasCrop" {
@@ -347,21 +345,15 @@ public enum XMP {
     }
 
     struct TagWrite {
-        enum Namespace: CaseIterable {
+        enum Namespace: String, CaseIterable {
             case xmp, crs, tiff
 
-            var prefix: String {
-                switch self {
-                case .xmp: "xmp"
-                case .crs: "crs"
-                case .tiff: "tiff"
-                }
-            }
+            var prefix: String { rawValue }
 
             var uri: String {
                 switch self {
                 case .xmp: "http://ns.adobe.com/xap/1.0/"
-                case .crs: crsNamespace
+                case .crs: "http://ns.adobe.com/camera-raw-settings/1.0/"
                 case .tiff: "http://ns.adobe.com/tiff/1.0/"
                 }
             }
@@ -494,7 +486,6 @@ public enum XMP {
             guard let base else {
                 throw XMPError.unreadableOrientation(file.path)
             }
-            // Lightroom writes the absolute value, not a delta
             let absolute = absoluteOrientation(
                 rotation: edit.normalizedRotation, base: base)
             tags.append(TagWrite(.tiff, "Orientation", .scalar("\(absolute)")))
@@ -521,10 +512,13 @@ public enum XMP {
                 exiftoolArgs(tags, exifOrientationPin: exifOrientationPin),
                 clearing: clearing, file: file, tool: tool)
         #else
-            guard file.usesSidecar else { throw XMPError.embeddedWriteUnsupported(file.path) }
-            try XMPTextWriter.write(
-                tags, to: sidecarURL(forImagePath: file.path), clearing: clearing)
+            try writeText(tags, clearing: clearing, file: file)
         #endif
+    }
+
+    static func writeText(_ tags: [TagWrite], clearing: Bool, file: ImageFile) throws {
+        guard file.usesSidecar else { throw XMPError.embeddedWriteUnsupported(file.path) }
+        try XMPTextWriter.write(tags, to: sidecarURL(forImagePath: file.path), clearing: clearing)
     }
 
     private static func writeWithExifTool(

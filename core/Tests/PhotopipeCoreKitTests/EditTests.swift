@@ -4,12 +4,7 @@ import Testing
 @testable import PhotopipeCoreKit
 
 private func fixtureURL() -> URL {
-    URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .appendingPathComponent("fixtures/curve-samples.json")
+    fixturesRoot().appendingPathComponent("curve-samples.json")
 }
 
 private struct CurveFixture: Codable {

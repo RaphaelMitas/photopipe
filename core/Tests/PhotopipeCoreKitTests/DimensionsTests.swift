@@ -5,12 +5,7 @@ import Testing
 @testable import PhotopipeCoreKit
 
 @Test func dimensionsFromRealARWHeader() throws {
-    let fixture = URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .appendingPathComponent("fixtures/raw/sony-a7iv.arw")
+    let fixture = fixturesRoot().appendingPathComponent("raw/sony-a7iv.arw")
     guard FileManager.default.fileExists(atPath: fixture.path) else {
         #expect(
             ProcessInfo.processInfo.environment["CI"] == nil,

@@ -210,12 +210,7 @@ func makePNG(width: Int = 64, height: Int = 48) throws -> (ImageFile, URL) {
 }
 
 @Test func thumbnailExtractsEmbeddedPreviewFromRealARW() throws {
-    let fixture = URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent()  // Tests/PhotopipeCoreKitTests
-        .deletingLastPathComponent()  // Tests
-        .deletingLastPathComponent()  // core
-        .deletingLastPathComponent()  // repo root
-        .appendingPathComponent("fixtures/raw/sony-a7iv.arw")
+    let fixture = fixturesRoot().appendingPathComponent("raw/sony-a7iv.arw")
     guard FileManager.default.fileExists(atPath: fixture.path) else {
         // Locally a missing fixture is a soft skip; CI fetches fixtures first,
         // so there it must fail loudly instead of going silently green.

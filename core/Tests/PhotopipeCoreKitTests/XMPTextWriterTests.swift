@@ -3,14 +3,8 @@ import Testing
 
 @testable import PhotopipeCoreKit
 
-private let fixtures = URL(fileURLWithPath: #filePath)
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .deletingLastPathComponent()
-    .appendingPathComponent("fixtures/sidecars")
+private let fixtures = fixturesRoot().appendingPathComponent("sidecars")
 
-// the oracle: what another tool reads back
 private func exiftoolDump(_ url: URL) throws -> String {
     let json = try ExifTool.shared.execute(["-q", "-j", "-G1", "-struct", "-a", url.path])
     let parsed = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[String: Any]]
@@ -44,16 +38,13 @@ private struct Writers {
 
     func write(_ rating: Int) throws {
         try XMP.writeRating(rating, file: try image(exiftool), tool: .shared)
-        try XMPTextWriter.write(
-            XMP.ratingTags(rating), to: XMP.sidecarURL(forImagePath: text.path),
-            clearing: rating == 0)
+        try XMP.writeText(XMP.ratingTags(rating), clearing: rating == 0, file: try image(text))
     }
 
     func write(_ edit: Edit) throws {
         try XMP.writeEdit(edit, file: try image(exiftool), tool: .shared)
-        try XMPTextWriter.write(
-            XMP.editTags(edit, file: try image(text)).tags,
-            to: XMP.sidecarURL(forImagePath: text.path), clearing: edit.isIdentity)
+        let file = try image(text)
+        try XMP.writeText(XMP.editTags(edit, file: file).tags, clearing: edit.isIdentity, file: file)
     }
 
     func expectEqual(_ step: String) throws {
@@ -149,10 +140,9 @@ func textWriterMatchesExifTool(fixture: String?) throws {
         exposure: 0.5,
         curveRGB: [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.4, y: 0.6), CurvePoint(x: 1, y: 1)],
         curveBlue: [CurvePoint(x: 0, y: 0.2), CurvePoint(x: 1, y: 0.8)])
-    try XMPTextWriter.write(
-        XMP.editTags(edit, file: try image(raw)).tags,
-        to: XMP.sidecarURL(forImagePath: raw.path), clearing: false)
-    let read = XMP.readEdit(file: try image(raw))
+    let file = try image(raw)
+    try XMP.writeText(XMP.editTags(edit, file: file).tags, clearing: false, file: file)
+    let read = XMP.readEdit(file: file)
     #expect(read.curveRGB == edit.curveRGB)
     #expect(read.curveBlue == edit.curveBlue)
 }
@@ -169,6 +159,17 @@ func textWriterMatchesExifTool(fixture: String?) throws {
     }
     try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: sidecar.path)
     #expect(try Data(contentsOf: sidecar) == original)
+}
+
+@Test func textWriterTreatsEmptySidecarAsMissing() throws {
+    let dir = scratchDir("xmp-text")
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let writers = try Writers(in: dir, fixture: nil)
+    for raw in [writers.exiftool, writers.text] {
+        try Data().write(to: XMP.sidecarURL(forImagePath: raw.path))
+    }
+    try writers.write(3)
+    try writers.expectEqual("rating into empty file")
 }
 
 @Test func textWriterRatingReadsBackFromSingleQuotedAttribute() throws {

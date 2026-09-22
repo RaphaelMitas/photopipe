@@ -25,12 +25,14 @@ enum XMPTextWriter {
     static func write(_ tags: [XMP.TagWrite], to sidecar: URL, clearing: Bool) throws {
         writeLock.lock()
         defer { writeLock.unlock() }
-        let existing: Data?
+        var existing: Data?
         do {
             existing = try Data(contentsOf: sidecar)
         } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
             existing = nil
         }
+        // exiftool treats a zero-byte sidecar as absent too
+        if existing?.isEmpty == true { existing = nil }
         if existing == nil && clearing { return }
         let bytes = try apply(tags, to: existing.map(Array.init) ?? Array(freshSidecar.utf8))
         try Data(bytes).write(to: sidecar, options: .atomic)
@@ -67,9 +69,8 @@ enum XMPTextWriter {
         let range: Range<Int>
     }
 
-    /// An `rdf:Description` directly under `rdf:RDF`. Lightroom nests more of
-    /// them inside masks, and those repeat names like `crs:ToneCurvePV2012`.
-    private struct Description {
+    // Lightroom's mask Descriptions repeat names like crs:ToneCurvePV2012
+    private struct TopLevelDescription {
         let start: Tag
         let end: Tag?
         let children: [ChildElement]
@@ -82,20 +83,12 @@ enum XMPTextWriter {
     }
 
     private struct Document {
-        var descriptions: [Description] = []
+        var descriptions: [TopLevelDescription] = []
         var prefixes: [(prefix: String, uri: String, scope: PrefixScope)] = []
         var rdfEnd: Tag?
     }
 
     private static let skipped = [("<!--", "-->"), ("<?", "?>"), ("<![CDATA[", "]]>")]
-
-    private static func find(_ needle: String, in bytes: [UInt8], from start: Int) -> Int? {
-        let needle = Array(needle.utf8)
-        guard bytes.count >= needle.count else { return nil }
-        return (start...max(start, bytes.count - needle.count)).first {
-            bytes[$0...].starts(with: needle)
-        }
-    }
 
     private static func isSpace(_ byte: UInt8) -> Bool {
         byte == 0x20 || byte == 0x0A || byte == 0x0D || byte == 0x09
@@ -114,10 +107,10 @@ enum XMPTextWriter {
                 continue
             }
             if let (open, close) = skipped.first(where: { bytes[index...].starts(with: $0.0.utf8) }) {
-                guard let end = find(close, in: bytes, from: index) else {
+                guard let end = bytes[index...].firstRange(of: Array(close.utf8)) else {
                     throw WriteError.malformed("unterminated \(open)")
                 }
-                index = end + close.utf8.count
+                index = end.upperBound
                 continue
             }
             let start = index
@@ -195,7 +188,8 @@ enum XMPTextWriter {
                 if tag.name == "rdf:Description", stack.last?.name == "rdf:RDF", open == nil {
                     notePrefixes(tag, scope: .description(document.descriptions.count))
                     if tag.isSelfClosing {
-                        document.descriptions.append(Description(start: tag, end: nil, children: []))
+                        document.descriptions.append(
+                            TopLevelDescription(start: tag, end: nil, children: []))
                     } else {
                         open = (tag, [], stack.count)
                     }
@@ -226,7 +220,7 @@ enum XMPTextWriter {
                 child = nil
             } else if stack.count == current.depth {
                 document.descriptions.append(
-                    Description(start: current.start, end: tag, children: current.children))
+                    TopLevelDescription(start: current.start, end: tag, children: current.children))
                 open = nil
             }
         }
@@ -280,7 +274,7 @@ enum XMPTextWriter {
 
     private static func insertionTarget(
         for namespace: XMP.TagWrite.Namespace, in bytes: inout [UInt8]
-    ) throws -> Description {
+    ) throws -> TopLevelDescription {
         var document = try parse(bytes)
         if document.descriptions.isEmpty {
             // exiftool leaves an empty rdf:RDF behind once every tag is cleared
