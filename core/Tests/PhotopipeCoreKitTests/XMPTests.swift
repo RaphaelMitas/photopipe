@@ -6,7 +6,7 @@ import Testing
 
 /// exiftool availability: soft skip locally, loud failure on CI (which
 /// installs it before running tests).
-private func requireExifTool() -> Bool {
+func requireExifTool() -> Bool {
     guard ExifTool.shared.available else {
         #expect(
             ProcessInfo.processInfo.environment["CI"] == nil,

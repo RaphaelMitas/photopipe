@@ -14,6 +14,15 @@ func scratchDir(_ prefix: String) -> URL {
         .appendingPathComponent("photopipe-tests/\(prefix)-\(UUID().uuidString)")
 }
 
+func fixturesRoot() -> URL {
+    URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("fixtures")
+}
+
 /// `setRoot` returns as soon as the tree is walked, so anything that asserts on
 /// ratings, edits, dimensions or a settled generation has to wait for the
 /// background enrichment to land first.

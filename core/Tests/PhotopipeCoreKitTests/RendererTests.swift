@@ -6,12 +6,7 @@ import UniformTypeIdentifiers
 @testable import PhotopipeCoreKit
 
 private func fixtureARW() -> URL? {
-    let fixture = URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .appendingPathComponent("fixtures/raw/sony-a7iv.arw")
+    let fixture = fixturesRoot().appendingPathComponent("raw/sony-a7iv.arw")
     guard FileManager.default.fileExists(atPath: fixture.path) else {
         // Locally a missing fixture is a soft skip; CI must fail loudly.
         #expect(
