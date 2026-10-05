@@ -12,7 +12,7 @@ export default async function Home() {
 
   return (
     <>
-      <SiteNav href={href} />
+      <SiteNav />
       <main>
         <Hero href={href} />
         <div id="develop">

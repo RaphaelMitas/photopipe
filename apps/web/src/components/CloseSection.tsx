@@ -1,4 +1,4 @@
-import { AppStoreButton } from "@/components/AppStoreButton";
+import { AppStoreBadge } from "@/components/AppStoreBadge";
 import { BrewCommand } from "@/components/BrewCommand";
 import { DownloadButton } from "@/components/DownloadButton";
 
@@ -24,8 +24,10 @@ export function CloseSection({ href }: { href: string }) {
           Free and open source.
         </p>
         <div className="mt-9 flex flex-col flex-wrap items-center justify-center gap-3 sm:flex-row">
-          <DownloadButton href={href}>Download Photopipe</DownloadButton>
-          <AppStoreButton />
+          <AppStoreBadge />
+          <DownloadButton href={href} variant="outline">
+            Download DMG
+          </DownloadButton>
           <BrewCommand />
         </div>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-muted-foreground text-sm">

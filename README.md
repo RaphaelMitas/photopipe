@@ -23,12 +23,16 @@ to.
 
 Requires **macOS 15 (Sequoia) or later** on **Apple Silicon**.
 
+<a href="https://apps.apple.com/app/id6813775361"><img src="apps/web/public/badges/mac-app-store.svg" height="40" alt="Download on the Mac App Store"></a>
+
+Get it from the [Mac App Store](https://apps.apple.com/app/id6813775361). It
+is free there too. Or install it with Homebrew, or download the DMG from
+[Releases](https://github.com/RaphaelMitas/photopipe/releases):
+
 ```bash
 brew install --cask raphaelmitas/tap/photopipe
 ```
 
-Or get it from the [Mac App Store](https://apps.apple.com/app/id6813775361),
-or download the DMG from [Releases](https://github.com/RaphaelMitas/photopipe/releases).
 Everything is signed and notarized, so it opens with a double-click. There is
 nothing else to install: the raw pipeline and the metadata writer ship inside
 the app.
