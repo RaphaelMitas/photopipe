@@ -23,7 +23,7 @@ const SECTIONS = [
     body: [
       "photopipe.net sets no cookies and runs no analytics or tracking scripts. The fonts ship with the site, so your browser makes no request to Google.",
       "Vercel hosts the site. Like any web host, Vercel processes your IP address and keeps short-lived server logs to deliver pages and block abuse.",
-      "The download button and the other links in the footer point to GitHub. Once you follow them, GitHub's privacy statement applies.",
+      "The download button and the other links in the footer point to GitHub. Once you follow them, GitHub's privacy statement applies. The Mac App Store button points to Apple, whose privacy policy applies there.",
     ],
   },
 ];

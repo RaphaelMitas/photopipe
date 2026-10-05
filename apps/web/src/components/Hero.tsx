@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { AppStoreButton } from "@/components/AppStoreButton";
 import { BrewCommand } from "@/components/BrewCommand";
 import { DownloadButton } from "@/components/DownloadButton";
 
@@ -20,8 +21,9 @@ export function Hero({ href }: { href: string }) {
           scoring, all of it on your own machine, over your own folders. No
           catalogue, no import, no account.
         </p>
-        <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+        <div className="mt-9 flex flex-col flex-wrap items-center justify-center gap-3 sm:flex-row">
           <DownloadButton href={href}>Download for macOS</DownloadButton>
+          <AppStoreButton />
           <BrewCommand />
         </div>
         <p className="mt-6 text-muted-foreground text-sm">

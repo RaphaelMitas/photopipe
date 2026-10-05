@@ -27,14 +27,16 @@ Requires **macOS 15 (Sequoia) or later** on **Apple Silicon**.
 brew install --cask raphaelmitas/tap/photopipe
 ```
 
-Or download the DMG from [Releases](https://github.com/RaphaelMitas/photopipe/releases).
+Or get it from the [Mac App Store](https://apps.apple.com/app/id6813775361),
+or download the DMG from [Releases](https://github.com/RaphaelMitas/photopipe/releases).
 Everything is signed and notarized, so it opens with a double-click. There is
 nothing else to install: the raw pipeline and the metadata writer ship inside
 the app.
 
-Photopipe updates itself. It looks for a new version on launch and offers it;
-nothing is downloaded until you say so. The running version and a manual check
-live under the ⓘ in the sidebar footer.
+The DMG and Homebrew installs update themselves. Photopipe looks for a new
+version on launch and offers it; nothing is downloaded until you say so. The
+running version and a manual check live under the ⓘ in the sidebar footer.
+The Mac App Store version gets its updates from the App Store.
 
 ## How it works
 
