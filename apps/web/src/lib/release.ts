@@ -1,4 +1,5 @@
 export const REPO = "https://github.com/RaphaelMitas/photopipe";
+export const APP_STORE = "https://apps.apple.com/app/id6813775361";
 const LATEST_JSON = `${REPO}/releases/latest/download/latest.json`;
 const RELEASES_PAGE = `${REPO}/releases/latest`;
 

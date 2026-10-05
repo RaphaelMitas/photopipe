@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteNav } from "@/components/SiteNav";
-import { downloadUrl, REPO } from "@/lib/release";
+import { REPO } from "@/lib/release";
 
 export const metadata: Metadata = {
   title: "Privacy",
@@ -23,17 +23,15 @@ const SECTIONS = [
     body: [
       "photopipe.net sets no cookies and runs no analytics or tracking scripts. The fonts ship with the site, so your browser makes no request to Google.",
       "Vercel hosts the site. Like any web host, Vercel processes your IP address and keeps short-lived server logs to deliver pages and block abuse.",
-      "The download button and the other links in the footer point to GitHub. Once you follow them, GitHub's privacy statement applies.",
+      "The Download button and the App Store links lead to the Mac App Store, where Apple's privacy policy applies. The DMG download and the other links in the footer point to GitHub, where GitHub's privacy statement applies.",
     ],
   },
 ];
 
-export default async function Privacy() {
-  const href = await downloadUrl();
-
+export default function Privacy() {
   return (
     <>
-      <SiteNav href={href} />
+      <SiteNav />
       <main className="mx-auto w-full max-w-3xl px-6 py-20 md:py-28">
         <h1 className="font-heading text-4xl tracking-tight md:text-5xl">
           Privacy

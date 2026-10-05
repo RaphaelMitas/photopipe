@@ -1,7 +1,7 @@
 import { Button } from "@photopipe/ui/components/button";
 import { Photopipe } from "@photopipe/ui/components/photopipe-mark";
 import { PhotopipeWordmark } from "@photopipe/ui/components/photopipe-wordmark";
-import { REPO } from "@/lib/release";
+import { APP_STORE, REPO } from "@/lib/release";
 
 const LINKS = [
   { label: "Develop", href: "/#develop" },
@@ -10,7 +10,7 @@ const LINKS = [
   { label: "GitHub", href: REPO },
 ];
 
-export function SiteNav({ href }: { href: string }) {
+export function SiteNav() {
   return (
     <header className="sticky top-0 z-50 border-border/60 border-b bg-background/80 backdrop-blur-xl">
       <nav className="mx-auto flex h-16 w-full max-w-6xl items-center gap-3 px-6">
@@ -25,7 +25,7 @@ export function SiteNav({ href }: { href: string }) {
           ))}
         </div>
         <Button asChild size="sm" className="ml-1">
-          <a href={href}>Download</a>
+          <a href={APP_STORE}>Download</a>
         </Button>
       </nav>
     </header>
