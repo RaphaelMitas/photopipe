@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Montserrat } from "next/font/google";
 import "./globals.css";
+import { DESCRIPTION, SITE_URL } from "@/lib/site";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -14,20 +15,23 @@ const montserrat = Montserrat({
   display: "swap",
 });
 
-const description =
-  "A free culling and develop suite for macOS. Apple's latest raw decoder, Neural Engine denoise, curves, crop and Vision aesthetic scoring, all of it on your own machine, over your own folders.";
-
 export const viewport: Viewport = {
   themeColor: "#16181D",
 };
 
+const title = "Photopipe: free raw photo editor and culling app for Mac";
+
 export const metadata: Metadata = {
-  metadataBase: new URL("https://photopipe.net"),
+  metadataBase: new URL(SITE_URL),
   title: {
-    default: "Photopipe — from 2000 raws to the ones you'll send",
+    default: title,
     template: "%s — Photopipe",
   },
-  description,
+  description: DESCRIPTION,
+  alternates: {
+    canonical: "/",
+    types: { "text/markdown": "/llms-full.txt" },
+  },
   manifest: "/site.webmanifest",
   icons: {
     icon: [
@@ -37,17 +41,17 @@ export const metadata: Metadata = {
     apple: "/apple-touch-icon.png",
   },
   openGraph: {
-    title: "Photopipe",
-    description,
-    url: "https://photopipe.net",
+    title,
+    description: DESCRIPTION,
+    url: SITE_URL,
     siteName: "Photopipe",
     type: "website",
     images: [{ url: "/og-dark.png", width: 1200, height: 630 }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Photopipe",
-    description,
+    title,
+    description: DESCRIPTION,
     images: ["/og-dark.png"],
   },
 };

@@ -3,10 +3,19 @@ import { SiteFooter } from "@/components/SiteFooter";
 import { SiteNav } from "@/components/SiteNav";
 import { REPO } from "@/lib/release";
 
+const description =
+  "Photopipe has no account and no telemetry. Your photos stay on your Mac.";
+
 export const metadata: Metadata = {
   title: "Privacy",
-  description:
-    "Photopipe has no account and no telemetry. Your photos stay on your Mac.",
+  description,
+  alternates: { canonical: "/privacy" },
+  openGraph: {
+    title: "Privacy — Photopipe",
+    description,
+    url: "/privacy",
+    images: ["/og-dark.png"],
+  },
 };
 
 const SECTIONS = [

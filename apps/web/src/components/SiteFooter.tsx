@@ -10,6 +10,7 @@ const LINKS = [
   { label: "Design notes", href: `${REPO}/blob/main/docs/design.md` },
   { label: "Licence", href: `${REPO}/blob/main/LICENSE` },
   { label: "Privacy", href: "/privacy" },
+  { label: "llms.txt", href: "/llms.txt" },
 ];
 
 export function SiteFooter() {

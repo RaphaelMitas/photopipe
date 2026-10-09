@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { Section } from "@/components/Section";
 
-const FEATURES = [
+export const FEATURES = [
   {
     icon: FolderOpen,
     title: "Your folders are the truth",
@@ -23,7 +23,7 @@ const FEATURES = [
   {
     icon: Star,
     title: "Ratings that travel",
-    body: "Stars, tone, colour, curves and crop go out as XMP: a sidecar beside a raw, embedded in a DNG. Lightroom and Capture One read the same decisions.",
+    body: "Stars, tone, colour, curves and crop go out as XMP: a sidecar beside a raw, embedded in a DNG or JPEG. Lightroom, Capture One and Photo Mechanic read the same stars.",
   },
   {
     icon: BarChart3,
@@ -47,9 +47,14 @@ const FEATURES = [
   },
 ];
 
+export const EVERYTHING_ELSE = {
+  eyebrow: "The rest of it",
+  title: "From folder to export.",
+};
+
 export function FeatureGrid() {
   return (
-    <Section eyebrow="The rest of it" title="Everything else the job needs.">
+    <Section {...EVERYTHING_ELSE}>
       <div className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {FEATURES.map((feature) => (
           <Card key={feature.title} className="h-full">
@@ -57,7 +62,9 @@ export function FeatureGrid() {
               <div className="mb-4 flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
                 <feature.icon className="size-5" />
               </div>
-              <CardTitle className="text-lg">{feature.title}</CardTitle>
+              <CardTitle className="text-lg">
+                <h3>{feature.title}</h3>
+              </CardTitle>
               <CardDescription className="mt-2 leading-relaxed">
                 {feature.body}
               </CardDescription>
