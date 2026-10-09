@@ -274,7 +274,7 @@ export function EditPanel({
             <Crop />
             Crop & straighten
             {summary && (
-              <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+              <span className="ml-auto min-w-0 truncate font-mono text-[10px] text-muted-foreground">
                 {summary}
               </span>
             )}
