@@ -1,17 +1,21 @@
 import { CloseSection } from "@/components/CloseSection";
 import { DevelopSection } from "@/components/DevelopSection";
+import { FaqSection } from "@/components/FaqSection";
 import { FeatureGrid } from "@/components/FeatureGrid";
 import { Hero } from "@/components/Hero";
 import { InstinctSection } from "@/components/InstinctSection";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteNav } from "@/components/SiteNav";
-import { downloadUrl } from "@/lib/release";
+import { StructuredData } from "@/components/StructuredData";
+import { downloadUrl, latestVersion } from "@/lib/release";
 
 export default async function Home() {
-  const href = await downloadUrl();
+  const version = await latestVersion();
+  const href = downloadUrl(version);
 
   return (
     <>
+      <StructuredData version={version} href={href} />
       <SiteNav />
       <main>
         <Hero href={href} />
@@ -24,8 +28,11 @@ export default async function Home() {
         <div id="everything-else">
           <FeatureGrid />
         </div>
+        <div id="faq">
+          <FaqSection />
+        </div>
       </main>
-      <CloseSection href={href} />
+      <CloseSection href={href} version={version} />
       <SiteFooter />
     </>
   );

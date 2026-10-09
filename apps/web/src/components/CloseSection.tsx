@@ -6,10 +6,16 @@ const FACTS = [
   "macOS 15 (Sequoia) or later",
   "Apple Silicon",
   "No account",
-  "Nothing leaves your Mac",
+  "Photos never leave your Mac",
 ];
 
-export function CloseSection({ href }: { href: string }) {
+export function CloseSection({
+  href,
+  version,
+}: {
+  href: string;
+  version: string | null;
+}) {
   return (
     <section className="relative overflow-hidden">
       <div
@@ -21,7 +27,7 @@ export function CloseSection({ href }: { href: string }) {
           Your next shoot is waiting.
         </h2>
         <p className="mt-4 text-lg text-muted-foreground">
-          Free and open source.
+          Free and open source{version ? `, version ${version}` : ""}.
         </p>
         <div className="mt-9 flex flex-col flex-wrap items-center justify-center gap-3 sm:flex-row">
           <AppStoreBadge />

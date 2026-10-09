@@ -2,7 +2,7 @@ import { Separator } from "@photopipe/ui/components/separator";
 import Image from "next/image";
 import { Section } from "@/components/Section";
 
-const CONTROLS = [
+export const CONTROLS = [
   { name: "Exposure", detail: "Written as Lightroom's own crs:Exposure2012." },
   { name: "Highlights · Shadows", detail: "Recovery either end of the range." },
   { name: "Whites · Blacks", detail: "Set where the photo clips, either end." },
@@ -31,13 +31,15 @@ const CONTROLS = [
   },
 ];
 
+export const DEVELOP = {
+  eyebrow: "Develop",
+  title: "A real edit, not a preview.",
+  lede: "Every adjustment runs through Apple's raw pipeline at full precision and is written back as XMP. Warm re-renders land in 32 ms on a 33 MP ARW, so a slider moves the photo, not a progress bar.",
+};
+
 export function DevelopSection() {
   return (
-    <Section
-      eyebrow="Develop"
-      title="A real edit, not a preview."
-      lede="Every adjustment runs through Apple's raw pipeline at full precision and is written back as XMP. Warm re-renders land in 32 ms on a 33 MP ARW, so a slider moves the photo, not a progress bar."
-    >
+    <Section {...DEVELOP}>
       <div className="mt-12 grid items-start gap-10 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)]">
         <ul className="flex flex-col">
           {CONTROLS.map((control, index) => (

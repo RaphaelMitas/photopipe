@@ -12,13 +12,16 @@ export function Hero({ href }: { href: string }) {
       />
       <div className="relative mx-auto w-full max-w-6xl px-6 pt-20 pb-12 text-center md:pt-28">
         <h1 className="mx-auto max-w-4xl text-balance font-heading text-5xl leading-[1.05] tracking-tight md:text-7xl">
+          <span className="mb-5 block font-medium font-sans text-primary text-sm uppercase tracking-[0.14em]">
+            Free raw photo editor for Mac
+          </span>{" "}
           From 2000 raws to the ones you&rsquo;ll{" "}
           <span className="text-primary">send</span>.
         </h1>
         <p className="mx-auto mt-7 max-w-2xl text-balance text-lg text-muted-foreground leading-relaxed md:text-xl">
-          A free culling and develop suite for macOS. Apple&rsquo;s latest raw
-          decoder, Neural Engine denoise, curves, crop and Vision aesthetic
-          scoring, all of it on your own machine, over your own folders. No
+          Cull, develop and export your raws in one free Mac app. Tone, colour,
+          curves, Neural Engine denoise and crop run through Apple&rsquo;s raw
+          pipeline, and on-device AI ranks the shoot before you start. No
           catalogue, no import, no account.
         </p>
         <div className="mt-9 flex flex-col flex-wrap items-center justify-center gap-3 sm:flex-row">
@@ -29,8 +32,8 @@ export function Hero({ href }: { href: string }) {
           <BrewCommand />
         </div>
         <p className="mt-6 text-muted-foreground text-sm">
-          Free and open source · macOS 15 or later · Apple Silicon · nothing is
-          uploaded, ever
+          Free and open source (MIT) · macOS 15 or later · Apple Silicon · your
+          photos never leave your Mac
         </p>
       </div>
       <div className="relative mx-auto w-full max-w-7xl px-6 pb-8">

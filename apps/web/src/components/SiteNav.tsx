@@ -7,6 +7,7 @@ const LINKS = [
   { label: "Develop", href: "/#develop" },
   { label: "Instinct", href: "/#instinct" },
   { label: "Export", href: "/#everything-else" },
+  { label: "FAQ", href: "/#faq" },
   { label: "GitHub", href: REPO },
 ];
 
