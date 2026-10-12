@@ -25,7 +25,7 @@ public struct Thumbnailer: Sendable {
     }
 
     public func thumbnail(for file: ImageFile, maxPixel: Int) throws -> URL {
-        try cache.file(at: cachePath(for: file, maxPixel: maxPixel)) { temp in
+        try cache.cachedFile(at: cachePath(for: file, maxPixel: maxPixel)) { temp in
             let url = URL(fileURLWithPath: file.path)
             guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
                 throw ThumbnailError.unreadable(file.path)

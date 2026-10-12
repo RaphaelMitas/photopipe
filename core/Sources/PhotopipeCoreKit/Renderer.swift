@@ -73,7 +73,7 @@ public final class Renderer: @unchecked Sendable {
         let dest = cachePath(
             for: file, edit: edit, maxPixel: maxPixel, viewport: viewport,
             decoderVersion: decoderVersion)
-        return try cache.file(at: dest) { temp in
+        return try cache.cachedFile(at: dest) { temp in
             var image = try sourceImage(
                 for: file, edit: edit, maxPixel: maxPixel, viewport: viewport,
                 decoderVersion: decoderVersion)

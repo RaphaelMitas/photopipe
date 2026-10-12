@@ -7,6 +7,8 @@ struct CacheFolder: Sendable {
 
     private static let maxAge: TimeInterval = 7 * 24 * 3600
     private static let touchInterval: TimeInterval = 24 * 3600
+    // a hit's touch and the prune's stat-then-delete must not interleave
+    private static let lock = NSLock()
 
     func url(forKey key: String) -> URL {
         let digest = SHA256.hash(data: Data(key.utf8))
@@ -14,16 +16,16 @@ struct CacheFolder: Sendable {
         return dir.appendingPathComponent("\(digest).jpg")
     }
 
-    /// Writes to a temp file then replaces, so a reader never sees half a JPEG.
-    func file(at url: URL, write: (URL) throws -> Void) throws -> URL {
+    func cachedFile(at url: URL, orWrite write: (URL) throws -> Void) throws -> URL {
         let fm = FileManager.default
-        if let modified = Self.modified(url) {
-            if modified.timeIntervalSinceNow > -Self.touchInterval { return url }
-            if (try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)) != nil {
-                return url
-            }
+        let hit = Self.lock.withLock { () -> Bool in
+            guard let modified = Self.modified(url) else { return false }
+            if modified.timeIntervalSinceNow > -Self.touchInterval { return true }
+            return (try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)) != nil
         }
+        if hit { return url }
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        // a reader never sees half a JPEG
         let temp = dir.appendingPathComponent("tmp-\(UUID().uuidString).jpg")
         try write(temp)
         _ = try? fm.replaceItemAt(url, withItemAt: temp)
@@ -43,8 +45,10 @@ struct CacheFolder: Sendable {
         else { return }
         for var entry in entries where entry.pathExtension == "jpg" {
             entry.removeAllCachedResourceValues()
-            if let modified = Self.modified(entry), modified < cutoff {
-                try? fm.removeItem(at: entry)
+            Self.lock.withLock {
+                if let modified = Self.modified(entry), modified < cutoff {
+                    try? fm.removeItem(at: entry)
+                }
             }
         }
     }
