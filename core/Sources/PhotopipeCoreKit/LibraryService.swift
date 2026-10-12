@@ -61,7 +61,7 @@ public final class LibraryService: @unchecked Sendable {
     public func setRoot(path: String, indexPath: String?) throws -> (
         shoots: Int, files: Int, generation: Int
     ) {
-        let path = URL(fileURLWithPath: path).standardizedFileURL.path
+        let path = Self.canonical(path)
         // Opening the database is itself a write (pragmas, schema, and a delete
         // if it turns out corrupt), so it has to queue behind whatever the
         // previous root left in flight rather than race it on a second handle.
@@ -74,11 +74,11 @@ public final class LibraryService: @unchecked Sendable {
         }
         let scanned = carryEnrichment(into: try walkLibrary(root: path), from: warm)
 
-        lock.lock()
-        root = path
-        self.index = index
-        let currentGeneration = publish(scanned)
-        lock.unlock()
+        let currentGeneration = lock.withLock {
+            root = path
+            self.index = index
+            return publish(scanned)
+        }
 
         store(scanned, root: path, in: index)
         useScorer(with: index)
@@ -86,17 +86,13 @@ public final class LibraryService: @unchecked Sendable {
         let newWatcher = Watcher(path: path, queue: rescanQueue) { [weak self] in
             self?.scheduleRescan()
         }
-        lock.lock()
-        watcher = newWatcher
-        lock.unlock()
+        lock.withLock { watcher = newWatcher }
 
         return (scanned.shoots.count, scanned.fileCount, currentGeneration)
     }
 
     public func listShoots() -> [Shoot] {
-        lock.lock()
-        defer { lock.unlock() }
-        return snapshot.shoots
+        lock.withLock { snapshot.shoots }
     }
 
     public func listImages(shoot: String) throws -> [ImageFile] {
@@ -116,20 +112,20 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     private func images(inShoot shoot: String) throws -> [ImageFile] {
-        lock.lock()
-        guard root != nil else {
-            lock.unlock()
-            throw ServiceError.noRoot
-        }
-        guard let images = snapshot.imagesByShoot[shoot] else {
-            lock.unlock()
-            throw ServiceError.unknownShoot(shoot)
-        }
-        lock.unlock()
-
+        let images = try snapshotImages(inShoot: shoot)
         // A read with a side effect: what you are looking at gets indexed first.
         enricher.prioritize(shoot: shoot)
         return images
+    }
+
+    private func snapshotImages(inShoot shoot: String) throws -> [ImageFile] {
+        try lock.withLock {
+            guard root != nil else { throw ServiceError.noRoot }
+            guard let images = snapshot.imagesByShoot[shoot] else {
+                throw ServiceError.unknownShoot(shoot)
+            }
+            return images
+        }
     }
 
     public struct Status: Sendable {
@@ -147,17 +143,17 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     public func status(since: Int? = nil) -> Status {
-        lock.lock()
-        defer { lock.unlock() }
-        return Status(
-            generation: generation,
-            root: root,
-            shoots: snapshot.shoots.count,
-            filesFound: snapshot.fileCount,
-            filesEnriched: snapshot.fileCount - pendingByShoot.values.reduce(0, +),
-            changedShoots: since.map { seen in
-                shootGenerations.filter { $0.value > seen }.keys.sorted()
-            })
+        lock.withLock {
+            Status(
+                generation: generation,
+                root: root,
+                shoots: snapshot.shoots.count,
+                filesFound: snapshot.fileCount,
+                filesEnriched: snapshot.fileCount - pendingByShoot.values.reduce(0, +),
+                changedShoots: since.map { seen in
+                    shootGenerations.filter { $0.value > seen }.keys.sorted()
+                })
+        }
     }
 
     /// Callers must hold the lock.
@@ -178,17 +174,17 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     private func startEnrichment() {
-        lock.lock()
-        let currentEpoch = epoch
-        let pending = snapshot.unenriched
-        let order = snapshot.shoots.map(\.name).compactMap { name in
-            pending[name].map { (shoot: name, files: $0) }
+        let (currentEpoch, order) = lock.withLock {
+            let pending = snapshot.unenriched
+            let order = snapshot.shoots.map(\.name).compactMap { name in
+                pending[name].map { (shoot: name, files: $0) }
+            }
+            // The counter has to come from the same read as the work list. Taking
+            // it from the earlier publish would leave anything settled in between
+            // counted but never queued, and indexing would never read as finished.
+            pendingByShoot = pending.mapValues(\.count)
+            return (epoch, order)
         }
-        // The counter has to come from the same read as the work list. Taking
-        // it from the earlier publish would leave anything settled in between
-        // counted but never queued, and indexing would never read as finished.
-        pendingByShoot = pending.mapValues(\.count)
-        lock.unlock()
         enricher.start(epoch: currentEpoch, work: order) { [weak self] epoch, shoot, files, done in
             self?.applyEnrichment(epoch: epoch, shoot: shoot, files: files, shootDone: done)
         }
@@ -197,35 +193,34 @@ public final class LibraryService: @unchecked Sendable {
     private func applyEnrichment(
         epoch: Int, shoot: String, files: [ImageFile], shootDone: Bool
     ) {
-        lock.lock()
-        guard epoch == self.epoch, let images = snapshot.imagesByShoot[shoot] else {
-            lock.unlock()
-            return
-        }
-        let updates = Self.byPath(files)
-        // A batch is a snapshot of what the files held when it was queued. If
-        // an entry has been settled since — a rating written, say — it is the
-        // newer truth and the batch must not walk over it.
-        let accepted = images.map { current in
-            current.enriched ? current : updates[current.path] ?? current
-        }
-        let merged = accepted.filter { updates[$0.path] == $0 }
-        snapshot = snapshot.replacingImages(inShoot: shoot, with: accepted)
+        let applied = lock.withLock { () -> (merged: [ImageFile], index: SQLiteIndex?)? in
+            guard epoch == self.epoch, let images = snapshot.imagesByShoot[shoot] else {
+                return nil
+            }
+            let updates = Self.byPath(files)
+            // A batch is a snapshot of what the files held when it was queued. If
+            // an entry has been settled since — a rating written, say — it is the
+            // newer truth and the batch must not walk over it.
+            let accepted = images.map { current in
+                current.enriched ? current : updates[current.path] ?? current
+            }
+            snapshot = snapshot.replacingImages(inShoot: shoot, with: accepted)
 
-        let left = max(0, (pendingByShoot[shoot] ?? 0) - files.count)
-        pendingByShoot[shoot] = left == 0 ? nil : left
-        generation += 1
+            let left = max(0, (pendingByShoot[shoot] ?? 0) - files.count)
+            pendingByShoot[shoot] = left == 0 ? nil : left
+            generation += 1
 
-        // Refetching a shoot means re-encoding every image in it, so say a
-        // shoot changed at most once a second. The dashboard's counters ride
-        // the global generation, which is free to move every batch.
-        let now = Date()
-        if shootDone || now.timeIntervalSince(shootPublished[shoot] ?? .distantPast) >= 1 {
-            shootGenerations[shoot] = generation
-            shootPublished[shoot] = now
+            // Refetching a shoot means re-encoding every image in it, so say a
+            // shoot changed at most once a second. The dashboard's counters ride
+            // the global generation, which is free to move every batch.
+            let now = Date()
+            if shootDone || now.timeIntervalSince(shootPublished[shoot] ?? .distantPast) >= 1 {
+                shootGenerations[shoot] = generation
+                shootPublished[shoot] = now
+            }
+            return (accepted.filter { updates[$0.path] == $0 }, index)
         }
-        let index = self.index
-        lock.unlock()
+        guard let (merged, index) = applied else { return }
 
         // Only what the merge accepted: persisting an entry the merge rejected
         // would put the pre-write value back on the next launch.
@@ -263,9 +258,7 @@ public final class LibraryService: @unchecked Sendable {
     /// nothing; only a library-wide "no" is worth telling the user about.
     /// nil when there is no raw to ask.
     public func raw9Availability() -> Bool? {
-        lock.lock()
-        let shoots = snapshot.imagesByShoot
-        lock.unlock()
+        let shoots = lock.withLock { snapshot.imagesByShoot }
         // one raw per shoot: cameras rarely differ within a shoot, and the
         // probe caches per camera, so this stays a handful of header reads
         let samples = shoots.values.compactMap { $0.first(where: \.isRaw) }
@@ -292,14 +285,8 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     private func recordUnderRoot(path: String) throws -> ImageFile {
-        lock.lock()
-        let currentRoot = root
-        lock.unlock()
-        guard let currentRoot else { throw ServiceError.noRoot }
-        let canonical = URL(fileURLWithPath: path).standardizedFileURL.path
-        guard canonical.hasPrefix(currentRoot + "/") || canonical == currentRoot else {
-            throw ServiceError.pathOutsideRoot(path)
-        }
+        let currentRoot = try requireRoot()
+        let canonical = try Self.canonical(path, under: currentRoot)
         let attrs = try FileManager.default.attributesOfItem(atPath: canonical)
         return ImageFile(
             path: canonical,
@@ -312,53 +299,26 @@ public final class LibraryService: @unchecked Sendable {
     /// One canonical index for the whole selection: resolving each path against
     /// a linear scan makes selecting a whole shoot quadratic.
     private func images(inShoot shootName: String, paths: [String]) throws -> [ImageFile] {
-        lock.lock()
-        let images = snapshot.imagesByShoot[shootName]
-        let hasRoot = root != nil
-        lock.unlock()
-        guard hasRoot else { throw ServiceError.noRoot }
-        guard let images else { throw ServiceError.unknownShoot(shootName) }
-
         var byCanonical: [String: ImageFile] = [:]
-        for image in images {
-            byCanonical[URL(fileURLWithPath: image.path).standardizedFileURL.path] = image
+        for image in try snapshotImages(inShoot: shootName) {
+            byCanonical[Self.canonical(image.path)] = image
         }
         return try paths.map { path in
-            let canonical = URL(fileURLWithPath: path).standardizedFileURL.path
-            guard let image = byCanonical[canonical] else {
+            guard let image = byCanonical[Self.canonical(path)] else {
                 throw ServiceError.unknownImage(path)
             }
             return image
         }
     }
 
-    private func image(shoot shootName: String, path: String) throws -> ImageFile {
-        lock.lock()
-        let images = snapshot.imagesByShoot[shootName]
-        let hasRoot = root != nil
-        lock.unlock()
-        guard hasRoot else { throw ServiceError.noRoot }
-        guard let images else { throw ServiceError.unknownShoot(shootName) }
-        let canonical = URL(fileURLWithPath: path).standardizedFileURL.path
-        guard
-            let image = images.first(where: {
-                $0.path == path
-                    || URL(fileURLWithPath: $0.path).standardizedFileURL.path == canonical
-            })
-        else {
-            throw ServiceError.unknownImage(path)
-        }
-        return image
-    }
-
     /// The image with its real metadata, reading it now if enrichment has not
     /// reached it. A write against a placeholder would both lose what the file
     /// already carries and be overwritten by the batch still in the queue.
     private func settledImage(shoot: String, path: String) throws -> ImageFile {
-        let image = try image(shoot: shoot, path: path)
+        let image = try images(inShoot: shoot, paths: [path])[0]
         guard !image.enriched else { return image }
         let settled = enrich(image)
-        updateSnapshot(shoot: shoot, path: image.path) { _ in settled }
+        replace(settled, inShoot: shoot)
         return settled
     }
 
@@ -380,11 +340,9 @@ public final class LibraryService: @unchecked Sendable {
     /// placeholder by the very next rescan.
     private func settleAfterWrite(shoot: String, image: ImageFile) -> ImageFile {
         let settled = enrich(Self.restat(image))
-        updateSnapshot(shoot: shoot, path: image.path) { _ in settled }
+        replace(settled, inShoot: shoot)
         scorer.restamp(image, to: settled)
-        lock.lock()
-        let index = self.index
-        lock.unlock()
+        let index = lock.withLock { self.index }
         indexQueue.async { try? index?.upsert(shoot: shoot, files: [settled]) }
         return settled
     }
@@ -399,15 +357,12 @@ public final class LibraryService: @unchecked Sendable {
             sidecarMtime: file.usesSidecar ? XMP.sidecarMtime(forImagePath: file.path) : 0)
     }
 
-    private func updateSnapshot(
-        shoot shootName: String, path: String, _ transform: (ImageFile) -> ImageFile
-    ) {
-        lock.lock()
-        defer { lock.unlock() }
-        if var updated = snapshot.imagesByShoot[shootName],
-            let index = updated.firstIndex(where: { $0.path == path })
-        {
-            updated[index] = transform(updated[index])
+    private func replace(_ image: ImageFile, inShoot shootName: String) {
+        lock.withLock {
+            guard var updated = snapshot.imagesByShoot[shootName],
+                let index = updated.firstIndex(where: { $0.path == image.path })
+            else { return }
+            updated[index] = image
             snapshot = snapshot.replacingImages(inShoot: shootName, with: updated)
             generation += 1
             shootGenerations[shootName] = generation
@@ -486,13 +441,8 @@ public final class LibraryService: @unchecked Sendable {
     public func createProject(name: String, notes: String)
         throws -> (shoot: String, path: String, generation: Int)
     {
-        lock.lock()
-        let currentRoot = root
-        lock.unlock()
-        guard let currentRoot else { throw ServiceError.noRoot }
-
         let folder = try Self.projectFolder(name: name)
-        let path = try Self.freeProjectURL(root: currentRoot, folder: folder)
+        let path = try Self.freeProjectURL(root: requireRoot(), folder: folder)
         try FileManager.default.createDirectory(at: path, withIntermediateDirectories: false)
         try ProjectFile(notes: notes).write(inShoot: path.path)
 
@@ -632,9 +582,7 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     private func shoot(named shootName: String) throws -> Shoot {
-        lock.lock()
-        let shoot = snapshot.shoots.first { $0.name == shootName }
-        lock.unlock()
+        let shoot = lock.withLock { snapshot.shoots.first { $0.name == shootName } }
         guard let shoot else { throw ServiceError.unknownShoot(shootName) }
         return shoot
     }
@@ -642,14 +590,9 @@ public final class LibraryService: @unchecked Sendable {
     public func trashImages(shoot shootName: String, paths: [String]) throws -> (
         files: Int, generation: Int
     ) {
-        var targets: [String] = []
-        for path in paths {
-            let found = try image(shoot: shootName, path: path)
-            targets.append(found.path)
-            let sidecar = XMP.sidecarURL(forImagePath: found.path)
-            if FileManager.default.fileExists(atPath: sidecar.path) {
-                targets.append(sidecar.path)
-            }
+        let targets = try images(inShoot: shootName, paths: paths).flatMap { image in
+            let sidecar = XMP.sidecarURL(forImagePath: image.path).path
+            return FileManager.default.fileExists(atPath: sidecar) ? [image.path, sidecar] : [image.path]
         }
         guard !targets.isEmpty else { throw ServiceError.unknownImage(paths.first ?? "") }
 
@@ -762,17 +705,23 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     private func pathsUnderRoot(_ paths: [String]) throws -> [String] {
-        lock.lock()
-        let currentRoot = root
-        lock.unlock()
-        guard let currentRoot else { throw ServiceError.noRoot }
-        return try paths.map { path in
-            let canonical = URL(fileURLWithPath: path).standardizedFileURL.path
-            guard canonical.hasPrefix(currentRoot + "/") else {
-                throw ServiceError.pathOutsideRoot(path)
-            }
-            return canonical
-        }
+        let currentRoot = try requireRoot()
+        return try paths.map { try Self.canonical($0, under: currentRoot) }
+    }
+
+    private func requireRoot() throws -> String {
+        guard let root = lock.withLock({ root }) else { throw ServiceError.noRoot }
+        return root
+    }
+
+    private static func canonical(_ path: String) -> String {
+        URL(fileURLWithPath: path).standardizedFileURL.path
+    }
+
+    private static func canonical(_ path: String, under root: String) throws -> String {
+        let canonical = canonical(path)
+        guard canonical.hasPrefix(root + "/") else { throw ServiceError.pathOutsideRoot(path) }
+        return canonical
     }
 
     private func scheduleRescan() {
@@ -783,27 +732,22 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     public func rescanNow() {
-        lock.lock()
-        let currentRoot = root
-        lock.unlock()
-        guard let currentRoot, let walked = try? walkLibrary(root: currentRoot) else { return }
+        guard let currentRoot = try? requireRoot(),
+            let walked = try? walkLibrary(root: currentRoot)
+        else { return }
 
         // Read what is known only after the walk: on a big tree the walk takes
         // seconds, and anything enriched during it would otherwise be thrown
         // back to a placeholder.
-        lock.lock()
-        let known = Self.byPath(snapshot.imagesByShoot.values.joined())
-        lock.unlock()
+        let known = lock.withLock { Self.byPath(snapshot.imagesByShoot.values.joined()) }
         let scanned = carryEnrichment(into: walked, from: known)
 
-        lock.lock()
-        guard scanned != snapshot else {
-            lock.unlock()
-            return
+        let (changed, index) = lock.withLock { () -> (Bool, SQLiteIndex?) in
+            let changed = scanned != snapshot
+            if changed { _ = publish(scanned) }
+            return (changed, index)
         }
-        _ = publish(scanned)
-        let index = self.index
-        lock.unlock()
+        guard changed else { return }
 
         store(scanned, root: currentRoot, in: index)
     }

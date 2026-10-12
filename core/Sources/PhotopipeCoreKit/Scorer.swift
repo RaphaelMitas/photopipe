@@ -39,28 +39,29 @@ public final class Scorer: @unchecked Sendable {
     /// Results are handed to `flush` rather than written here, so the scorer
     /// never touches the database directly.
     public func use(cache: [String: ScoreRow], flush: @escaping Flush) {
-        lock.lock()
-        let cancelled = passes.values
-        passes.removeAll()
-        progressByShoot.removeAll()
-        moved.removeAll()
-        self.flush = flush
-        self.cache = cache
-        lock.unlock()
+        let cancelled = lock.withLock {
+            let cancelled = passes.values
+            passes.removeAll()
+            progressByShoot.removeAll()
+            moved.removeAll()
+            self.flush = flush
+            self.cache = cache
+            return cancelled
+        }
         for pass in cancelled { pass.cancel() }
     }
 
     /// Scores for the files that have a current one, keyed by path.
     public func scores(for files: [ImageFile]) -> [String: Double] {
-        lock.lock()
-        defer { lock.unlock() }
-        var result: [String: Double] = [:]
-        for file in files {
-            if let row = cache[file.path], row.matches(file), let score = row.score {
-                result[file.path] = score
+        lock.withLock {
+            var result: [String: Double] = [:]
+            for file in files {
+                if let row = cache[file.path], row.matches(file), let score = row.score {
+                    result[file.path] = score
+                }
             }
+            return result
         }
-        return result
     }
 
     /// Carry a score across our own metadata write, which moves a file's mtime and size without
@@ -82,35 +83,30 @@ public final class Scorer: @unchecked Sendable {
     /// Only a running pass reports stored progress. Once it ends the answer is recomputed from
     /// the cache, so a file that changed since goes back to being unscored.
     public func progress(shoot: String, files: [ImageFile]) -> Progress {
-        lock.lock()
-        defer { lock.unlock() }
-        if let current = progressByShoot[shoot], current.running { return current }
-        return Progress(done: scoredCount(files), total: files.count, running: false)
+        lock.withLock {
+            if let current = progressByShoot[shoot], current.running { return current }
+            return Progress(done: scoredCount(files), total: files.count, running: false)
+        }
     }
 
     /// Score everything in the shoot that has no current answer. Calling this while a pass for
     /// the same shoot runs just reports where it is.
     @discardableResult
     public func start(shoot: String, files: [ImageFile]) -> Progress {
-        lock.lock()
-        if passes[shoot] != nil {
-            let current = progressByShoot[shoot] ?? .idle
-            lock.unlock()
-            return current
+        lock.withLock {
+            if passes[shoot] != nil { return progressByShoot[shoot] ?? .idle }
+            let pending = files.filter { cache[$0.path]?.matches($0) != true }
+            guard !pending.isEmpty else {
+                return Progress(done: files.count, total: files.count, running: false)
+            }
+            let start = Progress(
+                done: files.count - pending.count, total: files.count, running: true)
+            progressByShoot[shoot] = start
+            passes[shoot] = Task.detached(priority: .utility) { [weak self] in
+                await self?.run(shoot: shoot, pending: pending, total: files.count)
+            }
+            return start
         }
-        let pending = files.filter { cache[$0.path]?.matches($0) != true }
-        guard !pending.isEmpty else {
-            lock.unlock()
-            return Progress(done: files.count, total: files.count, running: false)
-        }
-        let start = Progress(
-            done: files.count - pending.count, total: files.count, running: true)
-        progressByShoot[shoot] = start
-        passes[shoot] = Task.detached(priority: .utility) { [weak self] in
-            await self?.run(shoot: shoot, pending: pending, total: files.count)
-        }
-        lock.unlock()
-        return start
     }
 
     private func run(shoot: String, pending: [ImageFile], total: Int) async {

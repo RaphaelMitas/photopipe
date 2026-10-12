@@ -29,27 +29,28 @@ final class Enricher: @unchecked Sendable {
     /// Replaces the queue wholesale. Batches from an older epoch may still be
     /// in flight; they carry their epoch so the receiver can drop them.
     func start(epoch: Int, work: [(shoot: String, files: [ImageFile])], publish: @escaping Publish) {
-        lock.lock()
-        self.epoch = epoch
-        self.publish = publish
-        pending = [:]
-        order = []
-        for (shoot, files) in work where !files.isEmpty {
-            pending[shoot] = files
-            order.append(shoot)
+        let wake = lock.withLock {
+            self.epoch = epoch
+            self.publish = publish
+            pending = [:]
+            order = []
+            for (shoot, files) in work where !files.isEmpty {
+                pending[shoot] = files
+                order.append(shoot)
+            }
+            moveWantedToFront()
+            let wake = !draining && !order.isEmpty
+            if wake { draining = true }
+            return wake
         }
-        moveWantedToFront()
-        let wake = !draining && !order.isEmpty
-        if wake { draining = true }
-        lock.unlock()
         if wake { queue.async { self.drain() } }
     }
 
     func prioritize(shoot: String) {
-        lock.lock()
-        wanted = shoot
-        moveWantedToFront()
-        lock.unlock()
+        lock.withLock {
+            wanted = shoot
+            moveWantedToFront()
+        }
     }
 
     /// Callers must hold the lock.
@@ -61,25 +62,24 @@ final class Enricher: @unchecked Sendable {
 
     private func drain() {
         while true {
-            lock.lock()
-            guard let shoot = order.first, let queued = pending[shoot] else {
-                draining = false
-                lock.unlock()
-                return
+            let next = lock.withLock {
+                () -> (epoch: Int, shoot: String, batch: [ImageFile], done: Bool, Publish?)? in
+                guard let shoot = order.first, let queued = pending[shoot] else {
+                    draining = false
+                    return nil
+                }
+                let batch = Array(queued.prefix(Self.batchSize))
+                let rest = Array(queued.dropFirst(batch.count))
+                if rest.isEmpty {
+                    pending[shoot] = nil
+                    order.removeFirst()
+                } else {
+                    pending[shoot] = rest
+                }
+                return (epoch, shoot, batch, rest.isEmpty, publish)
             }
-            let batch = Array(queued.prefix(Self.batchSize))
-            let rest = Array(queued.dropFirst(batch.count))
-            if rest.isEmpty {
-                pending[shoot] = nil
-                order.removeFirst()
-            } else {
-                pending[shoot] = rest
-            }
-            let currentEpoch = epoch
-            let publish = self.publish
-            lock.unlock()
-
-            publish?(currentEpoch, shoot, Self.enrichConcurrently(batch), rest.isEmpty)
+            guard let (epoch, shoot, batch, done, publish) = next else { return }
+            publish?(epoch, shoot, Self.enrichConcurrently(batch), done)
         }
     }
 

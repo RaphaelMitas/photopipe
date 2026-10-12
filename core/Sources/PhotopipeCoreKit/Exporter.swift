@@ -47,22 +47,22 @@ public final class Exporter: @unchecked Sendable {
     public init() {}
 
     public func start(plan: Plan) -> Progress {
-        lock.lock()
         // A counter would restart at 1 with the process, and a client that
         // outlives a sidecar respawn would poll and cancel a stranger's job.
         let id = UUID().uuidString
-        for (old, settled) in settledAt where settled.timeIntervalSinceNow < -600 {
-            jobs[old] = nil
-            settledAt[old] = nil
-        }
         let initial = Progress(
             id: id, total: plan.items.count, done: 0, failed: 0, running: true,
             cancelled: false, archiving: false, error: nil, failures: [])
-        jobs[id] = initial
-        tasks[id] = Task.detached(priority: .utility) { [weak self] in
-            await self?.run(id: id, plan: plan)
+        lock.withLock {
+            for (old, settled) in settledAt where settled.timeIntervalSinceNow < -600 {
+                jobs[old] = nil
+                settledAt[old] = nil
+            }
+            jobs[id] = initial
+            tasks[id] = Task.detached(priority: .utility) { [weak self] in
+                await self?.run(id: id, plan: plan)
+            }
         }
-        lock.unlock()
         return initial
     }
 
