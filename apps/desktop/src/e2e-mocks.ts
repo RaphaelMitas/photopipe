@@ -221,8 +221,6 @@ export const E2E_HANDLERS: Record<
   string,
   (params: Record<string, unknown>) => unknown
 > = {
-  ping: () => ({ pong: true }),
-  version: () => ({ version: "0.0.0-e2e", protocol: 1 }),
   listShoots: () => ({
     shoots: shoots.map((shoot) => ({ ...shoot, indexed: !indexing })),
   }),
@@ -233,7 +231,6 @@ export const E2E_HANDLERS: Record<
     })),
   }),
   scoreShoot: (params) => scored(String(params.shoot)),
-  scoreStatus: (params) => scored(String(params.shoot)),
   thumbnail: (params) => ({
     cachePath: `/fake/thumbs/${String(params.path)}.jpg`,
   }),
