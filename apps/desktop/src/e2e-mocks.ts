@@ -156,7 +156,6 @@ function startJob(total: number, zip: boolean): ExportProgress {
     running: true,
     cancelled: false,
     archiving: false,
-    error: null,
     failures: [],
   };
   exportJobs.set(job.id, job);
@@ -233,7 +232,6 @@ export const E2E_HANDLERS: Record<
     })),
   }),
   scoreShoot: (params) => scored(String(params.shoot)),
-  scoreStatus: (params) => scored(String(params.shoot)),
   thumbnail: (params) => ({
     cachePath: `/fake/thumbs/${String(params.path)}.jpg`,
   }),

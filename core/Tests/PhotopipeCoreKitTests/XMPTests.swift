@@ -627,7 +627,7 @@ func image(_ url: URL) throws -> ImageFile {
     waitUntilIndexed(service)
 
     _ = try service.scoreShoot(shoot: "2026-01-01_instinct")
-    try await waitForPass { try service.scoreStatus(shoot: "2026-01-01_instinct") }
+    try await waitForPass { try service.scoreShoot(shoot: "2026-01-01_instinct") }
     let before = try service.listImages(shoot: "2026-01-01_instinct")
     let target = shoot.appendingPathComponent("b.JPG").path
     let score = try #require(before.first { $0.path == target }?.score)
@@ -637,7 +637,7 @@ func image(_ url: URL) throws -> ImageFile {
 
     let after = try service.listImages(shoot: "2026-01-01_instinct")
     #expect(after.first { $0.path == target }?.score == score)
-    let progress = try service.scoreStatus(shoot: "2026-01-01_instinct")
+    let progress = try service.scoreShoot(shoot: "2026-01-01_instinct")
     #expect(progress.running == false)
     #expect(progress.done == progress.total)
 }

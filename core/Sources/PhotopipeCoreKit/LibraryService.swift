@@ -105,10 +105,6 @@ public final class LibraryService: @unchecked Sendable {
         scorer.start(shoot: shoot, files: try images(inShoot: shoot))
     }
 
-    public func scoreStatus(shoot: String) throws -> Scorer.Progress {
-        scorer.progress(shoot: shoot, files: try images(inShoot: shoot))
-    }
-
     private func images(inShoot shoot: String) throws -> [ImageFile] {
         let images = try snapshotImages(inShoot: shoot)
         // A read with a side effect: what you are looking at gets indexed first.
