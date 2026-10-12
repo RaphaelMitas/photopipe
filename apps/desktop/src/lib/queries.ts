@@ -36,9 +36,16 @@ export function useShoots(enabled: boolean) {
   });
 }
 
+const imagesKey = (shoot: string | null) => ["images", shoot];
+
+function invalidateLibrary(queryClient: QueryClient) {
+  queryClient.invalidateQueries({ queryKey: ["shoots"] });
+  queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
+}
+
 export function useImages(shoot: string | null) {
   return useQuery({
-    queryKey: ["images", shoot],
+    queryKey: imagesKey(shoot),
     queryFn:
       shoot === null
         ? skipToken
@@ -81,7 +88,7 @@ export function useScoring(shoot: string | null, enabled: boolean) {
       return;
     }
     if (!finished) return;
-    void client.invalidateQueries({ queryKey: ["images", shoot] });
+    void client.invalidateQueries({ queryKey: imagesKey(shoot) });
     setJustRated(true);
     const timer = setTimeout(() => setJustRated(false), RATED_OFFER_MS);
     return () => clearTimeout(timer);
@@ -264,13 +271,20 @@ export function useRaw9Availability(enabled: boolean) {
 const SET_RATING_KEY = ["setRating"];
 const SET_EDIT_KEY = ["setEdit"];
 
-function xmpWritesInFlight(
-  queryClient: ReturnType<typeof useQueryClient>,
-): number {
+function xmpWritesInFlight(queryClient: QueryClient): number {
   return (
     queryClient.isMutating({ mutationKey: SET_RATING_KEY }) +
     queryClient.isMutating({ mutationKey: SET_EDIT_KEY })
   );
+}
+
+function invalidateAfterLastWrite(
+  queryClient: QueryClient,
+  shoot: string | null,
+) {
+  if (xmpWritesInFlight(queryClient) === 1) {
+    queryClient.invalidateQueries({ queryKey: imagesKey(shoot) });
+  }
 }
 
 export function cachedImage(
@@ -279,7 +293,7 @@ export function cachedImage(
   path: string,
 ) {
   return queryClient
-    .getQueryData<ImageFile[]>(["images", shoot])
+    .getQueryData<ImageFile[]>(imagesKey(shoot))
     ?.find((image) => image.path === path);
 }
 
@@ -290,7 +304,7 @@ function patchImages(
   shoot: string | null,
   patches: Map<string, Partial<ImageFile>>,
 ) {
-  queryClient.setQueryData<ImageFile[]>(["images", shoot], (old) =>
+  queryClient.setQueryData<ImageFile[]>(imagesKey(shoot), (old) =>
     old?.map((image) => {
       const patch = patches.get(image.path);
       return patch ? { ...image, ...patch } : image;
@@ -305,55 +319,14 @@ const patchImage = (
   patch: Partial<ImageFile>,
 ) => patchImages(queryClient, shoot, new Map([[path, patch]]));
 
-export function useSetRating(shoot: string | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationKey: SET_RATING_KEY,
-    mutationFn: ({ path, rating }: { path: string; rating: number }) =>
-      writeInOrder(path, () =>
-        coreRequest("setRating", { shoot, path, rating }),
-      ),
-    onMutate: async ({ path, rating }) => {
-      await queryClient.cancelQueries({ queryKey: ["images", shoot] });
-      const previous = cachedImage(queryClient, shoot, path)?.rating;
-      patchImage(queryClient, shoot, path, { rating });
-      return { previous };
-    },
-    onError: (error, vars, context) => {
-      if (context?.previous !== undefined) {
-        patchImage(queryClient, shoot, vars.path, { rating: context.previous });
-      }
-      toast.error(`Rating ${fileName(vars.path)} failed`, {
-        description: String(error),
-      });
-    },
-    onSettled: () => {
-      if (xmpWritesInFlight(queryClient) === 1) {
-        queryClient.invalidateQueries({ queryKey: ["images", shoot] });
-      }
-    },
-  });
-}
-
 export type EditWrite = { path: string; edit: Edit };
-
-const patchEdits = (
-  queryClient: QueryClient,
-  shoot: string | null,
-  edits: Map<string, Edit>,
-) =>
-  patchImages(
-    queryClient,
-    shoot,
-    new Map(Array.from(edits, ([path, edit]) => [path, { edit }])),
-  );
 
 export function currentEdits(
   queryClient: QueryClient,
   shoot: string | null,
   paths: string[],
 ): Map<string, Edit> {
-  const images = queryClient.getQueryData<ImageFile[]>(["images", shoot]) ?? [];
+  const images = queryClient.getQueryData<ImageFile[]>(imagesKey(shoot)) ?? [];
   const byPath = new Map(images.map((image) => [image.path, image.edit]));
   const wanted = new Map<string, Edit>();
   for (const path of paths) {
@@ -378,33 +351,90 @@ function writeInOrder<T>(path: string, write: () => Promise<T>): Promise<T> {
   return done;
 }
 
-const writeEdit = (shoot: string | null, { path, edit }: EditWrite) =>
-  writeInOrder(path, () => coreRequest("setEdit", { shoot, path, edit }));
+type PhotoField<V> = {
+  mutationKey: string[];
+  of: (image: ImageFile) => V;
+  same: (a: V, b: V) => boolean;
+  patch: (value: V) => Partial<ImageFile>;
+  write: (shoot: string | null, path: string, value: V) => Promise<unknown>;
+  failedOne: (path: string) => string;
+  failedMany: (count: number) => string;
+};
 
-export function useSetEdit(shoot: string | null) {
+const photos = (count: number) =>
+  `${count} ${count === 1 ? "photo" : "photos"}`;
+
+const RATING_FIELD: PhotoField<number> = {
+  mutationKey: SET_RATING_KEY,
+  of: (image) => image.rating,
+  same: (a, b) => a === b,
+  patch: (rating) => ({ rating }),
+  write: (shoot, path, rating) =>
+    writeInOrder(path, () => coreRequest("setRating", { shoot, path, rating })),
+  failedOne: (path) => `Rating ${fileName(path)} failed`,
+  failedMany: (count) => `${photos(count)} kept the rating they had`,
+};
+
+const EDIT_FIELD: PhotoField<Edit> = {
+  mutationKey: SET_EDIT_KEY,
+  of: (image) => image.edit,
+  same: (a, b) => editKey(a) === editKey(b),
+  patch: (edit) => ({ edit }),
+  write: (shoot, path, edit) =>
+    writeInOrder(path, () => coreRequest("setEdit", { shoot, path, edit })),
+  failedOne: (path) => `Saving edits for ${fileName(path)} failed`,
+  failedMany: (count) => `${photos(count)} kept the settings they had`,
+};
+
+function cachedValue<V>(
+  queryClient: QueryClient,
+  shoot: string | null,
+  path: string,
+  field: PhotoField<V>,
+): V | undefined {
+  const image = cachedImage(queryClient, shoot, path);
+  return image && field.of(image);
+}
+
+function useFieldWrite<V, Vars extends { path: string }>(
+  shoot: string | null,
+  field: PhotoField<V>,
+  valueIn: (vars: Vars) => V,
+) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationKey: SET_EDIT_KEY,
-    mutationFn: (write: EditWrite) => writeEdit(shoot, write),
-    onMutate: async ({ path, edit }) => {
-      await queryClient.cancelQueries({ queryKey: ["images", shoot] });
-      const previous = currentEdits(queryClient, shoot, [path]);
-      patchEdits(queryClient, shoot, new Map([[path, edit]]));
+    mutationKey: field.mutationKey,
+    mutationFn: (vars: Vars) => field.write(shoot, vars.path, valueIn(vars)),
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: imagesKey(shoot) });
+      const previous = cachedValue(queryClient, shoot, vars.path, field);
+      patchImage(queryClient, shoot, vars.path, field.patch(valueIn(vars)));
       return { previous };
     },
     onError: (error, vars, context) => {
-      if (context?.previous) patchEdits(queryClient, shoot, context.previous);
-      toast.error(`Saving edits for ${fileName(vars.path)} failed`, {
-        description: String(error),
-      });
-    },
-    onSettled: () => {
-      if (xmpWritesInFlight(queryClient) === 1) {
-        queryClient.invalidateQueries({ queryKey: ["images", shoot] });
+      if (context?.previous !== undefined) {
+        patchImage(
+          queryClient,
+          shoot,
+          vars.path,
+          field.patch(context.previous),
+        );
       }
+      toast.error(field.failedOne(vars.path), { description: String(error) });
     },
+    onSettled: () => invalidateAfterLastWrite(queryClient, shoot),
   });
 }
+
+export const useSetRating = (shoot: string | null) =>
+  useFieldWrite(
+    shoot,
+    RATING_FIELD,
+    (vars: { path: string; rating: number }) => vars.rating,
+  );
+
+export const useSetEdit = (shoot: string | null) =>
+  useFieldWrite(shoot, EDIT_FIELD, (vars: EditWrite) => vars.edit);
 
 export type BatchResult = {
   written: number;
@@ -415,31 +445,18 @@ export type BatchResult = {
 /// Enough to keep exiftool busy without starving renders and thumbnails.
 const BATCH_CONCURRENCY = 4;
 
-type BatchField<I, V> = {
-  mutationKey: string[];
-  values: (input: I) => Map<string, V>;
-  of: (image: ImageFile) => V;
-  same: (a: V, b: V) => boolean;
-  patch: (value: V) => Partial<ImageFile>;
-  write: (shoot: string | null, path: string, value: V) => Promise<unknown>;
-  failedToast: (count: number) => string;
-};
-
 /// One mutation for the batch, under the single-write key so the library poller
 /// leaves the images cache alone until every write has settled.
-function useBatchWrite<I, V>(shoot: string | null, field: BatchField<I, V>) {
+function useBatchWrite<V>(shoot: string | null, field: PhotoField<V>) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: field.mutationKey,
-    mutationFn: async (input: I): Promise<BatchResult> => {
+    mutationFn: async (values: Map<string, V>): Promise<BatchResult> => {
       // A long batch outlives its shoot, so it keeps the one it started with.
       const target = shoot;
-      const values = field.values(input);
-      const live = (path: string) => {
-        const image = cachedImage(queryClient, target, path);
-        return image && field.of(image);
-      };
-      await queryClient.cancelQueries({ queryKey: ["images", target] });
+      const live = (path: string) =>
+        cachedValue(queryClient, target, path, field);
+      await queryClient.cancelQueries({ queryKey: imagesKey(target) });
       const previous = new Map<string, V>();
       const patches = new Map<string, Partial<ImageFile>>();
       for (const [path, value] of values) {
@@ -483,13 +500,11 @@ function useBatchWrite<I, V>(shoot: string | null, field: BatchField<I, V>) {
         ),
       );
       if (failed.length > 0) {
-        toast.error(field.failedToast(failed.length), {
+        toast.error(field.failedMany(failed.length), {
           description: "Saving failed",
         });
       }
-      if (xmpWritesInFlight(queryClient) === 1) {
-        queryClient.invalidateQueries({ queryKey: ["images", target] });
-      }
+      invalidateAfterLastWrite(queryClient, target);
       return {
         written: values.size - failed.length - overtaken,
         failed,
@@ -499,37 +514,11 @@ function useBatchWrite<I, V>(shoot: string | null, field: BatchField<I, V>) {
   });
 }
 
-const photos = (count: number) =>
-  `${count} ${count === 1 ? "photo" : "photos"}`;
-
 export const usePasteEdits = (shoot: string | null) =>
-  useBatchWrite(shoot, {
-    mutationKey: SET_EDIT_KEY,
-    values: (edits: Map<string, Edit>) => edits,
-    of: (image) => image.edit,
-    same: (a, b) => editKey(a) === editKey(b),
-    patch: (edit) => ({ edit }),
-    write: (target, path, edit) => writeEdit(target, { path, edit }),
-    failedToast: (count) => `${photos(count)} kept the settings they had`,
-  });
+  useBatchWrite(shoot, EDIT_FIELD);
 
 export const useSetRatings = (shoot: string | null) =>
-  useBatchWrite(shoot, {
-    mutationKey: SET_RATING_KEY,
-    values: (ratings: Map<string, number>) => ratings,
-    of: (image) => image.rating,
-    same: (a, b) => a === b,
-    patch: (rating) => ({ rating }),
-    write: (target, path, rating) =>
-      writeInOrder(path, () =>
-        coreRequest("setRating", {
-          shoot: target,
-          path,
-          rating,
-        }),
-      ),
-    failedToast: (count) => `${photos(count)} kept the rating they had`,
-  });
+  useBatchWrite(shoot, RATING_FIELD);
 
 export function useReveal() {
   return useMutation({
@@ -547,13 +536,11 @@ export function useTrash(shoot: string | null) {
     mutationKey: ["write", "trash"],
     mutationFn: (paths: string[]) => coreRequest("trash", { shoot, paths }),
     onSuccess: (result, paths) => {
-      toast.success(
-        `Moved ${paths.length} ${paths.length === 1 ? "photo" : "photos"} to the Trash`,
-        { description: `${result.files} files` },
-      );
-      queryClient.invalidateQueries({ queryKey: ["images", shoot] });
-      queryClient.invalidateQueries({ queryKey: ["shoots"] });
-      queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
+      toast.success(`Moved ${photos(paths.length)} to the Trash`, {
+        description: `${result.files} files`,
+      });
+      queryClient.invalidateQueries({ queryKey: imagesKey(shoot) });
+      invalidateLibrary(queryClient);
     },
     onError: (error) => {
       toast.error("Could not delete", { description: String(error) });
@@ -572,8 +559,7 @@ export function useUpdateProject() {
         toast.success(`Renamed to ${result.shoot}`);
         queryClient.invalidateQueries({ queryKey: ["images"] });
       }
-      queryClient.invalidateQueries({ queryKey: ["shoots"] });
-      queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
+      invalidateLibrary(queryClient);
     },
     onError: (error) => {
       toast.error("Could not save the project", { description: String(error) });
@@ -725,8 +711,7 @@ export function useCreateProject() {
       coreRequest("createProject", vars),
     onSuccess: (result) => {
       toast.success(`Created ${result.shoot}`);
-      queryClient.invalidateQueries({ queryKey: ["shoots"] });
-      queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
+      invalidateLibrary(queryClient);
     },
     onError: (error) => {
       toast.error("Could not create the project", {
@@ -793,10 +778,9 @@ export function useLibrarySync(
           status.generation !== seen.current &&
           xmpWritesInFlight(queryClient) === 0
         ) {
-          queryClient.invalidateQueries({ queryKey: ["shoots"] });
-          queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
+          invalidateLibrary(queryClient);
           for (const shoot of status.changedShoots ?? []) {
-            queryClient.invalidateQueries({ queryKey: ["images", shoot] });
+            queryClient.invalidateQueries({ queryKey: imagesKey(shoot) });
             // newly arrived photos need rating, and only scoreShoot picks them up
             queryClient.invalidateQueries({ queryKey: ["scoring", shoot] });
           }
