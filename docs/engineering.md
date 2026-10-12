@@ -79,8 +79,9 @@ rather than committed — they are 25–50 MB each.
 Requirements: **macOS 15, Apple Silicon.** The bundle's
 `minimumSystemVersion` and the Swift package's platform floor must stay
 equal; if the bundle allows an older OS than the core was built for, the app
-installs, opens, and then every request fails. `scripts/build-core.sh` builds
-the host triple only, so an Intel Mac would get a sidecar that cannot run.
+installs, opens, and then every request fails. `scripts/prepare-bundle.sh`
+builds the core for the host triple only, so an Intel Mac would get a sidecar
+that cannot run.
 
 `tauri-build` resolves `externalBin` and `bundle.resources` at compile time,
 so a missing Swift core or missing exiftool fails `cargo clippy` and
