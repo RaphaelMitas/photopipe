@@ -165,13 +165,9 @@ public enum XMP {
     private static func cropRect(_ value: (String) -> Double?) -> CropRect? {
         guard let left = value("Left"), let top = value("Top"),
             let right = value("Right"), let bottom = value("Bottom"),
-            left.isFinite, top.isFinite, right.isFinite, bottom.isFinite
+            let rect = CropRect(left: left, top: top, right: right, bottom: bottom).sanitized(),
+            rect.width > 0.001, rect.height > 0.001
         else { return nil }
-        // straightened crops overhang the frame box; matches Renderer.saneCrop
-        let clamp = { (value: Double) in min(max(value, -1), 2) }
-        let rect = CropRect(
-            left: clamp(left), top: clamp(top), right: clamp(right), bottom: clamp(bottom))
-        guard rect.right - rect.left > 0.001, rect.bottom - rect.top > 0.001 else { return nil }
         return rect
     }
 
