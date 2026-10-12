@@ -241,7 +241,7 @@ public final class Dispatcher {
                         message: "shoot, paths and destination required")
                 }
                 let format =
-                    LibraryService.ExportFormat(
+                    ExportFormat(
                         rawValue: request.params?["format"]?.stringValue ?? "original")
                     ?? .original
                 let job = try library.startExport(

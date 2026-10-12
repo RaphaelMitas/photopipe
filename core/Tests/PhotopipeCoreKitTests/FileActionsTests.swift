@@ -41,7 +41,7 @@ private func settled(_ service: LibraryService, _ job: Exporter.Progress) throws
 @discardableResult
 private func exportNow(
     _ service: LibraryService, shoot: String, paths: [String], destination: String,
-    zip: Bool = false, flatten: Bool = true, format: LibraryService.ExportFormat = .original,
+    zip: Bool = false, flatten: Bool = true, format: ExportFormat = .original,
     quality: Int = 90
 ) throws -> Exporter.Progress {
     try settled(

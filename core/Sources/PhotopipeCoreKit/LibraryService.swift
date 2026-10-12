@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 /// Reached from the dispatcher's worker pool, the watcher's queue and the
@@ -454,124 +453,9 @@ public final class LibraryService: @unchecked Sendable {
         let shootPath = try shoot(named: shootName).path
         let images = paths.filter(isImagePath)
         guard !images.isEmpty else { throw FileActions.ActionError.noFiles }
-
-        let destination = URL(fileURLWithPath: shootPath)
-        Self.sweepStaleTemps(in: destination)
-
-        let plan = ImportPlan(destination: destination)
-        var items: [Exporter.Plan.Item] = []
-        for path in images {
-            let source = URL(fileURLWithPath: path)
-            guard let target = plan.target(for: source) else { continue }
-            items.append(
-                Exporter.Plan.Item(label: source.lastPathComponent) {
-                    try FileActions.copyWithoutOverwriting(from: source, to: target)
-                })
-        }
+        let items = ImportPlan.items(copying: images, into: URL(fileURLWithPath: shootPath))
         return exporter.start(
             plan: Exporter.Plan(items: items, destination: shootPath, staging: nil))
-    }
-
-    private final class ImportPlan {
-        private let destination: URL
-        private var used: Set<String> = []
-        private var claimed: [FileIdentity: Claim] = [:]
-        private var digests: [URL: Data] = [:]
-
-        /// The first file is kept whole rather than digested, so a selection
-        /// that collides nowhere never opens a file at all.
-        private struct Claim {
-            var first: URL?
-            var digests: Set<Data> = []
-        }
-
-        init(destination: URL) { self.destination = destination }
-
-        func target(for source: URL) -> URL? {
-            let identity = LibraryService.identity(source)
-            if let identity, claimedAlready(identity, source) { return nil }
-            var imported = false
-            let name = FileActions.uniqueName(source.lastPathComponent) { candidate in
-                if used.contains(candidate.lowercased()) { return true }
-                let landed = destination.appendingPathComponent(candidate)
-                guard let landedIdentity = LibraryService.identity(landed) else { return false }
-                if landedIdentity == identity, sameHead(source, landed) {
-                    imported = true
-                }
-                return true
-            }
-            guard !imported else { return nil }
-            used.insert(name.lowercased())
-            if let identity {
-                if claimed[identity] == nil {
-                    claimed[identity] = Claim(first: source)
-                } else if let digest = digest(source) {
-                    claimed[identity]?.digests.insert(digest)
-                }
-            }
-            return destination.appendingPathComponent(name)
-        }
-
-        private func claimedAlready(_ identity: FileIdentity, _ source: URL) -> Bool {
-            guard var claim = claimed[identity] else { return false }
-            if let first = claim.first {
-                claim.first = nil
-                if let digest = digest(first) { claim.digests.insert(digest) }
-                claimed[identity] = claim
-            }
-            guard let mine = digest(source) else { return false }
-            return claim.digests.contains(mine)
-        }
-
-        /// FAT32 rounds mtime to two seconds and an uncompressed raw is one size
-        /// per body, so two frames of a burst agree on both; their EXIF does not.
-        private func sameHead(_ left: URL, _ right: URL) -> Bool {
-            guard let left = digest(left) else { return false }
-            return left == digest(right)
-        }
-
-        private func digest(_ url: URL) -> Data? {
-            if let known = digests[url] { return known }
-            guard let head = LibraryService.head(url) else { return nil }
-            let digest = Data(SHA256.hash(data: head))
-            digests[url] = digest
-            return digest
-        }
-    }
-
-    private struct FileIdentity: Hashable {
-        let size: Int
-        let modified: Date
-    }
-
-    private static func identity(_ url: URL) -> FileIdentity? {
-        guard
-            let values = try? url.resourceValues(forKeys: [
-                .fileSizeKey, .contentModificationDateKey,
-            ]), let size = values.fileSize, let modified = values.contentModificationDate
-        else { return nil }
-        return FileIdentity(size: size, modified: modified)
-    }
-
-    private static func head(_ url: URL) -> Data? {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? handle.close() }
-        return try? handle.read(upToCount: 64 * 1024)
-    }
-
-    /// Nothing else clears a staging file, since the prefix hides it from Finder
-    /// and the scanner alike. The age bound spares a running import's temps.
-    private static func sweepStaleTemps(in folder: URL) {
-        let fm = FileManager.default
-        let cutoff = Date().addingTimeInterval(-3600)
-        let names = (try? fm.contentsOfDirectory(atPath: folder.path)) ?? []
-        for name in names where name.hasPrefix(FileActions.tempPrefix) {
-            let stale = folder.appendingPathComponent(name)
-            guard let modified = Self.identity(stale)?.modified, modified < cutoff else {
-                continue
-            }
-            try? fm.removeItem(at: stale)
-        }
     }
 
     private func shoot(named shootName: String) throws -> Shoot {
@@ -594,11 +478,6 @@ public final class LibraryService: @unchecked Sendable {
         return (trashed.count, status().generation)
     }
 
-    public enum ExportFormat: String, Sendable {
-        case original
-        case jpeg
-    }
-
     /// Everything that can be refused outright is refused here, so a bad
     /// request comes back as an error rather than as a job that fails a
     /// minute later.
@@ -609,44 +488,10 @@ public final class LibraryService: @unchecked Sendable {
     ) throws -> Exporter.Progress {
         let images = try images(inShoot: shootName, paths: pathsUnderRoot(paths))
         guard !images.isEmpty else { throw FileActions.ActionError.noFiles }
-
-        let fm = FileManager.default
-        let staging =
-            zip
-            ? fm.temporaryDirectory
-                .appendingPathComponent("photopipe-export-\(UUID().uuidString)")
-            : nil
-        let base = staging ?? URL(fileURLWithPath: destination)
-
-        var used: Set<String> = []
-        let items = images.map { image in
-            var rel = image.rel
-            if format == .jpeg {
-                rel = (rel as NSString).deletingPathExtension + ".jpg"
-            }
-            if flatten {
-                rel = (rel as NSString).lastPathComponent
-            }
-            let name = FileActions.uniqueName(rel) { candidate in
-                used.contains(candidate.lowercased())
-                    || (staging == nil
-                        && fm.fileExists(atPath: base.appendingPathComponent(candidate).path))
-            }
-            used.insert(name.lowercased())
-            let target = base.appendingPathComponent(name)
-            // An export carries the real edit and rating even where enrichment
-            // has not reached yet. Reading them opens the file, so it happens in
-            // the writers, four wide, rather than in the request that plans it.
-            return Exporter.Plan.Item(label: image.rel) {
-                try self.write(
-                    enrich(image), format: format, quality: quality, to: target, staging: zip,
-                    decoderVersion: decoderVersion)
-            }
-        }
-
-        if let staging { try fm.createDirectory(at: staging, withIntermediateDirectories: true) }
-        return exporter.start(
-            plan: Exporter.Plan(items: items, destination: destination, staging: staging))
+        return try exporter.start(
+            plan: .export(
+                images, to: destination, zip: zip, flatten: flatten, format: format,
+                quality: quality, decoderVersion: decoderVersion, renderer: renderer))
     }
 
     public func stopExports() {
@@ -661,40 +506,6 @@ public final class LibraryService: @unchecked Sendable {
     public func cancelExport(id: String) throws -> Exporter.Progress {
         guard let progress = exporter.cancel(id: id) else { throw ServiceError.unknownExport(id) }
         return progress
-    }
-
-    private func write(
-        _ image: ImageFile, format: ExportFormat, quality: Int, to planned: URL, staging: Bool,
-        decoderVersion: Int?
-    ) throws {
-        let fm = FileManager.default
-        try fm.createDirectory(
-            at: planned.deletingLastPathComponent(), withIntermediateDirectories: true)
-        switch format {
-        case .original:
-            let source = URL(fileURLWithPath: image.path)
-            if staging {
-                do { try fm.linkItem(at: source, to: planned) } catch {
-                    try fm.copyItem(at: source, to: planned)
-                }
-            } else {
-                try FileActions.copyWithoutOverwriting(from: source, to: planned)
-            }
-        case .jpeg:
-            // A name picked before the first write can be taken by the time the
-            // render lands, and a render cannot retry one the way a copy does.
-            let target =
-                staging || !fm.fileExists(atPath: planned.path)
-                ? planned : FileActions.uniqueURL(for: planned)
-            try renderer.exportJPEG(
-                file: image, edit: image.edit,
-                quality: Double(quality) / 100, to: target,
-                decoderVersion: decoderVersion)
-            if image.rating > 0 {
-                try? ExifTool.shared.write(
-                    ["-overwrite_original", "-XMP:Rating=\(image.rating)", target.path])
-            }
-        }
     }
 
     private func pathsUnderRoot(_ paths: [String]) throws -> [String] {

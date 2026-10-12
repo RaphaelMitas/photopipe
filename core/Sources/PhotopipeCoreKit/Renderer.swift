@@ -4,7 +4,8 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-public final class Renderer {
+/// Shared by the dispatcher's workers; every cache below is guarded by `lock`.
+public final class Renderer: @unchecked Sendable {
     public enum RenderError: Error {
         case unreadable(String)
         case encodeFailed
