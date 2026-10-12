@@ -72,7 +72,6 @@ import { heldOrder } from "@/lib/loupeWalk";
 import { isModalOpen } from "@/lib/modal";
 import {
   cachedImage,
-  type EditWrite,
   jobStatus,
   type ScoreProgress,
   useExportJobs,
@@ -524,7 +523,7 @@ export default function App() {
         return;
       }
       const ready = targets.filter((image) => image.enriched);
-      const pasted: EditWrite[] = [];
+      const pasted = new Map<string, Edit>();
       let keptWhiteBalance = 0;
       for (const image of ready) {
         const current = editOf(image);
@@ -537,11 +536,11 @@ export default function App() {
         ) {
           keptWhiteBalance += 1;
         }
-        pasted.push({ path: image.path, edit: next });
+        pasted.set(image.path, next);
       }
       const notReady = targets.length - ready.length;
-      const unchanged = ready.length - pasted.length;
-      if (pasted.length === 0) {
+      const unchanged = ready.length - pasted.size;
+      if (pasted.size === 0) {
         toast(
           ready.length === 0
             ? "Still reading those photos' existing edits"
@@ -550,7 +549,7 @@ export default function App() {
         );
         return;
       }
-      if (editDraft && pasted.some((write) => write.path === editDraft.path)) {
+      if (editDraft && pasted.has(editDraft.path)) {
         cancelEdit();
       }
       const result = await writes.paste(pasted).catch(() => null);

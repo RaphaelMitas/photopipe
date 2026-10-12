@@ -8,7 +8,6 @@ import {
   type BatchResult,
   cachedImage,
   currentEdits,
-  type EditWrite,
   usePasteEdits,
   useSetEdit,
   useSetRating,
@@ -88,8 +87,7 @@ export function useRecordedWrites(shoot: string | null) {
   );
 
   const paste = useCallback(
-    (writes: EditWrite[]): Promise<BatchResult> => {
-      const pasted = new Map(writes.map((write) => [write.path, write.edit]));
+    (pasted: Map<string, Edit>): Promise<BatchResult> => {
       const batch = pasteEdits(pasted);
       // Recorded up front: ⌘Z during a long paste has to mean this paste.
       void edits.record(

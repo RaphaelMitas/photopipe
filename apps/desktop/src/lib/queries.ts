@@ -319,8 +319,6 @@ const patchImage = (
   patch: Partial<ImageFile>,
 ) => patchImages(queryClient, shoot, new Map([[path, patch]]));
 
-export type EditWrite = { path: string; edit: Edit };
-
 export function currentEdits(
   queryClient: QueryClient,
   shoot: string | null,

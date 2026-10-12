@@ -125,7 +125,7 @@ describe("useRecordedWrites", () => {
 
     const look = { ...identityEdit, exposure: 1.5 };
     await act(() =>
-      result.current.writes.paste(paths.map((path) => ({ path, edit: look }))),
+      result.current.writes.paste(new Map(paths.map((path) => [path, look]))),
     );
     act(() => result.current.writes.rate(paths[0], 5));
     await waitFor(() => expect(historyState().cursor).toBe(2));
