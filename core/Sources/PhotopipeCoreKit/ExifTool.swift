@@ -143,11 +143,13 @@ public final class ExifTool: @unchecked Sendable {
 }
 
 extension ExifTool.ExifToolError: WireError {
-    public var wire: (code: String, message: String) {
+    public var wire: ResponseError {
         switch self {
         case .notInstalled:
-            ("exiftool_missing", "exiftool not found — install it or set PHOTOPIPE_EXIFTOOL")
-        case .failed(let output): ("exiftool_failed", output)
+            ResponseError(
+                code: "exiftool_missing",
+                message: "exiftool not found — install it or set PHOTOPIPE_EXIFTOOL")
+        case .failed(let output): ResponseError(code: "exiftool_failed", message: output)
         }
     }
 }

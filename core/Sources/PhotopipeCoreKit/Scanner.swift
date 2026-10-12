@@ -38,9 +38,9 @@ public struct LibrarySnapshot: Equatable, Sendable {
 public enum ScanError: WireError {
     case rootNotFound(String)
 
-    public var wire: (code: String, message: String) {
+    public var wire: ResponseError {
         switch self {
-        case .rootNotFound(let path): ("root_not_found", path)
+        case .rootNotFound(let path): ResponseError(code: "root_not_found", message: path)
         }
     }
 }

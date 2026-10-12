@@ -574,20 +574,25 @@ public final class LibraryService: @unchecked Sendable {
 }
 
 extension LibraryService.ServiceError: WireError {
-    public var wire: (code: String, message: String) {
+    public var wire: ResponseError {
         switch self {
-        case .noRoot: ("no_root", "call setRoot first")
-        case .unknownShoot(let name): ("unknown_shoot", name)
-        case .pathOutsideRoot(let path): ("path_outside_root", path)
-        case .unknownImage(let stem): ("unknown_image", stem)
-        case .invalidRating(let rating): ("invalid_rating", "rating \(rating) not in 0...5")
+        case .noRoot: ResponseError(code: "no_root", message: "call setRoot first")
+        case .unknownShoot(let name): ResponseError(code: "unknown_shoot", message: name)
+        case .pathOutsideRoot(let path): ResponseError(code: "path_outside_root", message: path)
+        case .unknownImage(let stem): ResponseError(code: "unknown_image", message: stem)
+        case .invalidRating(let rating):
+            ResponseError(code: "invalid_rating", message: "rating \(rating) not in 0...5")
         case .invalidProjectName(let name):
-            ("invalid_project_name", "\(name) is not a usable project name")
-        case .invalidProjectDay(let day): ("invalid_project_day", "\(day) is not a YYYY-MM-DD date")
-        case .unknownExport(let id): ("unknown_export", id)
-        case .projectExists(let folder): ("project_exists", "\(folder) already exists")
+            ResponseError(code: "invalid_project_name", message: "\(name) is not a usable project name")
+        case .invalidProjectDay(let day):
+            ResponseError(code: "invalid_project_day", message: "\(day) is not a YYYY-MM-DD date")
+        case .unknownExport(let id): ResponseError(code: "unknown_export", message: id)
+        case .projectExists(let folder):
+            ResponseError(code: "project_exists", message: "\(folder) already exists")
         case .unreadableProjectFile(let shoot):
-            ("unreadable_project_file", "\(shoot) has a photopipe.json that could not be read")
+            ResponseError(
+                code: "unreadable_project_file",
+                message: "\(shoot) has a photopipe.json that could not be read")
         }
     }
 }

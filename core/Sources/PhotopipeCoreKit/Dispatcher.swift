@@ -26,7 +26,7 @@ public final class Dispatcher {
         do {
             return .success(id: request.id, result: try result(for: request))
         } catch let error as WireError {
-            return .failure(id: request.id, code: error.wire.code, message: error.wire.message)
+            return .failure(id: request.id, error: error.wire)
         } catch {
             return .failure(id: request.id, code: "io_error", message: "\(error)")
         }
@@ -171,10 +171,11 @@ private enum DispatchError: WireError {
     case invalidParams(String)
     case unknownMethod(String)
 
-    var wire: (code: String, message: String) {
+    var wire: ResponseError {
         switch self {
-        case .invalidParams(let key): ("invalid_params", "\(key) required")
-        case .unknownMethod(let method): ("unknown_method", "unknown method: \(method)")
+        case .invalidParams(let key): ResponseError(code: "invalid_params", message: "\(key) required")
+        case .unknownMethod(let method):
+            ResponseError(code: "unknown_method", message: "unknown method: \(method)")
         }
     }
 }

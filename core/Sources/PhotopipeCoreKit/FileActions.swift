@@ -110,10 +110,10 @@ public enum FileActions {
 }
 
 extension FileActions.ActionError: WireError {
-    public var wire: (code: String, message: String) {
+    public var wire: ResponseError {
         switch self {
-        case .noFiles: ("no_files", "nothing selected")
-        case .zipFailed(let output): ("zip_failed", output)
+        case .noFiles: ResponseError(code: "no_files", message: "nothing selected")
+        case .zipFailed(let output): ResponseError(code: "zip_failed", message: output)
         }
     }
 }

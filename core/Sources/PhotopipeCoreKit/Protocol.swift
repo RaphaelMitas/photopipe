@@ -26,7 +26,7 @@ public struct Request: Codable, Equatable, Sendable {
 
 /// What the client sees of a thrown error; any other error reaches it as io_error.
 public protocol WireError: Error {
-    var wire: (code: String, message: String) { get }
+    var wire: ResponseError { get }
 }
 
 public struct ResponseError: Codable, Equatable, Sendable {
@@ -46,9 +46,11 @@ public struct Response: Codable, Equatable, Sendable {
     }
 
     public static func failure(id: String, code: String, message: String) -> Response {
-        Response(
-            v: protocolVersion, id: id, ok: false, result: nil,
-            error: ResponseError(code: code, message: message))
+        failure(id: id, error: ResponseError(code: code, message: message))
+    }
+
+    public static func failure(id: String, error: ResponseError) -> Response {
+        Response(v: protocolVersion, id: id, ok: false, result: nil, error: error)
     }
 
     /// Single-line JSON, deterministic key order.
