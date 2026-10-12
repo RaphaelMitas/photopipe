@@ -1,12 +1,12 @@
 import CryptoKit
 import Foundation
 
-/// JPEGs named by a hash of what they were made from. An entry's mtime is when
-/// it was last served, so pruning by age drops only what nobody looks at.
+/// An entry's mtime is when it was last served, so pruning by age drops only what nobody looks at.
 struct CacheFolder: Sendable {
     let dir: URL
 
     private static let maxAge: TimeInterval = 7 * 24 * 3600
+    private static let touchInterval: TimeInterval = 24 * 3600
 
     func url(forKey key: String) -> URL {
         let digest = SHA256.hash(data: Data(key.utf8))
@@ -14,16 +14,14 @@ struct CacheFolder: Sendable {
         return dir.appendingPathComponent("\(digest).jpg")
     }
 
-    /// `write` runs only on a miss, against a temp file that replaces `url`
-    /// once complete, so a reader never sees half a JPEG.
+    /// Writes to a temp file then replaces, so a reader never sees half a JPEG.
     func file(at url: URL, write: (URL) throws -> Void) throws -> URL {
         let fm = FileManager.default
         if let modified = Self.modified(url) {
-            // once a day is plenty to stay clear of a weekly prune
-            if modified.timeIntervalSinceNow < -24 * 3600 {
-                try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
+            if modified.timeIntervalSinceNow > -Self.touchInterval { return url }
+            if (try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)) != nil {
+                return url
             }
-            return url
         }
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         let temp = dir.appendingPathComponent("tmp-\(UUID().uuidString).jpg")
@@ -41,9 +39,10 @@ struct CacheFolder: Sendable {
         let fm = FileManager.default
         guard
             let entries = try? fm.contentsOfDirectory(
-                at: dir, includingPropertiesForKeys: [.contentModificationDateKey])
+                at: dir, includingPropertiesForKeys: nil)
         else { return }
-        for entry in entries where entry.pathExtension == "jpg" {
+        for var entry in entries where entry.pathExtension == "jpg" {
+            entry.removeAllCachedResourceValues()
             if let modified = Self.modified(entry), modified < cutoff {
                 try? fm.removeItem(at: entry)
             }
