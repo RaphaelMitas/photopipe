@@ -22,11 +22,6 @@ import {
   type ViewMode,
   viewPref,
 } from "@/components/BrowserToolbar";
-import {
-  type CropDraft,
-  commitDraft,
-  draftFromEdit,
-} from "@/components/CropTool";
 import { Dashboard } from "@/components/Dashboard";
 import { EditSidebar } from "@/components/EditPanel";
 import {
@@ -87,6 +82,7 @@ import {
 import { openRoot, type RootError, rootsQuery, toRootError } from "@/lib/roots";
 import { useSelection } from "@/lib/selection";
 import { browserOrder, type SortKey, sortPref } from "@/lib/sort";
+import { type CropSession, useCropSession } from "@/lib/useCropSession";
 import { useDebouncedEdit } from "@/lib/useDebouncedEdit";
 import { useRecordedWrites } from "@/lib/useRecordedWrites";
 import { useUpdater } from "@/lib/useUpdater";
@@ -135,8 +131,6 @@ export default function App() {
   const filmstrip = filmstripPref.use();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const editOpen = editPanelPref.use();
-  const [cropDraft, setCropDraft] = useState<CropDraft | null>(null);
-  const cropping = cropDraft !== null;
   const [clipboard, setClipboard] = useState<EditClipboard | null>(null);
   const queryClient = useQueryClient();
 
@@ -374,6 +368,8 @@ export default function App() {
   // The browser keeps the current photo after the loupe closes, so anything
   // acting on "the photo you are looking at" has to ask whether it is open.
   const loupePhoto = loupeOpen ? loupeImage : null;
+  const crop = useCropSession(loupePhoto, loupeEdit, changeEdit);
+  const cropping = crop.draft !== null;
 
   // a filtered-out photo is not in the browser, so land on its neighbour
   const focusPath = useMemo(() => {
@@ -516,9 +512,6 @@ export default function App() {
     }
   }, [currentPath, loupeIndex]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: leave crop mode on any way out of this photo
-  useEffect(() => setCropDraft(null), [currentPath, loupeOpen]);
-
   const openExport = useCallback(() => {
     if (loupePhoto) {
       setLoupeOpen(false);
@@ -622,13 +615,6 @@ export default function App() {
 
   const latestJob = exports.jobs[0];
 
-  const applyCrop = () => {
-    if (!cropDraft || !loupeImage) return;
-    changeEdit(loupeImage, { ...loupeEdit, ...commitDraft(cropDraft) });
-    setCropDraft(null);
-  };
-  const cancelCrop = () => setCropDraft(null);
-
   return (
     <TooltipProvider>
       <ShootSettingsDialog
@@ -662,7 +648,9 @@ export default function App() {
             filter={filter}
             ratingCounts={counts}
             onRate={writes.rate}
-            onBackToGrid={() => (cropping ? cancelCrop() : setLoupeOpen(false))}
+            onBackToGrid={() =>
+              cropping ? crop.cancel() : setLoupeOpen(false)
+            }
           />
         ) : (
           <AppSidebar
@@ -811,10 +799,7 @@ export default function App() {
                 loupeImages={loupeImages}
                 loupeIndex={loupeIndex}
                 loupeEdit={loupeEdit}
-                cropDraft={cropDraft}
-                onCropDraft={setCropDraft}
-                onApplyCrop={applyCrop}
-                onCancelCrop={cancelCrop}
+                crop={crop}
                 filmstrip={filmstrip}
                 showInfo={showInfo}
                 selection={selection}
@@ -838,19 +823,7 @@ export default function App() {
                 edit={loupeEdit}
                 onChange={(edit) => changeEdit(loupeImage, edit)}
                 onHold={holdEdit}
-                cropDraft={cropDraft}
-                onCropDraft={setCropDraft}
-                onEnterCrop={() =>
-                  setCropDraft(
-                    draftFromEdit(
-                      loupeEdit,
-                      loupeImage.width,
-                      loupeImage.height,
-                    ),
-                  )
-                }
-                onApplyCrop={applyCrop}
-                onCancelCrop={cancelCrop}
+                crop={crop}
                 canPaste={clipboard !== null}
                 onCopySettings={() => copySettings(loupeImage)}
                 onPasteSettings={() => pasteSettings([loupeImage])}
@@ -910,10 +883,7 @@ type ContentProps = {
   loupeImages: ImageFile[];
   loupeIndex: number;
   loupeEdit: Edit;
-  cropDraft: CropDraft | null;
-  onCropDraft: (draft: CropDraft | null) => void;
-  onApplyCrop: () => void;
-  onCancelCrop: () => void;
+  crop: CropSession;
   filmstrip: FilmstripMode;
   showInfo: boolean;
   selection: ReturnType<typeof useSelection>;
@@ -947,10 +917,7 @@ function Content({
   loupeImages,
   loupeIndex,
   loupeEdit,
-  cropDraft,
-  onCropDraft,
-  onApplyCrop,
-  onCancelCrop,
+  crop,
   filmstrip,
   showInfo,
   selection,
@@ -987,10 +954,7 @@ function Content({
         index={loupeIndex}
         edit={loupeEdit}
         filmstrip={filmstrip}
-        cropDraft={cropDraft}
-        onCropDraft={onCropDraft}
-        onApplyCrop={onApplyCrop}
-        onCancelCrop={onCancelCrop}
+        crop={crop}
         onEditChange={(edit) => onEditChange(image, edit)}
         onNavigate={onNavigate}
         onClose={onCloseLoupe}

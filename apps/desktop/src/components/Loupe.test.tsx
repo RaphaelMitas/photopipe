@@ -15,8 +15,8 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type Edit, type ImageFile, identityEdit } from "@/lib/core";
+import { type CropDraft, draftFromEdit } from "@/lib/crop";
 import { makeImage } from "@/lib/test-image";
-import { type CropDraft, draftFromEdit } from "./CropTool";
 import { EditSidebar } from "./EditPanel";
 import { Loupe } from "./Loupe";
 import { LoupeSidebar } from "./LoupeSidebar";
@@ -72,10 +72,13 @@ function renderLoupe(
         index={index}
         edit={editWith(exposure)}
         filmstrip="off"
-        cropDraft={cropDraft}
-        onCropDraft={onCropDraft}
-        onApplyCrop={onApplyCrop}
-        onCancelCrop={onCancelCrop}
+        crop={{
+          draft: cropDraft,
+          set: onCropDraft,
+          enter: vi.fn(),
+          apply: onApplyCrop,
+          cancel: onCancelCrop,
+        }}
         onEditChange={onEditChange}
         onNavigate={onNavigate}
         onClose={onClose}
@@ -314,11 +317,13 @@ describe("EditSidebar", () => {
             edit={edit}
             onChange={onChange}
             onHold={vi.fn()}
-            cropDraft={cropDraft}
-            onCropDraft={onCropDraft}
-            onEnterCrop={onEnterCrop}
-            onApplyCrop={onApplyCrop}
-            onCancelCrop={onCancelCrop}
+            crop={{
+              draft: cropDraft,
+              set: onCropDraft,
+              enter: onEnterCrop,
+              apply: onApplyCrop,
+              cancel: onCancelCrop,
+            }}
             canPaste={false}
             onCopySettings={vi.fn()}
             onPasteSettings={vi.fn()}
