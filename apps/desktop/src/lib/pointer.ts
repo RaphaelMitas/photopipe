@@ -6,6 +6,17 @@ export function cursorIn(
   return { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
 }
 
+export function normalizedIn(
+  node: Element,
+  event: { clientX: number; clientY: number },
+) {
+  const bounds = node.getBoundingClientRect();
+  return {
+    x: (event.clientX - bounds.left) / bounds.width,
+    y: (event.clientY - bounds.top) / bounds.height,
+  };
+}
+
 // Synthetic and already-released pointers make setPointerCapture throw.
 export function capturePointer(event: {
   currentTarget: Element;

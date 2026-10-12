@@ -15,7 +15,7 @@ import {
   rotatedSize,
 } from "@/lib/crop";
 import { isModalOpen } from "@/lib/modal";
-import { capturePointer, cursorIn } from "@/lib/pointer";
+import { capturePointer, cursorIn, normalizedIn } from "@/lib/pointer";
 import {
   usePrefetchRender,
   useRender,
@@ -627,11 +627,7 @@ function Navigator({
   const dragging = useRef(false);
 
   const centerFrom = (event: React.PointerEvent<HTMLDivElement>) => {
-    const bounds = event.currentTarget.getBoundingClientRect();
-    onCenter({
-      x: (event.clientX - bounds.left) / bounds.width,
-      y: (event.clientY - bounds.top) / bounds.height,
-    });
+    onCenter(normalizedIn(event.currentTarget, event));
   };
 
   if (box.width <= 0) return null;
