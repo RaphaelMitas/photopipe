@@ -45,9 +45,9 @@ work queue and responses may come back out of order, matched by id. Only
 multiplexes, poisons a desynced connection, replays the root after a respawn,
 and re-sends a request only if it never reached the core. A timeout fails just
 that request; the core is killed only if a ping goes unanswered too, if eight
-requests in a row time out, or if the timed-out request was `setRoot`,
-`setRating`, `setEdit` or `updateProject`, which must not land after a newer
-write.
+requests time out with nothing finishing since they were sent, or if the
+timed-out request was `setRoot`, `setRating`, `setEdit` or `updateProject`,
+which must not land after a newer write.
 
 ## Testing
 
