@@ -33,8 +33,7 @@ function showProgress(percent: number | null) {
 export function useUpdater(options: Options) {
   const [enabled, setEnabled] = useState(false);
   const pending = useRef<Update | null>(null);
-  // once the user checks or installs, a late startup check must not re-offer
-  const handled = useRef(false);
+  const startupOfferSuppressed = useRef(false);
   // the offer toast outlives the render that made it, so Install reads this
   const live = useRef({ ...options, enabled });
   live.current = { ...options, enabled };
@@ -46,7 +45,7 @@ export function useUpdater(options: Options) {
   }, []);
 
   const install = useCallback(async () => {
-    handled.current = true;
+    startupOfferSuppressed.current = true;
     const { blockedReason, beforeInstall } = live.current;
     if (blockedReason) {
       toast.error(blockedReason, { id: UPDATE_TOAST });
@@ -55,15 +54,11 @@ export function useUpdater(options: Options) {
     beforeInstall();
     const update = pending.current;
     pending.current = null;
-    if (!update) {
-      toast.error(
-        "Install failed: That update is no longer available. Check again.",
-        { id: UPDATE_TOAST, duration: undefined, action: undefined },
-      );
-      return;
-    }
-    showProgress(null);
     try {
+      if (!update) {
+        throw new Error("That update is no longer available. Check again.");
+      }
+      showProgress(null);
       let total = 0;
       let done = 0;
       await update.downloadAndInstall((event) => {
@@ -74,7 +69,11 @@ export function useUpdater(options: Options) {
       toast.success("Update installed, restarting…", { id: UPDATE_TOAST });
       await relaunch();
     } catch (error) {
-      toast.error(`Install failed: ${message(error)}`, { id: UPDATE_TOAST });
+      toast.error(`Install failed: ${message(error)}`, {
+        id: UPDATE_TOAST,
+        duration: undefined,
+        action: undefined,
+      });
     }
   }, []);
 
@@ -107,25 +106,37 @@ export function useUpdater(options: Options) {
     if (!enabled || !updatable()) return;
     find().then(
       (update) => {
-        if (update && !handled.current) offer(update.version);
+        if (update && !startupOfferSuppressed.current) offer(update.version);
       },
       () => {},
     );
   }, [enabled, find, offer]);
 
   const check = useCallback(async () => {
-    handled.current = true;
+    startupOfferSuppressed.current = true;
     if (!live.current.enabled || !updatable()) {
       toast.error("Not a release build.", { id: UPDATE_TOAST });
       return;
     }
-    toast.loading("Checking for updates…", { id: UPDATE_TOAST });
+    toast.loading("Checking for updates…", {
+      id: UPDATE_TOAST,
+      action: undefined,
+    });
     try {
       const update = await find();
       if (update) offer(update.version);
-      else toast.success("Photopipe is up to date", { id: UPDATE_TOAST });
+      else
+        toast.success("Photopipe is up to date", {
+          id: UPDATE_TOAST,
+          duration: undefined,
+          action: undefined,
+        });
     } catch (error) {
-      toast.error(message(error), { id: UPDATE_TOAST });
+      toast.error(message(error), {
+        id: UPDATE_TOAST,
+        duration: undefined,
+        action: undefined,
+      });
     }
   }, [find, offer]);
 
