@@ -14,11 +14,6 @@ public enum XMP {
         return values?.contentModificationDate?.timeIntervalSince1970 ?? 0
     }
 
-    public static func readSidecarRating(at url: URL) -> Int? {
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-        return parseRating(text)
-    }
-
     static func parseRating(_ text: String) -> Int? {
         if let match = text.firstMatch(of: /xmp:Rating\s*=\s*"(-?\d+)"/) {
             return Int(match.1)
@@ -305,43 +300,21 @@ public enum XMP {
         }
     }
 
-    public static func readRating(file: ImageFile) -> Int {
-        if file.usesSidecar {
-            return readSidecarRating(at: sidecarURL(forImagePath: file.path)) ?? 0
+    public static func read(file: ImageFile) -> (rating: Int, edit: Edit) {
+        let fileURL = URL(fileURLWithPath: file.path)
+        let read: (rating: Int?, edit: Edit)
+        if !file.usesSidecar {
+            read = readEmbedded(at: fileURL, isRaw: file.isRaw)
+        } else if let text = try? String(
+            contentsOf: sidecarURL(forImagePath: file.path), encoding: .utf8)
+        {
+            let edit = parseEdit(
+                text, isRaw: file.isRaw, baseOrientation: baseOrientation(at: fileURL) ?? 1)
+            read = (parseRating(text), edit)
+        } else {
+            read = (nil, .identity)
         }
-        return embeddedCached(for: file).rating ?? 0
-    }
-
-    public static func readEdit(file: ImageFile) -> Edit {
-        if file.usesSidecar {
-            guard
-                let text = try? String(
-                    contentsOf: sidecarURL(forImagePath: file.path), encoding: .utf8)
-            else { return .identity }
-            return parseEdit(
-                text, isRaw: file.isRaw,
-                baseOrientation: baseOrientation(at: URL(fileURLWithPath: file.path)) ?? 1)
-        }
-        return embeddedCached(for: file).edit
-    }
-
-    private static let cacheLock = NSLock()
-    nonisolated(unsafe) private static var embeddedCache:
-        [String: (mtime: Double, rating: Int?, edit: Edit)] = [:]
-
-    private static func embeddedCached(for file: ImageFile) -> (rating: Int?, edit: Edit) {
-        cacheLock.lock()
-        if let cached = embeddedCache[file.path], cached.mtime == file.mtime {
-            cacheLock.unlock()
-            return (cached.rating, cached.edit)
-        }
-        cacheLock.unlock()
-
-        let read = readEmbedded(at: URL(fileURLWithPath: file.path), isRaw: file.isRaw)
-        cacheLock.lock()
-        embeddedCache[file.path] = (file.mtime, read.rating, read.edit)
-        cacheLock.unlock()
-        return read
+        return (read.rating ?? 0, read.edit)
     }
 
     struct TagWrite {

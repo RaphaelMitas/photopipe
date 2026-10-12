@@ -37,8 +37,6 @@ private func writeGrayJPEG(to url: URL) throws {
         of: gray, to: url, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
 }
 
-/// Fresh stat every time: the embedded-read cache is (path, mtime)-keyed, so
-/// a stale mtime would serve pre-write values.
 func image(_ url: URL) throws -> ImageFile {
     let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
     return ImageFile(
@@ -60,12 +58,12 @@ func image(_ url: URL) throws -> ImageFile {
     let sidecar = XMP.sidecarURL(forImagePath: arw.path)
     #expect(sidecar.lastPathComponent == "DSC00001.xmp")
     #expect(FileManager.default.fileExists(atPath: sidecar.path))
-    #expect(XMP.readRating(file: try image(arw)) == 4)
+    #expect(XMP.read(file: try image(arw)).rating == 4)
     #expect(try exiftoolTag("-XMP:Rating", of: sidecar) == "4")
 
     // Update in place (no duplicate sidecar, no backup file left behind).
     try XMP.writeRating(2, file: try image(arw), tool: .shared)
-    #expect(XMP.readRating(file: try image(arw)) == 2)
+    #expect(XMP.read(file: try image(arw)).rating == 2)
     let contents = try FileManager.default.contentsOfDirectory(atPath: dir.path)
     #expect(contents.sorted() == ["DSC00001.ARW", "DSC00001.xmp"])
 }
@@ -78,7 +76,7 @@ func image(_ url: URL) throws -> ImageFile {
     let arw = dir.appendingPathComponent("DSC00006.ARW")
     try Data("fake".utf8).write(to: arw)
 
-    #expect(XMP.readEdit(file: try image(arw)) == .identity, "no sidecar means untouched")
+    #expect(XMP.read(file: try image(arw)).edit == .identity, "no sidecar means untouched")
 
     let edit = Edit(
         exposure: 1.5, highlights: -42, shadows: 18, whites: 30, blacks: -20,
@@ -88,7 +86,7 @@ func image(_ url: URL) throws -> ImageFile {
         curveRed: [CurvePoint(x: 0, y: 0.1), CurvePoint(x: 1, y: 0.9)])
     try XMP.writeEdit(edit, file: try image(arw), tool: .shared)
 
-    let read = XMP.readEdit(file: try image(arw))
+    let read = XMP.read(file: try image(arw)).edit
     #expect(read.exposure == 1.5)
     #expect(read.highlights == -42)
     #expect(read.shadows == 18)
@@ -119,14 +117,14 @@ func image(_ url: URL) throws -> ImageFile {
 
     // Edit and rating live in the same sidecar without clobbering each other.
     try XMP.writeRating(3, file: try image(arw), tool: .shared)
-    #expect(XMP.readEdit(file: try image(arw)).exposure == 1.5)
-    #expect(XMP.readRating(file: try image(arw)) == 3)
+    #expect(XMP.read(file: try image(arw)).edit.exposure == 1.5)
+    #expect(XMP.read(file: try image(arw)).rating == 3)
 
     // Writing identity clears every tag again.
     try XMP.writeEdit(.identity, file: try image(arw), tool: .shared)
-    #expect(XMP.readEdit(file: try image(arw)) == .identity)
+    #expect(XMP.read(file: try image(arw)).edit == .identity)
     #expect(try exiftoolTag("-XMP-crs:ToneCurvePV2012", of: sidecar).isEmpty)
-    #expect(XMP.readRating(file: try image(arw)) == 3, "clearing the edit keeps the rating")
+    #expect(XMP.read(file: try image(arw)).rating == 3, "clearing the edit keeps the rating")
 }
 
 @Test func sidecarCropRoundTrip() throws {
@@ -141,7 +139,7 @@ func image(_ url: URL) throws -> ImageFile {
         crop: CropRect(left: 0.125, top: 0.05, right: 0.875, bottom: 0.95), cropAngle: -1.5)
     try XMP.writeEdit(edit, file: try image(arw), tool: .shared)
 
-    let read = XMP.readEdit(file: try image(arw))
+    let read = XMP.read(file: try image(arw)).edit
     #expect(read.crop == edit.crop)
     #expect(read.cropAngle == -1.5)
 
@@ -152,7 +150,7 @@ func image(_ url: URL) throws -> ImageFile {
 
     // Clearing the crop removes every crop tag again.
     try XMP.writeEdit(.identity, file: try image(arw), tool: .shared)
-    #expect(XMP.readEdit(file: try image(arw)) == .identity)
+    #expect(XMP.read(file: try image(arw)).edit == .identity)
     #expect(try exiftoolTag("-XMP-crs:HasCrop", of: sidecar).isEmpty)
     #expect(try exiftoolTag("-XMP-crs:CropLeft", of: sidecar).isEmpty)
 }
@@ -204,7 +202,7 @@ func image(_ url: URL) throws -> ImageFile {
     // finite but far past Int.max, as IPC can send it
     let huge = Edit(curveRGB: [CurvePoint(x: 0, y: 0.2), CurvePoint(x: 1e30, y: 1)])
     try XMP.writeEdit(huge, file: try image(arw), tool: .shared)
-    #expect(XMP.readEdit(file: try image(arw)).curveRGB.last == CurvePoint(x: 1, y: 1))
+    #expect(XMP.read(file: try image(arw)).edit.curveRGB.last == CurvePoint(x: 1, y: 1))
 }
 
 @Test func nonFiniteEmbeddedCurvePointsAreDropped() throws {
@@ -219,7 +217,7 @@ func image(_ url: URL) throws -> ImageFile {
         "-XMP-crs:ToneCurvePV2012=255, 255", jpg.path,
     ])
 
-    let edit = XMP.readEdit(file: try image(jpg))
+    let edit = XMP.read(file: try image(jpg)).edit
     #expect(edit.curveRGB.count == 3, "nan and inf are dropped, the rest stays")
     #expect(throws: Never.self) { try JSONEncoder().encode(edit) }
 }
@@ -309,7 +307,7 @@ func image(_ url: URL) throws -> ImageFile {
 
     let sidecar = XMP.sidecarURL(forImagePath: arw.path)
     #expect(try exiftoolTag("-XMP-crs:CropLeft", of: sidecar) == "0.00003")
-    #expect(XMP.readEdit(file: try image(arw)).crop == edit.crop)
+    #expect(XMP.read(file: try image(arw)).edit.crop == edit.crop)
 
     // Exponent forms in foreign sidecars parse anyway.
     #expect(XMP.parseDouble("CropLeft", in: #"crs:CropLeft="3e-05""#) == 3e-05)
@@ -328,19 +326,19 @@ func image(_ url: URL) throws -> ImageFile {
     try writeGrayJPEG(to: jpg)
 
     try XMP.writeEdit(Edit(rotation: 90), file: try image(jpg), tool: .shared)
-    #expect(XMP.readEdit(file: try image(jpg)).rotation == 90)
+    #expect(XMP.read(file: try image(jpg)).edit.rotation == 90)
     #expect(
         try exiftoolTag("-IFD0:Orientation#", of: jpg) == "1",
         "the pre-edit base gets pinned as real EXIF")
 
     // A second write reads the pinned base, not our own XMP echo.
     try XMP.writeEdit(Edit(rotation: 180), file: try image(jpg), tool: .shared)
-    #expect(XMP.readEdit(file: try image(jpg)).rotation == 180)
+    #expect(XMP.read(file: try image(jpg)).edit.rotation == 180)
     #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: jpg) == "3")
 
     // Un-turning restores the pinned base instead of deleting the tag.
     try XMP.writeEdit(Edit(rotation: 0), file: try image(jpg), tool: .shared)
-    #expect(XMP.readEdit(file: try image(jpg)).rotation == 0)
+    #expect(XMP.read(file: try image(jpg)).edit.rotation == 0)
     #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: jpg) == "1")
 }
 
@@ -359,13 +357,13 @@ func image(_ url: URL) throws -> ImageFile {
     ])
 
     // The foreign turn reads as no model rotation (it is the display base).
-    #expect(XMP.readEdit(file: try image(jpg)).rotation == 0)
+    #expect(XMP.read(file: try image(jpg)).edit.rotation == 0)
 
     try XMP.writeEdit(Edit(exposure: 0.5), file: try image(jpg), tool: .shared)
     #expect(
         try exiftoolTag("-XMP-tiff:Orientation#", of: jpg) == "6",
         "a slider edit must not delete a foreign orientation record")
-    #expect(XMP.readEdit(file: try image(jpg)).exposure == 0.5)
+    #expect(XMP.read(file: try image(jpg)).edit.exposure == 0.5)
 
     try XMP.writeEdit(.identity, file: try image(jpg), tool: .shared)
     #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: jpg) == "6")
@@ -410,13 +408,13 @@ func image(_ url: URL) throws -> ImageFile {
     try XMP.writeEdit(Edit(rotation: 90), file: try image(arw), tool: .shared)
     let sidecar = XMP.sidecarURL(forImagePath: arw.path)
     #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: sidecar) == "6")
-    #expect(XMP.readEdit(file: try image(arw)).rotation == 90)
+    #expect(XMP.read(file: try image(arw)).edit.rotation == 90)
 
     // Clearing a turn restores the base rather than deleting the tag, so a
     // foreign orientation record can never be collateral damage.
     try XMP.writeEdit(.identity, file: try image(arw), tool: .shared)
     #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: sidecar) == "1")
-    #expect(XMP.readEdit(file: try image(arw)) == .identity)
+    #expect(XMP.read(file: try image(arw)).edit == .identity)
 }
 
 /// Regression: `-TAG= -TAG+=…` appends to the existing list in exiftool, so
@@ -443,7 +441,7 @@ func image(_ url: URL) throws -> ImageFile {
 
     // parseCurve returns the raw item list, so a stale leftover would show up
     // as extra points here.
-    let read = XMP.readEdit(file: try image(arw))
+    let read = XMP.read(file: try image(arw)).edit
     #expect(read.curveRGB.count == 4)
     let sidecar = XMP.sidecarURL(forImagePath: arw.path)
     let text = try String(contentsOf: sidecar, encoding: .utf8)
@@ -465,7 +463,7 @@ func image(_ url: URL) throws -> ImageFile {
 
     try XMP.writeRating(5, file: try image(arw), tool: .shared)
 
-    #expect(XMP.readSidecarRating(at: sidecar) == 5)
+    #expect(XMP.read(file: try image(arw)).rating == 5)
     #expect(
         try exiftoolTag("-XMP:Label", of: sidecar) == "Blue",
         "existing Lightroom tags must survive our writes")
@@ -498,8 +496,8 @@ func image(_ url: URL) throws -> ImageFile {
         curveRGB: [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.25, y: 0.2), CurvePoint(x: 1, y: 1)])
     try XMP.writeEdit(edit, file: try image(jpg), tool: .shared)
 
-    #expect(XMP.readRating(file: try image(jpg)) == 3)
-    let read = XMP.readEdit(file: try image(jpg))
+    #expect(XMP.read(file: try image(jpg)).rating == 3)
+    let read = XMP.read(file: try image(jpg)).edit
     #expect(read.exposure == 0.5)
     #expect(read.shadows == 25)
     #expect(read.whites == -15)
@@ -529,7 +527,7 @@ func image(_ url: URL) throws -> ImageFile {
     try XMP.writeRating(5, file: try image(jpg), tool: .shared)
     try XMP.writeRating(0, file: try image(jpg), tool: .shared)
 
-    #expect(XMP.readRating(file: try image(jpg)) == 0)
+    #expect(XMP.read(file: try image(jpg)).rating == 0)
     #expect(try exiftoolTag("-XMP:Rating", of: jpg).isEmpty)
 }
 
@@ -547,8 +545,8 @@ func image(_ url: URL) throws -> ImageFile {
     try XMP.writeRating(4, file: try image(arw), tool: .shared)
     try XMP.writeRating(2, file: try image(jpg), tool: .shared)
 
-    #expect(XMP.readRating(file: try image(arw)) == 4)
-    #expect(XMP.readRating(file: try image(jpg)) == 2)
+    #expect(XMP.read(file: try image(arw)).rating == 4)
+    #expect(XMP.read(file: try image(jpg)).rating == 2)
 }
 
 @Test func libraryServiceRatingAndEditEndToEnd() throws {
