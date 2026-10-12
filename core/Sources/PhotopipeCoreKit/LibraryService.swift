@@ -433,8 +433,9 @@ public final class LibraryService: @unchecked Sendable {
     public func createProject(name: String, notes: String)
         throws -> (shoot: String, path: String, generation: Int)
     {
+        let currentRoot = try requireRoot()
         let folder = try Self.projectFolder(name: name)
-        let path = try Self.freeProjectURL(root: requireRoot(), folder: folder)
+        let path = try Self.freeProjectURL(root: currentRoot, folder: folder)
         try FileManager.default.createDirectory(at: path, withIntermediateDirectories: false)
         try ProjectFile(notes: notes).write(inShoot: path.path)
 
