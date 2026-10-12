@@ -35,9 +35,23 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 /// they were sent means a core that answers ping has stopped finishing work.
 const MAX_STALLED_TIMEOUTS: u32 = 8;
 
-/// Left running after a timeout, these could land after the user's next write
-/// to the same photo or library and silently undo it.
-const KILL_ON_TIMEOUT: &[&str] = &["setRoot", "setRating", "setEdit", "updateProject"];
+/// Only these may keep running after a timeout. A write left running could
+/// undo the user's next write or start a job whose dropped reply loses its id.
+const READS: &[&str] = &[
+    "ping",
+    "version",
+    "status",
+    "listShoots",
+    "listImages",
+    "thumbnail",
+    "render",
+    "rawDefaults",
+    "captureDate",
+    "decoderSupport",
+    "decoderAvailability",
+    "exportStatus",
+    "scoreStatus",
+];
 
 #[derive(Debug, Deserialize)]
 struct WireError {
@@ -90,7 +104,6 @@ enum RoundTripError {
     Unsent(String),
     /// The core may have acted on the request before the connection failed.
     Lost(String),
-    /// The core may still be working on it.
     TimedOut(Duration),
     /// The core answered with an error — respawning won't help.
     Remote(String),
@@ -191,8 +204,11 @@ impl Sidecar {
                 if let Some(map) = reader_handle.pending.lock().unwrap().as_mut() {
                     if let Some(tx) = map.remove(&id) {
                         let _ = tx.send(Ok(response));
+                    } else {
+                        // A late reply still proves the queue is moving.
+                        reader_handle.finished.fetch_add(1, Ordering::Relaxed);
+                        reader_handle.stalled_timeouts.store(0, Ordering::Relaxed);
                     }
-                    // No waiter: it timed out and deregistered — drop the late reply.
                 }
             }
             reader_handle.poison("sidecar closed stdout");
@@ -342,7 +358,7 @@ impl Sidecar {
                     let stalled = running.finished.load(Ordering::Relaxed) == finished_before
                         && running.stalled_timeouts.fetch_add(1, Ordering::Relaxed) + 1
                             >= MAX_STALLED_TIMEOUTS;
-                    if KILL_ON_TIMEOUT.contains(&method) || stalled {
+                    if !READS.contains(&method) || stalled {
                         self.discard(&running);
                     } else {
                         self.probe(&running);
@@ -460,6 +476,10 @@ done
 "#
             ),
         )
+    }
+
+    fn exited(running: &Running) -> bool {
+        running.child.lock().unwrap().try_wait().unwrap().is_some()
     }
 
     fn temp_tree(tag: &str, files: &[&str]) -> PathBuf {
@@ -614,10 +634,7 @@ done
             "took {:?}",
             start.elapsed()
         );
-        assert!(
-            wedged.child.lock().unwrap().try_wait().unwrap().is_some(),
-            "wedged core still running"
-        );
+        assert!(exited(&wedged), "wedged core still running");
         let fresh = sidecar.connection().expect("respawn");
         assert!(!Arc::ptr_eq(&wedged, &fresh));
         sidecar.shutdown();
@@ -632,7 +649,7 @@ done
         let busy = sidecar.connection().expect("spawn");
         let error = sidecar.request("render", None).expect_err("must time out");
         assert!(error.contains("did not answer"), "got: {error}");
-        assert!(busy.child.lock().unwrap().try_wait().unwrap().is_none());
+        assert!(!exited(&busy));
         assert!(Arc::ptr_eq(&busy, &sidecar.connection().unwrap()));
         assert_eq!(sidecar.request("ping", None).expect("ping")["pong"], true);
         sidecar.shutdown();
@@ -648,9 +665,9 @@ done
         for _ in 1..MAX_STALLED_TIMEOUTS {
             sidecar.request("render", None).expect_err("must time out");
         }
-        assert!(stuck.child.lock().unwrap().try_wait().unwrap().is_none());
+        assert!(!exited(&stuck));
         sidecar.request("render", None).expect_err("must time out");
-        assert!(stuck.child.lock().unwrap().try_wait().unwrap().is_some());
+        assert!(exited(&stuck));
         sidecar.shutdown();
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -673,8 +690,34 @@ done
         for render in renders {
             render.join().expect("worker");
         }
-        assert!(busy.child.lock().unwrap().try_wait().unwrap().is_none());
+        assert!(!exited(&busy));
         assert!(Arc::ptr_eq(&busy, &sidecar.connection().unwrap()));
+        sidecar.shutdown();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_core_whose_answers_all_arrive_late_is_not_respawned() {
+        let dir = temp_dir("late");
+        let script = script_core(
+            &dir,
+            r#"while read -r line; do
+  id=$(printf '%s\n' "$line" | sed 's/.*"id":"\([0-9]*\)".*/\1/')
+  case "$line" in
+    *'"method":"ping"'*) printf '{"v":1,"id":"%s","ok":true,"result":{}}\n' "$id" ;;
+    *) (sleep 0.3; printf '{"v":1,"id":"%s","ok":true,"result":{}}\n' "$id") & ;;
+  esac
+done
+"#,
+        );
+        let mut sidecar = Sidecar::new(script);
+        sidecar.read_timeout = Duration::from_millis(200);
+        let busy = sidecar.connection().expect("spawn");
+        for _ in 0..MAX_STALLED_TIMEOUTS {
+            sidecar.request("render", None).expect_err("answered late");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(!exited(&busy));
         sidecar.shutdown();
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -684,9 +727,11 @@ done
         let dir = temp_dir("write");
         let mut sidecar = Sidecar::new(answering_core(&dir, &["ping"]));
         sidecar.read_timeout = Duration::from_millis(200);
-        let busy = sidecar.connection().expect("spawn");
-        sidecar.request("setEdit", None).expect_err("must time out");
-        assert!(busy.child.lock().unwrap().try_wait().unwrap().is_some());
+        for method in ["setEdit", "exportFiles"] {
+            let busy = sidecar.connection().expect("spawn");
+            sidecar.request(method, None).expect_err("must time out");
+            assert!(exited(&busy), "{method} left the core running");
+        }
         sidecar.shutdown();
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -46,8 +46,8 @@ multiplexes, poisons a desynced connection, replays the root after a respawn,
 and re-sends a request only if it never reached the core. A timeout fails just
 that request; the core is killed only if a ping goes unanswered too, if eight
 requests time out with nothing finishing since they were sent, or if the
-timed-out request was `setRoot`, `setRating`, `setEdit` or `updateProject`,
-which must not land after a newer write.
+timed-out request was a write. Left running, a write could undo a newer one or
+start a job whose id never reaches the UI.
 
 ## Testing
 
