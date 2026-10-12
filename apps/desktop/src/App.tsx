@@ -7,21 +7,11 @@ import { TooltipProvider } from "@photopipe/ui/components/tooltip";
 import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import {
-  AlertCircle,
-  Check,
-  Download,
-  SlidersHorizontal,
-  Upload,
-} from "lucide-react";
+import { AlertCircle, Check, SlidersHorizontal, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { AppSidebar, showInfoPref } from "@/components/AppSidebar";
-import {
-  BrowserToolbar,
-  type ViewMode,
-  viewPref,
-} from "@/components/BrowserToolbar";
+import { AppSidebar } from "@/components/AppSidebar";
+import { BrowserPane } from "@/components/BrowserPane";
 import { Dashboard } from "@/components/Dashboard";
 import { EditSidebar } from "@/components/EditPanel";
 import {
@@ -29,10 +19,8 @@ import {
   type ExportOptions,
   exportLabel,
 } from "@/components/ExportDrawer";
-import { type FilmstripMode, filmstripPref } from "@/components/Filmstrip";
+import { filmstripPref } from "@/components/Filmstrip";
 import { HistoryControls } from "@/components/HistoryControls";
-import { ImageGrid } from "@/components/ImageGrid";
-import { ImageList } from "@/components/ImageList";
 import { IndexingStatus } from "@/components/IndexingStatus";
 import { Loupe } from "@/components/Loupe";
 import { LoupeSidebar } from "@/components/LoupeSidebar";
@@ -70,7 +58,6 @@ import {
   cachedImage,
   type EditWrite,
   jobStatus,
-  type ScoreProgress,
   useExportJobs,
   useImages,
   useLibrarySync,
@@ -81,8 +68,8 @@ import {
 } from "@/lib/queries";
 import { openRoot, type RootError, rootsQuery, toRootError } from "@/lib/roots";
 import { useSelection } from "@/lib/selection";
-import { browserOrder, type SortKey, sortPref } from "@/lib/sort";
-import { type CropSession, useCropSession } from "@/lib/useCropSession";
+import { browserOrder, sortPref } from "@/lib/sort";
+import { useCropSession } from "@/lib/useCropSession";
 import { useDebouncedEdit } from "@/lib/useDebouncedEdit";
 import { useRecordedWrites } from "@/lib/useRecordedWrites";
 import { useUpdater } from "@/lib/useUpdater";
@@ -120,14 +107,12 @@ export default function App() {
   const [newProject, setNewProject] = useState(false);
   const [shootSettings, setShootSettings] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const view = viewPref.use();
   const sort = sortPref.use();
   const autoScore = autoScorePref.use();
   // outlives the loupe, so closing it lands the browser on the same photo
   const [currentPath, setCurrentPath] = useState<string | null>(null);
   const [loupeOpen, setLoupeOpen] = useState(false);
   const filter = useRatingFilter();
-  const showInfo = showInfoPref.use();
   const filmstrip = filmstripPref.use();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const editOpen = editPanelPref.use();
@@ -615,6 +600,55 @@ export default function App() {
 
   const latestJob = exports.jobs[0];
 
+  const content = !openShoot ? (
+    shoots.data ? (
+      <div className="h-full overflow-auto">
+        <Dashboard
+          shoots={shoots.data}
+          onOpen={enterShoot}
+          onNewProject={() => setNewProject(true)}
+          onSettings={setShootSettings}
+        />
+      </div>
+    ) : (
+      <p className="p-8 text-sm text-muted-foreground">scanning library…</p>
+    )
+  ) : images.data === undefined ? (
+    <p className="p-8 text-sm text-muted-foreground">loading…</p>
+  ) : loupePhoto ? (
+    <Loupe
+      images={loupeImages}
+      index={loupeIndex}
+      edit={loupeEdit}
+      filmstrip={filmstrip}
+      crop={crop}
+      onEditChange={(edit) => changeEdit(loupePhoto, edit)}
+      onNavigate={(next) => setCurrentPath(loupeImages[next]?.path ?? null)}
+      onClose={() => setLoupeOpen(false)}
+      onRate={writes.rate}
+    />
+  ) : (
+    <BrowserPane
+      images={filteredImages}
+      sort={activeSort}
+      scoreReady={scoreReady}
+      scoring={scoring}
+      justRated={justRated}
+      filterActive={filter.active}
+      selected={selection.selected}
+      onSelect={selection.click}
+      focusPath={focusPath}
+      revealed={revealed}
+      onOpen={(index) => {
+        // A new visit walks the browser's order as it stands now.
+        held.current = NO_HELD;
+        setCurrentPath(filteredImages[index]?.path ?? null);
+        setLoupeOpen(true);
+      }}
+      onImport={runImport}
+    />
+  );
+
   return (
     <TooltipProvider>
       <ShootSettingsDialog
@@ -775,48 +809,7 @@ export default function App() {
             onClear={selection.clear}
           />
           <div className="flex min-h-0 flex-1">
-            <div className="min-w-0 flex-1">
-              <Content
-                openShoot={openShoot}
-                loaded={images.data !== undefined}
-                filteredImages={filteredImages}
-                shoots={shoots.data}
-                onOpenShoot={enterShoot}
-                onNewProject={() => setNewProject(true)}
-                view={view}
-                onView={viewPref.set}
-                sort={activeSort}
-                onSort={sortPref.set}
-                scoreReady={scoreReady}
-                scoring={scoring}
-                justRated={justRated}
-                onImport={runImport}
-                onShootSettings={setShootSettings}
-                filterActive={filter.active}
-                focusPath={focusPath}
-                revealed={revealed}
-                inLoupe={inLoupe}
-                loupeImages={loupeImages}
-                loupeIndex={loupeIndex}
-                loupeEdit={loupeEdit}
-                crop={crop}
-                filmstrip={filmstrip}
-                showInfo={showInfo}
-                selection={selection}
-                onEditChange={changeEdit}
-                onNavigate={(next) =>
-                  setCurrentPath(loupeImages[next]?.path ?? null)
-                }
-                onCloseLoupe={() => setLoupeOpen(false)}
-                onRate={writes.rate}
-                onOpenLoupe={(index) => {
-                  // A new visit walks the browser's order as it stands now.
-                  held.current = NO_HELD;
-                  setCurrentPath(filteredImages[index]?.path ?? null);
-                  setLoupeOpen(true);
-                }}
-              />
-            </div>
+            <div className="min-w-0 flex-1">{content}</div>
             {inLoupe && loupeImage && editOpen && (
               <EditSidebar
                 image={loupeImage}
@@ -857,166 +850,5 @@ export default function App() {
         </SidebarInset>
       </SidebarProvider>
     </TooltipProvider>
-  );
-}
-
-type ContentProps = {
-  openShoot: string | null;
-  loaded: boolean;
-  filteredImages: ImageFile[];
-  shoots: ReturnType<typeof useShoots>["data"];
-  onOpenShoot: (shoot: string) => void;
-  onNewProject: () => void;
-  view: ViewMode;
-  onView: (view: ViewMode) => void;
-  sort: SortKey;
-  onSort: (sort: SortKey) => void;
-  scoreReady: boolean;
-  scoring: ScoreProgress | null;
-  justRated: boolean;
-  onImport: () => void;
-  onShootSettings: (shoot: string) => void;
-  filterActive: boolean;
-  focusPath: string | null;
-  revealed: number;
-  inLoupe: boolean;
-  loupeImages: ImageFile[];
-  loupeIndex: number;
-  loupeEdit: Edit;
-  crop: CropSession;
-  filmstrip: FilmstripMode;
-  showInfo: boolean;
-  selection: ReturnType<typeof useSelection>;
-  onEditChange: (image: ImageFile, edit: Edit) => void;
-  onNavigate: (index: number) => void;
-  onCloseLoupe: () => void;
-  onRate: (path: string, rating: number) => void;
-  onOpenLoupe: (index: number) => void;
-};
-
-function Content({
-  openShoot,
-  loaded,
-  filteredImages,
-  shoots,
-  onOpenShoot,
-  onNewProject,
-  view,
-  onView,
-  sort,
-  onSort,
-  scoreReady,
-  scoring,
-  justRated,
-  onImport,
-  onShootSettings,
-  filterActive,
-  focusPath,
-  revealed,
-  inLoupe,
-  loupeImages,
-  loupeIndex,
-  loupeEdit,
-  crop,
-  filmstrip,
-  showInfo,
-  selection,
-  onEditChange,
-  onNavigate,
-  onCloseLoupe,
-  onRate,
-  onOpenLoupe,
-}: ContentProps) {
-  if (!openShoot) {
-    return shoots ? (
-      <div className="h-full overflow-auto">
-        <Dashboard
-          shoots={shoots}
-          onOpen={onOpenShoot}
-          onNewProject={onNewProject}
-          onSettings={onShootSettings}
-        />
-      </div>
-    ) : (
-      <p className="p-8 text-sm text-muted-foreground">scanning library…</p>
-    );
-  }
-
-  if (!loaded) {
-    return <p className="p-8 text-sm text-muted-foreground">loading…</p>;
-  }
-
-  if (inLoupe) {
-    const image = loupeImages[loupeIndex];
-    return (
-      <Loupe
-        images={loupeImages}
-        index={loupeIndex}
-        edit={loupeEdit}
-        filmstrip={filmstrip}
-        crop={crop}
-        onEditChange={(edit) => onEditChange(image, edit)}
-        onNavigate={onNavigate}
-        onClose={onCloseLoupe}
-        onRate={onRate}
-      />
-    );
-  }
-
-  const emptyMessage = filterActive
-    ? "Nothing matches the rating filter."
-    : "No photos in this project yet. Import them, or drop files into the folder — subfolders are fine.";
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <BrowserToolbar
-        purpose="Cull and rate. Click a photo for the loupe; Export takes the selection."
-        view={view}
-        onView={onView}
-        sort={sort}
-        onSort={onSort}
-        scoreReady={scoreReady}
-        scoring={scoring}
-        justRated={justRated}
-      />
-      {filteredImages.length === 0 ? (
-        <div className="flex flex-col items-start gap-3 p-8">
-          <p
-            data-testid="browser-empty"
-            className="text-muted-foreground text-sm"
-          >
-            {emptyMessage}
-          </p>
-          {!filterActive && (
-            <Button size="sm" data-testid="empty-import" onClick={onImport}>
-              <Download />
-              Import photos
-            </Button>
-          )}
-        </div>
-      ) : (
-        <div className="min-h-0 flex-1">
-          {view === "grid" ? (
-            <ImageGrid
-              images={filteredImages}
-              onOpen={onOpenLoupe}
-              showInfo={showInfo}
-              selected={selection.selected}
-              onSelect={selection.click}
-              focusPath={focusPath}
-              revealed={revealed}
-            />
-          ) : (
-            <ImageList
-              images={filteredImages}
-              selected={selection.selected}
-              onSelect={selection.click}
-              onOpen={onOpenLoupe}
-              focusPath={focusPath}
-              revealed={revealed}
-            />
-          )}
-        </div>
-      )}
-    </div>
   );
 }
