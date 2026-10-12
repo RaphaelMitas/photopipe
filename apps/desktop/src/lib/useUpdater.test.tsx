@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { Toaster } from "sonner";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { Toaster, toast } from "sonner";
 import { afterEach, expect, it, vi } from "vitest";
 import { useUpdater } from "./useUpdater";
 
@@ -10,6 +10,8 @@ vi.mock("@tauri-apps/plugin-updater", () => ({ check: findUpdate }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: vi.fn() }));
 
 afterEach(() => {
+  cleanup();
+  toast.dismiss();
   vi.unstubAllEnvs();
   vi.clearAllMocks();
 });
@@ -38,4 +40,27 @@ it("Install checks the block when clicked and keeps the reason on screen", async
 
   expect(screen.getByText("Finish the running job first")).toBeInTheDocument();
   expect(update.downloadAndInstall).not.toHaveBeenCalled();
+});
+
+it("Install drops the button once the download starts", async () => {
+  vi.stubEnv("PROD", true);
+  invoke.mockResolvedValue(true);
+  const update = {
+    version: "2.0.0",
+    close: vi.fn(),
+    downloadAndInstall: vi.fn(
+      (onEvent: (event: { event: string; data: object }) => void) => {
+        onEvent({ event: "Started", data: { contentLength: 100 } });
+        onEvent({ event: "Progress", data: { chunkLength: 40 } });
+        return new Promise(() => {});
+      },
+    ),
+  };
+  findUpdate.mockResolvedValue(update);
+  render(<Updater blockedReason={null} />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Install" }));
+  await screen.findByText("Downloading update… 40%");
+
+  expect(screen.queryByRole("button", { name: "Install" })).toBeNull();
 });

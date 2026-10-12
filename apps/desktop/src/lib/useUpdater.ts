@@ -26,7 +26,7 @@ function showProgress(percent: number | null) {
     percent === null
       ? "Downloading update…"
       : `Downloading update… ${percent}%`,
-    { id: UPDATE_TOAST, duration: Number.POSITIVE_INFINITY },
+    { id: UPDATE_TOAST, duration: Number.POSITIVE_INFINITY, action: undefined },
   );
 }
 
@@ -58,7 +58,7 @@ export function useUpdater(options: Options) {
     if (!update) {
       toast.error(
         "Install failed: That update is no longer available. Check again.",
-        { id: UPDATE_TOAST },
+        { id: UPDATE_TOAST, duration: undefined, action: undefined },
       );
       return;
     }
