@@ -48,16 +48,16 @@ jobs:
           key: fixtures-${{ hashFiles('fixtures/fetch.sh') }}
       - name: Fetch raw fixtures
         run: ./fixtures/fetch.sh
-      - name: Install exiftool (XMP round-trip tests)
-        run: brew install exiftool
+      - name: Fetch exiftool (XMP round-trip tests)
+        run: ./scripts/fetch-exiftool.sh
       - name: Swift format lint
         working-directory: core
         run: swift format lint --strict --recursive .
-      - name: Swift build & test
+      - name: Swift test
         working-directory: core
-        run: |
-          swift build
-          swift test
+        env:
+          PHOTOPIPE_EXIFTOOL: ${{ github.workspace }}/apps/desktop/src-tauri/resources/exiftool/exiftool
+        run: swift test
       # tauri-build resolves externalBin and bundle.resources at compile
       # time, so a missing sidecar or exiftool fails every cargo command, not
       # just the bundle. Both are staged before the Rust steps.
