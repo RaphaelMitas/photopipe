@@ -20,11 +20,7 @@ import {
 } from "lucide-react";
 import type { Shoot } from "@/lib/core";
 import { pref } from "@/lib/pref";
-import {
-  RatingFilterOps,
-  RatingHistogram,
-  type RatingOp,
-} from "./RatingFilter";
+import { type RatingFilter, RatingFilterGroup } from "./RatingFilter";
 import { SidebarBrandHeader } from "./SidebarBrandHeader";
 
 export const showInfoPref = pref(
@@ -39,11 +35,8 @@ type Props = {
   onImport: () => void;
   onRevealShoot: (path: string) => void;
   onShootSettings: () => void;
+  filter: RatingFilter;
   ratingCounts: number[];
-  ratingOp: RatingOp;
-  onRatingOp: (op: RatingOp) => void;
-  ratingStars: number;
-  onRatingStars: (rating: number) => void;
   filterEnabled: boolean;
   rootPath: string;
   onChangeRoot: () => void;
@@ -56,11 +49,8 @@ export function AppSidebar({
   onImport,
   onRevealShoot,
   onShootSettings,
+  filter,
   ratingCounts,
-  ratingOp,
-  onRatingOp,
-  ratingStars,
-  onRatingStars,
   filterEnabled,
   rootPath,
   onChangeRoot,
@@ -148,34 +138,20 @@ export function AppSidebar({
             </SidebarGroupContent>
           </SidebarGroup>
         )}
-        <SidebarGroup>
-          <SidebarGroupLabel className="justify-between">
-            Rating
-            <RatingFilterOps
-              op={ratingOp}
-              disabled={!filterEnabled}
-              onOp={onRatingOp}
-            />
-          </SidebarGroupLabel>
-          <SidebarGroupContent className="px-2 py-1">
-            <RatingHistogram
-              counts={ratingCounts}
-              op={ratingOp}
-              stars={ratingStars}
-              disabled={!filterEnabled}
-              onOp={onRatingOp}
-              onStars={onRatingStars}
-            />
-            {currentShoot && !currentShoot.indexed && (
-              <p
-                data-testid="ratings-indexing"
-                className="mt-1 text-[10px] text-muted-foreground/70"
-              >
-                Still reading ratings — counts will move.
-              </p>
-            )}
-          </SidebarGroupContent>
-        </SidebarGroup>
+        <RatingFilterGroup
+          filter={filter}
+          counts={ratingCounts}
+          disabled={!filterEnabled}
+        >
+          {currentShoot && !currentShoot.indexed && (
+            <p
+              data-testid="ratings-indexing"
+              className="mt-1 text-[10px] text-muted-foreground/70"
+            >
+              Still reading ratings — counts will move.
+            </p>
+          )}
+        </RatingFilterGroup>
 
         <SidebarGroup>
           <SidebarGroupLabel>View</SidebarGroupLabel>

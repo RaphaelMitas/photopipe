@@ -20,6 +20,7 @@ import { type CropDraft, draftFromEdit } from "./CropTool";
 import { EditSidebar } from "./EditPanel";
 import { Loupe } from "./Loupe";
 import { LoupeSidebar } from "./LoupeSidebar";
+import type { RatingFilter } from "./RatingFilter";
 
 afterEach(cleanup);
 
@@ -226,6 +227,16 @@ describe("Loupe crop mode", () => {
 });
 
 describe("LoupeSidebar", () => {
+  const filter: RatingFilter = {
+    op: "gte",
+    stars: 0,
+    setOp: vi.fn(),
+    setStars: vi.fn(),
+    matches: () => true,
+    active: false,
+    reset: vi.fn(),
+  };
+
   it("shows name, position and stars; rates", () => {
     const onRate = vi.fn();
     render(
@@ -237,10 +248,7 @@ describe("LoupeSidebar", () => {
             count={3}
             betterThan={null}
             ratingCounts={[3, 0, 0, 0, 0, 0]}
-            ratingOp="gte"
-            onRatingOp={vi.fn()}
-            ratingStars={0}
-            onRatingStars={vi.fn()}
+            filter={filter}
             onRate={onRate}
             onBackToGrid={vi.fn()}
           />
@@ -264,10 +272,7 @@ describe("LoupeSidebar", () => {
             count={3}
             betterThan={betterThan}
             ratingCounts={[3, 0, 0, 0, 0, 0]}
-            ratingOp="gte"
-            onRatingOp={vi.fn()}
-            ratingStars={0}
-            onRatingStars={vi.fn()}
+            filter={filter}
             onRate={vi.fn()}
             onBackToGrid={vi.fn()}
           />

@@ -15,11 +15,7 @@ import { ChevronLeft } from "lucide-react";
 import type { ImageFile } from "@/lib/core";
 import { instinctScore } from "@/lib/instinct";
 import { filmstripPref } from "./Filmstrip";
-import {
-  RatingFilterOps,
-  RatingHistogram,
-  type RatingOp,
-} from "./RatingFilter";
+import { type RatingFilter, RatingFilterGroup } from "./RatingFilter";
 import { SidebarBrandHeader } from "./SidebarBrandHeader";
 import { Stars } from "./Stars";
 
@@ -28,11 +24,8 @@ type Props = {
   position: number;
   count: number;
   betterThan: number | null;
+  filter: RatingFilter;
   ratingCounts: number[];
-  ratingOp: RatingOp;
-  onRatingOp: (op: RatingOp) => void;
-  ratingStars: number;
-  onRatingStars: (stars: number) => void;
   onRate: (path: string, rating: number) => void;
   onBackToGrid: () => void;
 };
@@ -42,11 +35,8 @@ export function LoupeSidebar({
   position,
   count,
   betterThan,
+  filter,
   ratingCounts,
-  ratingOp,
-  onRatingOp,
-  ratingStars,
-  onRatingStars,
   onRate,
   onBackToGrid,
 }: Props) {
@@ -74,21 +64,7 @@ export function LoupeSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel className="justify-between">
-            Rating
-            <RatingFilterOps op={ratingOp} onOp={onRatingOp} />
-          </SidebarGroupLabel>
-          <SidebarGroupContent className="px-2 py-1">
-            <RatingHistogram
-              counts={ratingCounts}
-              op={ratingOp}
-              stars={ratingStars}
-              onOp={onRatingOp}
-              onStars={onRatingStars}
-            />
-          </SidebarGroupContent>
-        </SidebarGroup>
+        <RatingFilterGroup filter={filter} counts={ratingCounts} />
 
         <SidebarSeparator />
 

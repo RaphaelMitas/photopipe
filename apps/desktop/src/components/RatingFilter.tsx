@@ -1,7 +1,13 @@
 import { Button } from "@photopipe/ui/components/button";
 import { ButtonGroup } from "@photopipe/ui/components/button-group";
+import {
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+} from "@photopipe/ui/components/sidebar";
+import { type ReactNode, useCallback, useState } from "react";
 
-export type RatingOp = "gte" | "eq" | "lte" | "unrated";
+type RatingOp = "gte" | "eq" | "lte" | "unrated";
 
 const OP_LABEL: Record<RatingOp, string> = {
   gte: "≥",
@@ -17,7 +23,7 @@ const OP_TITLE: Record<RatingOp, string> = {
   unrated: "Unrated only",
 };
 
-export function matchesRatingFilter(
+function matchesRatingFilter(
   rating: number,
   op: RatingOp,
   stars: number,
@@ -34,6 +40,32 @@ export function matchesRatingFilter(
   }
 }
 
+export function useRatingFilter() {
+  const [op, setOp] = useState<RatingOp>("gte");
+  const [stars, setStarsOnly] = useState(0);
+  const matches = useCallback(
+    (image: { rating: number }) => matchesRatingFilter(image.rating, op, stars),
+    [op, stars],
+  );
+  return {
+    op,
+    stars,
+    setOp,
+    setStars: (next: number) => {
+      setStarsOnly(next);
+      if (next > 0 && op === "unrated") setOp("gte");
+    },
+    matches,
+    active: op === "unrated" || stars > 0,
+    reset: () => {
+      setStarsOnly(0);
+      setOp("gte");
+    },
+  };
+}
+
+export type RatingFilter = ReturnType<typeof useRatingFilter>;
+
 export function ratingCounts(images: { rating: number }[]): number[] {
   const counts = [0, 0, 0, 0, 0, 0];
   for (const image of images) {
@@ -42,7 +74,7 @@ export function ratingCounts(images: { rating: number }[]): number[] {
   return counts;
 }
 
-export function RatingFilterOps({
+function RatingFilterOps({
   op,
   disabled,
   onOp,
@@ -74,7 +106,7 @@ export function RatingFilterOps({
 
 const BAR_AREA = 40;
 
-export function RatingHistogram({
+function RatingHistogram({
   counts,
   op,
   stars,
@@ -139,5 +171,41 @@ export function RatingHistogram({
         );
       })}
     </div>
+  );
+}
+
+export function RatingFilterGroup({
+  filter,
+  counts,
+  disabled,
+  children,
+}: {
+  filter: RatingFilter;
+  counts: number[];
+  disabled?: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <SidebarGroup>
+      <SidebarGroupLabel className="justify-between">
+        Rating
+        <RatingFilterOps
+          op={filter.op}
+          disabled={disabled}
+          onOp={filter.setOp}
+        />
+      </SidebarGroupLabel>
+      <SidebarGroupContent className="px-2 py-1">
+        <RatingHistogram
+          counts={counts}
+          op={filter.op}
+          stars={filter.stars}
+          disabled={disabled}
+          onOp={filter.setOp}
+          onStars={filter.setStars}
+        />
+        {children}
+      </SidebarGroupContent>
+    </SidebarGroup>
   );
 }

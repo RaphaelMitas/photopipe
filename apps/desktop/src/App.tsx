@@ -42,11 +42,7 @@ import { IndexingStatus } from "@/components/IndexingStatus";
 import { Loupe } from "@/components/Loupe";
 import { LoupeSidebar } from "@/components/LoupeSidebar";
 import { NewProjectDialog } from "@/components/NewProjectDialog";
-import {
-  matchesRatingFilter,
-  type RatingOp,
-  ratingCounts,
-} from "@/components/RatingFilter";
+import { ratingCounts, useRatingFilter } from "@/components/RatingFilter";
 import { RootPicker } from "@/components/RootPicker";
 import { SelectionBar } from "@/components/SelectionBar";
 import { autoScorePref, SettingsDialog } from "@/components/SettingsDialog";
@@ -138,8 +134,7 @@ export default function App() {
   // outlives the loupe, so closing it lands the browser on the same photo
   const [currentPath, setCurrentPath] = useState<string | null>(null);
   const [loupeOpen, setLoupeOpen] = useState(false);
-  const [ratingOp, setRatingOp] = useState<RatingOp>("gte");
-  const [ratingStars, setRatingStars] = useState(0);
+  const filter = useRatingFilter();
   const showInfo = showInfoPref.use();
   const filmstrip = filmstripPref.use();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -224,18 +219,12 @@ export default function App() {
   // Sorting a half-rated project would put photos in an order the scores do not
   // support, so until the pass is done the browser falls back to name.
   const activeSort = sort === "score" && !scoreReady ? "name" : sort;
-  const matchesFilter = useCallback(
-    (image: ImageFile) =>
-      matchesRatingFilter(image.rating, ratingOp, ratingStars),
-    [ratingOp, ratingStars],
-  );
   const filteredImages = useMemo(
-    () => browserOrder(allImages, matchesFilter, activeSort),
-    [allImages, matchesFilter, activeSort],
+    () => browserOrder(allImages, filter.matches, activeSort),
+    [allImages, filter.matches, activeSort],
   );
   const ranks = useMemo(() => scoreRanks(allImages), [allImages]);
   const counts = useMemo(() => ratingCounts(allImages), [allImages]);
-  const filterActive = ratingOp === "unrated" || ratingStars > 0;
 
   const orderedPaths = useMemo(
     () => filteredImages.map((image) => image.path),
@@ -413,7 +402,7 @@ export default function App() {
   // Keyed on the sort you chose, not the one in force: a scoring pass finishing
   // must not re-order the loupe under you mid-visit.
   const held = useRef<{ key: string; paths: string[] }>({ key: "", paths: [] });
-  const heldKey = `${openShoot}|${sort}|${ratingOp}|${ratingStars}`;
+  const heldKey = `${openShoot}|${sort}|${filter.op}|${filter.stars}`;
   const openImage = currentPath
     ? allImages.find((image) => image.path === currentPath)
     : undefined;
@@ -427,13 +416,13 @@ export default function App() {
     if (!openImage) return filteredImages;
     if (!reorder)
       return heldOrder(held.current.paths, filteredImages, openImage);
-    return browserOrder(allImages, matchesFilter, activeSort, openImage);
+    return browserOrder(allImages, filter.matches, activeSort, openImage);
   }, [
     filteredImages,
     allImages,
     openImage,
     reorder,
-    matchesFilter,
+    filter.matches,
     activeSort,
   ]);
 
@@ -659,22 +648,13 @@ export default function App() {
     travel,
   ]);
 
-  const changeRatingStars = (stars: number) => {
-    setRatingStars(stars);
-    if (stars > 0 && ratingOp === "unrated") setRatingOp("gte");
-  };
-  const clearRatingFilter = () => {
-    setRatingStars(0);
-    setRatingOp("gte");
-  };
-
   const enterShoot = (shoot: string | null) => {
     flushEdit();
     clearHistory();
     setOpenShoot(shoot);
     setCurrentPath(null);
     setLoupeOpen(false);
-    clearRatingFilter();
+    filter.reset();
     selection.clear();
   };
 
@@ -742,11 +722,8 @@ export default function App() {
               ranks.get(loupeImage.path) ?? null,
               ranks.size,
             )}
+            filter={filter}
             ratingCounts={counts}
-            ratingOp={ratingOp}
-            onRatingOp={setRatingOp}
-            ratingStars={ratingStars}
-            onRatingStars={changeRatingStars}
             onRate={writes.rate}
             onBackToGrid={() => (cropping ? cancelCrop() : setLoupeOpen(false))}
           />
@@ -757,11 +734,8 @@ export default function App() {
             onImport={runImport}
             onRevealShoot={(path) => reveal.mutate([path])}
             onShootSettings={() => setShootSettings(openShoot)}
+            filter={filter}
             ratingCounts={counts}
-            ratingOp={ratingOp}
-            onRatingOp={setRatingOp}
-            ratingStars={ratingStars}
-            onRatingStars={changeRatingStars}
             filterEnabled={openShoot !== null}
             rootPath={rootState.path}
             onChangeRoot={() => {
@@ -893,7 +867,7 @@ export default function App() {
                 justRated={justRated}
                 onImport={runImport}
                 onShootSettings={setShootSettings}
-                filterActive={filterActive}
+                filterActive={filter.active}
                 focusPath={focusPath}
                 revealed={revealed}
                 inLoupe={inLoupe}
@@ -954,12 +928,12 @@ export default function App() {
                 editedCount={editedCount}
                 filteredCount={filteredImages.length}
                 totalCount={allImages.length}
-                filterActive={filterActive}
+                filterActive={filter.active}
                 jobs={exports.jobs}
                 busy={exports.running}
                 onSelectFiltered={() => selection.select(orderedPaths)}
                 onSelectAll={() => {
-                  clearRatingFilter();
+                  filter.reset();
                   selection.select(allImages.map((image) => image.path));
                 }}
                 onClearSelection={selection.clear}
