@@ -62,8 +62,9 @@ when the appearance changes.
 ## web/
 
     favicon.svg, favicon.ico (16/32/48/64), apple-touch-icon.png,
-    icon-192.png, icon-512.png, icon-512-maskable.png, site.webmanifest,
-    head.html (paste into <head>), Photopipe.tsx (React component)
+    icon-192.png, icon-512.png, icon-512-maskable.png, site.webmanifest
+
+The React component lives in `packages/ui/src/components/photopipe-mark.tsx`.
 
 ## social/
 
