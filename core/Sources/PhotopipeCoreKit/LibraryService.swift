@@ -26,7 +26,6 @@ public final class LibraryService: @unchecked Sendable {
     private var epoch = 0
     private var shootGenerations: [String: Int] = [:]
     private var shootPublished: [String: Date] = [:]
-    private var pendingByShoot: [String: Int] = [:]
     private var watcher: Watcher?
     private var index: SQLiteIndex?
     private let thumbnailer: Thumbnailer
@@ -149,7 +148,9 @@ public final class LibraryService: @unchecked Sendable {
                 root: root,
                 shoots: snapshot.shoots.count,
                 filesFound: snapshot.fileCount,
-                filesEnriched: snapshot.fileCount - pendingByShoot.values.reduce(0, +),
+                filesEnriched: snapshot.imagesByShoot.values.reduce(0) {
+                    $0 + $1.count(where: \.enriched)
+                },
                 changedShoots: since.map { seen in
                     shootGenerations.filter { $0.value > seen }.keys.sorted()
                 })
@@ -165,7 +166,6 @@ public final class LibraryService: @unchecked Sendable {
         snapshot = next
         epoch += 1
         generation += 1
-        pendingByShoot = next.unenriched.mapValues(\.count)
         shootPublished = [:]
         for name in next.shoots.map(\.name) + departed {
             shootGenerations[name] = generation
@@ -179,10 +179,6 @@ public final class LibraryService: @unchecked Sendable {
             let order = snapshot.shoots.map(\.name).compactMap { name in
                 pending[name].map { (shoot: name, files: $0) }
             }
-            // The counter has to come from the same read as the work list. Taking
-            // it from the earlier publish would leave anything settled in between
-            // counted but never queued, and indexing would never read as finished.
-            pendingByShoot = pending.mapValues(\.count)
             return (epoch, order)
         }
         enricher.start(epoch: currentEpoch, work: order) { [weak self] epoch, shoot, files, done in
@@ -205,9 +201,6 @@ public final class LibraryService: @unchecked Sendable {
                 current.enriched ? current : updates[current.path] ?? current
             }
             snapshot = snapshot.replacingImages(inShoot: shoot, with: accepted)
-
-            let left = max(0, (pendingByShoot[shoot] ?? 0) - files.count)
-            pendingByShoot[shoot] = left == 0 ? nil : left
             generation += 1
 
             // Refetching a shoot means re-encoding every image in it, so say a
