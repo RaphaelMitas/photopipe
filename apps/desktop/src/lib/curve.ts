@@ -41,7 +41,7 @@ export const CURVE_CHANNELS: {
   },
 ];
 
-const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1);
+export const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1);
 
 function normalized(points: CurvePoint[]): CurvePoint[] {
   const seen = new Set<number>();

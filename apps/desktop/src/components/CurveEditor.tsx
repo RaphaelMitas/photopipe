@@ -7,6 +7,7 @@ import {
   CURVE_CHANNELS,
   type CurveChannel,
   type CurvePoint,
+  clamp01,
   isIdentityCurve,
   sampleCurve,
 } from "@/lib/curve";
@@ -113,24 +114,21 @@ export function CurveEditor({ edit, imageSrc, onChange }: Props) {
 
   const eventPoint = (event: React.MouseEvent<SVGSVGElement>): CurvePoint => {
     const at = normalizedIn(event.currentTarget, event);
-    return {
-      x: Math.min(Math.max(at.x, 0), 1),
-      y: Math.min(Math.max(1 - at.y, 0), 1),
-    };
+    return { x: clamp01(at.x), y: clamp01(1 - at.y) };
   };
 
-  const hitIndex = (event: React.MouseEvent<SVGSVGElement>) => {
-    const at = normalizedIn(event.currentTarget, event);
+  const hitIndex = (at: CurvePoint) => {
+    const c = toSvg(at);
     return points.findIndex((point) => {
       const p = toSvg(point);
-      return Math.hypot(p.x - at.x * W, p.y - at.y * H) <= HIT_RADIUS;
+      return Math.hypot(p.x - c.x, p.y - c.y) <= HIT_RADIUS;
     });
   };
 
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
-    let index = hitIndex(event);
+    const at = eventPoint(event);
+    let index = hitIndex(at);
     if (index === -1) {
-      const at = eventPoint(event);
       const insertAt = points.findIndex((point) => point.x > at.x);
       index = insertAt === -1 ? points.length : insertAt;
       emit([...points.slice(0, index), at, ...points.slice(index)]);
@@ -156,7 +154,7 @@ export function CurveEditor({ edit, imageSrc, onChange }: Props) {
 
   const onDoubleClick = (event: React.MouseEvent<SVGSVGElement>) => {
     if (points.length <= 2) return;
-    const index = hitIndex(event);
+    const index = hitIndex(eventPoint(event));
     if (index === -1) return;
     dragIndex.current = null;
     emit(points.filter((_, i) => i !== index));
