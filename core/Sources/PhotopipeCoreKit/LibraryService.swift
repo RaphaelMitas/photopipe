@@ -577,3 +577,22 @@ public final class LibraryService: @unchecked Sendable {
         }
     }
 }
+
+extension LibraryService.ServiceError: WireError {
+    public var wire: (code: String, message: String) {
+        switch self {
+        case .noRoot: ("no_root", "call setRoot first")
+        case .unknownShoot(let name): ("unknown_shoot", name)
+        case .pathOutsideRoot(let path): ("path_outside_root", path)
+        case .unknownImage(let stem): ("unknown_image", stem)
+        case .invalidRating(let rating): ("invalid_rating", "rating \(rating) not in 0...5")
+        case .invalidProjectName(let name):
+            ("invalid_project_name", "\(name) is not a usable project name")
+        case .invalidProjectDay(let day): ("invalid_project_day", "\(day) is not a YYYY-MM-DD date")
+        case .unknownExport(let id): ("unknown_export", id)
+        case .projectExists(let folder): ("project_exists", "\(folder) already exists")
+        case .unreadableProjectFile(let shoot):
+            ("unreadable_project_file", "\(shoot) has a photopipe.json that could not be read")
+        }
+    }
+}

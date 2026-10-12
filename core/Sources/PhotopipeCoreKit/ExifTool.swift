@@ -141,3 +141,13 @@ public final class ExifTool: @unchecked Sendable {
         stdoutPipe = nil
     }
 }
+
+extension ExifTool.ExifToolError: WireError {
+    public var wire: (code: String, message: String) {
+        switch self {
+        case .notInstalled:
+            ("exiftool_missing", "exiftool not found — install it or set PHOTOPIPE_EXIFTOOL")
+        case .failed(let output): ("exiftool_failed", output)
+        }
+    }
+}

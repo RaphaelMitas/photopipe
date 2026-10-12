@@ -25,51 +25,8 @@ public final class Dispatcher {
 
         do {
             return .success(id: request.id, result: try result(for: request))
-        } catch DispatchError.invalidParams(let key) {
-            return .failure(id: request.id, code: "invalid_params", message: "\(key) required")
-        } catch DispatchError.unknownMethod(let method) {
-            return .failure(
-                id: request.id, code: "unknown_method", message: "unknown method: \(method)")
-        } catch LibraryService.ServiceError.noRoot {
-            return .failure(id: request.id, code: "no_root", message: "call setRoot first")
-        } catch LibraryService.ServiceError.unknownShoot(let name) {
-            return .failure(id: request.id, code: "unknown_shoot", message: name)
-        } catch LibraryService.ServiceError.pathOutsideRoot(let path) {
-            return .failure(id: request.id, code: "path_outside_root", message: path)
-        } catch LibraryService.ServiceError.unknownImage(let stem) {
-            return .failure(id: request.id, code: "unknown_image", message: stem)
-        } catch LibraryService.ServiceError.invalidRating(let rating) {
-            return .failure(
-                id: request.id, code: "invalid_rating", message: "rating \(rating) not in 0...5")
-        } catch LibraryService.ServiceError.invalidProjectName(let name) {
-            return .failure(
-                id: request.id, code: "invalid_project_name",
-                message: "\(name) is not a usable project name")
-        } catch LibraryService.ServiceError.invalidProjectDay(let day) {
-            return .failure(
-                id: request.id, code: "invalid_project_day",
-                message: "\(day) is not a YYYY-MM-DD date")
-        } catch LibraryService.ServiceError.unknownExport(let id) {
-            return .failure(id: request.id, code: "unknown_export", message: id)
-        } catch LibraryService.ServiceError.projectExists(let folder) {
-            return .failure(
-                id: request.id, code: "project_exists", message: "\(folder) already exists")
-        } catch LibraryService.ServiceError.unreadableProjectFile(let shoot) {
-            return .failure(
-                id: request.id, code: "unreadable_project_file",
-                message: "\(shoot) has a photopipe.json that could not be read")
-        } catch FileActions.ActionError.noFiles {
-            return .failure(id: request.id, code: "no_files", message: "nothing selected")
-        } catch FileActions.ActionError.zipFailed(let output) {
-            return .failure(id: request.id, code: "zip_failed", message: output)
-        } catch ExifTool.ExifToolError.notInstalled {
-            return .failure(
-                id: request.id, code: "exiftool_missing",
-                message: "exiftool not found — install it or set PHOTOPIPE_EXIFTOOL")
-        } catch ExifTool.ExifToolError.failed(let output) {
-            return .failure(id: request.id, code: "exiftool_failed", message: output)
-        } catch ScanError.rootNotFound(let path) {
-            return .failure(id: request.id, code: "root_not_found", message: path)
+        } catch let error as WireError {
+            return .failure(id: request.id, code: error.wire.code, message: error.wire.message)
         } catch {
             return .failure(id: request.id, code: "io_error", message: "\(error)")
         }
@@ -241,9 +198,16 @@ public final class Dispatcher {
     }
 }
 
-private enum DispatchError: Error {
+private enum DispatchError: WireError {
     case invalidParams(String)
     case unknownMethod(String)
+
+    var wire: (code: String, message: String) {
+        switch self {
+        case .invalidParams(let key): ("invalid_params", "\(key) required")
+        case .unknownMethod(let method): ("unknown_method", "unknown method: \(method)")
+        }
+    }
 }
 
 private func required<Value>(_ key: String, _ value: Value?) throws -> Value {

@@ -108,3 +108,12 @@ public enum FileActions {
         return (process.terminationStatus, String(decoding: data, as: UTF8.self))
     }
 }
+
+extension FileActions.ActionError: WireError {
+    public var wire: (code: String, message: String) {
+        switch self {
+        case .noFiles: ("no_files", "nothing selected")
+        case .zipFailed(let output): ("zip_failed", output)
+        }
+    }
+}

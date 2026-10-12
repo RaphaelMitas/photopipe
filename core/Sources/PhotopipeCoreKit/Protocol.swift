@@ -22,6 +22,11 @@ public struct Request: Codable, Equatable, Sendable {
     }
 }
 
+/// What the client sees of a thrown error; any other error reaches it as io_error.
+public protocol WireError: Error {
+    var wire: (code: String, message: String) { get }
+}
+
 public struct ResponseError: Codable, Equatable, Sendable {
     public let code: String
     public let message: String
