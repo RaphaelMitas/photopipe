@@ -16,8 +16,13 @@ Stack, testing strategy, CI and releases.
 ```
 photopipe/
 ├── apps/desktop/       Tauri app (src/ React, src-tauri/ Rust, e2e/ Playwright)
+├── apps/web/           photopipe.net, Next.js on Vercel
+├── packages/ui/        shadcn components and tokens shared by both apps
+├── tooling/            shared tsconfig
 ├── core/               Swift package: the photopipe-core sidecar
 ├── scripts/            build, vendor, smoke test, release
+├── fastlane/           App Store metadata and upload lanes
+├── fixtures/           XMP sidecars, curve samples, raw fetch script
 ├── docs/               this, design.md, screenshots
 └── brand/              logo and icon source
 ```

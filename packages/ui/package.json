@@ -16,7 +16,7 @@
   "dependencies": {
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "lucide-react": "^1.30.0",
+    "lucide-react": "catalog:",
     "radix-ui": "^1.6.7",
     "react-day-picker": "^10.0.1",
     "shadcn": "4.21.4",
@@ -34,6 +34,6 @@
     "@types/react-dom": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
-    "typescript": "7.0.2"
+    "typescript": "catalog:"
   }
 }
