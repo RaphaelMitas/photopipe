@@ -1,9 +1,11 @@
 import { Skeleton } from "@photopipe/ui/components/skeleton";
 import { cn } from "@photopipe/ui/lib/utils";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { type Rect, useVirtualizer } from "@tanstack/react-virtual";
 import { useMemo, useRef } from "react";
 import { fileSrc, type ImageFile } from "@/lib/core";
+import { fixedRect } from "@/lib/fixedRect";
 import { useThumbnail } from "@/lib/queries";
+import { clickIntent, type SelectModifiers } from "@/lib/selection";
 import { useVirtualJump } from "@/lib/useVirtualJump";
 import { ExposureBadge, RatingBadge } from "./PhotoBadges";
 
@@ -25,25 +27,18 @@ function RowThumb({ image }: { image: ImageFile }) {
 type Props = {
   images: ImageFile[];
   selected: ReadonlySet<string>;
-  selectMode: boolean;
-  onSelect: (
-    path: string,
-    modifiers: { meta: boolean; shift: boolean },
-  ) => void;
+  onSelect: (path: string, modifiers: SelectModifiers) => void;
   onOpen?: (index: number) => void;
-  emptyMessage: string;
   focusPath?: string | null;
   revealed?: number;
-  initialRect?: { width: number; height: number };
+  initialRect?: Rect;
 };
 
 export function ImageList({
   images,
   selected,
-  selectMode,
   onSelect,
   onOpen,
-  emptyMessage,
   focusPath,
   revealed,
   initialRect,
@@ -54,16 +49,7 @@ export function ImageList({
     getScrollElement: () => parentRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: 12,
-    initialRect,
-    ...(initialRect && {
-      observeElementRect: (
-        _instance: unknown,
-        cb: (rect: { width: number; height: number }) => void,
-      ) => {
-        cb(initialRect);
-        return () => {};
-      },
-    }),
+    ...fixedRect(initialRect),
   });
 
   const focusIndex = useMemo(
@@ -73,14 +59,6 @@ export function ImageList({
   );
 
   useVirtualJump(virtualizer, focusIndex, true, revealed);
-
-  if (images.length === 0) {
-    return (
-      <p data-testid="list-empty" className="p-8 text-sm text-muted-foreground">
-        {emptyMessage}
-      </p>
-    );
-  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -111,15 +89,9 @@ export function ImageList({
                 data-selected={isSelected}
                 data-current={isCurrent}
                 onClick={(event) => {
-                  const meta = event.metaKey || event.ctrlKey;
-                  if (onOpen && !meta && !event.shiftKey && !selectMode) {
-                    onOpen(item.index);
-                    return;
-                  }
-                  onSelect(image.path, {
-                    meta: meta || (!onOpen && !event.shiftKey) || selectMode,
-                    shift: event.shiftKey,
-                  });
+                  const intent = clickIntent(event, selected.size > 0);
+                  if (intent === "open") onOpen?.(item.index);
+                  else onSelect(image.path, intent);
                 }}
                 className={cn(
                   "absolute top-0 left-0 flex w-full items-center gap-3 px-3 text-left",

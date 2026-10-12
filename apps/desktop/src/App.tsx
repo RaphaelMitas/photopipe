@@ -1135,7 +1135,6 @@ function Content({
   const emptyMessage = filterActive
     ? "Nothing matches the rating filter."
     : "No photos in this project yet. Import them, or drop files into the folder — subfolders are fine.";
-  const selectMode = !selection.isEmpty;
   return (
     <div className="flex h-full min-h-0 flex-col">
       <BrowserToolbar
@@ -1171,7 +1170,6 @@ function Content({
               onOpen={onOpenLoupe}
               showInfo={showInfo}
               selected={selection.selected}
-              selectMode={selectMode}
               onSelect={selection.click}
               focusPath={focusPath}
               revealed={revealed}
@@ -1180,10 +1178,8 @@ function Content({
             <ImageList
               images={filteredImages}
               selected={selection.selected}
-              selectMode={selectMode}
               onSelect={selection.click}
               onOpen={onOpenLoupe}
-              emptyMessage={emptyMessage}
               focusPath={focusPath}
               revealed={revealed}
             />
