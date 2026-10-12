@@ -263,8 +263,6 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> (rating:
     #expect(read.rating == 3)
 }
 
-/// A cut-off or broken sidecar keeps everything before the break, as the
-/// regex reader did, rather than losing its rating.
 @Test func brokenSidecarKeepsWhatPrecedesTheBreak() {
     let head = """
         <x:xmpmeta xmlns:x="adobe:ns:meta/">
@@ -287,6 +285,18 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> (rating:
     #expect(mismatched.rating == 4)
     #expect(mismatched.edit.shadows == 20)
     #expect(mismatched.edit.whites == 0)
+}
+
+@Test func sidecarCutInsideTheDescriptionTagKeepsItsAttributes() throws {
+    let lightroom = try String(
+        contentsOf: fixturesRoot().appendingPathComponent("sidecars/lightroom-masks.xmp"),
+        encoding: .utf8
+    ).replacingOccurrences(of: "rdf:about=\"\"", with: "rdf:about=\"\" xmp:Rating=\"4\"")
+    let cut = try #require(lightroom.range(of: "crs:Shadows2012=\"+3"))
+    let read = XMP.parse(lightroom[..<cut.upperBound].utf8, isRaw: true)
+    #expect(read.rating == 4)
+    #expect(read.edit.highlights == -21)
+    #expect(read.edit.shadows == 0)
 }
 
 @Test func hugeCurvePointsNeitherPoisonNorTrap() throws {

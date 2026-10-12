@@ -27,7 +27,7 @@ struct XMPDocument {
     struct ChildElement {
         let name: String
         let range: Range<Int>
-        let namespaces: [String: String]
+        let uri: String?
         let content: Range<Int>?
         let items: [Range<Int>]
     }
@@ -36,7 +36,7 @@ struct XMPDocument {
     struct TopLevelDescription {
         let start: Tag
         let end: Tag?
-        let namespaces: [String: String]
+        let attributeURIs: [String?]
         let children: [ChildElement]
     }
 
@@ -56,7 +56,8 @@ struct XMPDocument {
         byte == 0x20 || byte == 0x0A || byte == 0x0D || byte == 0x09
     }
 
-    /// Stops at the first malformation and returns what came before it.
+    /// Stops at the first malformation and returns what came before it,
+    /// including the attributes of a start tag it cut off.
     private static func scanTags(_ bytes: [UInt8]) -> (tags: [Tag], malformed: String?) {
         let lessThan = UInt8(ascii: "<")
         let greaterThan = UInt8(ascii: ">")
@@ -88,6 +89,12 @@ struct XMPDocument {
             }
             let name = String(decoding: bytes[nameStart..<index], as: UTF8.self)
             var attributes: [Attribute] = []
+            func cutOff(_ reason: String) -> (tags: [Tag], malformed: String?) {
+                let partial = Tag(
+                    name: name, range: start..<index, isEnd: isEnd, isSelfClosing: false,
+                    attributes: attributes)
+                return (tags + [partial], reason)
+            }
             while index < bytes.count, bytes[index] != greaterThan {
                 let spaceStart = index
                 while index < bytes.count, isSpace(bytes[index]) { index += 1 }
@@ -108,11 +115,11 @@ struct XMPDocument {
                 }
                 guard index < bytes.count,
                     bytes[index] == UInt8(ascii: "\"") || bytes[index] == UInt8(ascii: "'")
-                else { return (tags, "attribute \(attribute) in <\(name)>") }
+                else { return cutOff("attribute \(attribute) in <\(name)>") }
                 let quote = bytes[index]
                 let valueStart = index + 1
                 guard let valueEnd = bytes[valueStart...].firstIndex(of: quote) else {
-                    return (tags, "unterminated attribute \(attribute)")
+                    return cutOff("unterminated attribute \(attribute)")
                 }
                 attributes.append(
                     Attribute(
@@ -120,7 +127,7 @@ struct XMPDocument {
                         withLeadingSpace: spaceStart..<valueEnd + 1, value: valueStart..<valueEnd))
                 index = valueEnd + 1
             }
-            guard index < bytes.count else { return (tags, "unterminated <\(name)") }
+            guard index < bytes.count else { return cutOff("unterminated <\(name)") }
             tags.append(
                 Tag(
                     name: name, range: start..<index + 1, isEnd: isEnd,
@@ -136,10 +143,16 @@ struct XMPDocument {
         let (tags, malformed) = scanTags(bytes)
         if let malformed, !lenient { throw Malformed(reason: malformed) }
         var document = XMPDocument()
-        var stack: [(tag: Tag, namespaces: [String: String])] = []
-        var open: (start: Tag, namespaces: [String: String], children: [ChildElement], depth: Int)?
-        var child: (start: Tag, namespaces: [String: String], items: [Range<Int>])?
+        var stack: [(tag: Tag, declared: [String: String])] = []
+        var open: (start: Tag, attributeURIs: [String?], children: [ChildElement], depth: Int)?
+        var child: (start: Tag, uri: String?, items: [Range<Int>])?
         var item: Tag?
+
+        func uri(of name: String, declaredHere: [String: String]) -> String? {
+            guard let colon = name.firstIndex(of: ":") else { return nil }
+            let prefix = String(name[..<colon])
+            return declaredHere[prefix] ?? stack.reversed().lazy.compactMap { $0.declared[prefix] }.first
+        }
 
         for tag in tags {
             guard tag.isEnd else {
@@ -149,29 +162,31 @@ struct XMPDocument {
                         uri: String(decoding: bytes[$0.value], as: UTF8.self)
                     )
                 }
-                let namespaces = declared.reduce(into: stack.last?.namespaces ?? [:]) {
-                    $0[$1.prefix] = $1.uri
-                }
+                let declaredHere = Dictionary(declared, uniquingKeysWith: { $1 })
                 let scope: PrefixScope
                 if tag.name == "rdf:Description", stack.last?.tag.name == "rdf:RDF", open == nil {
                     scope = .description(document.descriptions.count)
+                    let attributeURIs = tag.attributes.map {
+                        uri(of: $0.name, declaredHere: declaredHere)
+                    }
                     if tag.isSelfClosing {
                         document.descriptions.append(
                             TopLevelDescription(
-                                start: tag, end: nil, namespaces: namespaces, children: []))
+                                start: tag, end: nil, attributeURIs: attributeURIs, children: []))
                     } else {
-                        open = (tag, namespaces, [], stack.count)
+                        open = (tag, attributeURIs, [], stack.count)
                     }
                 } else if let current = open {
                     scope = .nested
                     let level = stack.count - current.depth
+                    let childURI = level == 1 ? uri(of: tag.name, declaredHere: declaredHere) : nil
                     if level == 1, tag.isSelfClosing {
                         open?.children.append(
                             ChildElement(
-                                name: tag.name, range: tag.range, namespaces: namespaces,
-                                content: nil, items: []))
+                                name: tag.name, range: tag.range, uri: childURI, content: nil,
+                                items: []))
                     } else if level == 1 {
-                        child = (tag, namespaces, [])
+                        child = (tag, childURI, [])
                     } else if level == 3, tag.name == "rdf:li", !tag.isSelfClosing {
                         item = tag
                     }
@@ -179,7 +194,7 @@ struct XMPDocument {
                     scope = .aboveDescriptions
                 }
                 document.prefixes += declared.map { ($0.prefix, $0.uri, scope) }
-                if !tag.isSelfClosing { stack.append((tag, namespaces)) }
+                if !tag.isSelfClosing { stack.append((tag, declaredHere)) }
                 continue
             }
             guard let opened = stack.popLast(), opened.tag.name == tag.name else {
@@ -197,14 +212,14 @@ struct XMPDocument {
                     ChildElement(
                         name: started.start.name,
                         range: started.start.range.lowerBound..<tag.range.upperBound,
-                        namespaces: started.namespaces,
+                        uri: started.uri,
                         content: started.start.range.upperBound..<tag.range.lowerBound,
                         items: started.items))
                 child = nil
             } else if level == 0 {
                 document.descriptions.append(
                     TopLevelDescription(
-                        start: current.start, end: tag, namespaces: current.namespaces,
+                        start: current.start, end: tag, attributeURIs: current.attributeURIs,
                         children: current.children))
                 open = nil
             }
@@ -212,7 +227,7 @@ struct XMPDocument {
         if lenient, let current = open {
             document.descriptions.append(
                 TopLevelDescription(
-                    start: current.start, end: nil, namespaces: current.namespaces,
+                    start: current.start, end: nil, attributeURIs: current.attributeURIs,
                     children: current.children))
         } else if !lenient, let unclosed = stack.last {
             throw Malformed(reason: "unclosed <\(unclosed.tag.name)>")
@@ -235,23 +250,21 @@ struct XMPProperties {
         let bytes = Array(packet)
         guard let document = try? XMPDocument.parse(bytes, lenient: true) else { return }
         for description in document.descriptions {
-            for attribute in description.start.attributes {
-                add(attribute.name, description.namespaces, [attribute.value], in: bytes)
+            for (attribute, uri) in zip(description.start.attributes, description.attributeURIs) {
+                add(attribute.name, uri, [attribute.value], in: bytes)
             }
             for child in description.children {
                 let ranges = child.items.isEmpty ? child.content.map { [$0] } ?? [] : child.items
-                add(child.name, child.namespaces, ranges, in: bytes)
+                add(child.name, child.uri, ranges, in: bytes)
             }
         }
     }
 
     private mutating func add(
-        _ qualifiedName: String, _ namespaces: [String: String], _ ranges: [Range<Int>],
-        in bytes: [UInt8]
+        _ qualifiedName: String, _ uri: String?, _ ranges: [Range<Int>], in bytes: [UInt8]
     ) {
-        let parts = qualifiedName.split(separator: ":", maxSplits: 1)
-        guard parts.count == 2, let uri = namespaces[String(parts[0])] else { return }
-        let key = Key(uri: uri, name: String(parts[1]))
+        guard let uri, let colon = qualifiedName.firstIndex(of: ":") else { return }
+        let key = Key(uri: uri, name: String(qualifiedName[qualifiedName.index(after: colon)...]))
         guard values[key] == nil else { return }
         values[key] = ranges.map {
             Self.decoded(String(decoding: bytes[$0], as: UTF8.self))
