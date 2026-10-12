@@ -182,6 +182,9 @@ catalogs:
     react-dom:
       specifier: ^19.3.0
       version: 19.3.0
+    sonner:
+      specifier: ^2.0.7
+      version: 2.0.8
     tailwindcss:
       specifier: 4.3.3
       version: 4.3.3
@@ -239,7 +242,7 @@ importers:
         specifier: 'catalog:'
         version: 19.3.0(react@19.3.0)
       sonner:
-        specifier: ^2.0.7
+        specifier: 'catalog:'
         version: 2.0.8(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
     devDependencies:
       '@photopipe/tsconfig':
@@ -349,7 +352,7 @@ importers:
         specifier: 4.21.4
         version: 4.21.4
       sonner:
-        specifier: ^2.0.7
+        specifier: 'catalog:'
         version: 2.0.8(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       tailwind-merge:
         specifier: ^3.3.1
