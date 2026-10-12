@@ -92,6 +92,11 @@ impl Running {
         }
     }
 
+    fn progressed(&self) {
+        self.finished.fetch_add(1, Ordering::Relaxed);
+        self.stalled_timeouts.store(0, Ordering::Relaxed);
+    }
+
     fn kill(&self) {
         let mut child = self.child.lock().unwrap();
         let _ = child.kill();
@@ -205,9 +210,7 @@ impl Sidecar {
                     if let Some(tx) = map.remove(&id) {
                         let _ = tx.send(Ok(response));
                     } else {
-                        // A late reply still proves the queue is moving.
-                        reader_handle.finished.fetch_add(1, Ordering::Relaxed);
-                        reader_handle.stalled_timeouts.store(0, Ordering::Relaxed);
+                        reader_handle.progressed();
                     }
                 }
             }
@@ -335,8 +338,7 @@ impl Sidecar {
             let outcome = self.round_trip(&running, method, &params, timeout);
             // ping skips the work queue, so its answer says nothing about progress
             if core_answered(&outcome) && method != "ping" {
-                running.finished.fetch_add(1, Ordering::Relaxed);
-                running.stalled_timeouts.store(0, Ordering::Relaxed);
+                running.progressed();
             }
             match outcome {
                 Ok(result) => {
@@ -457,21 +459,25 @@ mod tests {
         script
     }
 
-    fn answering_core(dir: &std::path::Path, methods: &[&str]) -> PathBuf {
+    /// Answers `methods` at once, any other method after `late_by` seconds or never.
+    fn answering_core(dir: &std::path::Path, methods: &[&str], late_by: Option<&str>) -> PathBuf {
         let pattern = methods
             .iter()
             .map(|method| format!(r#"*'"method":"{method}"'*"#))
             .collect::<Vec<_>>()
             .join("|");
+        let reply = r#"printf '{"v":1,"id":"%s","ok":true,"result":{"pong":true}}\n' "$id""#;
+        let late = late_by
+            .map(|seconds| format!("    *) (sleep {seconds}; {reply}) & ;;\n"))
+            .unwrap_or_default();
         script_core(
             dir,
             &format!(
                 r#"while read -r line; do
+  id=$(printf '%s\n' "$line" | sed 's/.*"id":"\([0-9]*\)".*/\1/')
   case "$line" in
-    {pattern})
-      id=$(printf '%s\n' "$line" | sed 's/.*"id":"\([0-9]*\)".*/\1/')
-      printf '{{"v":1,"id":"%s","ok":true,"result":{{"pong":true}}}}\n' "$id" ;;
-  esac
+    {pattern}) {reply} ;;
+{late}  esac
 done
 "#
             ),
@@ -644,7 +650,7 @@ done
     #[test]
     fn a_slow_request_does_not_kill_a_core_that_answers_ping() {
         let dir = temp_dir("busy");
-        let mut sidecar = Sidecar::new(answering_core(&dir, &["ping"]));
+        let mut sidecar = Sidecar::new(answering_core(&dir, &["ping"], None));
         sidecar.read_timeout = Duration::from_millis(200);
         let busy = sidecar.connection().expect("spawn");
         let error = sidecar.request("render", None).expect_err("must time out");
@@ -659,7 +665,7 @@ done
     #[test]
     fn a_core_that_answers_ping_but_finishes_nothing_is_respawned() {
         let dir = temp_dir("stuck");
-        let mut sidecar = Sidecar::new(answering_core(&dir, &["ping"]));
+        let mut sidecar = Sidecar::new(answering_core(&dir, &["ping"], None));
         sidecar.read_timeout = Duration::from_millis(100);
         let stuck = sidecar.connection().expect("spawn");
         for _ in 1..MAX_STALLED_TIMEOUTS {
@@ -675,7 +681,7 @@ done
     #[test]
     fn a_burst_of_timeouts_does_not_kill_a_core_that_keeps_finishing_work() {
         let dir = temp_dir("burst");
-        let mut sidecar = Sidecar::new(answering_core(&dir, &["ping", "listShoots"]));
+        let mut sidecar = Sidecar::new(answering_core(&dir, &["ping", "listShoots"], None));
         sidecar.read_timeout = Duration::from_millis(300);
         let sidecar = Arc::new(sidecar);
         let busy = sidecar.connection().expect("spawn");
@@ -697,20 +703,9 @@ done
     }
 
     #[test]
-    fn a_core_whose_answers_all_arrive_late_is_not_respawned() {
+    fn late_answers_landing_between_timeouts_keep_the_core_alive() {
         let dir = temp_dir("late");
-        let script = script_core(
-            &dir,
-            r#"while read -r line; do
-  id=$(printf '%s\n' "$line" | sed 's/.*"id":"\([0-9]*\)".*/\1/')
-  case "$line" in
-    *'"method":"ping"'*) printf '{"v":1,"id":"%s","ok":true,"result":{}}\n' "$id" ;;
-    *) (sleep 0.3; printf '{"v":1,"id":"%s","ok":true,"result":{}}\n' "$id") & ;;
-  esac
-done
-"#,
-        );
-        let mut sidecar = Sidecar::new(script);
+        let mut sidecar = Sidecar::new(answering_core(&dir, &["ping"], Some("0.3")));
         sidecar.read_timeout = Duration::from_millis(200);
         let busy = sidecar.connection().expect("spawn");
         for _ in 0..MAX_STALLED_TIMEOUTS {
@@ -725,7 +720,7 @@ done
     #[test]
     fn a_timed_out_write_kills_the_core() {
         let dir = temp_dir("write");
-        let mut sidecar = Sidecar::new(answering_core(&dir, &["ping"]));
+        let mut sidecar = Sidecar::new(answering_core(&dir, &["ping"], None));
         sidecar.read_timeout = Duration::from_millis(200);
         for method in ["setEdit", "exportFiles"] {
             let busy = sidecar.connection().expect("spawn");
