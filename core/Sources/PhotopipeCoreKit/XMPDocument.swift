@@ -239,8 +239,6 @@ struct XMPDocument {
     }
 }
 
-/// What a reader may take from a packet: only the direct properties of the
-/// top-level Descriptions, keyed by namespace URI rather than prefix.
 struct XMPProperties {
     private struct Key: Hashable {
         let uri: String
