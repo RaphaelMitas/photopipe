@@ -55,13 +55,9 @@ public final class Dispatcher {
             library.stopExports()
             return .object(["bye": .bool(true)])
         case "setRoot":
-            let summary = try library.setRoot(
-                path: request.string("path"), indexPath: request.param("indexPath")?.stringValue)
-            return .object([
-                "shoots": .number(Double(summary.shoots)),
-                "files": .number(Double(summary.files)),
-                "generation": .number(Double(summary.generation)),
-            ])
+            return try JSONValue(
+                encoding: library.setRoot(
+                    path: request.string("path"), indexPath: request.param("indexPath")?.stringValue))
         case "listShoots":
             return .object(["shoots": try JSONValue(encoding: library.listShoots())])
         case "listImages":
@@ -81,21 +77,15 @@ public final class Dispatcher {
                 decoderVersion: request.param("decoderVersion")?.intValue)
             return .object(["cachePath": .string(cachePath)])
         case "setRating":
-            let result = try library.setRating(
-                shoot: request.string("shoot"), path: request.string("path"),
-                rating: request.int("rating"))
-            return .object([
-                "rating": .number(Double(result.rating)),
-                "generation": .number(Double(result.generation)),
-            ])
+            return try JSONValue(
+                encoding: library.setRating(
+                    shoot: request.string("shoot"), path: request.string("path"),
+                    rating: request.int("rating")))
         case "setEdit":
-            let result = try library.setEdit(
-                shoot: request.string("shoot"), path: request.string("path"),
-                edit: required("edit", request.edit()))
-            return .object([
-                "edit": try JSONValue(encoding: result.edit),
-                "generation": .number(Double(result.generation)),
-            ])
+            return try JSONValue(
+                encoding: library.setEdit(
+                    shoot: request.string("shoot"), path: request.string("path"),
+                    edit: required("edit", request.edit())))
         case "rawDefaults":
             let asShot = try library.rawDefaults(
                 path: request.string("path"),
@@ -106,20 +96,13 @@ public final class Dispatcher {
                 "denoise": asShot.map { .number($0.denoise * 100) } ?? .null,
             ])
         case "trash":
-            let result = try library.trashImages(
-                shoot: request.string("shoot"), paths: request.strings("paths"))
-            return .object([
-                "files": .number(Double(result.files)),
-                "generation": .number(Double(result.generation)),
-            ])
+            return try JSONValue(
+                encoding: library.trashImages(
+                    shoot: request.string("shoot"), paths: request.strings("paths")))
         case "decoderAvailability":
             return .object(["raw9": library.raw9Availability().map(JSONValue.bool) ?? .null])
         case "decoderSupport":
-            let support = try library.decoderSupport(paths: request.strings("paths"))
-            return .object([
-                "raw9": .number(Double(support.raw9)),
-                "rawTotal": .number(Double(support.rawTotal)),
-            ])
+            return try JSONValue(encoding: library.decoderSupport(paths: request.strings("paths")))
         case "exportFiles":
             let job = try library.startExport(
                 shoot: request.string("shoot"), paths: request.strings("paths"),
@@ -136,26 +119,19 @@ public final class Dispatcher {
         case "cancelExport":
             return try JSONValue(encoding: library.cancelExport(id: request.string("id")))
         case "createProject":
-            let result = try library.createProject(
-                name: request.string("name"), notes: request.string("notes"))
-            return .object([
-                "shoot": .string(result.shoot),
-                "path": .string(result.path),
-                "generation": .number(Double(result.generation)),
-            ])
+            return try JSONValue(
+                encoding: library.createProject(
+                    name: request.string("name"), notes: request.string("notes")))
         case "importFiles":
             let job = try library.startImport(
                 shoot: request.string("shoot"), paths: request.strings("paths"))
             return try JSONValue(encoding: job)
         case "updateProject":
-            let updated = try library.updateProject(
-                shoot: request.string("shoot"), name: request.string("name"),
-                day: request.param("day")?.stringValue, notes: request.string("notes"),
-                cover: request.param("cover")?.stringValue)
-            return .object([
-                "shoot": .string(updated.shoot),
-                "generation": .number(Double(updated.generation)),
-            ])
+            return try JSONValue(
+                encoding: library.updateProject(
+                    shoot: request.string("shoot"), name: request.string("name"),
+                    day: request.param("day")?.stringValue, notes: request.string("notes"),
+                    cover: request.param("cover")?.stringValue))
         case "captureDate":
             let day = try library.captureDate(path: request.string("path"))
             return .object(["day": day.map(JSONValue.string) ?? .null])
