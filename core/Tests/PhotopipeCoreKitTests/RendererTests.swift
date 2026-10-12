@@ -170,11 +170,11 @@ private func tempCacheDir() -> URL {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let cache = CacheFolder(dir: cacheDir)
-    let entry = try cache.file(at: cache.url(forKey: "photo")) { try Data("x".utf8).write(to: $0) }
+    let entry = try cache.cachedFile(at: cache.url(forKey: "photo")) { try Data("x".utf8).write(to: $0) }
     try FileManager.default.setAttributes(
         [.modificationDate: Date().addingTimeInterval(-8 * 24 * 3600)], ofItemAtPath: entry.path)
 
-    _ = try cache.file(at: cache.url(forKey: "photo")) { _ in
+    _ = try cache.cachedFile(at: cache.url(forKey: "photo")) { _ in
         Issue.record("a hit must not rewrite the entry")
     }
     cache.prune(olderThan: 7 * 24 * 3600)
