@@ -11,6 +11,3 @@ catalog:
 
 allowBuilds:
   esbuild: true
-
-minimumReleaseAgeExclude:
-  - jsdom@30.1.1
