@@ -94,9 +94,6 @@ import { useUpdater } from "@/lib/useUpdater";
 const NO_HELD = { key: "", paths: [] };
 const LEGACY_ROOT_KEY = "photopipe.root";
 const LEGACY_RECENTS_KEY = "photopipe.recentRoots";
-/// One toast id for the whole update conversation, so a download replaces the
-/// offer rather than stacking under it.
-const UPDATE_TOAST = "update";
 
 const isTyping = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
@@ -127,7 +124,6 @@ export default function App() {
   const [newProject, setNewProject] = useState(false);
   const [shootSettings, setShootSettings] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const updater = useUpdater();
   const view = viewPref.use();
   const sort = sortPref.use();
   const autoScore = autoScorePref.use();
@@ -269,79 +265,20 @@ export default function App() {
     scrubEdit(image.path, edit);
   };
 
-  const installBlocked = exports.running
-    ? "Finish the running job first; installing restarts Photopipe."
-    : null;
-  const { install: installUpdate } = updater;
-  // Sonner dismisses the toast the moment Install is clicked, so anything that
-  // stops the install has to say so itself or it happens in silence.
-  const startInstall = useCallback(async () => {
-    if (installBlocked) {
-      toast.error(installBlocked, { id: UPDATE_TOAST });
-      return;
-    }
-    flushEdit();
-    const result = await installUpdate();
-    if (result.kind === "error") {
-      toast.error(`Install failed: ${result.message}`, { id: UPDATE_TOAST });
-    }
-  }, [installBlocked, flushEdit, installUpdate]);
+  const updater = useUpdater({
+    blockedReason: exports.running
+      ? "Finish the running job first; installing restarts Photopipe."
+      : null,
+    beforeInstall: flushEdit,
+  });
 
-  const offerUpdate = useCallback(
-    (version: string, id?: string | number) => {
-      toast(`Photopipe ${version} is available`, {
-        id,
-        duration: Number.POSITIVE_INFINITY,
-        action: { label: "Install", onClick: () => void startInstall() },
-      });
-    },
-    [startInstall],
-  );
-
-  const { state: updateState } = updater;
-  const offered = useRef(false);
-  useEffect(() => {
-    if (updateState.kind === "downloading") {
-      toast.loading(
-        updateState.percent === null
-          ? "Downloading update…"
-          : `Downloading update… ${updateState.percent}%`,
-        { id: UPDATE_TOAST, duration: Number.POSITIVE_INFINITY },
-      );
-      return;
-    }
-    if (updateState.kind === "installed") {
-      toast.success("Update installed, restarting…", { id: UPDATE_TOAST });
-      return;
-    }
-    if (updateState.kind !== "available" || offered.current) return;
-    offered.current = true;
-    offerUpdate(updateState.version);
-  }, [updateState, offerUpdate]);
-
-  const { check: checkUpdate } = updater;
-  const checkForUpdates = useCallback(async () => {
-    // The startup check offers on its own; this one owns the toast instead.
-    offered.current = true;
-    toast.loading("Checking for updates…", { id: UPDATE_TOAST });
-    const result = await checkUpdate();
-    if (result.kind === "available") offerUpdate(result.version, UPDATE_TOAST);
-    else if (result.kind === "error")
-      toast.error(result.message, { id: UPDATE_TOAST });
-    else toast.success("Photopipe is up to date", { id: UPDATE_TOAST });
-  }, [checkUpdate, offerUpdate]);
-
-  // Subscribe once for the app's lifetime. Re-subscribing whenever the check
-  // callback changes identity leaves gaps where a menu click reaches nobody.
-  const latestCheck = useRef(checkForUpdates);
-  useEffect(() => {
-    latestCheck.current = checkForUpdates;
-  }, [checkForUpdates]);
-
+  const { check: checkForUpdates } = updater;
+  // check never changes identity; resubscribing would leave a gap where a
+  // menu click reaches nobody
   useEffect(() => {
     const subscriptions = [
       listen("menu:settings", () => setSettingsOpen(true)),
-      listen("menu:check-updates", () => void latestCheck.current()),
+      listen("menu:check-updates", () => void checkForUpdates()),
     ];
     for (const subscription of subscriptions) subscription.catch(() => {});
     return () => {
@@ -349,7 +286,7 @@ export default function App() {
         void subscription.then((unlisten) => unlisten()).catch(() => {});
       }
     };
-  }, []);
+  }, [checkForUpdates]);
 
   const currentShoot = shoots.data?.find((s) => s.name === openShoot);
 
