@@ -396,19 +396,16 @@ function cachedValue<V>(
   return image && field.of(image);
 }
 
-function useFieldWrite<V, Vars extends { path: string }>(
-  shoot: string | null,
-  field: PhotoField<V>,
-  valueIn: (vars: Vars) => V,
-) {
+function useFieldWrite<V>(shoot: string | null, field: PhotoField<V>) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: field.mutationKey,
-    mutationFn: (vars: Vars) => field.write(shoot, vars.path, valueIn(vars)),
+    mutationFn: ({ path, value }: { path: string; value: V }) =>
+      field.write(shoot, path, value),
     onMutate: async (vars) => {
       await queryClient.cancelQueries({ queryKey: imagesKey(shoot) });
       const previous = cachedValue(queryClient, shoot, vars.path, field);
-      patchImage(queryClient, shoot, vars.path, field.patch(valueIn(vars)));
+      patchImage(queryClient, shoot, vars.path, field.patch(vars.value));
       return { previous };
     },
     onError: (error, vars, context) => {
@@ -427,14 +424,10 @@ function useFieldWrite<V, Vars extends { path: string }>(
 }
 
 export const useSetRating = (shoot: string | null) =>
-  useFieldWrite(
-    shoot,
-    RATING_FIELD,
-    (vars: { path: string; rating: number }) => vars.rating,
-  );
+  useFieldWrite(shoot, RATING_FIELD);
 
 export const useSetEdit = (shoot: string | null) =>
-  useFieldWrite(shoot, EDIT_FIELD, (vars: EditWrite) => vars.edit);
+  useFieldWrite(shoot, EDIT_FIELD);
 
 export type BatchResult = {
   written: number;

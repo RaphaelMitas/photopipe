@@ -256,7 +256,7 @@ describe("edit writes to one photo", () => {
 
     single.mutate({
       path: "/r/shoot1/A.ARW",
-      edit: { ...identityEdit, exposure: 1 },
+      value: { ...identityEdit, exposure: 1 },
     });
     paste.mutate(
       new Map([["/r/shoot1/A.ARW", { ...identityEdit, exposure: 2 }]]),
@@ -354,8 +354,8 @@ describe("useSetRating burst behavior", () => {
       </QueryClientProvider>,
     );
 
-    mutation.mutate({ path: "/r/shoot1/A.ARW", rating: 3 });
-    mutation.mutate({ path: "/r/shoot1/B.ARW", rating: 4 });
+    mutation.mutate({ path: "/r/shoot1/A.ARW", value: 3 });
+    mutation.mutate({ path: "/r/shoot1/B.ARW", value: 4 });
     await waitFor(() => expect(pending.length).toBe(2));
 
     const optimistic = client.getQueryData<ImageFile[]>(["images", "shoot1"]);

@@ -48,7 +48,7 @@ export function useRecordedWrites(shoot: string | null) {
     (path: string, rating: number) => {
       const image = cachedImage(queryClient, shoot, path);
       if (!image || image.rating === rating) return;
-      const written = setRating({ path, rating });
+      const written = setRating({ path, value: rating });
       // the mutation already rolled back and toasted; the channel drops the entry
       void written.catch(() => {});
       // before the core has read the file, the old rating is a placeholder
@@ -72,7 +72,7 @@ export function useRecordedWrites(shoot: string | null) {
     (path: string, edit: Edit) => {
       const image = cachedImage(queryClient, shoot, path);
       if (!image || editKey(image.edit) === editKey(edit)) return;
-      const written = setEdit({ path, edit });
+      const written = setEdit({ path, value: edit });
       void written.catch(() => {});
       void edits.record(
         {

@@ -117,8 +117,6 @@ type WireImage = Omit<ImageFile, "score" | "edit"> & {
   edit: Partial<Edit>;
 };
 
-/// Everything downstream reads them as plain values, so they are filled in
-/// here, once, where the images come in.
 export function normalizeImage(image: WireImage): ImageFile {
   return {
     ...image,
@@ -166,7 +164,7 @@ export type ExportProgress = {
   running: boolean;
   cancelled: boolean;
   archiving: boolean;
-  error?: string | null;
+  error: string | null;
   failures: string[];
 };
 
@@ -178,7 +176,7 @@ export type SetRootResult = {
 
 export type StatusResult = {
   generation: number;
-  root?: string | null;
+  root: string | null;
   shoots: number;
   scanning: boolean;
   filesFound: number;
@@ -220,7 +218,7 @@ export type CoreMethods = {
     params: { paths: string[] };
     result: { raw9: number; rawTotal: number };
   };
-  decoderAvailability: { params: undefined; result: { raw9?: boolean | null } };
+  decoderAvailability: { params: undefined; result: { raw9: boolean | null } };
   setRating: {
     params: { shoot: string | null; path: string; rating: number };
     result: { rating: number; generation: number };
