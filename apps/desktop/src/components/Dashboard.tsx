@@ -1,12 +1,10 @@
 import { Button } from "@photopipe/ui/components/button";
 import { Card, CardContent } from "@photopipe/ui/components/card";
-import { Skeleton } from "@photopipe/ui/components/skeleton";
 import { Images, Plus, Settings2 } from "lucide-react";
-import { fileSrc, type Shoot } from "@/lib/core";
-import { useThumbnail } from "@/lib/queries";
+import type { Shoot } from "@/lib/core";
+import { Thumbnail } from "./Thumbnail";
 
 function Cover({ path }: { path: string | null }) {
-  const thumb = useThumbnail(path ? { path, mtime: 0 } : undefined);
   if (!path) {
     return (
       <div className="flex aspect-[3/2] w-full items-center justify-center rounded-t-xl bg-muted/40">
@@ -14,18 +12,12 @@ function Cover({ path }: { path: string | null }) {
       </div>
     );
   }
-  if (!thumb.data) {
-    return (
-      <Skeleton className="aspect-[3/2] w-full rounded-t-xl rounded-b-none" />
-    );
-  }
   return (
-    <img
-      data-testid="shoot-cover"
-      src={fileSrc(thumb.data)}
+    <Thumbnail
+      file={{ path, mtime: 0 }}
       alt=""
-      loading="lazy"
-      className="aspect-[3/2] w-full rounded-t-xl object-cover"
+      data-testid="shoot-cover"
+      className="aspect-[3/2] w-full rounded-t-xl"
     />
   );
 }
