@@ -1,5 +1,4 @@
 import CoreImage
-import CryptoKit
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -11,7 +10,7 @@ public final class Renderer: @unchecked Sendable {
         case encodeFailed
     }
 
-    public let cacheDir: URL
+    private let cache: CacheFolder
     private let context = CIContext(options: [.cacheIntermediates: true])
     // an export renders each photo once, so there is nothing to reuse
     private let exportContext = CIContext(options: [.cacheIntermediates: false])
@@ -46,27 +45,8 @@ public final class Renderer: @unchecked Sendable {
     private let filterCapacity = 6
 
     public init(cacheDir: URL) {
-        self.cacheDir = cacheDir
-        let dir = cacheDir
-        DispatchQueue.global(qos: .utility).async {
-            Self.prune(cacheDir: dir, olderThan: 7 * 24 * 3600)
-        }
-    }
-
-    public static func prune(cacheDir: URL, olderThan age: TimeInterval) {
-        let cutoff = Date().addingTimeInterval(-age)
-        let fm = FileManager.default
-        guard
-            let entries = try? fm.contentsOfDirectory(
-                at: cacheDir, includingPropertiesForKeys: [.contentModificationDateKey])
-        else { return }
-        for entry in entries where entry.pathExtension == "jpg" {
-            let modified = (try? entry.resourceValues(forKeys: [.contentModificationDateKey]))?
-                .contentModificationDate
-            if let modified, modified < cutoff {
-                try? fm.removeItem(at: entry)
-            }
-        }
+        cache = CacheFolder(dir: cacheDir)
+        cache.pruneInBackground()
     }
 
     public static func defaultCacheDir() -> URL {
@@ -82,9 +62,7 @@ public final class Renderer: @unchecked Sendable {
         let decoder = resolvedTag(for: file, requested: decoderVersion)
         let key =
             "\(file.path)|\(file.mtime)|\(file.size)|\(edit.cacheKey)|\(maxPixel)\(region)\(decoder)|v\(Self.pipelineVersion)"
-        let digest = SHA256.hash(data: Data(key.utf8))
-            .map { String(format: "%02x", $0) }.joined().prefix(32)
-        return cacheDir.appendingPathComponent("\(digest).jpg")
+        return cache.url(forKey: key)
     }
 
     public func render(
@@ -95,33 +73,26 @@ public final class Renderer: @unchecked Sendable {
         let dest = cachePath(
             for: file, edit: edit, maxPixel: maxPixel, viewport: viewport,
             decoderVersion: decoderVersion)
-        if FileManager.default.fileExists(atPath: dest.path) {
-            return dest
+        return try cache.file(at: dest) { temp in
+            var image = try sourceImage(
+                for: file, edit: edit, maxPixel: maxPixel, viewport: viewport,
+                decoderVersion: decoderVersion)
+            // raws already decoded close to this; embedded formats did not
+            let longEdge = max(image.extent.width, image.extent.height)
+            let scale = CGFloat(maxPixel) / longEdge
+            if scale < 1 {
+                image = image.transformed(by: .init(scaleX: scale, y: scale))
+            }
+
+            guard
+                let jpeg = context.jpegRepresentation(
+                    of: image, colorSpace: jpegColorSpace,
+                    options: [
+                        kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.85
+                    ])
+            else { throw RenderError.encodeFailed }
+            try jpeg.write(to: temp)
         }
-        try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-
-        var image = try sourceImage(
-            for: file, edit: edit, maxPixel: maxPixel, viewport: viewport,
-            decoderVersion: decoderVersion)
-        // raws already decoded close to this; embedded formats did not
-        let longEdge = max(image.extent.width, image.extent.height)
-        let scale = CGFloat(maxPixel) / longEdge
-        if scale < 1 {
-            image = image.transformed(by: .init(scaleX: scale, y: scale))
-        }
-
-        guard
-            let jpeg = context.jpegRepresentation(
-                of: image, colorSpace: jpegColorSpace,
-                options: [
-                    kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.85
-                ])
-        else { throw RenderError.encodeFailed }
-
-        let temp = cacheDir.appendingPathComponent("tmp-\(UUID().uuidString).jpg")
-        try jpeg.write(to: temp)
-        _ = try? FileManager.default.replaceItemAt(dest, withItemAt: temp)
-        return dest
     }
 
     public func exportJPEG(

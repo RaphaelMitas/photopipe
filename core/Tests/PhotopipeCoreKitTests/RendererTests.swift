@@ -159,11 +159,27 @@ private func tempCacheDir() -> URL {
         [.modificationDate: Date().addingTimeInterval(-8 * 24 * 3600)],
         ofItemAtPath: stale.path)
 
-    Renderer.prune(cacheDir: cacheDir, olderThan: 7 * 24 * 3600)
+    CacheFolder(dir: cacheDir).prune(olderThan: 7 * 24 * 3600)
 
     #expect(!FileManager.default.fileExists(atPath: stale.path), "8-day-old render pruned")
     #expect(FileManager.default.fileExists(atPath: fresh.path), "fresh render kept")
     #expect(FileManager.default.fileExists(atPath: foreign.path), "non-render files untouched")
+}
+
+@Test func aCacheEntryInUseOutlivesThePrune() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let cache = CacheFolder(dir: cacheDir)
+    let entry = try cache.file(at: cache.url(forKey: "photo")) { try Data("x".utf8).write(to: $0) }
+    try FileManager.default.setAttributes(
+        [.modificationDate: Date().addingTimeInterval(-8 * 24 * 3600)], ofItemAtPath: entry.path)
+
+    _ = try cache.file(at: cache.url(forKey: "photo")) { _ in
+        Issue.record("a hit must not rewrite the entry")
+    }
+    cache.prune(olderThan: 7 * 24 * 3600)
+
+    #expect(FileManager.default.fileExists(atPath: entry.path), "a hit keeps the entry alive")
 }
 
 @Test func nonRawRenderAdjustsExposureToo() throws {
