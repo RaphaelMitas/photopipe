@@ -14,6 +14,17 @@ public enum XMP {
         return values?.contentModificationDate?.timeIntervalSince1970 ?? 0
     }
 
+    // the tag parser costs ~70x the packet in memory
+    static let packetSizeLimit = 4 << 20
+
+    static func sidecarData(forImagePath path: String) -> Data? {
+        guard let handle = try? FileHandle(forReadingFrom: sidecarURL(forImagePath: path)),
+            let data = try? handle.read(upToCount: packetSizeLimit + 1),
+            data.count <= packetSizeLimit
+        else { return nil }
+        return data
+    }
+
     // non-finite or huge values poison JSON encoding, CI geometry and the
     // integer tag writes downstream
     static let scalarMagnitudeLimit = 1e6
@@ -164,7 +175,7 @@ public enum XMP {
         guard let start = head.range(of: Data("<x:xmpmeta".utf8)),
             let end = head.range(
                 of: Data("</x:xmpmeta>".utf8), in: start.upperBound..<head.endIndex),
-            end.upperBound - start.lowerBound <= 4 << 20
+            end.upperBound - start.lowerBound <= packetSizeLimit
         else { return nil }
         return orientation(in: XMPProperties(head[start.lowerBound..<end.upperBound]))
     }
@@ -258,7 +269,7 @@ public enum XMP {
         let read: (rating: Int?, edit: Edit)
         if !file.usesSidecar {
             read = readEmbedded(at: fileURL, isRaw: file.isRaw)
-        } else if let sidecar = try? Data(contentsOf: sidecarURL(forImagePath: file.path)) {
+        } else if let sidecar = sidecarData(forImagePath: file.path) {
             read = parse(
                 sidecar, isRaw: file.isRaw, baseOrientation: baseOrientation(at: fileURL) ?? 1)
         } else {
@@ -394,8 +405,7 @@ public enum XMP {
             baseOrientation(at: fileURL) ?? (file.usesSidecar ? 1 : nil)
         let currentXMP =
             file.usesSidecar
-            ? (try? Data(contentsOf: sidecarURL(forImagePath: file.path)))
-                .flatMap { orientation(in: XMPProperties($0)) }
+            ? sidecarData(forImagePath: file.path).flatMap { orientation(in: XMPProperties($0)) }
             : embeddedXMPOrientation(at: fileURL)
         var exifOrientationPin: Int?
         if edit.normalizedRotation == 0 {

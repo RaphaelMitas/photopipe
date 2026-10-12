@@ -82,6 +82,28 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> (rating:
     #expect(contents.sorted() == ["DSC00001.ARW", "DSC00001.xmp"])
 }
 
+@Test func oversizedSidecarReadsAsNoSidecar() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00002.ARW")
+    try Data("fake".utf8).write(to: arw)
+    let packet = Data(
+        """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/">
+        <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+        <rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="4"/>
+        </rdf:RDF>
+        </x:xmpmeta>
+        """.utf8)
+    let sidecar = XMP.sidecarURL(forImagePath: arw.path)
+
+    try (packet + Data(repeating: 0x20, count: XMP.packetSizeLimit - packet.count)).write(to: sidecar)
+    #expect(XMP.read(file: try image(arw)).rating == 4)
+
+    try (packet + Data(repeating: 0x20, count: XMP.packetSizeLimit)).write(to: sidecar)
+    #expect(XMP.read(file: try image(arw)).rating == 0)
+}
+
 @Test func sidecarEditRoundTrip() throws {
     guard requireExifTool() else { return }
     let dir = try tempDir()
