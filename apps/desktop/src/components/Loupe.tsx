@@ -14,6 +14,7 @@ import {
   moveCrop,
   rotatedSize,
 } from "@/lib/crop";
+import { isModalOpen } from "@/lib/modal";
 import { capturePointer, cursorIn } from "@/lib/pointer";
 import {
   usePrefetchRender,
@@ -178,11 +179,11 @@ export function Loupe({
     const handler = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       // an open popover has already spent this Escape on closing itself
-      if (event.defaultPrevented) return;
-      const target = event.target as HTMLElement | null;
+      if (event.defaultPrevented || isModalOpen()) return;
+      const target = event.target instanceof Element ? event.target : null;
       if (
         event.key.startsWith("Arrow") &&
-        target?.closest?.("[data-slot='slider'], select")
+        target?.closest("[data-slot='slider'], select")
       ) {
         return;
       }
@@ -194,7 +195,7 @@ export function Loupe({
         }
         // A focused button (Cancel, Reset) or the aspect select acts on
         // Enter itself.
-        if (event.key === "Enter" && !target?.closest?.("button, select")) {
+        if (event.key === "Enter" && !target?.closest("button, select")) {
           draftRef.current = null;
           onApplyCrop();
         }

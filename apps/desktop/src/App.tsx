@@ -69,6 +69,7 @@ import {
 } from "@/lib/history";
 import { betterThan, scoreRanks } from "@/lib/instinct";
 import { heldOrder } from "@/lib/loupeWalk";
+import { isModalOpen } from "@/lib/modal";
 import {
   cachedImage,
   type EditWrite,
@@ -579,7 +580,6 @@ export default function App() {
   );
 
   const [historyOpen, setHistoryOpen] = useState(false);
-  const modalOpen = newProject || shootSettings !== null || settingsOpen;
   const [revealed, setRevealed] = useState(0);
   // Before the write, so you are on the photo when the step lands.
   const showPhoto = useCallback(
@@ -642,7 +642,9 @@ export default function App() {
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
-      if (isTyping(event.target) || event.defaultPrevented) return;
+      if (isTyping(event.target) || event.defaultPrevented || isModalOpen()) {
+        return;
+      }
       if (event.metaKey || event.ctrlKey) {
         // Case-insensitive, so the Lightroom pair ⌘⇧C/⌘⇧V lands here too.
         const key = event.key.toLowerCase();
@@ -654,11 +656,11 @@ export default function App() {
           event.preventDefault();
           pasteSettings(pasteTargets);
         }
-        if (key === "z" && !cropping && !modalOpen) {
+        if (key === "z" && !cropping) {
           event.preventDefault();
           travel(event.shiftKey ? "redo" : "undo");
         }
-        if (key === "y" && openShoot && !cropping && !modalOpen) {
+        if (key === "y" && openShoot && !cropping) {
           event.preventDefault();
           setHistoryOpen((open) => !open);
         }
@@ -693,7 +695,6 @@ export default function App() {
     pasteTargets,
     pasteSettings,
     travel,
-    modalOpen,
   ]);
 
   const changeRatingStars = (stars: number) => {
