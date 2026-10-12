@@ -252,8 +252,7 @@ export default function App() {
   });
 
   const { check: checkForUpdates } = updater;
-  // check never changes identity; resubscribing would leave a gap where a
-  // menu click reaches nobody
+  // check is stable, so this subscribes once and no menu click falls in a gap
   useEffect(() => {
     const subscriptions = [
       listen("menu:settings", () => setSettingsOpen(true)),
