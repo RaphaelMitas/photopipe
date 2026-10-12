@@ -3,7 +3,7 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-/// Shared by the dispatcher's workers; every cache below is guarded by `lock`.
+/// Shared by the dispatcher's workers.
 public final class Renderer: @unchecked Sendable {
     public enum RenderError: Error {
         case unreadable(String)
