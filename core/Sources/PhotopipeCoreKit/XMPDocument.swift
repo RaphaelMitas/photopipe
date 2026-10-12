@@ -56,8 +56,6 @@ struct XMPDocument {
         byte == 0x20 || byte == 0x0A || byte == 0x0D || byte == 0x09
     }
 
-    /// Stops at the first malformation and returns what came before it,
-    /// including the attributes of a start tag it cut off.
     private static func scanTags(_ bytes: [UInt8]) -> (tags: [Tag], malformed: String?) {
         let lessThan = UInt8(ascii: "<")
         let greaterThan = UInt8(ascii: ">")
@@ -144,6 +142,7 @@ struct XMPDocument {
         if let malformed, !lenient { throw Malformed(reason: malformed) }
         var document = XMPDocument()
         var stack: [(tag: Tag, declared: [String: String])] = []
+        var bindings: [String: [String]] = [:]
         var open: (start: Tag, attributeURIs: [String?], children: [ChildElement], depth: Int)?
         var child: (start: Tag, uri: String?, items: [Range<Int>])?
         var item: Tag?
@@ -151,7 +150,7 @@ struct XMPDocument {
         func uri(of name: String, declaredHere: [String: String]) -> String? {
             guard let colon = name.firstIndex(of: ":") else { return nil }
             let prefix = String(name[..<colon])
-            return declaredHere[prefix] ?? stack.reversed().lazy.compactMap { $0.declared[prefix] }.first
+            return declaredHere[prefix] ?? bindings[prefix]?.last
         }
 
         for tag in tags {
@@ -194,13 +193,17 @@ struct XMPDocument {
                     scope = .aboveDescriptions
                 }
                 document.prefixes += declared.map { ($0.prefix, $0.uri, scope) }
-                if !tag.isSelfClosing { stack.append((tag, declaredHere)) }
+                if !tag.isSelfClosing {
+                    stack.append((tag, declaredHere))
+                    for (prefix, uri) in declaredHere { bindings[prefix, default: []].append(uri) }
+                }
                 continue
             }
             guard let opened = stack.popLast(), opened.tag.name == tag.name else {
                 if lenient { break }
                 throw Malformed(reason: "mismatched </\(tag.name)>")
             }
+            for prefix in opened.declared.keys { bindings[prefix]?.removeLast() }
             if tag.name == "rdf:RDF" { document.rdfEnd = tag }
             guard let current = open else { continue }
             let level = stack.count - current.depth
