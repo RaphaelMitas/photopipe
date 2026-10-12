@@ -85,7 +85,6 @@ enum RoundTripError {
 pub struct Sidecar {
     bin: PathBuf,
     read_timeout: Duration,
-    set_root_timeout: Duration,
     next_id: AtomicU64,
     running: Mutex<Option<Arc<Running>>>,
     /// Params of the last successful `setRoot`, replayed after a respawn so
@@ -98,7 +97,6 @@ impl Sidecar {
         Self {
             bin,
             read_timeout: READ_TIMEOUT,
-            set_root_timeout: SET_ROOT_TIMEOUT,
             next_id: AtomicU64::new(1),
             running: Mutex::new(None),
             last_root: Mutex::new(None),
@@ -124,17 +122,7 @@ impl Sidecar {
         {
             return sibling;
         }
-        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        for profile in ["release", "debug"] {
-            let candidate = manifest
-                .join("../../../core/.build")
-                .join(profile)
-                .join("photopipe-core");
-            if candidate.exists() {
-                return candidate;
-            }
-        }
-        PathBuf::from("photopipe-core")
+        dev_build().unwrap_or_else(|| PathBuf::from("photopipe-core"))
     }
 
     fn spawn(&self) -> Result<Arc<Running>, String> {
@@ -189,31 +177,24 @@ impl Sidecar {
 
     /// Current connection, spawning (and replaying the root) if needed.
     fn connection(&self) -> Result<Arc<Running>, String> {
-        {
+        let fresh = {
             let mut guard = self.running.lock().map_err(|e| e.to_string())?;
             if let Some(running) = guard.as_ref() {
                 return Ok(Arc::clone(running));
             }
             let running = self.spawn()?;
             *guard = Some(Arc::clone(&running));
-        }
+            running
+        };
         // Outside the lock, best-effort: replay session state on the fresh
         // connection. A concurrent request can slip in before the replay and
         // eat one `no_root` error — that request fails visibly and the next
         // succeeds, which is acceptable for a crash-recovery path.
         let replay = self.last_root.lock().unwrap().clone();
         if let Some(params) = replay {
-            let running = self.running.lock().unwrap().as_ref().map(Arc::clone);
-            if let Some(running) = running {
-                let _ = self.round_trip(&running, "setRoot", &Some(params));
-            }
+            let _ = self.round_trip(&fresh, "setRoot", &Some(params));
         }
-        self.running
-            .lock()
-            .unwrap()
-            .as_ref()
-            .map(Arc::clone)
-            .ok_or_else(|| "sidecar connection lost during setup".into())
+        Ok(fresh)
     }
 
     /// Drop `failed` as the current connection (only if it still is) and kill it.
@@ -245,17 +226,9 @@ impl Sidecar {
             };
         }
 
-        let request = json!({
-            "v": PROTOCOL_VERSION,
-            "id": id.to_string(),
-            "method": method,
-            "params": params,
-        });
-        let mut line = request.to_string();
-        line.push('\n');
         {
             let mut stdin = running.stdin.lock().unwrap();
-            if let Err(e) = stdin.write_all(line.as_bytes()) {
+            if let Err(e) = stdin.write_all(envelope(id, method, params).as_bytes()) {
                 if let Some(map) = running.pending.lock().unwrap().as_mut() {
                     map.remove(&id);
                 }
@@ -264,7 +237,7 @@ impl Sidecar {
         }
 
         let timeout = if method == "setRoot" {
-            self.set_root_timeout
+            SET_ROOT_TIMEOUT
         } else {
             self.read_timeout
         };
@@ -340,14 +313,14 @@ impl Sidecar {
         };
         drop(guard);
 
-        let goodbye = json!({
-            "v": PROTOCOL_VERSION,
-            "id": self.next_id.fetch_add(1, Ordering::Relaxed).to_string(),
-            "method": "shutdown",
-        });
+        let goodbye = envelope(
+            self.next_id.fetch_add(1, Ordering::Relaxed),
+            "shutdown",
+            &None,
+        );
         {
             let mut stdin = running.stdin.lock().unwrap();
-            let _ = stdin.write_all(format!("{goodbye}\n").as_bytes());
+            let _ = stdin.write_all(goodbye.as_bytes());
         }
         // long enough for a running export to drop its queue and clean up
         let deadline = Instant::now() + Duration::from_millis(3000);
@@ -366,20 +339,32 @@ impl Sidecar {
     }
 }
 
+fn envelope(id: u64, method: &str, params: &Option<Value>) -> String {
+    let request = json!({
+        "v": PROTOCOL_VERSION,
+        "id": id.to_string(),
+        "method": method,
+        "params": params,
+    });
+    format!("{request}\n")
+}
+
+/// The core built from this checkout, for `cargo test` and `tauri dev`.
+fn dev_build() -> Option<PathBuf> {
+    let build = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../core/.build");
+    ["release", "debug"]
+        .into_iter()
+        .map(|profile| build.join(profile).join("photopipe-core"))
+        .find(|candidate| candidate.exists())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn core_bin() -> Option<PathBuf> {
-        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        for profile in ["debug", "release"] {
-            let candidate = manifest
-                .join("../../../core/.build")
-                .join(profile)
-                .join("photopipe-core");
-            if candidate.exists() {
-                return Some(candidate);
-            }
+        if let Some(bin) = dev_build() {
+            return Some(bin);
         }
         // Locally a missing core is a soft skip; on CI it means the pipeline
         // forgot to build Swift first and must fail loudly, not go green.
