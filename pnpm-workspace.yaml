@@ -12,6 +12,7 @@ catalog:
   typescript: 7.0.2
   tailwindcss: 4.3.3
   lucide-react: ^1.30.0
+  sonner: ^2.0.7
 
 allowBuilds:
   esbuild: true
