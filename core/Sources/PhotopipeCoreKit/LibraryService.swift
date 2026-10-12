@@ -454,9 +454,7 @@ public final class LibraryService: @unchecked Sendable {
         let shootPath = try shoot(named: shootName).path
         let images = paths.filter(isImagePath)
         guard !images.isEmpty else { throw FileActions.ActionError.noFiles }
-        let items = ImportPlan.items(copying: images, into: URL(fileURLWithPath: shootPath))
-        return exporter.start(
-            plan: Exporter.Plan(items: items, destination: shootPath, staging: nil))
+        return exporter.start(plan: .importing(images, into: shootPath))
     }
 
     private func shoot(named shootName: String) throws -> Shoot {

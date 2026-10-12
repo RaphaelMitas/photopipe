@@ -1,6 +1,22 @@
 import CryptoKit
 import Foundation
 
+extension Exporter.Plan {
+    static func importing(_ paths: [String], into destination: String) -> Exporter.Plan {
+        let folder = URL(fileURLWithPath: destination)
+        ImportPlan.sweepStaleTemps(in: folder)
+        let plan = ImportPlan(destination: folder)
+        let items: [Exporter.Plan.Item] = paths.compactMap { path in
+            let source = URL(fileURLWithPath: path)
+            guard let target = plan.target(for: source) else { return nil }
+            return Exporter.Plan.Item(label: source.lastPathComponent) {
+                try FileActions.copyWithoutOverwriting(from: source, to: target)
+            }
+        }
+        return Exporter.Plan(items: items, destination: destination, staging: nil)
+    }
+}
+
 final class ImportPlan {
     private let destination: URL
     private var used: Set<String> = []
@@ -14,21 +30,9 @@ final class ImportPlan {
         var digests: Set<Data> = []
     }
 
-    static func items(copying paths: [String], into destination: URL) -> [Exporter.Plan.Item] {
-        sweepStaleTemps(in: destination)
-        let plan = ImportPlan(destination: destination)
-        return paths.compactMap { path in
-            let source = URL(fileURLWithPath: path)
-            guard let target = plan.target(for: source) else { return nil }
-            return Exporter.Plan.Item(label: source.lastPathComponent) {
-                try FileActions.copyWithoutOverwriting(from: source, to: target)
-            }
-        }
-    }
+    fileprivate init(destination: URL) { self.destination = destination }
 
-    private init(destination: URL) { self.destination = destination }
-
-    private func target(for source: URL) -> URL? {
+    fileprivate func target(for source: URL) -> URL? {
         let identity = Self.identity(source)
         if let identity, claimedAlready(identity, source) { return nil }
         var imported = false
@@ -101,7 +105,7 @@ final class ImportPlan {
 
     /// Nothing else clears a staging file, since the prefix hides it from Finder
     /// and the scanner alike. The age bound spares a running import's temps.
-    private static func sweepStaleTemps(in folder: URL) {
+    fileprivate static func sweepStaleTemps(in folder: URL) {
         let fm = FileManager.default
         let cutoff = Date().addingTimeInterval(-3600)
         let names = (try? fm.contentsOfDirectory(atPath: folder.path)) ?? []
