@@ -94,6 +94,22 @@ test("unrated mode shows only rating-0 images; a bar click returns to threshold 
   await expect(page.locator("[data-path='abends/DSC00938.ARW']")).toBeVisible();
 });
 
+test("the unrated filter stays with the shoot it was set in", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("filter-op-unrated").click();
+  await expect(page.getByTestId("thumb")).toHaveCount(3);
+
+  await page.getByTestId("back-to-shoots").click();
+  await page.getByTestId("shoot-2026-07-12_zell").click();
+  await expect(page.getByTestId("thumb")).toHaveCount(4);
+  await expect(page.getByTestId("filter-op-gte")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+});
+
 test("the filter is available inside the loupe and info toggle pins the grid overlay", async ({
   page,
 }) => {

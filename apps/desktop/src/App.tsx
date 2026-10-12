@@ -700,6 +700,10 @@ export default function App() {
     setRatingStars(stars);
     if (stars > 0 && ratingOp === "unrated") setRatingOp("gte");
   };
+  const clearRatingFilter = () => {
+    setRatingStars(0);
+    setRatingOp("gte");
+  };
 
   const enterShoot = (shoot: string | null) => {
     flushEdit();
@@ -707,7 +711,7 @@ export default function App() {
     setOpenShoot(shoot);
     setCurrentPath(null);
     setLoupeOpen(false);
-    setRatingStars(0);
+    clearRatingFilter();
     selection.clear();
   };
 
@@ -998,8 +1002,7 @@ export default function App() {
                 busy={exports.running}
                 onSelectFiltered={() => selection.select(orderedPaths)}
                 onSelectAll={() => {
-                  setRatingStars(0);
-                  if (ratingOp === "unrated") setRatingOp("gte");
+                  clearRatingFilter();
                   selection.select(allImages.map((image) => image.path));
                 }}
                 onClearSelection={selection.clear}
