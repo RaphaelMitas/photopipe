@@ -700,7 +700,7 @@ export function useCreateProject() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["write", "createProject"],
-    mutationFn: (vars: { name: string; notes: string }) =>
+    mutationFn: (vars: CoreMethods["createProject"]["params"]) =>
       coreRequest("createProject", vars),
     onSuccess: (result) => {
       toast.success(`Created ${result.shoot}`);
