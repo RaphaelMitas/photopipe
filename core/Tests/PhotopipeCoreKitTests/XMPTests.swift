@@ -45,6 +45,20 @@ func image(_ url: URL) throws -> ImageFile {
         mtime: ((attrs[.modificationDate] as? Date) ?? .distantPast).timeIntervalSince1970)
 }
 
+private func parsed(_ description: String, baseOrientation: Int = 1) -> (rating: Int?, edit: Edit) {
+    let packet = """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/">
+        <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+          xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+          xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+          xmlns:tiff="http://ns.adobe.com/tiff/1.0/">
+        \(description)
+        </rdf:RDF>
+        </x:xmpmeta>
+        """
+    return XMP.parse(packet.utf8, isRaw: true, baseOrientation: baseOrientation)
+}
+
 @Test func sidecarCreateWriteReadRoundTrip() throws {
     guard requireExifTool() else { return }
     let dir = try tempDir()
@@ -158,31 +172,121 @@ func image(_ url: URL) throws -> ImageFile {
 @Test func hasCropFalseSuppressesStaleCropValues() {
     // Lightroom's crop-reset keeps the Crop* tags and flips HasCrop to False.
     let sidecar = """
-        <x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF><rdf:Description
+        <rdf:Description
         crs:HasCrop="False" crs:CropLeft="0.1" crs:CropTop="0.1"
         crs:CropRight="0.9" crs:CropBottom="0.9" crs:CropAngle="2.5"/>
-        </rdf:RDF></x:xmpmeta>
         """
-    let edit = XMP.parseEdit(sidecar, isRaw: true)
+    let edit = parsed(sidecar).edit
     #expect(edit.crop == nil)
     #expect(edit.cropAngle == 0)
 
-    let active = XMP.parseEdit(sidecar.replacingOccurrences(of: "\"False\"", with: "\"True\""), isRaw: true)
+    let active = parsed(sidecar.replacingOccurrences(of: "\"False\"", with: "\"True\"")).edit
     #expect(active.crop == CropRect(left: 0.1, top: 0.1, right: 0.9, bottom: 0.9))
     #expect(active.cropAngle == 2.5)
 }
 
 @Test func straightCurveFromAnotherToolReadsAsNoCurve() {
     let sidecar = """
-        <x:xmpmeta><rdf:Description><crs:ToneCurvePV2012><rdf:Seq>
+        <rdf:Description><crs:ToneCurvePV2012><rdf:Seq>
         <rdf:li>0, 0</rdf:li><rdf:li>255, 255</rdf:li>
         </rdf:Seq></crs:ToneCurvePV2012><crs:ToneCurvePV2012Red><rdf:Seq>
         <rdf:li>0, 10</rdf:li><rdf:li>255, 255</rdf:li>
-        </rdf:Seq></crs:ToneCurvePV2012Red></rdf:Description></x:xmpmeta>
+        </rdf:Seq></crs:ToneCurvePV2012Red></rdf:Description>
         """
-    let edit = XMP.parseEdit(sidecar, isRaw: true)
+    let edit = parsed(sidecar).edit
     #expect(edit.curveRGB.isEmpty, "a straight curve is the same edit as no curve")
     #expect(edit.curveRed.count == 2)
+}
+
+/// Regression: an exiftool rewrite moves crs:Look, which nests a tone curve of
+/// its own, above the photo's curves, and the first-match reader took the Look's.
+@Test func lightroomLookCurveIsNotThePhotosCurve() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00014.ARW")
+    try Data("fake".utf8).write(to: arw)
+    let sidecar = XMP.sidecarURL(forImagePath: arw.path)
+    try FileManager.default.copyItem(
+        at: fixturesRoot().appendingPathComponent("sidecars/lightroom-masks.xmp"), to: sidecar)
+
+    try ExifTool.shared.write([
+        "-overwrite_original", "-XMP-crs:ToneCurvePV2012Red=0, 20",
+        "-XMP-crs:ToneCurvePV2012Red=255, 240", sidecar.path,
+    ])
+    let read = XMP.read(file: try image(arw)).edit
+    let photoCurve = [(0.0, 0.0), (66, 58), (192, 200), (255, 255)].map {
+        CurvePoint(x: $0 / 255, y: $1 / 255)
+    }
+    #expect(read.curveRGB == photoCurve)
+    #expect(read.curveRed == [CurvePoint(x: 0, y: 20 / 255), CurvePoint(x: 1, y: 240 / 255)])
+    #expect(read.curveGreen.isEmpty)
+    #expect(read.highlights == -21)
+
+    try ExifTool.shared.write(["-overwrite_original", "-XMP-crs:ToneCurvePV2012=", sidecar.path])
+    #expect(try String(contentsOf: sidecar, encoding: .utf8).contains("<rdf:li>22, 16</rdf:li>"))
+    #expect(XMP.read(file: try image(arw)).edit.curveRGB.isEmpty)
+}
+
+@Test func maskSettingsAreNotThePhotosSettings() {
+    let edit = parsed(
+        """
+        <rdf:Description crs:Exposure2012="0.5">
+         <crs:MaskGroupBasedCorrections><rdf:Seq><rdf:li>
+          <rdf:Description crs:Exposure2012="3" crs:Shadows2012="40">
+           <crs:ToneCurvePV2012><rdf:Seq>
+            <rdf:li>0, 40</rdf:li><rdf:li>255, 255</rdf:li>
+           </rdf:Seq></crs:ToneCurvePV2012>
+          </rdf:Description>
+         </rdf:li></rdf:Seq></crs:MaskGroupBasedCorrections>
+        </rdf:Description>
+        """
+    ).edit
+    #expect(edit.exposure == 0.5)
+    #expect(edit.shadows == 0)
+    #expect(edit.curveRGB.isEmpty)
+}
+
+@Test func propertiesResolveByNamespaceNotPrefix() {
+    let read = XMP.parse(
+        """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/">
+        <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+         <rdf:Description xmlns:raw="http://ns.adobe.com/camera-raw-settings/1.0/"
+           xmlns:crs="urn:example:not-camera-raw" xmlns:xap="http://ns.adobe.com/xap/1.0/"
+           raw:Exposure2012="0.5" crs:Shadows2012="40" xap:Rating="&#51;"/>
+        </rdf:RDF>
+        </x:xmpmeta>
+        """.utf8, isRaw: true)
+    #expect(read.edit.exposure == 0.5)
+    #expect(read.edit.shadows == 0)
+    #expect(read.rating == 3)
+}
+
+/// A cut-off or broken sidecar keeps everything before the break, as the
+/// regex reader did, rather than losing its rating.
+@Test func brokenSidecarKeepsWhatPrecedesTheBreak() {
+    let head = """
+        <x:xmpmeta xmlns:x="adobe:ns:meta/">
+        <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+        <rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+          xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/" xmp:Rating="4">
+         <crs:Shadows2012>20</crs:Shadows2012>
+
+        """
+    let truncated = XMP.parse(
+        (head + "<crs:ToneCurvePV2012><rdf:Seq><rdf:li>0, 0</rdf:li><rdf:li>128, 16").utf8,
+        isRaw: true)
+    #expect(truncated.rating == 4)
+    #expect(truncated.edit.shadows == 20)
+    #expect(truncated.edit.curveRGB.isEmpty)
+
+    let mismatched = XMP.parse(
+        (head + "<crs:Exposure2012>0.5</crs:Exposure><crs:Whites2012>9</crs:Whites2012>").utf8,
+        isRaw: true)
+    #expect(mismatched.rating == 4)
+    #expect(mismatched.edit.shadows == 20)
+    #expect(mismatched.edit.whites == 0)
 }
 
 @Test func hugeCurvePointsNeitherPoisonNorTrap() throws {
@@ -193,11 +297,11 @@ func image(_ url: URL) throws -> ImageFile {
 
     let overflow = String(repeating: "9", count: 400)
     let sidecar = """
-        <x:xmpmeta><rdf:Description><crs:ToneCurvePV2012><rdf:Seq>
+        <rdf:Description><crs:ToneCurvePV2012><rdf:Seq>
         <rdf:li>0, 0</rdf:li><rdf:li>\(overflow), 255</rdf:li>
-        </rdf:Seq></crs:ToneCurvePV2012></rdf:Description></x:xmpmeta>
+        </rdf:Seq></crs:ToneCurvePV2012></rdf:Description>
         """
-    #expect(XMP.parseEdit(sidecar, isRaw: true).curveRGB.isEmpty, "an infinite point is dropped")
+    #expect(parsed(sidecar).edit.curveRGB.isEmpty, "an infinite point is dropped")
 
     // finite but far past Int.max, as IPC can send it
     let huge = Edit(curveRGB: [CurvePoint(x: 0, y: 0.2), CurvePoint(x: 1e30, y: 1)])
@@ -225,32 +329,30 @@ func image(_ url: URL) throws -> ImageFile {
 @Test func hostileCropValuesAreRejectedOnParse() {
     let digits = String(repeating: "9", count: 400)
     let sidecar = """
-        <x:xmpmeta><rdf:Description crs:Exposure2012="\(digits)"
+        <rdf:Description crs:Exposure2012="\(digits)"
         crs:CropLeft="\(digits)" crs:CropTop="0" crs:CropRight="1"
-        crs:CropBottom="1" crs:CropAngle="\(digits)"/></x:xmpmeta>
+        crs:CropBottom="1" crs:CropAngle="\(digits)"/>
         """
-    let edit = XMP.parseEdit(sidecar, isRaw: true)
+    let edit = parsed(sidecar).edit
     #expect(edit.exposure == 0, "an overflowing scalar must not become infinity")
     #expect(edit.crop == nil)
     #expect(edit.cropAngle == 0)
 
     // Degenerate rects (right <= left) never become a crop.
-    let inverted = XMP.parseEdit(
-        #"<x:xmpmeta><rdf:Description crs:CropLeft="0.9" crs:CropTop="0" crs:CropRight="0.1" crs:CropBottom="1"/></x:xmpmeta>"#,
-        isRaw: true)
+    let inverted = parsed(
+        #"<rdf:Description crs:CropLeft="0.9" crs:CropTop="0" crs:CropRight="0.1" crs:CropBottom="1"/>"#
+    ).edit
     #expect(inverted.crop == nil)
 
     // Finite-but-huge exponent values would trap the integer tag writes.
-    let huge = XMP.parseEdit(
-        #"<x:xmpmeta><rdf:Description crs:Highlights2012="1e308"/></x:xmpmeta>"#,
-        isRaw: true)
+    let huge = parsed(#"<rdf:Description crs:Highlights2012="1e308"/>"#).edit
     #expect(huge.highlights == 0)
 
     // A straightened crop legitimately overhangs the frame box; the parse
     // tolerance matches the renderer's.
-    let overhang = XMP.parseEdit(
-        #"<x:xmpmeta><rdf:Description crs:CropLeft="-0.05" crs:CropTop="0" crs:CropRight="1.02" crs:CropBottom="1" crs:CropAngle="12"/></x:xmpmeta>"#,
-        isRaw: true)
+    let overhang = parsed(
+        #"<rdf:Description crs:CropLeft="-0.05" crs:CropTop="0" crs:CropRight="1.02" crs:CropBottom="1" crs:CropAngle="12"/>"#
+    ).edit
     #expect(overhang.crop == CropRect(left: -0.05, top: 0, right: 1.02, bottom: 1))
 }
 
@@ -310,7 +412,9 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(XMP.read(file: try image(arw)).edit.crop == edit.crop)
 
     // Exponent forms in foreign sidecars parse anyway.
-    #expect(XMP.parseDouble("CropLeft", in: #"crs:CropLeft="3e-05""#) == 3e-05)
+    let exponent = parsed(
+        #"<rdf:Description crs:CropLeft="3e-05" crs:CropTop="0" crs:CropRight="0.9" crs:CropBottom="1"/>"#)
+    #expect(exponent.edit.crop?.left == 3e-05)
 }
 
 /// Regression: for embedded formats ImageIO reports our own freshly written
@@ -392,8 +496,8 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(XMP.rotation(fromXMP: 6, base: 2) == 0, "mirror mismatch is not our turn")
 
     let sidecar = #"<rdf:Description tiff:Orientation="6" crs:Exposure2012="0.5"/>"#
-    #expect(XMP.parseEdit(sidecar, isRaw: true, baseOrientation: 1).rotation == 90)
-    #expect(XMP.parseEdit(sidecar, isRaw: true, baseOrientation: 6).rotation == 0)
+    #expect(parsed(sidecar, baseOrientation: 1).edit.rotation == 90)
+    #expect(parsed(sidecar, baseOrientation: 6).edit.rotation == 0)
 }
 
 @Test func sidecarRotationRoundTrip() throws {
@@ -439,7 +543,7 @@ func image(_ url: URL) throws -> ImageFile {
     try XMP.writeEdit(second, file: try image(arw), tool: .shared)
     try XMP.writeEdit(second, file: try image(arw), tool: .shared)
 
-    // parseCurve returns the raw item list, so a stale leftover would show up
+    // the reader returns the raw item list, so a stale leftover would show up
     // as extra points here.
     let read = XMP.read(file: try image(arw)).edit
     #expect(read.curveRGB.count == 4)

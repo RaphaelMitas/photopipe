@@ -181,7 +181,7 @@ func textWriterMatchesExifTool(fixture: String?) throws {
         </x:xmpmeta>
         """
     let written = try XMPTextWriter.apply(XMP.ratingTags(5), to: Array(compact.utf8))
-    #expect(XMP.parseRating(String(decoding: written, as: UTF8.self)) == 5)
+    #expect(XMP.parse(written, isRaw: true).rating == 5)
 }
 
 @Test func textWriterRefusesForeignPrefixOnChildElement() throws {
