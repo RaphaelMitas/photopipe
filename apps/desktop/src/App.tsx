@@ -53,7 +53,7 @@ import {
 import { betterThan, scoreRanks } from "@/lib/instinct";
 import { heldOrder } from "@/lib/loupeWalk";
 import { isModalOpen } from "@/lib/modal";
-import { pref } from "@/lib/pref";
+import { flagPref } from "@/lib/pref";
 import {
   cachedImage,
   type EditWrite,
@@ -90,11 +90,7 @@ type RootState =
 
 const EDIT_COMMIT_MS = 400;
 
-const editPanelPref = pref(
-  "photopipe.editPanel",
-  (raw) => raw !== "hidden",
-  (open) => (open ? "shown" : "hidden"),
-);
+const editPanelPref = flagPref("photopipe.editPanel", "shown", "hidden", true);
 const toggleEditPanel = () => editPanelPref.set(!editPanelPref.get());
 
 export default function App() {

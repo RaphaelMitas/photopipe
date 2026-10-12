@@ -10,7 +10,7 @@ import {
 import { Label } from "@photopipe/ui/components/label";
 import { Switch } from "@photopipe/ui/components/switch";
 import { cn } from "@photopipe/ui/lib/utils";
-import { pref } from "@/lib/pref";
+import { flagPref } from "@/lib/pref";
 import { useRaw9Availability } from "@/lib/queries";
 import {
   type RawDecoderVersion,
@@ -26,11 +26,7 @@ type Props = {
   onCheckUpdates?: () => void;
 };
 
-export const autoScorePref = pref(
-  "photopipe.autoScore",
-  (raw) => raw !== "off",
-  (on) => (on ? "on" : "off"),
-);
+export const autoScorePref = flagPref("photopipe.autoScore", "on", "off", true);
 
 function MeterDots({ filled }: { filled: number }) {
   return (

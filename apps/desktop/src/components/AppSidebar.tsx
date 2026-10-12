@@ -19,14 +19,15 @@ import {
   Settings2,
 } from "lucide-react";
 import type { Shoot } from "@/lib/core";
-import { pref } from "@/lib/pref";
+import { flagPref } from "@/lib/pref";
 import { type RatingFilter, RatingFilterGroup } from "./RatingFilter";
 import { SidebarBrandHeader } from "./SidebarBrandHeader";
 
-export const showInfoPref = pref(
+export const showInfoPref = flagPref(
   "photopipe.gridInfo",
-  (raw) => raw === "always",
-  (show) => (show ? "always" : "hover"),
+  "always",
+  "hover",
+  false,
 );
 
 type Props = {

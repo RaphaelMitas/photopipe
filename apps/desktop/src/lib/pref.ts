@@ -31,3 +31,15 @@ export function pref<T>(
 
   return { get, set, use: () => useSyncExternalStore(subscribe, get) };
 }
+
+export const flagPref = (
+  key: string,
+  on: string,
+  off: string,
+  defaultOn: boolean,
+) =>
+  pref(
+    key,
+    (raw) => (defaultOn ? raw !== off : raw === on),
+    (value) => (value ? on : off),
+  );

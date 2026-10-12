@@ -33,6 +33,8 @@ function showProgress(percent: number | null) {
 export function useUpdater(options: Options) {
   const [enabled, setEnabled] = useState(false);
   const pending = useRef<Update | null>(null);
+  // once the user checks or installs, a late startup check must not re-offer
+  const handled = useRef(false);
   // the offer toast outlives the render that made it, so Install reads this
   const live = useRef({ ...options, enabled });
   live.current = { ...options, enabled };
@@ -43,9 +45,8 @@ export function useUpdater(options: Options) {
     );
   }, []);
 
-  // Sonner dismisses the toast the moment Install is clicked, so anything that
-  // stops the install has to say so itself or it happens in silence.
   const install = useCallback(async () => {
+    handled.current = true;
     const { blockedReason, beforeInstall } = live.current;
     if (blockedReason) {
       toast.error(blockedReason, { id: UPDATE_TOAST });
@@ -82,7 +83,14 @@ export function useUpdater(options: Options) {
       toast(`Photopipe ${version} is available`, {
         id: UPDATE_TOAST,
         duration: Number.POSITIVE_INFINITY,
-        action: { label: "Install", onClick: () => void install() },
+        action: {
+          label: "Install",
+          onClick: (event) => {
+            // Sonner would delete whatever install() just posted under this id
+            event.preventDefault();
+            void install();
+          },
+        },
       });
     },
     [install],
@@ -99,13 +107,14 @@ export function useUpdater(options: Options) {
     if (!enabled || !updatable()) return;
     find().then(
       (update) => {
-        if (update) offer(update.version);
+        if (update && !handled.current) offer(update.version);
       },
       () => {},
     );
   }, [enabled, find, offer]);
 
   const check = useCallback(async () => {
+    handled.current = true;
     if (!live.current.enabled || !updatable()) {
       toast.error("Not a release build.", { id: UPDATE_TOAST });
       return;

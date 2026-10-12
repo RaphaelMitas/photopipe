@@ -1,4 +1,4 @@
-import { pref } from "./pref";
+import { flagPref, pref } from "./pref";
 
 export type RawDecoderVersion = 8 | 9;
 
@@ -13,8 +13,4 @@ export const {
 );
 
 export const { set: setRawDecoderQuickSwitch, use: useRawDecoderQuickSwitch } =
-  pref(
-    "photopipe.rawDecoderQuickSwitch",
-    (raw) => raw !== "off",
-    (on) => (on ? "on" : "off"),
-  );
+  flagPref("photopipe.rawDecoderQuickSwitch", "on", "off", true);
