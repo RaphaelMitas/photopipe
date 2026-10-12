@@ -2,8 +2,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 
 export type SelectModifiers = { meta: boolean; shift: boolean };
 
-// While a selection exists a plain click toggles instead of opening the loupe,
-// and a shift-click without ⌘ replaces the selection with the range.
+// Shift without ⌘ replaces the selection with the range, in grid and list alike.
 export function clickIntent(
   event: { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean },
   selecting: boolean,
