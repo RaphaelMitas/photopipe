@@ -6,7 +6,9 @@ import Foundation
 /// Response: {"v":1,"id":"<caller id>","ok":true,"result":{...}}
 ///           {"v":1,"id":"<caller id>","ok":false,"error":{"code":"...","message":"..."}}
 public let protocolVersion = 1
-public let coreVersion = "0.1.0"
+/// Shipped, the core sits in the app's Contents/MacOS and so reads the app's Info.plist.
+public let coreVersion =
+    Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
 
 public struct Request: Codable, Equatable, Sendable {
     public let v: Int
