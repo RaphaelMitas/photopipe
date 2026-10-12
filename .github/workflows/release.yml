@@ -116,7 +116,15 @@ jobs:
           git tag "${{ needs.check.outputs.tag }}"
           git push origin "${{ needs.check.outputs.tag }}"
 
-      - uses: ./.github/actions/setup-desktop
+      # Tags cut before #193 lack setup-desktop and import-cert.sh, so take them from this workflow's commit.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          path: .ci
+          sparse-checkout: |
+            .github/actions
+            scripts
+      - uses: ./.ci/.github/actions/setup-desktop
 
       # Only the .app here. The DMG is built after notarization, because a
       # DMG made now would wrap an unsigned app and be thrown away.
@@ -140,7 +148,7 @@ jobs:
           done
           KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
           CERTIFICATE="$APPLE_CERTIFICATE" CERTIFICATE_PASSWORD="$APPLE_CERTIFICATE_PASSWORD" \
-            ./scripts/import-cert.sh "$KEYCHAIN_PATH" /usr/bin/codesign
+            ./.ci/scripts/import-cert.sh "$KEYCHAIN_PATH" /usr/bin/codesign
 
           IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
             | grep "Developer ID Application" | head -1 | awk -F'"' '{print $2}')
@@ -316,7 +324,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.check.outputs.ref }}
-      - uses: ./.github/actions/setup-desktop
+      # Tags cut before #193 lack setup-desktop and import-cert.sh, so take them from this workflow's commit.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          path: .ci
+          sparse-checkout: |
+            .github/actions
+            scripts
+      - uses: ./.ci/.github/actions/setup-desktop
 
       # A store build that could still phone GitHub for updates would be rejected.
       - name: Build the App Store flavour
@@ -339,7 +355,7 @@ jobs:
           done
           KEYCHAIN_PATH=$RUNNER_TEMP/mas.keychain-db
           CERTIFICATE="$MAS_CERTIFICATE" CERTIFICATE_PASSWORD="$MAS_CERTIFICATE_PASSWORD" \
-            ./scripts/import-cert.sh "$KEYCHAIN_PATH" /usr/bin/codesign /usr/bin/productbuild
+            ./.ci/scripts/import-cert.sh "$KEYCHAIN_PATH" /usr/bin/codesign /usr/bin/productbuild
 
           APP_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
             | grep "Apple Distribution" | head -1 | awk -F'"' '{print $2}')

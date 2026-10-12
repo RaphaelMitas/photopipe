@@ -1,10 +1,4 @@
 #!/usr/bin/env bash
-# Import a signing certificate into a fresh keychain on a CI runner.
-#
-# Usage: CERTIFICATE=<base64 .p12> CERTIFICATE_PASSWORD=<password> \
-#          import-cert.sh <keychain path> <tool>...
-# Each tool may use the private key without a prompt. The secrets come in
-# through the environment so they never show up in a process listing.
 set -euo pipefail
 
 if [ $# -lt 2 ]; then
