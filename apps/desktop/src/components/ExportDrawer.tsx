@@ -34,7 +34,7 @@ import { DecoderSegmented } from "./DecoderSegmented";
 
 export type ExportOptions = {
   format: ExportFormat;
-  quality: number;
+  quality: 90 | 100;
   zip: boolean;
   flatten: boolean;
   decoderVersion: RawDecoderVersion;
@@ -122,13 +122,14 @@ type StoredOptions = Omit<ExportOptions, "decoderVersion">;
 function readOptions(): StoredOptions {
   try {
     const stored = localStorage.getItem(OPTIONS_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored) as Partial<StoredOptions>;
+    const parsed: unknown = stored ? JSON.parse(stored) : null;
+    if (typeof parsed === "object" && parsed !== null) {
       return {
-        format: parsed.format === "jpeg" ? "jpeg" : "original",
-        quality: parsed.quality === 100 ? 100 : 90,
-        zip: parsed.zip ?? false,
-        flatten: parsed.flatten ?? true,
+        format:
+          "format" in parsed && parsed.format === "jpeg" ? "jpeg" : "original",
+        quality: "quality" in parsed && parsed.quality === 100 ? 100 : 90,
+        zip: "zip" in parsed && parsed.zip === true,
+        flatten: !("flatten" in parsed && parsed.flatten === false),
       };
     }
   } catch {
@@ -334,13 +335,15 @@ export function ExportDrawer({
               Quality
             </span>
             <Segmented
-              value={String(options.quality) as "90" | "100"}
+              value={options.quality === 100 ? "100" : "90"}
               options={[
                 ["90", "90"],
                 ["100", "100"],
               ]}
               testid="quality"
-              onChange={(quality) => patch({ quality: Number(quality) })}
+              onChange={(quality) =>
+                patch({ quality: quality === "100" ? 100 : 90 })
+              }
             />
           </div>
         ) : null}

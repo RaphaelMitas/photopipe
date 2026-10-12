@@ -529,17 +529,15 @@ function useZoom({
       panBy(-event.deltaX, -event.deltaY);
     };
     // WebKit reports trackpad pinches as gesture events, not ctrl+wheel.
-    const onGestureStart = (event: Event) => {
+    const onGestureStart = (event: GestureEvent) => {
       event.preventDefault();
       inGesture = true;
       gestureScale = 1;
     };
-    const onGestureChange = (event: Event) => {
+    const onGestureChange = (event: GestureEvent) => {
       event.preventDefault();
-      const scale = (event as unknown as { scale: number }).scale;
-      const position = event as unknown as { clientX: number; clientY: number };
-      applyZoom(cursorIn(node, position), scale / gestureScale);
-      gestureScale = scale;
+      applyZoom(cursorIn(node, event), event.scale / gestureScale);
+      gestureScale = event.scale;
     };
     const onGestureEnd = () => {
       inGesture = false;

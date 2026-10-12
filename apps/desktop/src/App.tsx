@@ -85,7 +85,7 @@ import {
 } from "@/lib/queries";
 import { openRoot, type RootError, rootsQuery, toRootError } from "@/lib/roots";
 import { useSelection } from "@/lib/selection";
-import { browserOrder, type SortKey } from "@/lib/sort";
+import { browserOrder, isSortKey, type SortKey } from "@/lib/sort";
 import { useDebouncedEdit } from "@/lib/useDebouncedEdit";
 import { useRecordedWrites } from "@/lib/useRecordedWrites";
 import { useUpdater } from "@/lib/useUpdater";
@@ -133,9 +133,7 @@ export default function App() {
   };
   const [sort, setSort] = useState<SortKey>(() => {
     const stored = localStorage.getItem(SORT_KEY);
-    return stored === "date" || stored === "rating" || stored === "score"
-      ? stored
-      : "name";
+    return isSortKey(stored) ? stored : "name";
   });
   const changeSort = (next: SortKey) => {
     setSort(next);
