@@ -19,12 +19,19 @@ import {
   Settings2,
 } from "lucide-react";
 import type { Shoot } from "@/lib/core";
+import { pref } from "@/lib/pref";
 import {
   RatingFilterOps,
   RatingHistogram,
   type RatingOp,
 } from "./RatingFilter";
 import { SidebarBrandHeader } from "./SidebarBrandHeader";
+
+export const showInfoPref = pref(
+  "photopipe.gridInfo",
+  (raw) => raw === "always",
+  (show) => (show ? "always" : "hover"),
+);
 
 type Props = {
   currentShoot: Shoot | undefined;
@@ -38,8 +45,6 @@ type Props = {
   ratingStars: number;
   onRatingStars: (rating: number) => void;
   filterEnabled: boolean;
-  showInfo: boolean;
-  onShowInfo: (show: boolean) => void;
   rootPath: string;
   onChangeRoot: () => void;
   onSettings: () => void;
@@ -57,12 +62,11 @@ export function AppSidebar({
   ratingStars,
   onRatingStars,
   filterEnabled,
-  showInfo,
-  onShowInfo,
   rootPath,
   onChangeRoot,
   onSettings,
 }: Props) {
+  const showInfo = showInfoPref.use();
   return (
     <Sidebar>
       <SidebarBrandHeader />
@@ -182,7 +186,7 @@ export function AppSidebar({
                 data-testid="grid-info-toggle"
                 aria-label="Always show image info"
                 checked={showInfo}
-                onCheckedChange={onShowInfo}
+                onCheckedChange={showInfoPref.set}
               />
             </div>
           </SidebarGroupContent>

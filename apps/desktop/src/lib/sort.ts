@@ -1,4 +1,5 @@
 import type { ImageFile } from "./core";
+import { pref } from "./pref";
 
 export const SORT_KEYS = ["name", "date", "rating", "score"] as const;
 export type SortKey = (typeof SORT_KEYS)[number];
@@ -6,6 +7,12 @@ export type SortKey = (typeof SORT_KEYS)[number];
 export function isSortKey(value: unknown): value is SortKey {
   return SORT_KEYS.some((key) => key === value);
 }
+
+export const sortPref = pref(
+  "photopipe.sort",
+  (raw): SortKey => (isSortKey(raw) ? raw : "name"),
+  String,
+);
 
 /// The core lists a shoot by name, so that order is the baseline every other
 /// sort falls back to for ties and for files that have no score.

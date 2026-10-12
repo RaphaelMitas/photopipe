@@ -16,8 +16,12 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { AppSidebar } from "@/components/AppSidebar";
-import { BrowserToolbar, type ViewMode } from "@/components/BrowserToolbar";
+import { AppSidebar, showInfoPref } from "@/components/AppSidebar";
+import {
+  BrowserToolbar,
+  type ViewMode,
+  viewPref,
+} from "@/components/BrowserToolbar";
 import {
   type CropDraft,
   commitDraft,
@@ -30,7 +34,7 @@ import {
   type ExportOptions,
   exportLabel,
 } from "@/components/ExportDrawer";
-import type { FilmstripMode } from "@/components/Filmstrip";
+import { type FilmstripMode, filmstripPref } from "@/components/Filmstrip";
 import { HistoryControls } from "@/components/HistoryControls";
 import { ImageGrid } from "@/components/ImageGrid";
 import { ImageList } from "@/components/ImageList";
@@ -45,7 +49,7 @@ import {
 } from "@/components/RatingFilter";
 import { RootPicker } from "@/components/RootPicker";
 import { SelectionBar } from "@/components/SelectionBar";
-import { SettingsDialog } from "@/components/SettingsDialog";
+import { autoScorePref, SettingsDialog } from "@/components/SettingsDialog";
 import { ShootSettingsDialog } from "@/components/ShootSettingsDialog";
 import { ShowSidebarTrigger } from "@/components/ShowSidebarTrigger";
 import {
@@ -70,6 +74,7 @@ import {
 import { betterThan, scoreRanks } from "@/lib/instinct";
 import { heldOrder } from "@/lib/loupeWalk";
 import { isModalOpen } from "@/lib/modal";
+import { pref } from "@/lib/pref";
 import {
   cachedImage,
   type EditWrite,
@@ -85,16 +90,12 @@ import {
 } from "@/lib/queries";
 import { openRoot, type RootError, rootsQuery, toRootError } from "@/lib/roots";
 import { useSelection } from "@/lib/selection";
-import { browserOrder, isSortKey, type SortKey } from "@/lib/sort";
+import { browserOrder, type SortKey, sortPref } from "@/lib/sort";
 import { useDebouncedEdit } from "@/lib/useDebouncedEdit";
 import { useRecordedWrites } from "@/lib/useRecordedWrites";
 import { useUpdater } from "@/lib/useUpdater";
 
-const VIEW_KEY = "photopipe.view";
-const EDIT_PANEL_KEY = "photopipe.editPanel";
-const SORT_KEY = "photopipe.sort";
 const NO_HELD = { key: "", paths: [] };
-const AUTO_SCORE_KEY = "photopipe.autoScore";
 const LEGACY_ROOT_KEY = "photopipe.root";
 const LEGACY_RECENTS_KEY = "photopipe.recentRoots";
 /// One toast id for the whole update conversation, so a download replaces the
@@ -113,6 +114,13 @@ type RootState =
 
 const EDIT_COMMIT_MS = 400;
 
+const editPanelPref = pref(
+  "photopipe.editPanel",
+  (raw) => raw !== "hidden",
+  (open) => (open ? "shown" : "hidden"),
+);
+const toggleEditPanel = () => editPanelPref.set(!editPanelPref.get());
+
 export default function App() {
   const [rootState, setRootState] = useState<RootState>({
     kind: "picking",
@@ -124,61 +132,18 @@ export default function App() {
   const [shootSettings, setShootSettings] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const updater = useUpdater();
-  const [view, setView] = useState<ViewMode>(() =>
-    localStorage.getItem(VIEW_KEY) === "list" ? "list" : "grid",
-  );
-  const changeView = (next: ViewMode) => {
-    setView(next);
-    localStorage.setItem(VIEW_KEY, next);
-  };
-  const [sort, setSort] = useState<SortKey>(() => {
-    const stored = localStorage.getItem(SORT_KEY);
-    return isSortKey(stored) ? stored : "name";
-  });
-  const changeSort = (next: SortKey) => {
-    setSort(next);
-    localStorage.setItem(SORT_KEY, next);
-  };
-  const [autoScore, setAutoScore] = useState(
-    () => localStorage.getItem(AUTO_SCORE_KEY) !== "off",
-  );
-  const changeAutoScore = (on: boolean) => {
-    setAutoScore(on);
-    localStorage.setItem(AUTO_SCORE_KEY, on ? "on" : "off");
-  };
+  const view = viewPref.use();
+  const sort = sortPref.use();
+  const autoScore = autoScorePref.use();
   // outlives the loupe, so closing it lands the browser on the same photo
   const [currentPath, setCurrentPath] = useState<string | null>(null);
   const [loupeOpen, setLoupeOpen] = useState(false);
   const [ratingOp, setRatingOp] = useState<RatingOp>("gte");
   const [ratingStars, setRatingStars] = useState(0);
-  const [showInfo, setShowInfo] = useState(
-    () => localStorage.getItem("photopipe.gridInfo") === "always",
-  );
-  const toggleShowInfo = (show: boolean) => {
-    setShowInfo(show);
-    localStorage.setItem("photopipe.gridInfo", show ? "always" : "hover");
-  };
-  const [filmstrip, setFilmstrip] = useState<FilmstripMode>(() => {
-    const stored = localStorage.getItem("photopipe.filmstrip");
-    if (stored === "0") return "off";
-    if (stored === "off" || stored === "thumbs" || stored === "ratings")
-      return stored;
-    return "thumbs";
-  });
-  const changeFilmstrip = (mode: FilmstripMode) => {
-    setFilmstrip(mode);
-    localStorage.setItem("photopipe.filmstrip", mode);
-  };
+  const showInfo = showInfoPref.use();
+  const filmstrip = filmstripPref.use();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState(
-    () => localStorage.getItem(EDIT_PANEL_KEY) !== "hidden",
-  );
-  const toggleEditPanel = useCallback(() => {
-    setEditOpen((open) => {
-      localStorage.setItem(EDIT_PANEL_KEY, open ? "hidden" : "shown");
-      return !open;
-    });
-  }, []);
+  const editOpen = editPanelPref.use();
   const [cropDraft, setCropDraft] = useState<CropDraft | null>(null);
   const cropping = cropDraft !== null;
   const [clipboard, setClipboard] = useState<EditClipboard | null>(null);
@@ -687,7 +652,6 @@ export default function App() {
     openShoot,
     cropping,
     openExport,
-    toggleEditPanel,
     copySource,
     copySettings,
     pasteTargets,
@@ -720,8 +684,6 @@ export default function App() {
     <SettingsDialog
       open={settingsOpen}
       onOpenChange={setSettingsOpen}
-      autoScore={autoScore}
-      onAutoScore={changeAutoScore}
       onCheckUpdates={updater.enabled ? checkForUpdates : undefined}
     />
   );
@@ -780,8 +742,6 @@ export default function App() {
               ranks.get(loupeImage.path) ?? null,
               ranks.size,
             )}
-            filmstrip={filmstrip}
-            onFilmstrip={changeFilmstrip}
             ratingCounts={counts}
             ratingOp={ratingOp}
             onRatingOp={setRatingOp}
@@ -803,8 +763,6 @@ export default function App() {
             ratingStars={ratingStars}
             onRatingStars={changeRatingStars}
             filterEnabled={openShoot !== null}
-            showInfo={showInfo}
-            onShowInfo={toggleShowInfo}
             rootPath={rootState.path}
             onChangeRoot={() => {
               clearHistory();
@@ -927,9 +885,9 @@ export default function App() {
                 onOpenShoot={enterShoot}
                 onNewProject={() => setNewProject(true)}
                 view={view}
-                onView={changeView}
+                onView={viewPref.set}
                 sort={activeSort}
-                onSort={changeSort}
+                onSort={sortPref.set}
                 scoreReady={scoreReady}
                 scoring={scoring}
                 justRated={justRated}

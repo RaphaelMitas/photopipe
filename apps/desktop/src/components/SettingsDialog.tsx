@@ -10,6 +10,7 @@ import {
 import { Label } from "@photopipe/ui/components/label";
 import { Switch } from "@photopipe/ui/components/switch";
 import { cn } from "@photopipe/ui/lib/utils";
+import { pref } from "@/lib/pref";
 import { useRaw9Availability } from "@/lib/queries";
 import {
   type RawDecoderVersion,
@@ -22,10 +23,14 @@ import {
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  autoScore: boolean;
-  onAutoScore: (on: boolean) => void;
   onCheckUpdates?: () => void;
 };
+
+export const autoScorePref = pref(
+  "photopipe.autoScore",
+  (raw) => raw !== "off",
+  (on) => (on ? "on" : "off"),
+);
 
 function MeterDots({ filled }: { filled: number }) {
   return (
@@ -122,13 +127,8 @@ function DecoderCards({ raw9Missing }: { raw9Missing: boolean }) {
   );
 }
 
-export function SettingsDialog({
-  open,
-  onOpenChange,
-  autoScore,
-  onAutoScore,
-  onCheckUpdates,
-}: Props) {
+export function SettingsDialog({ open, onOpenChange, onCheckUpdates }: Props) {
+  const autoScore = autoScorePref.use();
   const quickSwitch = useRawDecoderQuickSwitch();
   const raw9Missing = useRaw9Availability(open).data === false;
   return (
@@ -153,7 +153,7 @@ export function SettingsDialog({
             id="auto-score"
             data-testid="auto-score"
             checked={autoScore}
-            onCheckedChange={onAutoScore}
+            onCheckedChange={autoScorePref.set}
           />
         </div>
         <div className="flex flex-col gap-2">

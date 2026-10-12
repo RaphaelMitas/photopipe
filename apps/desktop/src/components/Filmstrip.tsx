@@ -2,9 +2,20 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { Star } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import type { ImageFile } from "@/lib/core";
+import { pref } from "@/lib/pref";
 import { aspectRatio, Thumbnail } from "./Thumbnail";
 
 export type FilmstripMode = "off" | "thumbs" | "ratings";
+
+export const filmstripPref = pref(
+  "photopipe.filmstrip",
+  (raw): FilmstripMode => {
+    if (raw === "0") return "off";
+    if (raw === "off" || raw === "thumbs" || raw === "ratings") return raw;
+    return "thumbs";
+  },
+  String,
+);
 
 const STRIP_HEIGHT = 64;
 const GAP = 4;

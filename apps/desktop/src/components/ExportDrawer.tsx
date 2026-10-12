@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ExportFormat } from "@/lib/core";
+import { pref } from "@/lib/pref";
 import {
   type ExportJob,
   type JobStatus,
@@ -114,14 +115,11 @@ function Section({
   );
 }
 
-const OPTIONS_KEY = "photopipe.export";
-
 /// The decoder is seeded from culling on every open, so it never persists.
 type StoredOptions = Omit<ExportOptions, "decoderVersion">;
 
-function readOptions(): StoredOptions {
+function decodeOptions(stored: string | null): StoredOptions {
   try {
-    const stored = localStorage.getItem(OPTIONS_KEY);
     const parsed: unknown = stored ? JSON.parse(stored) : null;
     if (typeof parsed === "object" && parsed !== null) {
       return {
@@ -137,6 +135,8 @@ function readOptions(): StoredOptions {
   }
   return { format: "jpeg", quality: 90, zip: false, flatten: true };
 }
+
+const optionsPref = pref("photopipe.export", decodeOptions, JSON.stringify);
 
 export function ExportDrawer({
   shoot,
@@ -156,7 +156,7 @@ export function ExportDrawer({
   onReveal,
   onClose,
 }: Props) {
-  const [options, setOptions] = useState<StoredOptions>(readOptions);
+  const options = optionsPref.use();
   const [decoderVersion, setDecoderVersion] =
     useState<RawDecoderVersion>(rawDecoderVersion);
   const [dismissed, setDismissed] = useState<string | null>(null);
@@ -220,13 +220,8 @@ export function ExportDrawer({
   };
   const banner = warning();
 
-  const patch = (next: Partial<StoredOptions>) => {
-    setOptions((current) => {
-      const merged = { ...current, ...next };
-      localStorage.setItem(OPTIONS_KEY, JSON.stringify(merged));
-      return merged;
-    });
-  };
+  const patch = (next: Partial<StoredOptions>) =>
+    optionsPref.set({ ...optionsPref.get(), ...next });
 
   const pickDestination = async (): Promise<string | null> => {
     if (options.zip) {

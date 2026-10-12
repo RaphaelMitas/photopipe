@@ -14,7 +14,7 @@ import {
 import { ChevronLeft } from "lucide-react";
 import type { ImageFile } from "@/lib/core";
 import { instinctScore } from "@/lib/instinct";
-import type { FilmstripMode } from "./Filmstrip";
+import { filmstripPref } from "./Filmstrip";
 import {
   RatingFilterOps,
   RatingHistogram,
@@ -28,8 +28,6 @@ type Props = {
   position: number;
   count: number;
   betterThan: number | null;
-  filmstrip: FilmstripMode;
-  onFilmstrip: (mode: FilmstripMode) => void;
   ratingCounts: number[];
   ratingOp: RatingOp;
   onRatingOp: (op: RatingOp) => void;
@@ -44,8 +42,6 @@ export function LoupeSidebar({
   position,
   count,
   betterThan,
-  filmstrip,
-  onFilmstrip,
   ratingCounts,
   ratingOp,
   onRatingOp,
@@ -54,6 +50,7 @@ export function LoupeSidebar({
   onRate,
   onBackToGrid,
 }: Props) {
+  const filmstrip = filmstripPref.use();
   const instinct = image.score == null ? null : instinctScore(image.score);
 
   return (
@@ -151,7 +148,7 @@ export function LoupeSidebar({
                   ["ratings", "Ratings"],
                 ]}
                 testid="filmstrip"
-                onChange={onFilmstrip}
+                onChange={filmstripPref.set}
               />
             </div>
           </SidebarGroupContent>
