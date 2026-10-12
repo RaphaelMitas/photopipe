@@ -198,8 +198,7 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> (rating:
     #expect(edit.curveRed.count == 2)
 }
 
-/// Regression: an exiftool rewrite moves crs:Look, which nests a tone curve of
-/// its own, above the photo's curves, and the first-match reader took the Look's.
+/// exiftool rewrites move crs:Look, which nests its own tone curve, above the photo's curves.
 @Test func lightroomLookCurveIsNotThePhotosCurve() throws {
     guard requireExifTool() else { return }
     let dir = try tempDir()
