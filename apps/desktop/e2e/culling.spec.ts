@@ -94,9 +94,7 @@ test("unrated mode shows only rating-0 images; a bar click returns to threshold 
   await expect(page.locator("[data-path='abends/DSC00938.ARW']")).toBeVisible();
 });
 
-test("the unrated filter stays with the shoot it was set in", async ({
-  page,
-}) => {
+test("opening a shoot resets the rating filter", async ({ page }) => {
   await openZell(page);
   await page.getByTestId("filter-op-unrated").click();
   await expect(page.getByTestId("thumb")).toHaveCount(3);
