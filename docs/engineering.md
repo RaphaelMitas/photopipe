@@ -42,7 +42,7 @@ the loupe shows the thumbnail immediately and prefetches neighbours.
 JSON over stdio, versioned envelope, concurrent: requests run on a bounded
 work queue and responses may come back out of order, matched by id. The Rust
 side multiplexes, poisons a desynced connection, replays the root after a
-respawn, and never auto-retries a mutating method.
+respawn, and re-sends a request only if it never reached the core.
 
 ## Testing
 
