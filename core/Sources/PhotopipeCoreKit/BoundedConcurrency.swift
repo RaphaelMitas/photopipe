@@ -1,6 +1,4 @@
-/// Runs `work` over `inputs`, at most `width` at a time, handing each result to
-/// `onResult` as it lands. Once the calling task is cancelled nothing new
-/// starts, and `onResult` hears about it alongside every result after that.
+/// After cancellation nothing new starts; in-flight results still arrive with cancelled == true.
 func forEachConcurrently<Input: Sendable, Output: Sendable>(
     _ inputs: [Input], width: Int,
     _ work: @escaping @Sendable (Input) async -> Output,
