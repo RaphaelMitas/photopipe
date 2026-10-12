@@ -1,12 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  type Edit,
-  editKey,
-  type ImageFile,
-  identityEdit,
-  isIdentityEdit,
-  normalizeImage,
-} from "./core";
+import { editKey, identityEdit, isIdentityEdit, normalizeImage } from "./core";
 import { makeImage } from "./test-image";
 
 describe("normalizeImage", () => {
@@ -15,7 +8,7 @@ describe("normalizeImage", () => {
     const { score, ...unrated } = makeImage("DSC00001.ARW");
     expect("score" in unrated).toBe(false);
 
-    expect(normalizeImage(unrated as ImageFile).score).toBeNull();
+    expect(normalizeImage(unrated).score).toBeNull();
   });
 
   it("leaves a real score alone", () => {
@@ -26,9 +19,10 @@ describe("normalizeImage", () => {
   it("fills in the tone fields the core omits at their defaults", () => {
     // What listImages actually sends for an untouched photo: the core's
     // encoder drops every field sitting at its default.
-    const image = makeImage("DSC00002.ARW", {
-      edit: { exposure: 0, highlights: 0, shadows: 0 } as Edit,
-    });
+    const image = {
+      ...makeImage("DSC00002.ARW"),
+      edit: { exposure: 0, highlights: 0, shadows: 0 },
+    };
 
     const edit = normalizeImage(image).edit;
     expect(edit.whites).toBe(0);

@@ -8,16 +8,19 @@ import "./index.css";
 async function prepare() {
   if (import.meta.env.VITE_E2E === "1") {
     const { mockIPC } = await import("@tauri-apps/api/mocks");
-    const { E2E_COMMANDS, E2E_HANDLERS } = await import("./e2e-mocks");
+    const { answerCoreRequest, E2E_COMMANDS, isCoreRequest } = await import(
+      "./e2e-mocks"
+    );
     mockIPC((cmd, args) => {
       // The file pickers are OS windows with nothing to drive them from a
       // browser, so e2e answers them and moves on. Only the import picker
       // asks for many, and it wants photos rather than a destination.
       if (cmd.startsWith("plugin:dialog|")) {
-        const options = (
-          args as { options?: { multiple?: boolean } } | undefined
-        )?.options;
-        return options?.multiple
+        const options =
+          args && "options" in args && typeof args.options === "object"
+            ? args.options
+            : null;
+        return options && "multiple" in options && options.multiple
           ? [
               ...Array.from(
                 { length: 5 },
@@ -29,14 +32,10 @@ async function prepare() {
       }
       if (cmd === "plugin:opener|reveal_item_in_dir") return null;
       if (cmd in E2E_COMMANDS) return E2E_COMMANDS[cmd](args);
-      const method = (args as { method?: string } | undefined)?.method;
-      const params = (args as { params?: Record<string, unknown> } | undefined)
-        ?.params;
-      const handler =
-        cmd === "core_request" && method ? E2E_HANDLERS[method] : undefined;
-      if (!handler)
-        throw new Error(`unmocked IPC call: ${cmd} ${method ?? ""}`);
-      return handler(params ?? {});
+      if (cmd === "core_request" && isCoreRequest(args)) {
+        return answerCoreRequest(args);
+      }
+      throw new Error(`unmocked IPC call: ${cmd} ${JSON.stringify(args)}`);
     });
   }
 }
@@ -49,7 +48,9 @@ prepare().then(() => {
       mutations: { networkMode: "always" },
     },
   });
-  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+  const root = document.getElementById("root");
+  if (!root) throw new Error("index.html has no #root");
+  ReactDOM.createRoot(root).render(
     <React.StrictMode>
       <QueryClientProvider client={queryClient}>
         <App />

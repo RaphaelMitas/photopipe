@@ -105,17 +105,21 @@ export type ImageFile = {
   edit: Edit;
   width: number;
   height: number;
-  // Vision's aesthetic score, -1..1. The core omits it entirely for a photo it
-  // has not rated, so read it through `normalizeImage` and never off the wire.
-  score?: number | null;
+  // Vision's aesthetic score, -1..1, null for a photo it has not rated.
+  score: number | null;
   enriched: boolean;
 };
 
 /// The core omits nulls and defaulted fields when it encodes, so an unrated
 /// photo arrives with no `score` and an untouched one with no `whites`.
+type WireImage = Omit<ImageFile, "score" | "edit"> & {
+  score?: number | null;
+  edit: Partial<Edit>;
+};
+
 /// Everything downstream reads them as plain values, so they are filled in
 /// here, once, where the images come in.
-export function normalizeImage(image: ImageFile): ImageFile {
+export function normalizeImage(image: WireImage): ImageFile {
   return {
     ...image,
     score: image.score ?? null,
@@ -129,22 +133,6 @@ export function isRawFile(file: { ext: string }): boolean {
   );
 }
 
-export type SetRatingResult = {
-  rating: number;
-  generation: number;
-};
-
-export type SetEditResult = {
-  edit: Edit;
-  generation: number;
-};
-
-export type RawDefaultsResult = {
-  temperature: number | null;
-  tint: number | null;
-  denoise: number | null;
-};
-
 export type Shoot = {
   name: string;
   path: string;
@@ -156,12 +144,30 @@ export type Shoot = {
   indexed: boolean;
 };
 
+type WireShoot = Omit<Shoot, "day" | "cover" | "coverPath"> &
+  Partial<Pick<Shoot, "day" | "cover" | "coverPath">>;
+
+export function normalizeShoot(shoot: WireShoot): Shoot {
+  return {
+    ...shoot,
+    day: shoot.day ?? null,
+    cover: shoot.cover ?? null,
+    coverPath: shoot.coverPath ?? null,
+  };
+}
+
 export type ExportFormat = "original" | "jpeg";
 
-export type CreateProjectResult = {
-  shoot: string;
-  path: string;
-  generation: number;
+export type ExportProgress = {
+  id: string;
+  done: number;
+  failed: number;
+  total: number;
+  running: boolean;
+  cancelled: boolean;
+  archiving: boolean;
+  error?: string | null;
+  failures: string[];
 };
 
 export type SetRootResult = {
@@ -169,9 +175,10 @@ export type SetRootResult = {
   files: number;
   generation: number;
 };
+
 export type StatusResult = {
   generation: number;
-  root: string | null;
+  root?: string | null;
   shoots: number;
   scanning: boolean;
   filesFound: number;
@@ -181,11 +188,95 @@ export type StatusResult = {
   changedShoots?: string[];
 };
 
-export function coreRequest<T>(
-  method: string,
-  params?: Record<string, unknown>,
-): Promise<T> {
-  return invoke<T>("core_request", { method, params });
+type CachePath = { cachePath: string };
+
+export type CoreMethods = {
+  listShoots: { params: undefined; result: { shoots: WireShoot[] } };
+  listImages: { params: { shoot: string }; result: { images: WireImage[] } };
+  scoreShoot: {
+    params: { shoot: string };
+    result: { done: number; total: number; running: boolean };
+  };
+  thumbnail: { params: { path: string; maxPixel: number }; result: CachePath };
+  render: {
+    params: {
+      path: string;
+      edit: Edit;
+      maxPixel: number;
+      viewport?: CropRect;
+      decoderVersion?: number;
+    };
+    result: CachePath;
+  };
+  rawDefaults: {
+    params: { path: string; decoderVersion: number };
+    result: {
+      temperature: number | null;
+      tint: number | null;
+      denoise: number | null;
+    };
+  };
+  decoderSupport: {
+    params: { paths: string[] };
+    result: { raw9: number; rawTotal: number };
+  };
+  decoderAvailability: { params: undefined; result: { raw9?: boolean | null } };
+  setRating: {
+    params: { shoot: string | null; path: string; rating: number };
+    result: { rating: number; generation: number };
+  };
+  setEdit: {
+    params: { shoot: string | null; path: string; edit: Edit };
+    result: { edit: Partial<Edit>; generation: number };
+  };
+  trash: {
+    params: { shoot: string | null; paths: string[] };
+    result: { files: number; generation: number };
+  };
+  createProject: {
+    params: { name: string; notes: string };
+    result: { shoot: string; path: string; generation: number };
+  };
+  updateProject: {
+    params: {
+      shoot: string;
+      name: string;
+      day: string | null;
+      notes: string;
+      cover: string | null;
+    };
+    result: { shoot: string; generation: number };
+  };
+  captureDate: { params: { path: string }; result: { day: string | null } };
+  exportFiles: {
+    params: {
+      shoot: string;
+      paths: string[];
+      destination: string;
+      zip: boolean;
+      flatten: boolean;
+      format: ExportFormat;
+      quality: number;
+      decoderVersion: number;
+    };
+    result: ExportProgress;
+  };
+  importFiles: {
+    params: { shoot: string; paths: string[] };
+    result: ExportProgress;
+  };
+  exportStatus: { params: { id: string }; result: ExportProgress };
+  cancelExport: { params: { id: string }; result: ExportProgress };
+  status: { params: { since: number | null }; result: StatusResult };
+};
+
+export function coreRequest<K extends keyof CoreMethods>(
+  method: K,
+  ...[params]: CoreMethods[K]["params"] extends undefined
+    ? []
+    : [CoreMethods[K]["params"]]
+): Promise<CoreMethods[K]["result"]> {
+  return invoke("core_request", { method, params });
 }
 
 export function fileSrc(path: string): string {

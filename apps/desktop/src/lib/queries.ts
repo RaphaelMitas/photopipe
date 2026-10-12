@@ -1,6 +1,8 @@
 import {
   keepPreviousData,
   type QueryClient,
+  queryOptions,
+  skipToken,
   useMutation,
   useQueries,
   useQuery,
@@ -10,18 +12,15 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-  type CreateProjectResult,
+  type CoreMethods,
   coreRequest,
   type Edit,
-  type ExportFormat,
+  type ExportProgress,
   editKey,
   type ImageFile,
   isRawFile,
   normalizeImage,
-  type RawDefaultsResult,
-  type SetEditResult,
-  type SetRatingResult,
-  type Shoot,
+  normalizeShoot,
   type StatusResult,
 } from "./core";
 import { fileName } from "./fileName";
@@ -32,7 +31,7 @@ export function useShoots(enabled: boolean) {
   return useQuery({
     queryKey: ["shoots"],
     queryFn: async () =>
-      (await coreRequest<{ shoots: Shoot[] }>("listShoots")).shoots,
+      (await coreRequest("listShoots")).shoots.map(normalizeShoot),
     enabled,
   });
 }
@@ -40,19 +39,17 @@ export function useShoots(enabled: boolean) {
 export function useImages(shoot: string | null) {
   return useQuery({
     queryKey: ["images", shoot],
-    queryFn: async () =>
-      (
-        await coreRequest<{ images: ImageFile[] }>("listImages", { shoot })
-      ).images.map(normalizeImage),
-    enabled: shoot !== null,
+    queryFn:
+      shoot === null
+        ? skipToken
+        : async () =>
+            (await coreRequest("listImages", { shoot })).images.map(
+              normalizeImage,
+            ),
   });
 }
 
-export type ScoreProgress = {
-  done: number;
-  total: number;
-  running: boolean;
-};
+export type ScoreProgress = CoreMethods["scoreShoot"]["result"];
 
 const RATED_OFFER_MS = 8000;
 
@@ -67,8 +64,9 @@ export function useScoring(shoot: string | null, enabled: boolean) {
 
   const query = useQuery({
     queryKey: ["scoring", shoot],
-    queryFn: () => coreRequest<ScoreProgress>("scoreShoot", { shoot }),
-    enabled: enabled && shoot !== null,
+    queryFn:
+      shoot === null ? skipToken : () => coreRequest("scoreShoot", { shoot }),
+    enabled,
     refetchInterval: (query) => (query.state.data?.running ? 1000 : false),
   });
 
@@ -98,14 +96,11 @@ export function useThumbnail(
 ) {
   return useQuery({
     queryKey: ["thumb", file?.path, file?.mtime],
-    queryFn: async () =>
-      (
-        await coreRequest<{ cachePath: string }>("thumbnail", {
-          path: file?.path,
-          maxPixel: 512,
-        })
-      ).cachePath,
-    enabled: file !== undefined,
+    queryFn: file
+      ? async () =>
+          (await coreRequest("thumbnail", { path: file.path, maxPixel: 512 }))
+            .cachePath
+      : skipToken,
     staleTime: Number.POSITIVE_INFINITY,
   });
 }
@@ -125,7 +120,7 @@ function renderQueryOptions(
   viewport?: ViewportRequest["viewport"],
   decoderVersion?: number,
 ) {
-  return {
+  return queryOptions({
     queryKey: [
       "render",
       file?.path,
@@ -136,19 +131,21 @@ function renderQueryOptions(
         ? `${viewport.left},${viewport.top},${viewport.right},${viewport.bottom}`
         : "",
       decoderVersion ?? "",
-    ] as const,
-    queryFn: async () =>
-      (
-        await coreRequest<{ cachePath: string }>("render", {
-          path: file?.path,
-          edit,
-          maxPixel,
-          ...(viewport ? { viewport } : {}),
-          ...(decoderVersion ? { decoderVersion } : {}),
-        })
-      ).cachePath,
+    ],
+    queryFn: file
+      ? async () =>
+          (
+            await coreRequest("render", {
+              path: file.path,
+              edit,
+              maxPixel,
+              ...(viewport ? { viewport } : {}),
+              ...(decoderVersion ? { decoderVersion } : {}),
+            })
+          ).cachePath
+      : skipToken,
     staleTime: Number.POSITIVE_INFINITY,
-  };
+  });
 }
 
 export function useRender(file: RenderFile, edit: Edit) {
@@ -161,7 +158,6 @@ export function useRender(file: RenderFile, edit: Edit) {
       undefined,
       renderDecoderVersion(file, decoder),
     ),
-    enabled: file !== undefined,
     placeholderData: (previous: string | undefined, previousQuery) =>
       previousQuery?.queryKey[1] === file?.path ? previous : undefined,
   });
@@ -184,7 +180,7 @@ export function useViewportRender(
       request?.viewport,
       renderDecoderVersion(file, decoder),
     ),
-    enabled: file !== undefined && request !== null,
+    enabled: request !== null,
   });
 }
 
@@ -211,27 +207,23 @@ export function useRawDefaults(
   const decoderVersion = useRawDecoderVersion();
   return useQuery({
     queryKey: ["rawDefaults", file?.path, file?.mtime, decoderVersion],
-    queryFn: async () =>
-      coreRequest<RawDefaultsResult>("rawDefaults", {
-        path: file?.path,
-        decoderVersion,
-      }),
-    enabled: file !== undefined && isRawFile(file),
+    queryFn:
+      file && isRawFile(file)
+        ? () => coreRequest("rawDefaults", { path: file.path, decoderVersion })
+        : skipToken,
     staleTime: Number.POSITIVE_INFINITY,
   });
 }
-
-type DecoderSupport = { raw9: number; rawTotal: number };
 
 /// The core reads one file header per photo before its per-camera cache can
 /// help. A whole shoot off an SD card would outrun the sidecar's read timeout
 /// and take the process down, so ask in batches it can always answer in time.
 const SUPPORT_BATCH = 400;
 
-async function decoderSupport(paths: string[]): Promise<DecoderSupport> {
+async function decoderSupport(paths: string[]) {
   const total = { raw9: 0, rawTotal: 0 };
   for (let start = 0; start < paths.length; start += SUPPORT_BATCH) {
-    const batch = await coreRequest<DecoderSupport>("decoderSupport", {
+    const batch = await coreRequest("decoderSupport", {
       paths: paths.slice(start, start + SUPPORT_BATCH),
     });
     total.raw9 += batch.raw9;
@@ -263,8 +255,7 @@ export function useRaw9Availability(enabled: boolean) {
   return useQuery({
     queryKey: DECODER_AVAILABILITY_KEY,
     queryFn: async () =>
-      (await coreRequest<{ raw9: boolean | null }>("decoderAvailability"))
-        .raw9 ?? null,
+      (await coreRequest("decoderAvailability")).raw9 ?? null,
     enabled,
     staleTime: Number.POSITIVE_INFINITY,
   });
@@ -320,7 +311,7 @@ export function useSetRating(shoot: string | null) {
     mutationKey: SET_RATING_KEY,
     mutationFn: ({ path, rating }: { path: string; rating: number }) =>
       writeInOrder(path, () =>
-        coreRequest<SetRatingResult>("setRating", { shoot, path, rating }),
+        coreRequest("setRating", { shoot, path, rating }),
       ),
     onMutate: async ({ path, rating }) => {
       await queryClient.cancelQueries({ queryKey: ["images", shoot] });
@@ -388,9 +379,7 @@ function writeInOrder<T>(path: string, write: () => Promise<T>): Promise<T> {
 }
 
 const writeEdit = (shoot: string | null, { path, edit }: EditWrite) =>
-  writeInOrder(path, () =>
-    coreRequest<SetEditResult>("setEdit", { shoot, path, edit }),
-  );
+  writeInOrder(path, () => coreRequest("setEdit", { shoot, path, edit }));
 
 export function useSetEdit(shoot: string | null) {
   const queryClient = useQueryClient();
@@ -533,7 +522,7 @@ export const useSetRatings = (shoot: string | null) =>
     patch: (rating) => ({ rating }),
     write: (target, path, rating) =>
       writeInOrder(path, () =>
-        coreRequest<SetRatingResult>("setRating", {
+        coreRequest("setRating", {
           shoot: target,
           path,
           rating,
@@ -556,11 +545,7 @@ export function useTrash(shoot: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["write", "trash"],
-    mutationFn: (paths: string[]) =>
-      coreRequest<{ files: number; generation: number }>("trash", {
-        shoot,
-        paths,
-      }),
+    mutationFn: (paths: string[]) => coreRequest("trash", { shoot, paths }),
     onSuccess: (result, paths) => {
       toast.success(
         `Moved ${paths.length} ${paths.length === 1 ? "photo" : "photos"} to the Trash`,
@@ -580,14 +565,8 @@ export function useUpdateProject() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["write", "updateProject"],
-    mutationFn: (vars: {
-      shoot: string;
-      name: string;
-      day: string | null;
-      notes: string;
-      cover: string | null;
-    }) =>
-      coreRequest<{ shoot: string; generation: number }>("updateProject", vars),
+    mutationFn: (vars: CoreMethods["updateProject"]["params"]) =>
+      coreRequest("updateProject", vars),
     onSuccess: (result, vars) => {
       if (result.shoot !== vars.shoot) {
         toast.success(`Renamed to ${result.shoot}`);
@@ -601,34 +580,6 @@ export function useUpdateProject() {
     },
   });
 }
-
-type ExportRequest = {
-  shoot: string;
-  paths: string[];
-  destination: string;
-  zip: boolean;
-  flatten: boolean;
-  format: ExportFormat;
-  quality: number;
-  decoderVersion: number;
-};
-
-export type ExportProgress = {
-  id: string;
-  done: number;
-  failed: number;
-  total: number;
-  running: boolean;
-  cancelled: boolean;
-  archiving: boolean;
-  error: string | null;
-  failures: string[];
-};
-
-type ImportRequest = {
-  shoot: string;
-  paths: string[];
-};
 
 export type ExportJob = ExportProgress & {
   key: string;
@@ -668,8 +619,7 @@ export function useExportJobs() {
   const results = useQueries({
     queries: rows.map((row) => ({
       queryKey: ["export", row.key],
-      queryFn: () =>
-        coreRequest<ExportProgress>("exportStatus", { id: row.id }),
+      queryFn: () => coreRequest("exportStatus", { id: row.id }),
       initialData: row.initial,
       enabled: row.id !== "",
       refetchInterval: (query: { state: { data?: ExportProgress } }) =>
@@ -692,12 +642,16 @@ export function useExportJobs() {
   const start = useCallback(
     async (
       job:
-        | { method: "exportFiles"; label: string; request: ExportRequest }
+        | {
+            method: "exportFiles";
+            label: string;
+            request: CoreMethods["exportFiles"]["params"];
+          }
         | {
             method: "importFiles";
             label: string;
             destination: string;
-            request: ImportRequest;
+            request: CoreMethods["importFiles"]["params"];
           },
     ): Promise<ExportProgress | null> => {
       const { method, label, request } = job;
@@ -723,7 +677,7 @@ export function useExportJobs() {
         startedAt: Date.now(),
       };
       try {
-        const started = await coreRequest<ExportProgress>(method, request);
+        const started = await coreRequest(method, request);
         setRows((current) => [
           { ...row, id: started.id, initial: started },
           ...current,
@@ -749,7 +703,7 @@ export function useExportJobs() {
     (key: string) => {
       const row = rows.find((candidate) => candidate.key === key);
       if (!row) return;
-      coreRequest<ExportProgress>("cancelExport", { id: row.id })
+      coreRequest("cancelExport", { id: row.id })
         .then((update) => client.setQueryData(["export", key], update))
         .catch((error: unknown) => {
           toast.error("Could not cancel the export", {
@@ -768,7 +722,7 @@ export function useCreateProject() {
   return useMutation({
     mutationKey: ["write", "createProject"],
     mutationFn: (vars: { name: string; notes: string }) =>
-      coreRequest<CreateProjectResult>("createProject", vars),
+      coreRequest("createProject", vars),
     onSuccess: (result) => {
       toast.success(`Created ${result.shoot}`);
       queryClient.invalidateQueries({ queryKey: ["shoots"] });
@@ -784,8 +738,7 @@ export function useCreateProject() {
 
 export function useCaptureDate() {
   return useMutation({
-    mutationFn: (path: string) =>
-      coreRequest<{ day: string | null }>("captureDate", { path }),
+    mutationFn: (path: string) => coreRequest("captureDate", { path }),
     onError: (error) => {
       toast.error("Could not read the photo's date", {
         description: String(error),
@@ -831,9 +784,7 @@ export function useLibrarySync(
     const poll = async () => {
       let next = IDLE_POLL_MS;
       try {
-        const status = await coreRequest<StatusResult>("status", {
-          since: seen.current,
-        });
+        const status = await coreRequest("status", { since: seen.current });
         if (stopped) return;
         setProgress(status);
         next = status.scanning ? INDEXING_POLL_MS : IDLE_POLL_MS;

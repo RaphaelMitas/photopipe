@@ -304,14 +304,18 @@ describe("useRender and the RAW decoder", () => {
     localStorage.setItem("photopipe.rawDecoder", "8");
     renderHarness(["/r/shoot1/A.ARW", "/r/shoot1/B.JPG"]);
     await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
-    const params = invoke.mock.calls.map(
-      ([, args]) =>
-        (args as { params: { path: string; decoderVersion?: number } }).params,
+    const render = (path: string, decoderVersion?: number) => ({
+      method: "render",
+      params: { path, edit: identityEdit, maxPixel: 2560, decoderVersion },
+    });
+    expect(invoke).toHaveBeenCalledWith(
+      "core_request",
+      render("/r/shoot1/A.ARW", 8),
     );
-    expect(params.find((p) => p.path.endsWith(".ARW"))?.decoderVersion).toBe(8);
-    expect(
-      params.find((p) => p.path.endsWith(".JPG"))?.decoderVersion,
-    ).toBeUndefined();
+    expect(invoke).toHaveBeenCalledWith(
+      "core_request",
+      render("/r/shoot1/B.JPG"),
+    );
   });
 
   it("flipping the global decoder requests a fresh raw render", async () => {
@@ -319,10 +323,10 @@ describe("useRender and the RAW decoder", () => {
     await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
     act(() => setRawDecoderVersion(8));
     await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
-    const last = invoke.mock.calls[1][1] as {
-      params: { decoderVersion?: number };
-    };
-    expect(last.params.decoderVersion).toBe(8);
+    expect(invoke).toHaveBeenLastCalledWith("core_request", {
+      method: "render",
+      params: expect.objectContaining({ decoderVersion: 8 }),
+    });
   });
 });
 

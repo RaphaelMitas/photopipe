@@ -1,11 +1,11 @@
 import {
-  type Edit,
+  type CoreMethods,
+  type ExportProgress,
   editKey,
   type ImageFile,
   identityEdit,
   type Shoot,
 } from "./lib/core";
-import type { ExportProgress } from "./lib/queries";
 import type { RootEntry } from "./lib/roots";
 import { makeImage } from "./lib/test-image";
 
@@ -94,15 +94,17 @@ const shoots: Shoot[] = [
 
 const emptyShoots = new Set<string>();
 
-function projectFields(
-  params: Record<string, unknown>,
-): Pick<Shoot, "name" | "path" | "day" | "notes"> {
-  const name = String(params.name).trim();
+function projectFields(params: {
+  name: string;
+  notes: string;
+  day?: string | null;
+}): Pick<Shoot, "name" | "path" | "day" | "notes"> {
+  const name = params.name.trim();
   return {
     name,
     path: `/fake/${name}`,
-    day: typeof params.day === "string" ? params.day : null,
-    notes: String(params.notes),
+    day: params.day ?? null,
+    notes: params.notes,
   };
 }
 
@@ -217,58 +219,54 @@ export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
   },
 };
 
-export const E2E_HANDLERS: Record<
-  string,
-  (params: Record<string, unknown>) => unknown
-> = {
+type CoreHandlers = {
+  [K in keyof CoreMethods]: (
+    params: CoreMethods[K]["params"],
+  ) => CoreMethods[K]["result"];
+};
+
+const E2E_HANDLERS: CoreHandlers = {
   listShoots: () => ({
     shoots: shoots.map((shoot) => ({ ...shoot, indexed: !indexing })),
   }),
   listImages: (params) => ({
-    images: imagesFor(String(params.shoot)).map((image) => ({
+    images: imagesFor(params.shoot).map((image) => ({
       ...image,
       enriched: !indexing,
     })),
   }),
-  scoreShoot: (params) => scored(String(params.shoot)),
+  scoreShoot: (params) => scored(params.shoot),
   thumbnail: (params) => ({
-    cachePath: `/fake/thumbs/${String(params.path)}.jpg`,
+    cachePath: `/fake/thumbs/${params.path}.jpg`,
   }),
-  render: (params) => {
-    const viewport = params.viewport as
-      | { left: number; top: number; right: number; bottom: number }
-      | undefined;
+  render: ({ path, edit, viewport }) => {
     const region = viewport
       ? `@${viewport.left},${viewport.top},${viewport.right},${viewport.bottom}`
       : "";
-    return {
-      cachePath: `/fake/renders/${editKey(
-        (params.edit as Edit | undefined) ?? identityEdit,
-      )}${region}/${String(params.path)}.jpg`,
-    };
+    return { cachePath: `/fake/renders/${editKey(edit)}${region}/${path}.jpg` };
   },
   setRating: (params) => {
     const all = [...zellImages, ...miscImages, ...bigImages];
     const target = all.find((entry) => entry.path === params.path);
-    if (!target) throw `unknown_image: ${String(params.path)}`;
-    target.rating = Number(params.rating);
+    if (!target) throw `unknown_image: ${params.path}`;
+    target.rating = params.rating;
     return { rating: target.rating, generation: 1 };
   },
   setEdit: (params) => {
     const all = [...zellImages, ...miscImages, ...bigImages];
     const target = all.find((entry) => entry.path === params.path);
-    if (!target) throw `unknown_image: ${String(params.path)}`;
-    target.edit = params.edit as Edit;
+    if (!target) throw `unknown_image: ${params.path}`;
+    target.edit = params.edit;
     return { edit: target.edit, generation: 1 };
   },
   rawDefaults: (params) =>
-    String(params.path).toLowerCase().endsWith(".arw")
+    params.path.toLowerCase().endsWith(".arw")
       ? { temperature: 5250, tint: 8, denoise: 38 }
       : { temperature: null, tint: null, denoise: null },
   decoderAvailability: () => ({ raw9: true }),
   // misc stands in for the older body that tops out at RAW 8
   decoderSupport: (params) => {
-    const raws = (params.paths as string[]).filter((path) =>
+    const raws = params.paths.filter((path) =>
       path.toLowerCase().endsWith(".arw"),
     );
     return {
@@ -277,7 +275,7 @@ export const E2E_HANDLERS: Record<
     };
   },
   trash: (params) => {
-    const paths = new Set(params.paths as string[]);
+    const paths = new Set(params.paths);
     let files = 0;
     for (const list of [zellImages, miscImages, bigImages]) {
       for (let i = list.length - 1; i >= 0; i -= 1) {
@@ -289,11 +287,10 @@ export const E2E_HANDLERS: Record<
     }
     return { files, generation: 1 };
   },
-  exportFiles: (params) =>
-    startJob((params.paths as string[]).length, params.zip === true),
-  exportStatus: (params) => advanceExport(String(params.id)),
+  exportFiles: (params) => startJob(params.paths.length, params.zip),
+  exportStatus: (params) => advanceExport(params.id),
   cancelExport: (params) => {
-    const job = advanceExport(String(params.id));
+    const job = advanceExport(params.id);
     if (job.running) {
       job.cancelled = true;
       job.running = false;
@@ -308,9 +305,8 @@ export const E2E_HANDLERS: Record<
   },
   importFiles: (params) =>
     startJob(
-      (params.paths as string[]).filter((path) =>
-        /\.(arw|dng|jpe?g|png)$/i.test(path),
-      ).length,
+      params.paths.filter((path) => /\.(arw|dng|jpe?g|png)$/i.test(path))
+        .length,
       false,
     ),
   createProject: (params) => {
@@ -330,7 +326,7 @@ export const E2E_HANDLERS: Record<
   },
   updateProject: (params) => {
     const shoot = shoots.find((s) => s.name === params.shoot);
-    if (!shoot) throw `unknown_shoot: ${String(params.shoot)}`;
+    if (!shoot) throw `unknown_shoot: ${params.shoot}`;
     const fields = projectFields(params);
     if (
       fields.name !== shoot.name &&
@@ -339,7 +335,7 @@ export const E2E_HANDLERS: Record<
       throw `project_exists: ${fields.name}`;
     }
     Object.assign(shoot, fields);
-    shoot.cover = typeof params.cover === "string" ? params.cover : null;
+    shoot.cover = params.cover;
     const match = imagesFor(shoot.name).find(
       (entry) => entry.rel === shoot.cover,
     );
@@ -357,3 +353,24 @@ export const E2E_HANDLERS: Record<
     changedShoots: [],
   }),
 };
+
+type CoreRequest<K extends keyof CoreMethods = keyof CoreMethods> = {
+  [M in K]: { method: M; params: CoreMethods[M]["params"] };
+}[K];
+
+/// Only `coreRequest` sends these, and it typed the params on the way out.
+export function isCoreRequest(args: unknown): args is CoreRequest {
+  return (
+    typeof args === "object" &&
+    args !== null &&
+    "method" in args &&
+    typeof args.method === "string" &&
+    args.method in E2E_HANDLERS
+  );
+}
+
+export function answerCoreRequest<K extends keyof CoreMethods>(
+  request: CoreRequest<K>,
+): CoreMethods[K]["result"] {
+  return E2E_HANDLERS[request.method](request.params);
+}
