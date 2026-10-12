@@ -69,12 +69,6 @@ public enum FileActions {
         }
     }
 
-    public static func list(zip path: String) throws -> [String] {
-        let result = try run("/usr/bin/unzip", ["-Z", "-1", path])
-        guard result.status == 0 else { throw ActionError.zipFailed(result.output) }
-        return result.output.split(separator: "\n").map(String.init)
-    }
-
     static func uniqueName(_ name: String, isTaken: (String) -> Bool) -> String {
         guard isTaken(name) else { return name }
         let ns = name as NSString
@@ -96,7 +90,7 @@ public enum FileActions {
         return dir.appendingPathComponent(name)
     }
 
-    private static func run(
+    static func run(
         _ tool: String, _ args: [String], currentDirectory: URL? = nil
     ) throws -> (
         status: Int32, output: String
