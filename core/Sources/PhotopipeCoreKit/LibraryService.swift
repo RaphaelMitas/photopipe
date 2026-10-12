@@ -550,7 +550,7 @@ public final class LibraryService: @unchecked Sendable {
         let (changed, index) = lock.withLock { () -> (Bool, SQLiteIndex?) in
             let changed = scanned != snapshot
             if changed { _ = publish(scanned) }
-            return (changed, index)
+            return (changed, self.index)
         }
         guard changed else { return }
 
