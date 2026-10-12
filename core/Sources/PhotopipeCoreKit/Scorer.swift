@@ -111,37 +111,27 @@ public final class Scorer: @unchecked Sendable {
 
     private func run(shoot: String, pending: [ImageFile], total: Int) async {
         var buffer: [(String, ScoreRow)] = []
-        await withTaskGroup(of: (ImageFile, Double?).self) { group in
-            var next = 0
-            func submit() {
-                guard next < pending.count else { return }
-                let file = pending[next]
-                next += 1
-                group.addTask { (file, await Self.score(path: file.path)) }
+        await forEachConcurrently(pending, width: Self.concurrency) { file in
+            (file, await Self.score(path: file.path))
+        } onResult: { scored, cancelled in
+            let (file, score) = scored
+            // Vision reports a cancelled read the same way it reports an
+            // unreadable file. Recording that would write the photo off for
+            // good, so a cancelled pass leaves it untouched instead.
+            if cancelled && score == nil { return }
+
+            let (write, full) = lock.withLock { () -> (Flush?, Bool) in
+                let row = ScoreRow(score: score, for: moved[file.path] ?? file)
+                cache[file.path] = row
+                buffer.append((file.path, row))
+                let done = scoredCount(pending) + (total - pending.count)
+                progressByShoot[shoot] = Progress(done: done, total: total, running: true)
+                return (self.flush, buffer.count >= Self.flushEvery)
             }
-            for _ in 0..<min(Self.concurrency, pending.count) { submit() }
 
-            while let (file, score) = await group.next() {
-                let cancelled = Task.isCancelled
-                if cancelled { group.cancelAll() } else { submit() }
-                // Vision reports a cancelled read the same way it reports an
-                // unreadable file. Recording that would write the photo off for
-                // good, so a cancelled pass leaves it untouched instead.
-                if cancelled && score == nil { continue }
-
-                let (write, full) = lock.withLock { () -> (Flush?, Bool) in
-                    let row = ScoreRow(score: score, for: moved[file.path] ?? file)
-                    cache[file.path] = row
-                    buffer.append((file.path, row))
-                    let done = scoredCount(pending) + (total - pending.count)
-                    progressByShoot[shoot] = Progress(done: done, total: total, running: true)
-                    return (self.flush, buffer.count >= Self.flushEvery)
-                }
-
-                if full {
-                    write?(buffer)
-                    buffer.removeAll(keepingCapacity: true)
-                }
+            if full {
+                write?(buffer)
+                buffer.removeAll(keepingCapacity: true)
             }
         }
 

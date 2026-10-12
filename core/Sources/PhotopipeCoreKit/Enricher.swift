@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Runs `enrich` over everything the walk left as a placeholder, off the
 /// request path and across every core, publishing each batch as it lands.
@@ -89,30 +90,14 @@ final class Enricher: @unchecked Sendable {
         let lanes = min(ProcessInfo.processInfo.activeProcessorCount, files.count)
         guard lanes > 1 else { return files.map(enrich) }
         let chunk = (files.count + lanes - 1) / lanes
-        let collector = Collector()
+        let byLane = Mutex<[Int: [ImageFile]]>([:])
         DispatchQueue.concurrentPerform(iterations: lanes) { lane in
             let start = lane * chunk
             guard start < files.count else { return }
             let end = min(start + chunk, files.count)
-            collector.store(lane, files[start..<end].map(enrich))
+            let enriched = files[start..<end].map(enrich)
+            byLane.withLock { $0[lane] = enriched }
         }
-        return collector.ordered(lanes)
-    }
-
-    private final class Collector: @unchecked Sendable {
-        private let lock = NSLock()
-        private var lanes: [Int: [ImageFile]] = [:]
-
-        func store(_ lane: Int, _ files: [ImageFile]) {
-            lock.lock()
-            lanes[lane] = files
-            lock.unlock()
-        }
-
-        func ordered(_ count: Int) -> [ImageFile] {
-            lock.lock()
-            defer { lock.unlock() }
-            return (0..<count).flatMap { lanes[$0] ?? [] }
-        }
+        return byLane.withLock { done in (0..<lanes).flatMap { done[$0] ?? [] } }
     }
 }
