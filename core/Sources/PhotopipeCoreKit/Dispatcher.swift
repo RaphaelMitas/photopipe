@@ -42,20 +42,6 @@ public final class Dispatcher {
         return CropRect(left: left, top: top, right: right, bottom: bottom).sanitized()
     }
 
-    private static func exportProgress(_ job: Exporter.Progress) -> JSONValue {
-        .object([
-            "id": .string(job.id),
-            "done": .number(Double(job.done)),
-            "failed": .number(Double(job.failed)),
-            "total": .number(Double(job.total)),
-            "running": .bool(job.running),
-            "cancelled": .bool(job.cancelled),
-            "archiving": .bool(job.archiving),
-            "error": job.error.map { .string($0) } ?? .null,
-            "failures": .array(job.failures.map { .string($0) }),
-        ])
-    }
-
     private func result(for request: Request) throws -> JSONValue {
         switch request.method {
         case "ping":
@@ -82,12 +68,7 @@ public final class Dispatcher {
             let images = try library.listImages(shoot: request.string("shoot"))
             return .object(["images": try JSONValue(encoding: images)])
         case "scoreShoot":
-            let progress = try library.scoreShoot(shoot: request.string("shoot"))
-            return .object([
-                "done": .number(Double(progress.done)),
-                "total": .number(Double(progress.total)),
-                "running": .bool(progress.running),
-            ])
+            return try JSONValue(encoding: library.scoreShoot(shoot: request.string("shoot")))
         case "thumbnail":
             let cachePath = try library.thumbnail(
                 path: request.string("path"), maxPixel: request.param("maxPixel")?.intValue ?? 256)
@@ -149,11 +130,11 @@ public final class Dispatcher {
                     ?? .original,
                 quality: request.param("quality")?.intValue ?? 90,
                 decoderVersion: request.param("decoderVersion")?.intValue)
-            return Self.exportProgress(job)
+            return try JSONValue(encoding: job)
         case "exportStatus":
-            return Self.exportProgress(try library.exportStatus(id: request.string("id")))
+            return try JSONValue(encoding: library.exportStatus(id: request.string("id")))
         case "cancelExport":
-            return Self.exportProgress(try library.cancelExport(id: request.string("id")))
+            return try JSONValue(encoding: library.cancelExport(id: request.string("id")))
         case "createProject":
             let result = try library.createProject(
                 name: request.string("name"), notes: request.string("notes"))
@@ -165,7 +146,7 @@ public final class Dispatcher {
         case "importFiles":
             let job = try library.startImport(
                 shoot: request.string("shoot"), paths: request.strings("paths"))
-            return Self.exportProgress(job)
+            return try JSONValue(encoding: job)
         case "updateProject":
             let updated = try library.updateProject(
                 shoot: request.string("shoot"), name: request.string("name"),
@@ -179,19 +160,7 @@ public final class Dispatcher {
             let day = try library.captureDate(path: request.string("path"))
             return .object(["day": day.map(JSONValue.string) ?? .null])
         case "status":
-            let status = library.status(since: request.param("since")?.intValue)
-            var result: [String: JSONValue] = [
-                "generation": .number(Double(status.generation)),
-                "root": status.root.map { .string($0) } ?? .null,
-                "shoots": .number(Double(status.shoots)),
-                "scanning": .bool(status.scanning),
-                "filesFound": .number(Double(status.filesFound)),
-                "filesEnriched": .number(Double(status.filesEnriched)),
-            ]
-            if let changed = status.changedShoots {
-                result["changedShoots"] = .array(changed.map { .string($0) })
-            }
-            return .object(result)
+            return try JSONValue(encoding: library.status(since: request.param("since")?.intValue))
         default:
             throw DispatchError.unknownMethod(request.method)
         }

@@ -4,7 +4,7 @@ import Foundation
 /// timeout, so the request that asks for one only plans it: `start` returns an
 /// id straight away and the client polls `progress` until it stops running.
 public final class Exporter: @unchecked Sendable {
-    public struct Progress: Equatable, Sendable {
+    public struct Progress: Equatable, Sendable, Encodable {
         public let id: String
         public let total: Int
         public var done: Int

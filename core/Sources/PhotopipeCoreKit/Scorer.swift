@@ -7,7 +7,7 @@ import Vision
 /// background for one shoot at a time and reports how far it has got, because the browser
 /// keeps the sort by score disabled until every file in the shoot has an answer.
 public final class Scorer: @unchecked Sendable {
-    public struct Progress: Equatable, Sendable {
+    public struct Progress: Equatable, Sendable, Encodable {
         public let done: Int
         public let total: Int
         public let running: Bool

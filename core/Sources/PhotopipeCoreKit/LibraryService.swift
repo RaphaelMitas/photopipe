@@ -126,30 +126,29 @@ public final class LibraryService: @unchecked Sendable {
         }
     }
 
-    public struct Status: Sendable {
+    public struct Status: Sendable, Encodable {
         public let generation: Int
         public let root: String?
         public let shoots: Int
         public let filesFound: Int
         public let filesEnriched: Int
+        public let scanning: Bool
         /// Shoots whose images changed after the caller's generation, so the
         /// client can refetch just those instead of the whole library. Nil
         /// when the caller did not say where it left off.
         public let changedShoots: [String]?
-
-        public var scanning: Bool { filesEnriched < filesFound }
     }
 
     public func status(since: Int? = nil) -> Status {
         lock.withLock {
-            Status(
+            let enriched = snapshot.imagesByShoot.values.reduce(0) { $0 + $1.count(where: \.enriched) }
+            return Status(
                 generation: generation,
                 root: root,
                 shoots: snapshot.shoots.count,
                 filesFound: snapshot.fileCount,
-                filesEnriched: snapshot.imagesByShoot.values.reduce(0) {
-                    $0 + $1.count(where: \.enriched)
-                },
+                filesEnriched: enriched,
+                scanning: enriched < snapshot.fileCount,
                 changedShoots: since.map { seen in
                     shootGenerations.filter { $0.value > seen }.keys.sorted()
                 })

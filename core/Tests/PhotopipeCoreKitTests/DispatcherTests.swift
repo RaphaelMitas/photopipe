@@ -29,6 +29,11 @@ func request(_ method: String, id: String = "1", v: Int = protocolVersion) -> St
     #expect(response == .success(id: "1", result: .object(["bye": .bool(true)])))
 }
 
+@Test func statusTellsTheIndexingPollerWhetherItIsScanning() {
+    let response = Dispatcher().dispatch(line: request("status"))
+    #expect(response.result?["scanning"] == .bool(false))
+}
+
 @Test func unknownMethodFails() {
     let response = Dispatcher().dispatch(line: request("levitate"))
     #expect(!response.ok)
