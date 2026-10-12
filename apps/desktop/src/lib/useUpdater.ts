@@ -21,12 +21,21 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function say(show: typeof toast.success, text: string, sticky = false) {
+  show(text, {
+    id: UPDATE_TOAST,
+    action: undefined,
+    duration: sticky ? Number.POSITIVE_INFINITY : undefined,
+  });
+}
+
 function showProgress(percent: number | null) {
-  toast.loading(
+  say(
+    toast.loading,
     percent === null
       ? "Downloading update…"
       : `Downloading update… ${percent}%`,
-    { id: UPDATE_TOAST, duration: Number.POSITIVE_INFINITY, action: undefined },
+    true,
   );
 }
 
@@ -34,7 +43,7 @@ export function useUpdater(options: Options) {
   const [enabled, setEnabled] = useState(false);
   const pending = useRef<Update | null>(null);
   const startupOfferSuppressed = useRef(false);
-  // the offer toast outlives the render that made it, so Install reads this
+  // read at call time: the offer toast's Install outlives its render, and check must stay stable for App's menu listener
   const live = useRef({ ...options, enabled });
   live.current = { ...options, enabled };
 
@@ -66,14 +75,10 @@ export function useUpdater(options: Options) {
         if (event.event === "Progress") done += event.data.chunkLength;
         showProgress(total > 0 ? Math.round((done / total) * 100) : null);
       });
-      toast.success("Update installed, restarting…", { id: UPDATE_TOAST });
+      say(toast.success, "Update installed, restarting…");
       await relaunch();
     } catch (error) {
-      toast.error(`Install failed: ${message(error)}`, {
-        id: UPDATE_TOAST,
-        duration: undefined,
-        action: undefined,
-      });
+      say(toast.error, `Install failed: ${message(error)}`);
     }
   }, []);
 
@@ -115,28 +120,16 @@ export function useUpdater(options: Options) {
   const check = useCallback(async () => {
     startupOfferSuppressed.current = true;
     if (!live.current.enabled || !updatable()) {
-      toast.error("Not a release build.", { id: UPDATE_TOAST });
+      say(toast.error, "Not a release build.");
       return;
     }
-    toast.loading("Checking for updates…", {
-      id: UPDATE_TOAST,
-      action: undefined,
-    });
+    say(toast.loading, "Checking for updates…");
     try {
       const update = await find();
       if (update) offer(update.version);
-      else
-        toast.success("Photopipe is up to date", {
-          id: UPDATE_TOAST,
-          duration: undefined,
-          action: undefined,
-        });
+      else say(toast.success, "Photopipe is up to date");
     } catch (error) {
-      toast.error(message(error), {
-        id: UPDATE_TOAST,
-        duration: undefined,
-        action: undefined,
-      });
+      say(toast.error, message(error));
     }
   }, [find, offer]);
 

@@ -18,6 +18,7 @@ import { type Edit, type ImageFile, identityEdit } from "@/lib/core";
 import { type CropDraft, draftFromEdit } from "@/lib/crop";
 import { makeImage } from "@/lib/test-image";
 import { EditSidebar } from "./EditPanel";
+import { filmstripPref } from "./Filmstrip";
 import { Loupe } from "./Loupe";
 import { LoupeSidebar } from "./LoupeSidebar";
 import type { RatingFilter } from "./RatingFilter";
@@ -65,13 +66,13 @@ function renderLoupe(
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  filmstripPref.set("off");
   render(
     <QueryClientProvider client={client}>
       <Loupe
         images={makeImages()}
         index={index}
         edit={editWith(exposure)}
-        filmstrip="off"
         crop={{
           draft: cropDraft,
           set: onCropDraft,

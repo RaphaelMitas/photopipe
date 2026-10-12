@@ -36,7 +36,7 @@ import {
   zoomAt,
 } from "@/lib/zoom";
 import { CropOverlay } from "./CropTool";
-import { Filmstrip, type FilmstripMode } from "./Filmstrip";
+import { Filmstrip, filmstripPref } from "./Filmstrip";
 
 // Photo pixels, not screen pixels: ten of them stay a fine adjustment on any
 // photo while still showing on screen at a fitted view.
@@ -62,7 +62,6 @@ type Props = {
   images: ImageFile[];
   index: number;
   edit: Edit;
-  filmstrip: FilmstripMode;
   crop: CropSession;
   onEditChange: (edit: Edit) => void;
   onNavigate: (index: number) => void;
@@ -74,7 +73,6 @@ export function Loupe({
   images,
   index,
   edit,
-  filmstrip,
   crop: session,
   onEditChange,
   onNavigate,
@@ -85,6 +83,7 @@ export function Loupe({
   const cropDraft = session.draft;
   const deferredEdit = useDeferredValue(edit);
   const cropping = cropDraft !== null;
+  const filmstrip = filmstripPref.use();
 
   // While cropping the stage shows the full turned frame, uncropped and
   // unstraightened; the crop and the CSS angle preview sit on top.

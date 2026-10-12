@@ -19,7 +19,6 @@ import {
   type ExportOptions,
   exportLabel,
 } from "@/components/ExportDrawer";
-import { filmstripPref } from "@/components/Filmstrip";
 import { HistoryControls } from "@/components/HistoryControls";
 import { IndexingStatus } from "@/components/IndexingStatus";
 import { Loupe } from "@/components/Loupe";
@@ -109,7 +108,6 @@ export default function App() {
   const [currentPath, setCurrentPath] = useState<string | null>(null);
   const [loupeOpen, setLoupeOpen] = useState(false);
   const filter = useRatingFilter();
-  const filmstrip = filmstripPref.use();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const editOpen = editPanelPref.use();
   const [clipboard, setClipboard] = useState<EditClipboard | null>(null);
@@ -615,7 +613,6 @@ export default function App() {
       images={loupeImages}
       index={loupeIndex}
       edit={loupeEdit}
-      filmstrip={filmstrip}
       crop={crop}
       onEditChange={(edit) => changeEdit(loupePhoto, edit)}
       onNavigate={(next) => setCurrentPath(loupeImages[next]?.path ?? null)}
