@@ -14,6 +14,7 @@ import {
   moveCrop,
   rotatedSize,
 } from "@/lib/crop";
+import { EXPOSURE_RANGE, EXPOSURE_STEP } from "@/lib/editSliders";
 import { isModalOpen } from "@/lib/modal";
 import { capturePointer, cursorIn, normalizedIn } from "@/lib/pointer";
 import {
@@ -34,9 +35,6 @@ import {
 } from "@/lib/zoom";
 import { type CropDraft, CropOverlay, draftWithAngle } from "./CropTool";
 import { Filmstrip, type FilmstripMode } from "./Filmstrip";
-
-export const EXPOSURE_STEP = 0.25;
-export const EXPOSURE_RANGE = 3;
 
 // Photo pixels, not screen pixels: ten of them stay a fine adjustment on any
 // photo while still showing on screen at a fitted view.

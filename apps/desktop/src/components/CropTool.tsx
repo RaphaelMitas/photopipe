@@ -97,7 +97,7 @@ export function draftFromEdit(
   };
 }
 
-export function isIdentityDraft(draft: CropDraft): boolean {
+function isIdentityDraft(draft: CropDraft): boolean {
   return isFullCrop(draft.crop) && draft.angle === 0 && draft.rotation === 0;
 }
 

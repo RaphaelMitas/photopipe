@@ -4,7 +4,7 @@ import type { Edit } from "./core";
 // a context menu or a lost window can swallow the pointerup
 const RELEASES = ["pointerup", "pointercancel", "contextmenu", "blur"];
 
-export type EditDraft = { path: string; edit: Edit } | null;
+type EditDraft = { path: string; edit: Edit } | null;
 
 export function useDebouncedEdit(
   commit: (path: string, edit: Edit) => void,

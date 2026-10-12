@@ -221,7 +221,7 @@ export function useRawDefaults(
   });
 }
 
-export type DecoderSupport = { raw9: number; rawTotal: number };
+type DecoderSupport = { raw9: number; rawTotal: number };
 
 /// The core reads one file header per photo before its per-camera cache can
 /// help. A whole shoot off an SD card would outrun the sidecar's read timeout
@@ -255,7 +255,7 @@ export function useDecoderSupport(paths: string[], enabled: boolean) {
   });
 }
 
-export const DECODER_AVAILABILITY_KEY = ["decoderAvailability"];
+const DECODER_AVAILABILITY_KEY = ["decoderAvailability"];
 
 /// null when nothing in the library could answer, so callers stay quiet
 /// instead of claiming RAW 9 is missing.
@@ -270,10 +270,10 @@ export function useRaw9Availability(enabled: boolean) {
   });
 }
 
-export const SET_RATING_KEY = ["setRating"];
-export const SET_EDIT_KEY = ["setEdit"];
+const SET_RATING_KEY = ["setRating"];
+const SET_EDIT_KEY = ["setEdit"];
 
-export function xmpWritesInFlight(
+function xmpWritesInFlight(
   queryClient: ReturnType<typeof useQueryClient>,
 ): number {
   return (
@@ -602,7 +602,7 @@ export function useUpdateProject() {
   });
 }
 
-export type ExportRequest = {
+type ExportRequest = {
   shoot: string;
   paths: string[];
   destination: string;
@@ -625,7 +625,7 @@ export type ExportProgress = {
   failures: string[];
 };
 
-export type ImportRequest = {
+type ImportRequest = {
   shoot: string;
   paths: string[];
 };

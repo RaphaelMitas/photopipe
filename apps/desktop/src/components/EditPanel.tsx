@@ -27,6 +27,7 @@ import {
 import { CURVE_CHANNELS, isIdentityCurve } from "@/lib/curve";
 import {
   COLOR_SLIDERS,
+  EXPOSURE_RANGE,
   kelvin,
   PRESENCE_SLIDERS,
   type SliderSpec,
@@ -42,7 +43,6 @@ import {
 import { type CropDraft, CropPanel } from "./CropTool";
 import { CurveEditor } from "./CurveEditor";
 import { DecoderSegmented } from "./DecoderSegmented";
-import { EXPOSURE_RANGE } from "./Loupe";
 
 type CropProps = {
   cropDraft: CropDraft | null;
