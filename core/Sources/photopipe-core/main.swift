@@ -29,6 +29,11 @@ while let line = readLine(strippingNewline: true) {
         emit(dispatcher.dispatch(line: line))
         break
     }
+    // the shell's liveness probe must not queue behind slow renders
+    if method == "ping" {
+        emit(dispatcher.dispatch(line: line))
+        continue
+    }
     work.addOperation { emit(dispatcher.dispatch(line: line)) }
 }
 work.waitUntilAllOperationsAreFinished()

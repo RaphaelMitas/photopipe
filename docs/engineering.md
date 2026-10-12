@@ -40,9 +40,11 @@ the loupe shows the thumbnail immediately and prefetches neighbours.
 ### Protocol
 
 JSON over stdio, versioned envelope, concurrent: requests run on a bounded
-work queue and responses may come back out of order, matched by id. The Rust
-side multiplexes, poisons a desynced connection, replays the root after a
-respawn, and re-sends a request only if it never reached the core.
+work queue and responses may come back out of order, matched by id. Only
+`ping` skips the queue, so a busy core still answers it. The Rust side
+multiplexes, poisons a desynced connection, replays the root after a respawn,
+and re-sends a request only if it never reached the core. A timeout fails just
+that request; the core is killed only if a ping goes unanswered too.
 
 ## Testing
 

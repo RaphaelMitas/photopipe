@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -27,6 +27,9 @@ const READ_TIMEOUT: Duration = Duration::from_secs(10);
 /// the whole tree before answering. Reading metadata happens afterwards, but a
 /// deep tree on a slow external disk can still take a while to enumerate.
 const SET_ROOT_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// The core answers ping off its work queue, so a busy core still answers fast.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Deserialize)]
 struct WireError {
@@ -52,6 +55,7 @@ struct Running {
     /// error, or a desynced/unparseable line): every waiter got an error and
     /// no new request may register.
     pending: Mutex<Option<PendingMap>>,
+    probing: AtomicBool,
 }
 
 impl Running {
@@ -76,6 +80,8 @@ enum RoundTripError {
     Unsent(String),
     /// The core may have acted on the request before the connection failed.
     Lost(String),
+    /// No answer in time; the core may still be working on it.
+    TimedOut(Duration),
     /// The core answered with an error — respawning won't help.
     Remote(String),
 }
@@ -136,6 +142,7 @@ impl Sidecar {
             child: Mutex::new(child),
             stdin: Mutex::new(stdin),
             pending: Mutex::new(Some(HashMap::new())),
+            probing: AtomicBool::new(false),
         });
 
         let reader_handle = Arc::clone(&running);
@@ -190,7 +197,7 @@ impl Sidecar {
         // succeeds, which is acceptable for a crash-recovery path.
         let replay = self.last_root.lock().unwrap().clone();
         if let Some(params) = replay {
-            let _ = self.round_trip(&fresh, "setRoot", &Some(params));
+            let _ = self.round_trip(&fresh, "setRoot", &Some(params), SET_ROOT_TIMEOUT);
         }
         Ok(fresh)
     }
@@ -208,11 +215,28 @@ impl Sidecar {
         failed.kill();
     }
 
+    /// Kill the core only if it ignores a ping too: a slow request alone must
+    /// not take the exports running in the core down with it.
+    fn probe(&self, running: &Arc<Running>) {
+        if running.probing.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let answered = matches!(
+            self.round_trip(running, "ping", &None, PROBE_TIMEOUT),
+            Ok(_) | Err(RoundTripError::Remote(_))
+        );
+        if !answered {
+            self.discard(running);
+        }
+        running.probing.store(false, Ordering::Release);
+    }
+
     fn round_trip(
         &self,
         running: &Arc<Running>,
         method: &str,
         params: &Option<Value>,
+        timeout: Duration,
     ) -> Result<Value, RoundTripError> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = sync_channel(1);
@@ -234,11 +258,6 @@ impl Sidecar {
             }
         }
 
-        let timeout = if method == "setRoot" {
-            SET_ROOT_TIMEOUT
-        } else {
-            self.read_timeout
-        };
         let response = match rx.recv_timeout(timeout) {
             Ok(Ok(response)) => response,
             Ok(Err(reason)) => return Err(RoundTripError::Lost(reason)),
@@ -246,9 +265,7 @@ impl Sidecar {
                 if let Some(map) = running.pending.lock().unwrap().as_mut() {
                     map.remove(&id);
                 }
-                return Err(RoundTripError::Lost(format!(
-                    "sidecar did not answer within {timeout:?}"
-                )));
+                return Err(RoundTripError::TimedOut(timeout));
             }
             Err(RecvTimeoutError::Disconnected) => {
                 return Err(RoundTripError::Lost("connection failed".into()))
@@ -273,10 +290,15 @@ impl Sidecar {
     }
 
     pub fn request(&self, method: &str, params: Option<Value>) -> Result<Value, String> {
+        let timeout = if method == "setRoot" {
+            SET_ROOT_TIMEOUT
+        } else {
+            self.read_timeout
+        };
         let mut retried = false;
         loop {
             let running = self.connection()?;
-            match self.round_trip(&running, method, &params) {
+            match self.round_trip(&running, method, &params, timeout) {
                 Ok(result) => {
                     if method == "setRoot" {
                         *self.last_root.lock().unwrap() = params.clone();
@@ -291,6 +313,10 @@ impl Sidecar {
                 Err(RoundTripError::Unsent(message) | RoundTripError::Lost(message)) => {
                     self.discard(&running);
                     return Err(format!("sidecar connection failed: {message}"));
+                }
+                Err(RoundTripError::TimedOut(timeout)) => {
+                    self.probe(&running);
+                    return Err(format!("sidecar did not answer within {timeout:?}"));
                 }
             }
         }
@@ -374,6 +400,15 @@ mod tests {
             std::process::id(),
             std::thread::current().id()
         ))
+    }
+
+    fn script_core(dir: &std::path::Path, body: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::create_dir_all(dir).unwrap();
+        let script = dir.join("core.sh");
+        std::fs::write(&script, format!("#!/bin/sh\n{body}")).unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        script
     }
 
     fn temp_tree(tag: &str, files: &[&str]) -> PathBuf {
@@ -514,38 +549,94 @@ mod tests {
     }
 
     #[test]
-    fn wedged_sidecar_times_out_instead_of_hanging() {
-        // A "sidecar" that accepts requests but never answers.
+    fn wedged_sidecar_is_killed_and_respawned() {
         let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/wedged-sidecar.sh");
         let mut sidecar = Sidecar::new(script);
         sidecar.read_timeout = Duration::from_millis(200);
+        let wedged = sidecar.connection().expect("spawn");
         let start = Instant::now();
         let error = sidecar.request("ping", None).expect_err("must time out");
         assert!(error.contains("did not answer"), "got: {error}");
         assert!(
-            start.elapsed() < Duration::from_secs(2),
+            start.elapsed() < sidecar.read_timeout + PROBE_TIMEOUT + Duration::from_secs(1),
             "took {:?}",
             start.elapsed()
         );
+        assert!(
+            wedged.child.lock().unwrap().try_wait().unwrap().is_some(),
+            "wedged core still running"
+        );
+        let fresh = sidecar.connection().expect("respawn");
+        assert!(!Arc::ptr_eq(&wedged, &fresh));
         sidecar.shutdown();
+    }
+
+    #[test]
+    fn a_slow_request_does_not_kill_a_core_that_answers_ping() {
+        let dir = temp_dir("busy");
+        let script = script_core(
+            &dir,
+            r#"while read -r line; do
+  case "$line" in
+    *'"method":"ping"'*)
+      id=$(printf '%s\n' "$line" | sed 's/.*"id":"\([0-9]*\)".*/\1/')
+      printf '{"v":1,"id":"%s","ok":true,"result":{"pong":true}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let mut sidecar = Sidecar::new(script);
+        sidecar.read_timeout = Duration::from_millis(200);
+        let busy = sidecar.connection().expect("spawn");
+        let error = sidecar.request("render", None).expect_err("must time out");
+        assert!(error.contains("did not answer"), "got: {error}");
+        assert!(busy.child.lock().unwrap().try_wait().unwrap().is_none());
+        assert!(Arc::ptr_eq(&busy, &sidecar.connection().unwrap()));
+        assert_eq!(sidecar.request("ping", None).expect("ping")["pong"], true);
+        sidecar.shutdown();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn requests_timing_out_together_probe_once() {
+        let dir = temp_dir("storm");
+        let log = dir.join("received.log");
+        let script = script_core(
+            &dir,
+            &format!(
+                "while read -r line; do echo \"$line\" >> '{}'; done\n",
+                log.display()
+            ),
+        );
+        let mut sidecar = Sidecar::new(script);
+        sidecar.read_timeout = Duration::from_millis(200);
+        let sidecar = Arc::new(sidecar);
+        let threads: Vec<_> = (0..8)
+            .map(|_| {
+                let sidecar = Arc::clone(&sidecar);
+                std::thread::spawn(move || sidecar.request("render", None).expect_err("wedged"))
+            })
+            .collect();
+        for thread in threads {
+            thread.join().expect("worker");
+        }
+        let received = std::fs::read_to_string(&log).unwrap();
+        let pings = received
+            .lines()
+            .filter(|line| line.contains(r#""method":"ping""#));
+        assert_eq!(pings.count(), 1, "{received}");
+        sidecar.shutdown();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn a_request_the_core_received_is_never_resent() {
         let dir = temp_dir("received");
-        std::fs::create_dir_all(&dir).unwrap();
         let log = dir.join("received.log");
-        let script = dir.join("dies-after-one-request.sh");
-        std::fs::write(
-            &script,
-            format!(
-                "#!/bin/sh\nread -r line\necho \"$line\" >> '{}'\n",
-                log.display()
-            ),
-        )
-        .unwrap();
-        std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
-            .unwrap();
+        let script = script_core(
+            &dir,
+            &format!("read -r line\necho \"$line\" >> '{}'\n", log.display()),
+        );
 
         let sidecar = Sidecar::new(script);
         let error = sidecar
