@@ -44,9 +44,8 @@ work queue and responses may come back out of order, matched by id. The Rust
 side multiplexes, poisons a desynced connection, replays the root after a
 respawn, and re-sends a request only if it never reached the core. A timeout
 fails just that request and never kills the core, so running exports survive;
-each request carries its deadline and the core skips one still queued past it.
-A rating or edit re-checks it right before exiftool writes, so a write reported
-as failed cannot land over a newer one. A timed-out `setRoot` is
+each request carries its deadline and the core skips one still queued past it,
+so a request reported as failed does not run later. A timed-out `setRoot` is
 the exception and discards the core, since its walk would otherwise switch the
 core to a library the app gave up on. The core is respawned only when it dies,
 and a wedged one stays until restart.

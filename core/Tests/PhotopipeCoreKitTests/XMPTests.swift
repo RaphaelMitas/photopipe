@@ -641,17 +641,3 @@ func image(_ url: URL) throws -> ImageFile {
     #expect(progress.running == false)
     #expect(progress.done == progress.total)
 }
-
-@Test func aWritePastItsDeadlineLeavesTheSidecarAlone() throws {
-    guard requireExifTool() else { return }
-    let dir = try tempDir()
-    defer { try? FileManager.default.removeItem(at: dir) }
-    let arw = dir.appendingPathComponent("DSC00001.ARW")
-    try Data("fake".utf8).write(to: arw)
-
-    #expect(throws: ExifTool.ExifToolError.expired) {
-        try XMP.writeRating(
-            4, file: try image(arw), tool: .shared, deadline: Date().addingTimeInterval(-1))
-    }
-    #expect(!FileManager.default.fileExists(atPath: XMP.sidecarURL(forImagePath: arw.path).path))
-}

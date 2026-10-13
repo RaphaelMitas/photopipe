@@ -58,7 +58,7 @@ public final class Dispatcher {
             "createProject", "importFiles", "updateProject", "captureDate",
             "scoreShoot", "scoreStatus":
             // The caller already reported this request as failed, so it must not act late.
-            if let deadline = request.deadlineDate, Date() > deadline {
+            if let deadline = request.deadline, Date().timeIntervalSince1970 > deadline {
                 return .respond(
                     .failure(
                         id: request.id, code: "expired",
@@ -171,8 +171,7 @@ public final class Dispatcher {
                         id: request.id, code: "invalid_params",
                         message: "shoot, path and rating required")
                 }
-                let result = try library.setRating(
-                    shoot: shoot, path: path, rating: rating, deadline: request.deadlineDate)
+                let result = try library.setRating(shoot: shoot, path: path, rating: rating)
                 return .success(
                     id: request.id,
                     result: .object([
@@ -188,8 +187,7 @@ public final class Dispatcher {
                         id: request.id, code: "invalid_params",
                         message: "shoot, path and edit required")
                 }
-                let result = try library.setEdit(
-                    shoot: shoot, path: path, edit: edit, deadline: request.deadlineDate)
+                let result = try library.setEdit(shoot: shoot, path: path, edit: edit)
                 return .success(
                     id: request.id,
                     result: .object([
@@ -379,10 +377,6 @@ public final class Dispatcher {
                 message: "exiftool not found — install it or set PHOTOPIPE_EXIFTOOL")
         } catch ExifTool.ExifToolError.failed(let output) {
             return .failure(id: request.id, code: "exiftool_failed", message: output)
-        } catch ExifTool.ExifToolError.expired {
-            return .failure(
-                id: request.id, code: "expired",
-                message: "\(request.method) passed its deadline before writing and was skipped")
         } catch ScanError.rootNotFound(let path) {
             return .failure(id: request.id, code: "root_not_found", message: path)
         } catch {

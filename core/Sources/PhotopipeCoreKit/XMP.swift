@@ -402,20 +402,15 @@ public enum XMP {
         [TagWrite(.xmp, "Rating", rating == 0 ? .remove : .scalar("\(rating)"))]
     }
 
-    public static func writeRating(
-        _ rating: Int, file: ImageFile, tool: ExifTool, deadline: Date? = nil
-    ) throws {
-        try write(
-            ratingTags(rating), clearing: rating == 0, file: file, tool: tool, deadline: deadline)
+    public static func writeRating(_ rating: Int, file: ImageFile, tool: ExifTool) throws {
+        try write(ratingTags(rating), clearing: rating == 0, file: file, tool: tool)
     }
 
-    public static func writeEdit(
-        _ edit: Edit, file: ImageFile, tool: ExifTool, deadline: Date? = nil
-    ) throws {
+    public static func writeEdit(_ edit: Edit, file: ImageFile, tool: ExifTool) throws {
         let (tags, exifOrientationPin) = try editTags(edit, file: file)
         try write(
             tags, exifOrientationPin: exifOrientationPin, clearing: edit.isIdentity,
-            file: file, tool: tool, deadline: deadline)
+            file: file, tool: tool)
     }
 
     static func editTags(
@@ -510,12 +505,12 @@ public enum XMP {
 
     private static func write(
         _ tags: [TagWrite], exifOrientationPin: Int? = nil, clearing: Bool, file: ImageFile,
-        tool: ExifTool, deadline: Date?
+        tool: ExifTool
     ) throws {
         #if os(macOS)
             try writeWithExifTool(
                 exiftoolArgs(tags, exifOrientationPin: exifOrientationPin),
-                clearing: clearing, file: file, tool: tool, deadline: deadline)
+                clearing: clearing, file: file, tool: tool)
         #else
             try writeText(tags, clearing: clearing, file: file)
         #endif
@@ -527,24 +522,22 @@ public enum XMP {
     }
 
     private static func writeWithExifTool(
-        _ tagArgs: [String], clearing: Bool, file: ImageFile, tool: ExifTool, deadline: Date?
+        _ tagArgs: [String], clearing: Bool, file: ImageFile, tool: ExifTool
     ) throws {
         if file.usesSidecar {
             let sidecar = sidecarURL(forImagePath: file.path)
             if FileManager.default.fileExists(atPath: sidecar.path) {
-                try tool.write(
-                    ["-overwrite_original"] + tagArgs + [sidecar.path], deadline: deadline)
+                try tool.write(["-overwrite_original"] + tagArgs + [sidecar.path])
             } else if !clearing {
                 do {
-                    try tool.write(tagArgs + ["-o", sidecar.path], deadline: deadline)
+                    try tool.write(tagArgs + ["-o", sidecar.path])
                 } catch {
                     guard FileManager.default.fileExists(atPath: sidecar.path) else { throw error }
-                    try tool.write(
-                        ["-overwrite_original"] + tagArgs + [sidecar.path], deadline: deadline)
+                    try tool.write(["-overwrite_original"] + tagArgs + [sidecar.path])
                 }
             }
         } else {
-            try tool.write(["-overwrite_original"] + tagArgs + [file.path], deadline: deadline)
+            try tool.write(["-overwrite_original"] + tagArgs + [file.path])
         }
     }
 }

@@ -414,21 +414,21 @@ public final class LibraryService: @unchecked Sendable {
         }
     }
 
-    public func setRating(
-        shoot shootName: String, path: String, rating: Int, deadline: Date? = nil
-    ) throws -> (rating: Int, generation: Int) {
+    public func setRating(shoot shootName: String, path: String, rating: Int) throws -> (
+        rating: Int, generation: Int
+    ) {
         guard (0...5).contains(rating) else { throw ServiceError.invalidRating(rating) }
         let settled = try write(shoot: shootName, path: path) { image in
-            try XMP.writeRating(rating, file: image, tool: .shared, deadline: deadline)
+            try XMP.writeRating(rating, file: image, tool: .shared)
         }
         return (settled.rating, status().generation)
     }
 
-    public func setEdit(
-        shoot shootName: String, path: String, edit: Edit, deadline: Date? = nil
-    ) throws -> (edit: Edit, generation: Int) {
+    public func setEdit(shoot shootName: String, path: String, edit: Edit) throws -> (
+        edit: Edit, generation: Int
+    ) {
         let settled = try write(shoot: shootName, path: path) { image in
-            try XMP.writeEdit(edit, file: image, tool: .shared, deadline: deadline)
+            try XMP.writeEdit(edit, file: image, tool: .shared)
         }
         return (settled.edit, status().generation)
     }
