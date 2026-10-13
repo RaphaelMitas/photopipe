@@ -42,7 +42,11 @@ the loupe shows the thumbnail immediately and prefetches neighbours.
 JSON over stdio, versioned envelope, concurrent: requests run on a bounded
 work queue and responses may come back out of order, matched by id. The Rust
 side multiplexes, poisons a desynced connection, replays the root after a
-respawn, and never auto-retries a mutating method.
+respawn, and re-sends a request only if it never reached the core. A timeout
+fails just that request and never kills the core, so running exports survive;
+the core is respawned only when it dies, and a wedged one stays until restart.
+The exception is `setRoot`: its timeout discards the core, so a walk still
+running cannot later switch it to a library the app gave up on.
 
 ## Testing
 
