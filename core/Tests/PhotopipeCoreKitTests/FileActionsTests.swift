@@ -81,6 +81,24 @@ private func exportNow(
     }
 }
 
+@Test func trashingTheJpegKeepsTheRawsSidecar() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let shoot = try makeShoot(in: dir)
+
+    let service = makeService(in: dir)
+    _ = try service.setRoot(path: dir.path, indexPath: nil)
+
+    let result = try service.trashImages(
+        shoot: shoot.lastPathComponent, paths: [shoot.appendingPathComponent("DSC00001.jpg").path])
+    #expect(result.files == 1)
+
+    let fm = FileManager.default
+    #expect(!fm.fileExists(atPath: shoot.appendingPathComponent("DSC00001.jpg").path))
+    #expect(fm.fileExists(atPath: shoot.appendingPathComponent("DSC00001.ARW").path))
+    #expect(fm.fileExists(atPath: shoot.appendingPathComponent("DSC00001.xmp").path))
+}
+
 @Test func actionsRefusePathsOutsideTheLibrary() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
