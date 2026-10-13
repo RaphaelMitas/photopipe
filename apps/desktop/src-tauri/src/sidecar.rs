@@ -3,8 +3,10 @@
 //! Protocol v1 envelope (line-delimited JSON with string ids), concurrent
 //! transport: requests from any thread interleave on one stdin pipe, a reader
 //! thread routes responses to waiters by id, so a slow render never blocks a
-//! ping. Crash/wedge recovery respawns the core, replays the library root, and
-//! re-sends a request only if it never reached the core.
+//! ping. A request that times out fails on its own and the core keeps running,
+//! so a slow request never takes running exports down. Only a core that dies is
+//! respawned: the library root is replayed and a request is re-sent only if it
+//! never reached the core. A wedged core stays until the app restarts.
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -12,7 +14,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -27,31 +29,6 @@ const READ_TIMEOUT: Duration = Duration::from_secs(10);
 /// the whole tree before answering. Reading metadata happens afterwards, but a
 /// deep tree on a slow external disk can still take a while to enumerate.
 const SET_ROOT_TIMEOUT: Duration = Duration::from_secs(120);
-
-/// The core answers ping off its work queue, so a busy core still answers fast.
-const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
-
-/// One per work-queue slot: this many timeouts with nothing finished since
-/// they were sent means a core that answers ping has stopped finishing work.
-const MAX_STALLED_TIMEOUTS: u32 = 8;
-
-/// Only these may keep running after a timeout. A write left running could
-/// undo the user's next write or start a job whose dropped reply loses its id.
-const READS: &[&str] = &[
-    "ping",
-    "version",
-    "status",
-    "listShoots",
-    "listImages",
-    "thumbnail",
-    "render",
-    "rawDefaults",
-    "captureDate",
-    "decoderSupport",
-    "decoderAvailability",
-    "exportStatus",
-    "scoreStatus",
-];
 
 #[derive(Debug, Deserialize)]
 struct WireError {
@@ -77,9 +54,6 @@ struct Running {
     /// error, or a desynced/unparseable line): every waiter got an error and
     /// no new request may register.
     pending: Mutex<Option<PendingMap>>,
-    probing: AtomicBool,
-    finished: AtomicU64,
-    stalled_timeouts: AtomicU32,
 }
 
 impl Running {
@@ -90,11 +64,6 @@ impl Running {
                 let _ = tx.send(Err(reason.to_string()));
             }
         }
-    }
-
-    fn progressed(&self) {
-        self.finished.fetch_add(1, Ordering::Relaxed);
-        self.stalled_timeouts.store(0, Ordering::Relaxed);
     }
 
     fn kill(&self) {
@@ -109,18 +78,9 @@ enum RoundTripError {
     Unsent(String),
     /// The core may have acted on the request before the connection failed.
     Lost(String),
-    TimedOut(Duration),
+    TimedOut(String),
     /// The core answered with an error — respawning won't help.
     Remote(String),
-}
-
-fn core_answered(outcome: &Result<Value, RoundTripError>) -> bool {
-    match outcome {
-        Ok(_) | Err(RoundTripError::Remote(_)) => true,
-        Err(RoundTripError::Unsent(_) | RoundTripError::Lost(_) | RoundTripError::TimedOut(_)) => {
-            false
-        }
-    }
 }
 
 pub struct Sidecar {
@@ -179,9 +139,6 @@ impl Sidecar {
             child: Mutex::new(child),
             stdin: Mutex::new(stdin),
             pending: Mutex::new(Some(HashMap::new())),
-            probing: AtomicBool::new(false),
-            finished: AtomicU64::new(0),
-            stalled_timeouts: AtomicU32::new(0),
         });
 
         let reader_handle = Arc::clone(&running);
@@ -209,9 +166,8 @@ impl Sidecar {
                 if let Some(map) = reader_handle.pending.lock().unwrap().as_mut() {
                     if let Some(tx) = map.remove(&id) {
                         let _ = tx.send(Ok(response));
-                    } else {
-                        reader_handle.progressed();
                     }
+                    // No waiter: it timed out and deregistered — drop the late reply.
                 }
             }
             reader_handle.poison("sidecar closed stdout");
@@ -237,7 +193,7 @@ impl Sidecar {
         // succeeds, which is acceptable for a crash-recovery path.
         let replay = self.last_root.lock().unwrap().clone();
         if let Some(params) = replay {
-            let _ = self.round_trip(&fresh, "setRoot", &Some(params), SET_ROOT_TIMEOUT);
+            let _ = self.round_trip(&fresh, "setRoot", &Some(params));
         }
         Ok(fresh)
     }
@@ -255,24 +211,11 @@ impl Sidecar {
         failed.kill();
     }
 
-    /// Kill the core only if it ignores a ping too: a slow request alone must
-    /// not take the exports running in the core down with it.
-    fn probe(&self, running: &Arc<Running>) {
-        if running.probing.swap(true, Ordering::AcqRel) {
-            return;
-        }
-        if !core_answered(&self.round_trip(running, "ping", &None, PROBE_TIMEOUT)) {
-            self.discard(running);
-        }
-        running.probing.store(false, Ordering::Release);
-    }
-
     fn round_trip(
         &self,
         running: &Arc<Running>,
         method: &str,
         params: &Option<Value>,
-        timeout: Duration,
     ) -> Result<Value, RoundTripError> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = sync_channel(1);
@@ -294,6 +237,11 @@ impl Sidecar {
             }
         }
 
+        let timeout = if method == "setRoot" {
+            SET_ROOT_TIMEOUT
+        } else {
+            self.read_timeout
+        };
         let response = match rx.recv_timeout(timeout) {
             Ok(Ok(response)) => response,
             Ok(Err(reason)) => return Err(RoundTripError::Lost(reason)),
@@ -301,7 +249,9 @@ impl Sidecar {
                 if let Some(map) = running.pending.lock().unwrap().as_mut() {
                     map.remove(&id);
                 }
-                return Err(RoundTripError::TimedOut(timeout));
+                return Err(RoundTripError::TimedOut(format!(
+                    "sidecar did not answer within {timeout:?}"
+                )));
             }
             Err(RecvTimeoutError::Disconnected) => {
                 return Err(RoundTripError::Lost("connection failed".into()))
@@ -326,28 +276,19 @@ impl Sidecar {
     }
 
     pub fn request(&self, method: &str, params: Option<Value>) -> Result<Value, String> {
-        let timeout = if method == "setRoot" {
-            SET_ROOT_TIMEOUT
-        } else {
-            self.read_timeout
-        };
         let mut retried = false;
         loop {
             let running = self.connection()?;
-            let finished_before = running.finished.load(Ordering::Relaxed);
-            let outcome = self.round_trip(&running, method, &params, timeout);
-            // ping skips the work queue, so its answer says nothing about progress
-            if core_answered(&outcome) && method != "ping" {
-                running.progressed();
-            }
-            match outcome {
+            match self.round_trip(&running, method, &params) {
                 Ok(result) => {
                     if method == "setRoot" {
                         *self.last_root.lock().unwrap() = params.clone();
                     }
                     return Ok(result);
                 }
-                Err(RoundTripError::Remote(message)) => return Err(message),
+                Err(RoundTripError::Remote(message) | RoundTripError::TimedOut(message)) => {
+                    return Err(message)
+                }
                 Err(RoundTripError::Unsent(_)) if !retried => {
                     self.discard(&running);
                     retried = true;
@@ -355,17 +296,6 @@ impl Sidecar {
                 Err(RoundTripError::Unsent(message) | RoundTripError::Lost(message)) => {
                     self.discard(&running);
                     return Err(format!("sidecar connection failed: {message}"));
-                }
-                Err(RoundTripError::TimedOut(timeout)) => {
-                    let stalled = running.finished.load(Ordering::Relaxed) == finished_before
-                        && running.stalled_timeouts.fetch_add(1, Ordering::Relaxed) + 1
-                            >= MAX_STALLED_TIMEOUTS;
-                    if !READS.contains(&method) || stalled {
-                        self.discard(&running);
-                    } else {
-                        self.probe(&running);
-                    }
-                    return Err(format!("sidecar did not answer within {timeout:?}"));
                 }
             }
         }
@@ -457,31 +387,6 @@ mod tests {
         std::fs::write(&script, format!("#!/bin/sh\n{body}")).unwrap();
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
         script
-    }
-
-    /// Answers `methods` at once, any other method after `late_by` seconds or never.
-    fn answering_core(dir: &std::path::Path, methods: &[&str], late_by: Option<&str>) -> PathBuf {
-        let pattern = methods
-            .iter()
-            .map(|method| format!(r#"*'"method":"{method}"'*"#))
-            .collect::<Vec<_>>()
-            .join("|");
-        let reply = r#"printf '{"v":1,"id":"%s","ok":true,"result":{"pong":true}}\n' "$id""#;
-        let late = late_by
-            .map(|seconds| format!("    *) (sleep {seconds}; {reply}) & ;;\n"))
-            .unwrap_or_default();
-        script_core(
-            dir,
-            &format!(
-                r#"while read -r line; do
-  id=$(printf '%s\n' "$line" | sed 's/.*"id":"\([0-9]*\)".*/\1/')
-  case "$line" in
-    {pattern}) {reply} ;;
-{late}  esac
-done
-"#
-            ),
-        )
     }
 
     fn exited(running: &Running) -> bool {
@@ -626,139 +531,33 @@ done
     }
 
     #[test]
-    fn wedged_sidecar_is_killed_and_respawned() {
-        let dir = temp_dir("wedged");
-        let script = script_core(&dir, "while read -r _line; do :; done\n");
+    fn a_timed_out_request_fails_alone_and_the_core_keeps_serving() {
+        let dir = temp_dir("slow");
+        let script = script_core(
+            &dir,
+            r#"while read -r line; do
+  case "$line" in
+    *'"method":"ping"'*)
+      id=$(printf '%s\n' "$line" | sed 's/.*"id":"\([0-9]*\)".*/\1/')
+      printf '{"v":1,"id":"%s","ok":true,"result":{"pong":true}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
         let mut sidecar = Sidecar::new(script);
         sidecar.read_timeout = Duration::from_millis(200);
-        let wedged = sidecar.connection().expect("spawn");
+        let core = sidecar.connection().expect("spawn");
         let start = Instant::now();
-        let error = sidecar.request("ping", None).expect_err("must time out");
+        let error = sidecar.request("render", None).expect_err("must time out");
         assert!(error.contains("did not answer"), "got: {error}");
         assert!(
-            start.elapsed() < sidecar.read_timeout + PROBE_TIMEOUT + Duration::from_secs(1),
+            start.elapsed() < Duration::from_secs(2),
             "took {:?}",
             start.elapsed()
         );
-        assert!(exited(&wedged), "wedged core still running");
-        let fresh = sidecar.connection().expect("respawn");
-        assert!(!Arc::ptr_eq(&wedged, &fresh));
-        sidecar.shutdown();
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn a_slow_request_does_not_kill_a_core_that_answers_ping() {
-        let dir = temp_dir("busy");
-        let mut sidecar = Sidecar::new(answering_core(&dir, &["ping"], None));
-        sidecar.read_timeout = Duration::from_millis(200);
-        let busy = sidecar.connection().expect("spawn");
-        let error = sidecar.request("render", None).expect_err("must time out");
-        assert!(error.contains("did not answer"), "got: {error}");
-        assert!(!exited(&busy));
-        assert!(Arc::ptr_eq(&busy, &sidecar.connection().unwrap()));
+        assert!(!exited(&core), "a timeout killed the core");
         assert_eq!(sidecar.request("ping", None).expect("ping")["pong"], true);
-        sidecar.shutdown();
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn a_core_that_answers_ping_but_finishes_nothing_is_respawned() {
-        let dir = temp_dir("stuck");
-        let mut sidecar = Sidecar::new(answering_core(&dir, &["ping"], None));
-        sidecar.read_timeout = Duration::from_millis(100);
-        let stuck = sidecar.connection().expect("spawn");
-        for _ in 1..MAX_STALLED_TIMEOUTS {
-            sidecar.request("render", None).expect_err("must time out");
-        }
-        assert!(!exited(&stuck));
-        sidecar.request("render", None).expect_err("must time out");
-        assert!(exited(&stuck));
-        sidecar.shutdown();
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn a_burst_of_timeouts_does_not_kill_a_core_that_keeps_finishing_work() {
-        let dir = temp_dir("burst");
-        let mut sidecar = Sidecar::new(answering_core(&dir, &["ping", "listShoots"], None));
-        sidecar.read_timeout = Duration::from_millis(300);
-        let sidecar = Arc::new(sidecar);
-        let busy = sidecar.connection().expect("spawn");
-        let renders: Vec<_> = (0..MAX_STALLED_TIMEOUTS)
-            .map(|_| {
-                let sidecar = Arc::clone(&sidecar);
-                std::thread::spawn(move || sidecar.request("render", None).expect_err("slow"))
-            })
-            .collect();
-        std::thread::sleep(Duration::from_millis(100));
-        sidecar.request("listShoots", None).expect("listShoots");
-        for render in renders {
-            render.join().expect("worker");
-        }
-        assert!(!exited(&busy));
-        assert!(Arc::ptr_eq(&busy, &sidecar.connection().unwrap()));
-        sidecar.shutdown();
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn late_answers_landing_between_timeouts_keep_the_core_alive() {
-        let dir = temp_dir("late");
-        let mut sidecar = Sidecar::new(answering_core(&dir, &["ping"], Some("0.3")));
-        sidecar.read_timeout = Duration::from_millis(200);
-        let busy = sidecar.connection().expect("spawn");
-        for _ in 0..MAX_STALLED_TIMEOUTS {
-            sidecar.request("render", None).expect_err("answered late");
-            std::thread::sleep(Duration::from_millis(50));
-        }
-        assert!(!exited(&busy));
-        sidecar.shutdown();
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn a_timed_out_write_kills_the_core() {
-        let dir = temp_dir("write");
-        let mut sidecar = Sidecar::new(answering_core(&dir, &["ping"], None));
-        sidecar.read_timeout = Duration::from_millis(200);
-        for method in ["setEdit", "exportFiles"] {
-            let busy = sidecar.connection().expect("spawn");
-            sidecar.request(method, None).expect_err("must time out");
-            assert!(exited(&busy), "{method} left the core running");
-        }
-        sidecar.shutdown();
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn requests_timing_out_together_probe_once() {
-        let dir = temp_dir("storm");
-        let log = dir.join("received.log");
-        let script = script_core(
-            &dir,
-            &format!(
-                "while read -r line; do echo \"$line\" >> '{}'; done\n",
-                log.display()
-            ),
-        );
-        let mut sidecar = Sidecar::new(script);
-        sidecar.read_timeout = Duration::from_millis(200);
-        let sidecar = Arc::new(sidecar);
-        let threads: Vec<_> = (1..MAX_STALLED_TIMEOUTS)
-            .map(|_| {
-                let sidecar = Arc::clone(&sidecar);
-                std::thread::spawn(move || sidecar.request("render", None).expect_err("wedged"))
-            })
-            .collect();
-        for thread in threads {
-            thread.join().expect("worker");
-        }
-        let received = std::fs::read_to_string(&log).unwrap();
-        let pings = received
-            .lines()
-            .filter(|line| line.contains(r#""method":"ping""#));
-        assert_eq!(pings.count(), 1, "{received}");
+        assert!(Arc::ptr_eq(&core, &sidecar.connection().unwrap()));
         sidecar.shutdown();
         let _ = std::fs::remove_dir_all(&dir);
     }
