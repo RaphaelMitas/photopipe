@@ -377,6 +377,69 @@ describe("useSetRating", () => {
     ).toBe(3);
   });
 
+  it("still delivers an external change whose refetch a rating cancelled", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const disk = [image("A"), image("B")];
+    let generation = 1;
+    let listed = 0;
+    const held: Array<() => void> = [];
+    invoke.mockImplementation(async (_command, { method, params }) => {
+      if (method === "status") {
+        return {
+          generation,
+          root: "/r",
+          shoots: 1,
+          scanning: true,
+          filesFound: 2,
+          filesEnriched: 2,
+          changedShoots: generation > params.since ? ["shoot1"] : [],
+        };
+      }
+      if (method === "listImages") {
+        listed += 1;
+        if (listed === 2) await new Promise<void>((go) => held.push(go));
+        return { images: disk.map((file) => ({ ...file })) };
+      }
+      if (method === "setRating") {
+        disk[0] = { ...disk[0], rating: params.rating };
+        return { rating: params.rating };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+
+    let mutation!: ReturnType<typeof useSetRating>;
+    function Rater() {
+      useImages("shoot1");
+      useLibrarySync(true, 1);
+      mutation = useSetRating("shoot1");
+      return null;
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Rater />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(listed).toBe(1));
+
+    disk[1] = { ...disk[1], rating: 5 };
+    generation = 2;
+    await waitFor(() => expect(held.length).toBe(1));
+    await act(() =>
+      mutation.mutateAsync({ path: "/r/shoot1/A.ARW", value: 3 }),
+    );
+    held[0]();
+
+    await waitFor(() =>
+      expect(
+        client
+          .getQueryData<ImageFile[]>(["images", "shoot1"])
+          ?.map((file) => file.rating),
+      ).toEqual([3, 5]),
+    );
+  });
+
   it("ends on the last rating when the first answer arrives late", async () => {
     const client = new QueryClient();
     client.setQueryData(["images", "shoot1"], [image("A")]);

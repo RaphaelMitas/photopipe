@@ -279,6 +279,27 @@ function xmpWritesInFlight(queryClient: QueryClient): number {
   );
 }
 
+/// Shoots whose refetch a write cancelled. The poller has already moved past
+/// the change that refetch was for, so the last write has to fetch it again.
+const cancelledRefetches = new Set<string | null>();
+
+async function holdImages(queryClient: QueryClient, shoot: string | null) {
+  if (queryClient.isFetching({ queryKey: imagesKey(shoot) }) > 0) {
+    cancelledRefetches.add(shoot);
+  }
+  await queryClient.cancelQueries({ queryKey: imagesKey(shoot) });
+}
+
+// Waits for the last write, or the refetch could land over one still in flight.
+function releaseImages(queryClient: QueryClient, shoot: string | null) {
+  if (
+    xmpWritesInFlight(queryClient) === 1 &&
+    cancelledRefetches.delete(shoot)
+  ) {
+    queryClient.invalidateQueries({ queryKey: imagesKey(shoot) });
+  }
+}
+
 export function cachedImage(
   queryClient: QueryClient,
   shoot: string | null,
@@ -421,11 +442,12 @@ function useFieldWrite<V>(shoot: string | null, field: PhotoField<V>) {
     mutationFn: ({ path, value }: { path: string; value: V }) =>
       writeField(queryClient, shoot, path, field, value),
     onMutate: async (vars) => {
-      await queryClient.cancelQueries({ queryKey: imagesKey(shoot) });
+      await holdImages(queryClient, shoot);
       const previous = cachedValue(queryClient, shoot, vars.path, field);
       patchImage(queryClient, shoot, vars.path, field.patch(vars.value));
       return { previous };
     },
+    onSettled: () => releaseImages(queryClient, shoot),
     onError: (error, vars, context) => {
       if (context?.previous !== undefined) {
         patchImage(
@@ -466,7 +488,7 @@ function useBatchWrite<V>(shoot: string | null, field: PhotoField<V>) {
       const target = shoot;
       const live = (path: string) =>
         cachedValue(queryClient, target, path, field);
-      await queryClient.cancelQueries({ queryKey: imagesKey(target) });
+      await holdImages(queryClient, target);
       const previous = new Map<string, V>();
       const patches = new Map<string, Partial<ImageFile>>();
       for (const [path, value] of values) {
@@ -514,6 +536,7 @@ function useBatchWrite<V>(shoot: string | null, field: PhotoField<V>) {
           description: "Saving failed",
         });
       }
+      releaseImages(queryClient, target);
       return {
         written: values.size - failed.length - overtaken,
         failed,
