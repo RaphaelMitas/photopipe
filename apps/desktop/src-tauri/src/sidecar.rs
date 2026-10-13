@@ -4,10 +4,9 @@
 //! transport: requests from any thread interleave on one stdin pipe, a reader
 //! thread routes responses to waiters by id, so a slow render never blocks a
 //! ping. A request that times out fails on its own and the core keeps running,
-//! so a slow request never takes running exports down; its deadline travels in
-//! the envelope so the core skips it if it is still queued. Only a core that
-//! dies is respawned: the library root is replayed and a request is re-sent only
-//! if it never reached the core. A wedged core stays until the app restarts.
+//! so a slow request never takes running exports down. Only a core that dies is
+//! respawned: the library root is replayed and a request is re-sent only if it
+//! never reached the core. A wedged core stays until the app restarts.
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -18,7 +17,7 @@ use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{sync_channel, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 pub const PROTOCOL_VERSION: u64 = 1;
 
@@ -87,7 +86,6 @@ enum RoundTripError {
 pub struct Sidecar {
     bin: PathBuf,
     read_timeout: Duration,
-    set_root_timeout: Duration,
     next_id: AtomicU64,
     running: Mutex<Option<Arc<Running>>>,
     /// Params of the last successful `setRoot`, replayed after a respawn so
@@ -100,7 +98,6 @@ impl Sidecar {
         Self {
             bin,
             read_timeout: READ_TIMEOUT,
-            set_root_timeout: SET_ROOT_TIMEOUT,
             next_id: AtomicU64::new(1),
             running: Mutex::new(None),
             last_root: Mutex::new(None),
@@ -230,14 +227,9 @@ impl Sidecar {
             };
         }
 
-        let timeout = if method == "setRoot" {
-            self.set_root_timeout
-        } else {
-            self.read_timeout
-        };
         {
             let mut stdin = running.stdin.lock().unwrap();
-            if let Err(e) = stdin.write_all(envelope(id, method, params, timeout).as_bytes()) {
+            if let Err(e) = stdin.write_all(envelope(id, method, params).as_bytes()) {
                 if let Some(map) = running.pending.lock().unwrap().as_mut() {
                     map.remove(&id);
                 }
@@ -245,6 +237,11 @@ impl Sidecar {
             }
         }
 
+        let timeout = if method == "setRoot" {
+            SET_ROOT_TIMEOUT
+        } else {
+            self.read_timeout
+        };
         let response = match rx.recv_timeout(timeout) {
             Ok(Ok(response)) => response,
             Ok(Err(reason)) => return Err(RoundTripError::Lost(reason)),
@@ -289,11 +286,6 @@ impl Sidecar {
                     }
                     return Ok(result);
                 }
-                // A walk still running would later switch the core to a root the app gave up on.
-                Err(RoundTripError::TimedOut(message)) if method == "setRoot" => {
-                    self.discard(&running);
-                    return Err(message);
-                }
                 Err(RoundTripError::Remote(message) | RoundTripError::TimedOut(message)) => {
                     return Err(message)
                 }
@@ -319,19 +311,17 @@ impl Sidecar {
         };
         drop(guard);
 
-        // long enough for a running export to drop its queue and clean up
-        let grace = Duration::from_millis(3000);
         let goodbye = envelope(
             self.next_id.fetch_add(1, Ordering::Relaxed),
             "shutdown",
             &None,
-            grace,
         );
         {
             let mut stdin = running.stdin.lock().unwrap();
             let _ = stdin.write_all(goodbye.as_bytes());
         }
-        let deadline = Instant::now() + grace;
+        // long enough for a running export to drop its queue and clean up
+        let deadline = Instant::now() + Duration::from_millis(3000);
         while Instant::now() < deadline {
             match running.child.lock().unwrap().try_wait() {
                 Ok(Some(_)) => {
@@ -347,16 +337,12 @@ impl Sidecar {
     }
 }
 
-fn envelope(id: u64, method: &str, params: &Option<Value>, timeout: Duration) -> String {
-    let deadline = (SystemTime::now() + timeout)
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default();
+fn envelope(id: u64, method: &str, params: &Option<Value>) -> String {
     let request = json!({
         "v": PROTOCOL_VERSION,
         "id": id.to_string(),
         "method": method,
         "params": params,
-        "deadline": deadline.as_secs_f64(),
     });
     format!("{request}\n")
 }
@@ -572,25 +558,6 @@ done
         assert!(!exited(&core), "a timeout killed the core");
         assert_eq!(sidecar.request("ping", None).expect("ping")["pong"], true);
         assert!(Arc::ptr_eq(&core, &sidecar.connection().unwrap()));
-        sidecar.shutdown();
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn a_timed_out_set_root_discards_the_core() {
-        let dir = temp_dir("set-root");
-        let script = script_core(&dir, "while read -r _line; do :; done\n");
-        let mut sidecar = Sidecar::new(script);
-        sidecar.set_root_timeout = Duration::from_millis(200);
-        let core = sidecar.connection().expect("spawn");
-        sidecar
-            .request("setRoot", Some(json!({"path": "/slow/nas"})))
-            .expect_err("must time out");
-        assert!(
-            exited(&core),
-            "the core kept walking a root the app gave up on"
-        );
-        assert!(!Arc::ptr_eq(&core, &sidecar.connection().unwrap()));
         sidecar.shutdown();
         let _ = std::fs::remove_dir_all(&dir);
     }

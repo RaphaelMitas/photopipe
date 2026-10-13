@@ -2,7 +2,7 @@ import Foundation
 
 /// Sidecar protocol v1: line-delimited JSON over stdio.
 ///
-/// Request:  {"v":1,"id":"<caller id>","method":"ping","params":{...},"deadline":<unix seconds>}
+/// Request:  {"v":1,"id":"<caller id>","method":"ping","params":{...}}
 /// Response: {"v":1,"id":"<caller id>","ok":true,"result":{...}}
 ///           {"v":1,"id":"<caller id>","ok":false,"error":{"code":"...","message":"..."}}
 public let protocolVersion = 1
@@ -13,17 +13,12 @@ public struct Request: Codable, Equatable, Sendable {
     public let id: String
     public let method: String
     public let params: JSONValue?
-    public let deadline: Double?
 
-    public init(
-        v: Int = protocolVersion, id: String, method: String, params: JSONValue? = nil,
-        deadline: Double? = nil
-    ) {
+    public init(v: Int = protocolVersion, id: String, method: String, params: JSONValue? = nil) {
         self.v = v
         self.id = id
         self.method = method
         self.params = params
-        self.deadline = deadline
     }
 }
 
