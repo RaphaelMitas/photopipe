@@ -647,7 +647,7 @@ public final class LibraryService: @unchecked Sendable {
             let found = try image(shoot: shootName, path: path)
             targets.append(found.path)
             let sidecar = XMP.sidecarURL(forImagePath: found.path)
-            if FileManager.default.fileExists(atPath: sidecar.path) {
+            if found.usesSidecar, FileManager.default.fileExists(atPath: sidecar.path) {
                 targets.append(sidecar.path)
             }
         }

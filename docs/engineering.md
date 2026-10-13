@@ -47,7 +47,11 @@ the loupe shows the thumbnail immediately and prefetches neighbours.
 JSON over stdio, versioned envelope, concurrent: requests run on a bounded
 work queue and responses may come back out of order, matched by id. The Rust
 side multiplexes, poisons a desynced connection, replays the root after a
-respawn, and never auto-retries a mutating method.
+respawn, and re-sends a request only if it never reached the core. A timeout
+fails just that request and never kills the core, so running exports survive;
+the core is respawned only when it dies, and a wedged one stays until restart.
+The exception is `setRoot`: its timeout discards the core, so a walk still
+running cannot later switch it to a library the app gave up on.
 
 ## Testing
 
@@ -84,8 +88,9 @@ rather than committed — they are 25–50 MB each.
 Requirements: **macOS 15, Apple Silicon.** The bundle's
 `minimumSystemVersion` and the Swift package's platform floor must stay
 equal; if the bundle allows an older OS than the core was built for, the app
-installs, opens, and then every request fails. `scripts/build-core.sh` builds
-the host triple only, so an Intel Mac would get a sidecar that cannot run.
+installs, opens, and then every request fails. `scripts/prepare-bundle.sh`
+builds the core for the host triple only, so an Intel Mac would get a sidecar
+that cannot run.
 
 `tauri-build` resolves `externalBin` and `bundle.resources` at compile time,
 so a missing Swift core or missing exiftool fails `cargo clippy` and

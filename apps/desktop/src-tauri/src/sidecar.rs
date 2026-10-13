@@ -3,8 +3,11 @@
 //! Protocol v1 envelope (line-delimited JSON with string ids), concurrent
 //! transport: requests from any thread interleave on one stdin pipe, a reader
 //! thread routes responses to waiters by id, so a slow render never blocks a
-//! ping. Crash/wedge recovery respawns the core, replays the library root, and
-//! re-sends only idempotent requests.
+//! ping. A request that times out fails on its own and the core keeps running,
+//! so a slow request never takes running exports down. The one exception is
+//! setRoot, whose timeout discards the core. Otherwise only a core that dies is
+//! respawned: the library root is replayed and a request is re-sent only if it
+//! never reached the core. A wedged core stays until the app restarts.
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -27,10 +30,6 @@ const READ_TIMEOUT: Duration = Duration::from_secs(10);
 /// the whole tree before answering. Reading metadata happens afterwards, but a
 /// deep tree on a slow external disk can still take a while to enumerate.
 const SET_ROOT_TIMEOUT: Duration = Duration::from_secs(120);
-
-/// Requests that mutate state must never be silently re-sent after a respawn:
-/// the first send may have taken effect before the connection died.
-const MUTATING_METHODS: &[&str] = &["setRating", "setEdit", "exportFiles", "importFiles"];
 
 #[derive(Debug, Deserialize)]
 struct WireError {
@@ -76,8 +75,11 @@ impl Running {
 }
 
 enum RoundTripError {
-    /// Connection-level failure — worth a respawn.
-    Io(String),
+    /// Safe to re-send on a fresh core.
+    Unsent(String),
+    /// The core may have acted on the request before the connection failed.
+    Lost(String),
+    TimedOut(String),
     /// The core answered with an error — respawning won't help.
     Remote(String),
 }
@@ -124,17 +126,7 @@ impl Sidecar {
         {
             return sibling;
         }
-        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        for profile in ["release", "debug"] {
-            let candidate = manifest
-                .join("../../../core/.build")
-                .join(profile)
-                .join("photopipe-core");
-            if candidate.exists() {
-                return candidate;
-            }
-        }
-        PathBuf::from("photopipe-core")
+        dev_build(["release", "debug"]).unwrap_or_else(|| PathBuf::from("photopipe-core"))
     }
 
     fn spawn(&self) -> Result<Arc<Running>, String> {
@@ -189,31 +181,24 @@ impl Sidecar {
 
     /// Current connection, spawning (and replaying the root) if needed.
     fn connection(&self) -> Result<Arc<Running>, String> {
-        {
+        let fresh = {
             let mut guard = self.running.lock().map_err(|e| e.to_string())?;
             if let Some(running) = guard.as_ref() {
                 return Ok(Arc::clone(running));
             }
             let running = self.spawn()?;
             *guard = Some(Arc::clone(&running));
-        }
+            running
+        };
         // Outside the lock, best-effort: replay session state on the fresh
         // connection. A concurrent request can slip in before the replay and
         // eat one `no_root` error — that request fails visibly and the next
         // succeeds, which is acceptable for a crash-recovery path.
         let replay = self.last_root.lock().unwrap().clone();
         if let Some(params) = replay {
-            let running = self.running.lock().unwrap().as_ref().map(Arc::clone);
-            if let Some(running) = running {
-                let _ = self.round_trip(&running, "setRoot", &Some(params));
-            }
+            let _ = self.round_trip(&fresh, "setRoot", &Some(params));
         }
-        self.running
-            .lock()
-            .unwrap()
-            .as_ref()
-            .map(Arc::clone)
-            .ok_or_else(|| "sidecar connection lost during setup".into())
+        Ok(fresh)
     }
 
     /// Drop `failed` as the current connection (only if it still is) and kill it.
@@ -241,25 +226,17 @@ impl Sidecar {
             let mut pending = running.pending.lock().unwrap();
             match pending.as_mut() {
                 Some(map) => map.insert(id, tx),
-                None => return Err(RoundTripError::Io("connection already failed".into())),
+                None => return Err(RoundTripError::Unsent("connection already failed".into())),
             };
         }
 
-        let request = json!({
-            "v": PROTOCOL_VERSION,
-            "id": id.to_string(),
-            "method": method,
-            "params": params,
-        });
-        let mut line = request.to_string();
-        line.push('\n');
         {
             let mut stdin = running.stdin.lock().unwrap();
-            if let Err(e) = stdin.write_all(line.as_bytes()) {
+            if let Err(e) = stdin.write_all(envelope(id, method, params).as_bytes()) {
                 if let Some(map) = running.pending.lock().unwrap().as_mut() {
                     map.remove(&id);
                 }
-                return Err(RoundTripError::Io(format!("write: {e}")));
+                return Err(RoundTripError::Unsent(format!("write: {e}")));
             }
         }
 
@@ -270,17 +247,17 @@ impl Sidecar {
         };
         let response = match rx.recv_timeout(timeout) {
             Ok(Ok(response)) => response,
-            Ok(Err(reason)) => return Err(RoundTripError::Io(reason)),
+            Ok(Err(reason)) => return Err(RoundTripError::Lost(reason)),
             Err(RecvTimeoutError::Timeout) => {
                 if let Some(map) = running.pending.lock().unwrap().as_mut() {
                     map.remove(&id);
                 }
-                return Err(RoundTripError::Io(format!(
+                return Err(RoundTripError::TimedOut(format!(
                     "sidecar did not answer within {timeout:?}"
                 )));
             }
             Err(RecvTimeoutError::Disconnected) => {
-                return Err(RoundTripError::Io("connection failed".into()))
+                return Err(RoundTripError::Lost("connection failed".into()))
             }
         };
 
@@ -302,9 +279,8 @@ impl Sidecar {
     }
 
     pub fn request(&self, method: &str, params: Option<Value>) -> Result<Value, String> {
-        let retryable = !MUTATING_METHODS.contains(&method);
-        let mut last_io_error = String::new();
-        for _attempt in 0..2 {
+        let mut retried = false;
+        loop {
             let running = self.connection()?;
             match self.round_trip(&running, method, &params) {
                 Ok(result) => {
@@ -313,21 +289,24 @@ impl Sidecar {
                     }
                     return Ok(result);
                 }
-                Err(RoundTripError::Remote(message)) => return Err(message),
-                Err(RoundTripError::Io(message)) => {
+                // A walk still running would later switch the core to a root the app gave up on.
+                Err(RoundTripError::TimedOut(message)) if method == "setRoot" => {
                     self.discard(&running);
-                    last_io_error = message;
-                    if !retryable {
-                        // The core may have applied the mutation before dying —
-                        // surface the failure instead of risking a double apply.
-                        return Err(format!("sidecar connection failed: {last_io_error}"));
-                    }
+                    return Err(message);
+                }
+                Err(RoundTripError::Remote(message) | RoundTripError::TimedOut(message)) => {
+                    return Err(message)
+                }
+                Err(RoundTripError::Unsent(_)) if !retried => {
+                    self.discard(&running);
+                    retried = true;
+                }
+                Err(RoundTripError::Unsent(message) | RoundTripError::Lost(message)) => {
+                    self.discard(&running);
+                    return Err(format!("sidecar connection failed: {message}"));
                 }
             }
         }
-        Err(format!(
-            "sidecar unreachable after restart: {last_io_error}"
-        ))
     }
 
     /// Best-effort graceful shutdown: ask politely, then reap or kill.
@@ -340,14 +319,14 @@ impl Sidecar {
         };
         drop(guard);
 
-        let goodbye = json!({
-            "v": PROTOCOL_VERSION,
-            "id": self.next_id.fetch_add(1, Ordering::Relaxed).to_string(),
-            "method": "shutdown",
-        });
+        let goodbye = envelope(
+            self.next_id.fetch_add(1, Ordering::Relaxed),
+            "shutdown",
+            &None,
+        );
         {
             let mut stdin = running.stdin.lock().unwrap();
-            let _ = stdin.write_all(format!("{goodbye}\n").as_bytes());
+            let _ = stdin.write_all(goodbye.as_bytes());
         }
         // long enough for a running export to drop its queue and clean up
         let deadline = Instant::now() + Duration::from_millis(3000);
@@ -366,20 +345,31 @@ impl Sidecar {
     }
 }
 
+fn envelope(id: u64, method: &str, params: &Option<Value>) -> String {
+    let request = json!({
+        "v": PROTOCOL_VERSION,
+        "id": id.to_string(),
+        "method": method,
+        "params": params,
+    });
+    format!("{request}\n")
+}
+
+fn dev_build(profiles: [&str; 2]) -> Option<PathBuf> {
+    let build = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../core/.build");
+    profiles
+        .into_iter()
+        .map(|profile| build.join(profile).join("photopipe-core"))
+        .find(|candidate| candidate.exists())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn core_bin() -> Option<PathBuf> {
-        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        for profile in ["debug", "release"] {
-            let candidate = manifest
-                .join("../../../core/.build")
-                .join(profile)
-                .join("photopipe-core");
-            if candidate.exists() {
-                return Some(candidate);
-            }
+        if let Some(bin) = dev_build(["debug", "release"]) {
+            return Some(bin);
         }
         // Locally a missing core is a soft skip; on CI it means the pipeline
         // forgot to build Swift first and must fail loudly, not go green.
@@ -390,12 +380,29 @@ mod tests {
         None
     }
 
-    fn temp_tree(tag: &str, files: &[&str]) -> PathBuf {
-        let root = std::env::temp_dir().join(format!(
+    fn temp_dir(tag: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
             "photopipe-cargo-{tag}-{}-{:?}",
             std::process::id(),
             std::thread::current().id()
-        ));
+        ))
+    }
+
+    fn script_core(dir: &std::path::Path, body: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::create_dir_all(dir).unwrap();
+        let script = dir.join("core.sh");
+        std::fs::write(&script, format!("#!/bin/sh\n{body}")).unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        script
+    }
+
+    fn exited(running: &Running) -> bool {
+        running.child.lock().unwrap().try_wait().unwrap().is_some()
+    }
+
+    fn temp_tree(tag: &str, files: &[&str]) -> PathBuf {
+        let root = temp_dir(tag);
         let shoot = root.join("2026-01-01_cargotest");
         std::fs::create_dir_all(&shoot).unwrap();
         for name in files {
@@ -532,46 +539,73 @@ mod tests {
     }
 
     #[test]
-    fn wedged_sidecar_times_out_instead_of_hanging() {
-        // A "sidecar" that accepts requests but never answers.
-        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/wedged-sidecar.sh");
+    fn a_timed_out_request_fails_alone_and_the_core_keeps_serving() {
+        let dir = temp_dir("slow");
+        let script = script_core(
+            &dir,
+            r#"while read -r line; do
+  case "$line" in
+    *'"method":"ping"'*)
+      id=$(printf '%s\n' "$line" | sed 's/.*"id":"\([0-9]*\)".*/\1/')
+      printf '{"v":1,"id":"%s","ok":true,"result":{"pong":true}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
         let mut sidecar = Sidecar::new(script);
         sidecar.read_timeout = Duration::from_millis(200);
+        let core = sidecar.connection().expect("spawn");
         let start = Instant::now();
-        let error = sidecar.request("ping", None).expect_err("must time out");
+        let error = sidecar.request("render", None).expect_err("must time out");
         assert!(error.contains("did not answer"), "got: {error}");
-        // Two attempts (initial + respawn retry), each bounded by the timeout.
         assert!(
             start.elapsed() < Duration::from_secs(2),
             "took {:?}",
             start.elapsed()
         );
+        assert!(!exited(&core), "a timeout killed the core");
+        assert_eq!(sidecar.request("ping", None).expect("ping")["pong"], true);
+        assert!(Arc::ptr_eq(&core, &sidecar.connection().unwrap()));
         sidecar.shutdown();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn mutating_methods_are_not_retried() {
-        let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/wedged-sidecar.sh");
+    fn a_timed_out_set_root_discards_the_core() {
+        let dir = temp_dir("set-root");
+        let script = script_core(&dir, "while read -r _line; do :; done\n");
         let mut sidecar = Sidecar::new(script);
-        sidecar.read_timeout = Duration::from_millis(200);
-        // Spelled out: a loop over the constant would stay green if a method left it.
-        for method in ["setRating", "setEdit", "exportFiles", "importFiles"] {
-            assert!(
-                MUTATING_METHODS.contains(&method),
-                "{method} mutates the library and must never be re-sent"
-            );
-            let start = Instant::now();
-            let error = sidecar
-                .request(method, Some(json!({"path": "/r/DSC1.ARW", "rating": 3})))
-                .expect_err("must fail");
-            // One attempt only — no silent re-send of a possibly-applied mutation.
-            assert!(error.contains("connection failed"), "{method} got: {error}");
-            assert!(
-                start.elapsed() < Duration::from_millis(600),
-                "{method} took {:?} — looks like it retried",
-                start.elapsed()
-            );
-        }
+        sidecar.set_root_timeout = Duration::from_millis(200);
+        let core = sidecar.connection().expect("spawn");
+        sidecar
+            .request("setRoot", Some(json!({"path": "/slow/nas"})))
+            .expect_err("must time out");
+        assert!(
+            exited(&core),
+            "the core kept walking a root the app gave up on"
+        );
+        assert!(!Arc::ptr_eq(&core, &sidecar.connection().unwrap()));
         sidecar.shutdown();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_request_the_core_received_is_never_resent() {
+        let dir = temp_dir("received");
+        let log = dir.join("received.log");
+        let script = script_core(
+            &dir,
+            &format!("read -r line\necho \"$line\" >> '{}'\n", log.display()),
+        );
+
+        let sidecar = Sidecar::new(script);
+        let error = sidecar
+            .request("trash", Some(json!({"paths": ["/r/DSC1.ARW"]})))
+            .expect_err("core died mid-request");
+        assert!(error.contains("connection failed"), "got: {error}");
+        let received = std::fs::read_to_string(&log).unwrap();
+        assert_eq!(received.lines().count(), 1, "re-sent: {received}");
+        sidecar.shutdown();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
