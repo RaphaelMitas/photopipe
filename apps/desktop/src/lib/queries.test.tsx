@@ -547,6 +547,50 @@ describe("useSetRating", () => {
     );
   });
 
+  it("shows what is on disk after two failed ratings to one photo", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const refusals: Array<() => void> = [];
+    invoke.mockImplementation(async (_command, { method }) => {
+      if (method === "listImages") return { images: [image("A")] };
+      if (method === "setRating") {
+        await new Promise<void>((go) => refusals.push(go));
+        throw new Error("read-only card");
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+
+    let mutation!: ReturnType<typeof useSetRating>;
+    function Rater() {
+      useImages("shoot1");
+      mutation = useSetRating("shoot1");
+      return null;
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Rater />
+      </QueryClientProvider>,
+    );
+    await waitFor(() =>
+      expect(client.getQueryData(["images", "shoot1"])).toBeDefined(),
+    );
+
+    const first = mutation.mutateAsync({ path: "/r/shoot1/A.ARW", value: 3 });
+    const second = mutation.mutateAsync({ path: "/r/shoot1/A.ARW", value: 4 });
+    await waitFor(() => expect(refusals.length).toBe(1));
+    refusals[0]();
+    await act(() => first.catch(() => {}));
+    await waitFor(() => expect(refusals.length).toBe(2));
+    refusals[1]();
+    await act(() => second.catch(() => {}));
+
+    await waitFor(() => expect(client.isFetching()).toBe(0));
+    expect(
+      client.getQueryData<ImageFile[]>(["images", "shoot1"])?.[0].rating,
+    ).toBe(0);
+  });
+
   it("ends on the last rating when the first answer arrives late", async () => {
     const client = new QueryClient();
     client.setQueryData(["images", "shoot1"], [image("A")]);

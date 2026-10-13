@@ -279,15 +279,18 @@ function xmpWritesInFlight(queryClient: QueryClient): number {
   );
 }
 
-/// Shoots whose list was fetched or cancelled while a write was in flight. It
-/// may hold a pre-write value or a change the poller has already moved past,
-/// so the last write to settle fetches it again.
+/// A failed write or a list fetched during a write: refetch that shoot once the burst ends.
 const staleLists = new WeakMap<QueryClient, Set<string | null>>();
 
-function markFetching(queryClient: QueryClient, shoot: string | null) {
-  if (queryClient.isFetching({ queryKey: imagesKey(shoot) }) === 0) return;
+function markStale(queryClient: QueryClient, shoot: string | null) {
   const shoots = staleLists.get(queryClient) ?? new Set();
   staleLists.set(queryClient, shoots.add(shoot));
+}
+
+function markFetching(queryClient: QueryClient, shoot: string | null) {
+  if (queryClient.isFetching({ queryKey: imagesKey(shoot) }) > 0) {
+    markStale(queryClient, shoot);
+  }
 }
 
 async function holdImages(queryClient: QueryClient, shoot: string | null) {
@@ -452,7 +455,10 @@ function useFieldWrite<V>(shoot: string | null, field: PhotoField<V>) {
       patchImage(queryClient, shoot, vars.path, field.patch(vars.value));
       return { previous };
     },
-    onSettled: () => releaseImages(queryClient),
+    onSettled: (_data, error) => {
+      if (error) markStale(queryClient, shoot);
+      releaseImages(queryClient);
+    },
     onError: (error, vars, context) => {
       if (context?.previous !== undefined) {
         patchImage(
@@ -537,6 +543,7 @@ function useBatchWrite<V>(shoot: string | null, field: PhotoField<V>) {
         ),
       );
       if (failed.length > 0) {
+        markStale(queryClient, target);
         toast.error(field.failedMany(failed.length), {
           description: "Saving failed",
         });
