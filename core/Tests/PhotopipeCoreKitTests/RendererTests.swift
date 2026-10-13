@@ -159,7 +159,7 @@ private func tempCacheDir() -> URL {
         [.modificationDate: Date().addingTimeInterval(-8 * 24 * 3600)],
         ofItemAtPath: stale.path)
 
-    CacheFolder(dir: cacheDir).prune(olderThan: 7 * 24 * 3600)
+    CacheFolder(dir: cacheDir, maxBytes: .max).prune(olderThan: 7 * 24 * 3600)
 
     #expect(!FileManager.default.fileExists(atPath: stale.path), "8-day-old render pruned")
     #expect(FileManager.default.fileExists(atPath: fresh.path), "fresh render kept")
@@ -169,7 +169,7 @@ private func tempCacheDir() -> URL {
 @Test func aCacheEntryInUseOutlivesThePrune() throws {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
-    let cache = CacheFolder(dir: cacheDir)
+    let cache = CacheFolder(dir: cacheDir, maxBytes: .max)
     let entry = try cache.cachedFile(at: cache.url(forKey: "photo")) { try Data("x".utf8).write(to: $0) }
     try FileManager.default.setAttributes(
         [.modificationDate: Date().addingTimeInterval(-8 * 24 * 3600)], ofItemAtPath: entry.path)
@@ -180,6 +180,85 @@ private func tempCacheDir() -> URL {
     cache.prune(olderThan: 7 * 24 * 3600)
 
     #expect(FileManager.default.fileExists(atPath: entry.path), "a hit keeps the entry alive")
+}
+
+private func writeEntry(_ name: String, in dir: URL, bytes: Int, hoursAgo: Double) throws -> URL {
+    let url = dir.appendingPathComponent(name)
+    try Data(count: bytes).write(to: url)
+    try FileManager.default.setAttributes(
+        [.modificationDate: Date().addingTimeInterval(-hoursAgo * 3600)], ofItemAtPath: url.path)
+    return url
+}
+
+@Test func pruneOverBudgetDropsLeastRecentlyServedFirst() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+    let entries = try (1...5).map {
+        try writeEntry("\($0).jpg", in: cacheDir, bytes: 100, hoursAgo: Double(24 + $0))
+    }
+    let inFlight = try writeEntry("tmp-write.jpg", in: cacheDir, bytes: 1000, hoursAgo: 30)
+
+    CacheFolder(dir: cacheDir, maxBytes: 250).prune(olderThan: 7 * 24 * 3600)
+
+    let survivors = entries.filter { FileManager.default.fileExists(atPath: $0.path) }
+    #expect(survivors == Array(entries.prefix(2)), "the two most recently served fit the budget")
+    #expect(
+        FileManager.default.fileExists(atPath: inFlight.path), "an in-flight write is not counted or pruned")
+}
+
+@Test func aHitSavesTheOldestEntryFromTheBudgetPrune() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let cache = CacheFolder(dir: cacheDir, maxBytes: 100)
+    let served = try cache.cachedFile(at: cache.url(forKey: "served")) { try Data(count: 100).write(to: $0) }
+    try FileManager.default.setAttributes(
+        [.modificationDate: Date().addingTimeInterval(-48 * 3600)], ofItemAtPath: served.path)
+    let other = try writeEntry("other.jpg", in: cacheDir, bytes: 100, hoursAgo: 25)
+
+    _ = try cache.cachedFile(at: served) { _ in Issue.record("a hit must not rewrite the entry") }
+    cache.prune(olderThan: 7 * 24 * 3600)
+
+    #expect(FileManager.default.fileExists(atPath: served.path), "the served entry is now the most recent")
+    #expect(!FileManager.default.fileExists(atPath: other.path), "the unserved entry goes")
+}
+
+@Test func aHitOnAnEntryHalfADayOldRefreshesItsMtime() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let cache = CacheFolder(dir: cacheDir, maxBytes: .max)
+    let served = try cache.cachedFile(at: cache.url(forKey: "served")) { try Data(count: 100).write(to: $0) }
+    try FileManager.default.setAttributes(
+        [.modificationDate: Date().addingTimeInterval(-13 * 3600)], ofItemAtPath: served.path)
+
+    _ = try cache.cachedFile(at: cache.url(forKey: "served")) { _ in
+        Issue.record("a hit must not rewrite the entry")
+    }
+
+    let modified = try #require(
+        try cache.url(forKey: "served").resourceValues(forKeys: [.contentModificationDateKey])
+            .contentModificationDate)
+    #expect(
+        modified.timeIntervalSinceNow > -60, "so the size prune's one-day cutoff stays 12h clear of a hit")
+}
+
+@Test func aZeroBudgetKeepsEntriesYoungerThanADay() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    CacheFolder(dir: cacheDir, maxBytes: 0).prune(olderThan: 7 * 24 * 3600)
+    try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
+    CacheFolder(dir: cacheDir, maxBytes: 0).prune(olderThan: 7 * 24 * 3600)
+
+    let old = try writeEntry("old.jpg", in: cacheDir, bytes: 100, hoursAgo: 25)
+    let recent = try writeEntry("recent.jpg", in: cacheDir, bytes: 100, hoursAgo: 23)
+    let foreign = try writeEntry("notes.txt", in: cacheDir, bytes: 100, hoursAgo: 25)
+    CacheFolder(dir: cacheDir, maxBytes: 0).prune(olderThan: 7 * 24 * 3600)
+
+    #expect(!FileManager.default.fileExists(atPath: old.path))
+    #expect(
+        FileManager.default.fileExists(atPath: recent.path),
+        "an entry younger than a day may have just been served")
+    #expect(FileManager.default.fileExists(atPath: foreign.path), "non-render files untouched")
 }
 
 @Test func nonRawRenderAdjustsExposureToo() throws {

@@ -45,7 +45,7 @@ public final class Renderer: @unchecked Sendable {
     private let filterCapacity = 6
 
     public init(cacheDir: URL) {
-        cache = CacheFolder(dir: cacheDir)
+        cache = CacheFolder(dir: cacheDir, maxBytes: 2 * 1024 * 1024 * 1024)
         cache.pruneInBackground()
     }
 
