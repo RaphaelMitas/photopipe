@@ -6,7 +6,9 @@ import Foundation
 /// Response: {"v":1,"id":"<caller id>","ok":true,"result":{...}}
 ///           {"v":1,"id":"<caller id>","ok":false,"error":{"code":"...","message":"..."}}
 public let protocolVersion = 1
-public let coreVersion = "0.1.0"
+/// Shipped, the core sits in the app's Contents/MacOS and so reads the app's Info.plist.
+public let coreVersion =
+    Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
 
 public struct Request: Codable, Equatable, Sendable {
     public let v: Int
@@ -20,6 +22,11 @@ public struct Request: Codable, Equatable, Sendable {
         self.method = method
         self.params = params
     }
+}
+
+/// What the client sees of a thrown error; any other error reaches it as io_error.
+public protocol WireError: Error {
+    var wire: ResponseError { get }
 }
 
 public struct ResponseError: Codable, Equatable, Sendable {
@@ -39,9 +46,11 @@ public struct Response: Codable, Equatable, Sendable {
     }
 
     public static func failure(id: String, code: String, message: String) -> Response {
-        Response(
-            v: protocolVersion, id: id, ok: false, result: nil,
-            error: ResponseError(code: code, message: message))
+        failure(id: id, error: ResponseError(code: code, message: message))
+    }
+
+    public static func failure(id: String, error: ResponseError) -> Response {
+        Response(v: protocolVersion, id: id, ok: false, result: nil, error: error)
     }
 
     /// Single-line JSON, deterministic key order.

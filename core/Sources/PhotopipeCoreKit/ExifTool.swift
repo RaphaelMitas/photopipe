@@ -140,11 +140,16 @@ public final class ExifTool: @unchecked Sendable {
         stdinPipe = nil
         stdoutPipe = nil
     }
+}
 
-    deinit {
-        if let process, process.isRunning {
-            stdinPipe?.fileHandleForWriting.write(Data("-stay_open\nFalse\n".utf8))
-            process.terminate()
+extension ExifTool.ExifToolError: WireError {
+    public var wire: ResponseError {
+        switch self {
+        case .notInstalled:
+            ResponseError(
+                code: "exiftool_missing",
+                message: "exiftool not found — install it or set PHOTOPIPE_EXIFTOOL")
+        case .failed(let output): ResponseError(code: "exiftool_failed", message: output)
         }
     }
 }

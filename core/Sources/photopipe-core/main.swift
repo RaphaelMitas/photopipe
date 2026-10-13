@@ -11,10 +11,10 @@ let out = DispatchQueue(label: "photopipe.stdout")
 
 private struct MethodPeek: Decodable { let method: String? }
 
-func emit(_ outcome: DispatchOutcome) {
+func emit(_ response: Response) {
     out.sync {
         do {
-            print(try outcome.response.encodedLine())
+            print(try response.encodedLine())
         } catch {
             FileHandle.standardError.write(Data("encode error: \(error)\n".utf8))
         }

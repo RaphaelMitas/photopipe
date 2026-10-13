@@ -1,16 +1,16 @@
 import CoreImage
-import CryptoKit
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-public final class Renderer {
+/// Shared by the dispatcher's workers.
+public final class Renderer: @unchecked Sendable {
     public enum RenderError: Error {
         case unreadable(String)
         case encodeFailed
     }
 
-    public let cacheDir: URL
+    private let cache: CacheFolder
     private let context = CIContext(options: [.cacheIntermediates: true])
     // an export renders each photo once, so there is nothing to reuse
     private let exportContext = CIContext(options: [.cacheIntermediates: false])
@@ -45,27 +45,8 @@ public final class Renderer {
     private let filterCapacity = 6
 
     public init(cacheDir: URL) {
-        self.cacheDir = cacheDir
-        let dir = cacheDir
-        DispatchQueue.global(qos: .utility).async {
-            Self.prune(cacheDir: dir, olderThan: 7 * 24 * 3600)
-        }
-    }
-
-    public static func prune(cacheDir: URL, olderThan age: TimeInterval) {
-        let cutoff = Date().addingTimeInterval(-age)
-        let fm = FileManager.default
-        guard
-            let entries = try? fm.contentsOfDirectory(
-                at: cacheDir, includingPropertiesForKeys: [.contentModificationDateKey])
-        else { return }
-        for entry in entries where entry.pathExtension == "jpg" {
-            let modified = (try? entry.resourceValues(forKeys: [.contentModificationDateKey]))?
-                .contentModificationDate
-            if let modified, modified < cutoff {
-                try? fm.removeItem(at: entry)
-            }
-        }
+        cache = CacheFolder(dir: cacheDir)
+        cache.pruneInBackground()
     }
 
     public static func defaultCacheDir() -> URL {
@@ -81,9 +62,7 @@ public final class Renderer {
         let decoder = resolvedTag(for: file, requested: decoderVersion)
         let key =
             "\(file.path)|\(file.mtime)|\(file.size)|\(edit.cacheKey)|\(maxPixel)\(region)\(decoder)|v\(Self.pipelineVersion)"
-        let digest = SHA256.hash(data: Data(key.utf8))
-            .map { String(format: "%02x", $0) }.joined().prefix(32)
-        return cacheDir.appendingPathComponent("\(digest).jpg")
+        return cache.url(forKey: key)
     }
 
     public func render(
@@ -94,33 +73,26 @@ public final class Renderer {
         let dest = cachePath(
             for: file, edit: edit, maxPixel: maxPixel, viewport: viewport,
             decoderVersion: decoderVersion)
-        if FileManager.default.fileExists(atPath: dest.path) {
-            return dest
+        return try cache.cachedFile(at: dest) { temp in
+            var image = try sourceImage(
+                for: file, edit: edit, maxPixel: maxPixel, viewport: viewport,
+                decoderVersion: decoderVersion)
+            // raws already decoded close to this; embedded formats did not
+            let longEdge = max(image.extent.width, image.extent.height)
+            let scale = CGFloat(maxPixel) / longEdge
+            if scale < 1 {
+                image = image.transformed(by: .init(scaleX: scale, y: scale))
+            }
+
+            guard
+                let jpeg = context.jpegRepresentation(
+                    of: image, colorSpace: jpegColorSpace,
+                    options: [
+                        kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.85
+                    ])
+            else { throw RenderError.encodeFailed }
+            try jpeg.write(to: temp)
         }
-        try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-
-        var image = try sourceImage(
-            for: file, edit: edit, maxPixel: maxPixel, viewport: viewport,
-            decoderVersion: decoderVersion)
-        // raws already decoded close to this; embedded formats did not
-        let longEdge = max(image.extent.width, image.extent.height)
-        let scale = CGFloat(maxPixel) / longEdge
-        if scale < 1 {
-            image = image.transformed(by: .init(scaleX: scale, y: scale))
-        }
-
-        guard
-            let jpeg = context.jpegRepresentation(
-                of: image, colorSpace: jpegColorSpace,
-                options: [
-                    kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.85
-                ])
-        else { throw RenderError.encodeFailed }
-
-        let temp = cacheDir.appendingPathComponent("tmp-\(UUID().uuidString).jpg")
-        try jpeg.write(to: temp)
-        _ = try? FileManager.default.replaceItemAt(dest, withItemAt: temp)
-        return dest
     }
 
     public func exportJPEG(
@@ -157,12 +129,9 @@ public final class Renderer {
     public func rawDefaults(for file: ImageFile, decoderVersion: Int? = nil) throws -> RawDefaults? {
         guard file.isRaw else { return nil }
         let key = Self.defaultsKey(path: file.path, decoderVersion: decoderVersion)
-        lock.lock()
-        if let cached = defaultsByPath[key], cached.mtime == file.mtime {
-            lock.unlock()
+        if let cached = lock.withLock({ defaultsByPath[key] }), cached.mtime == file.mtime {
             return cached.values
         }
-        lock.unlock()
         // reading these decodes nothing, so the filter is cheap and discarded
         return try makeFilter(for: file, decoderVersion: decoderVersion).defaults
     }
@@ -177,23 +146,23 @@ public final class Renderer {
             let cached = try rawFilter(
                 for: file, maxPixel: maxPixel, decoderVersion: decoderVersion)
             let filter = cached.filter
-            lock.lock()
-            let scale = Self.rawScaleFactor(
-                for: edit, orientedSize: cached.orientedSizeBeforeScaling, maxPixel: maxPixel,
-                viewport: viewport)
-            // Unconditionally, even when unchanged: skipping the assignment
-            // when it already matched returned a decode a quarter of the size
-            // on the next read. Re-assigning does not cost the warm path.
-            filter.scaleFactor = scale
-            filter.exposure = Float(edit.exposure)
-            filter.neutralTemperature = Float(edit.temperature ?? cached.defaults.temperature)
-            filter.neutralTint = Float(edit.tint ?? cached.defaults.tint)
-            if filter.isLuminanceNoiseReductionSupported {
-                let denoise = edit.denoise.map { min(max($0, 0), 100) / 100 }
-                filter.luminanceNoiseReductionAmount = Float(denoise ?? cached.defaults.denoise)
+            let output = lock.withLock {
+                let scale = Self.rawScaleFactor(
+                    for: edit, orientedSize: cached.orientedSizeBeforeScaling, maxPixel: maxPixel,
+                    viewport: viewport)
+                // Unconditionally, even when unchanged: skipping the assignment
+                // when it already matched returned a decode a quarter of the size
+                // on the next read. Re-assigning does not cost the warm path.
+                filter.scaleFactor = scale
+                filter.exposure = Float(edit.exposure)
+                filter.neutralTemperature = Float(edit.temperature ?? cached.defaults.temperature)
+                filter.neutralTint = Float(edit.tint ?? cached.defaults.tint)
+                if filter.isLuminanceNoiseReductionSupported {
+                    let denoise = edit.denoise.map { min(max($0, 0), 100) / 100 }
+                    filter.luminanceNoiseReductionAmount = Float(denoise ?? cached.defaults.denoise)
+                }
+                return filter.outputImage
             }
-            let output = filter.outputImage
-            lock.unlock()
             guard let output else { throw RenderError.unreadable(file.path) }
             image = output
         } else {
@@ -337,23 +306,24 @@ public final class Renderer {
     ) throws -> CachedFilter {
         let key =
             "\(file.path)|\(maxPixel.map(String.init) ?? "full")\(Self.decoderTag(decoderVersion))"
-        lock.lock()
-        if let cached = filtersByPathAndSize[key], cached.mtime == file.mtime {
+        let warm = lock.withLock { () -> CachedFilter? in
+            guard let cached = filtersByPathAndSize[key], cached.mtime == file.mtime else {
+                return nil
+            }
             filtersByPathAndSize[key]?.lastUsed = Date()
-            lock.unlock()
             return cached
         }
-        lock.unlock()
+        if let warm { return warm }
 
         let entry = try makeFilter(for: file, decoderVersion: decoderVersion)
-        lock.lock()
-        rawDecodeCount += 1
-        filtersByPathAndSize[key] = entry
-        if filtersByPathAndSize.count > filterCapacity {
-            let oldest = filtersByPathAndSize.min { $0.value.lastUsed < $1.value.lastUsed }
-            if let oldest { filtersByPathAndSize.removeValue(forKey: oldest.key) }
+        lock.withLock {
+            rawDecodeCount += 1
+            filtersByPathAndSize[key] = entry
+            if filtersByPathAndSize.count > filterCapacity {
+                let oldest = filtersByPathAndSize.min { $0.value.lastUsed < $1.value.lastUsed }
+                if let oldest { filtersByPathAndSize.removeValue(forKey: oldest.key) }
+            }
         }
-        lock.unlock()
         return entry
     }
 
@@ -369,12 +339,9 @@ public final class Renderer {
         // reading the header costs more than the probe it saves, so a path
         // answered once never reads again
         let pathKey = "\(file.path)|v\(major)"
-        lock.lock()
-        if let known = supportsByPath[pathKey], known.mtime == file.mtime {
-            lock.unlock()
+        if let known = lock.withLock({ supportsByPath[pathKey] }), known.mtime == file.mtime {
             return known.supported
         }
-        lock.unlock()
 
         let url = URL(fileURLWithPath: file.path)
         // resolveDecoder distinguishes the DNG variants, so a body's ARWs and
@@ -383,16 +350,12 @@ public final class Renderer {
         let cacheKey =
             Self.cameraModel(of: url).map { "\($0)|\(ext)|v\(major)" }
             ?? "path:\(file.path)|v\(major)"
-        lock.lock()
-        let cachedForCamera = supportsByCamera[cacheKey]
-        lock.unlock()
-
-        if let cachedForCamera {
-            lock.lock()
-            supportsByPath[pathKey] = (cachedForCamera, file.mtime)
-            lock.unlock()
-            return cachedForCamera
+        let cachedForCamera = lock.withLock { () -> Bool? in
+            guard let supported = supportsByCamera[cacheKey] else { return nil }
+            supportsByPath[pathKey] = (supported, file.mtime)
+            return supported
         }
+        if let cachedForCamera { return cachedForCamera }
 
         let versions = CIRAWFilter(imageURL: url)?.supportedDecoderVersions ?? []
         let supported = versions.contains { Self.isVersion($0, major) }
@@ -401,10 +364,10 @@ public final class Renderer {
         // and caching it under the camera would answer for every sibling.
         let readable = versions.contains { $0.rawValue != "None" }
         guard readable else { return nil }
-        lock.lock()
-        supportsByCamera[cacheKey] = supported
-        supportsByPath[pathKey] = (supported, file.mtime)
-        lock.unlock()
+        lock.withLock {
+            supportsByCamera[cacheKey] = supported
+            supportsByPath[pathKey] = (supported, file.mtime)
+        }
         return supported
     }
 
@@ -467,11 +430,11 @@ public final class Renderer {
                 tint: Double(filter.neutralTint),
                 denoise: Double(filter.luminanceNoiseReductionAmount)),
             lastUsed: Date())
-        lock.lock()
-        defaultsByPath[Self.defaultsKey(path: file.path, decoderVersion: decoderVersion)] = (
-            entry.defaults, file.mtime
-        )
-        lock.unlock()
+        lock.withLock {
+            defaultsByPath[Self.defaultsKey(path: file.path, decoderVersion: decoderVersion)] = (
+                entry.defaults, file.mtime
+            )
+        }
         return entry
     }
 }
