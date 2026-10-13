@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { retryCoreRequest } from "./lib/core";
 import "./index.css";
 
 async function prepare() {
@@ -44,7 +45,7 @@ prepare().then(() => {
   // The core is a local process: being offline must not pause a write to disk.
   const queryClient = new QueryClient({
     defaultOptions: {
-      queries: { networkMode: "always" },
+      queries: { networkMode: "always", retry: retryCoreRequest },
       mutations: { networkMode: "always" },
     },
   });

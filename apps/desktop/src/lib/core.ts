@@ -277,6 +277,14 @@ export function coreRequest<K extends keyof CoreMethods>(
   return invoke("core_request", { method, params });
 }
 
+// A failed core request rejects with "<code>: <message>". A superseded one
+// asked again would only queue behind the newer requests that replaced it.
+export function retryCoreRequest(failureCount: number, error: unknown) {
+  const superseded =
+    typeof error === "string" && error.startsWith("superseded:");
+  return !superseded && failureCount < 3;
+}
+
 export function fileSrc(path: string): string {
   try {
     return convertFileSrc(path);
