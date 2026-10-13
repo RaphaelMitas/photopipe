@@ -440,6 +440,113 @@ describe("useSetRating", () => {
     );
   });
 
+  it("does not let a list that started before the answer land over it", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    let disk = [image("A")];
+    const held: Array<() => void> = [];
+    invoke.mockImplementation(async (_command, { method, params }) => {
+      if (method === "listImages") {
+        const snapshot = disk.map((file) => ({ ...file }));
+        if (held.length === 1) await new Promise<void>((go) => held.push(go));
+        return { images: snapshot };
+      }
+      if (method === "setRating") {
+        await new Promise<void>((go) => held.push(go));
+        disk = [{ ...disk[0], rating: params.rating }];
+        return { rating: params.rating };
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+
+    let mutation!: ReturnType<typeof useSetRating>;
+    function Rater() {
+      useImages("shoot1");
+      mutation = useSetRating("shoot1");
+      return null;
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Rater />
+      </QueryClientProvider>,
+    );
+    await waitFor(() =>
+      expect(client.getQueryData(["images", "shoot1"])).toBeDefined(),
+    );
+
+    const rated = mutation.mutateAsync({ path: "/r/shoot1/A.ARW", value: 3 });
+    await waitFor(() => expect(held.length).toBe(1));
+    void client.invalidateQueries({ queryKey: ["images", "shoot1"] });
+    await waitFor(() => expect(held.length).toBe(2));
+    held[0]();
+    await act(() => rated);
+    held[1]();
+
+    await waitFor(() => expect(client.isFetching()).toBe(0));
+    expect(
+      client
+        .getQueryData<ImageFile[]>(["images", "shoot1"])
+        ?.map((file) => file.rating),
+    ).toEqual([3]);
+  });
+
+  it("refetches a held shoot even when another shoot's batch settles last", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    let shoot1 = [image("A"), image("B")];
+    client.setQueryData(["images", "shoot2"], [makeImage("C.ARW")]);
+    const held: Array<() => void> = [];
+    let listed = 0;
+    invoke.mockImplementation(async (_command, { method, params }) => {
+      if (method === "listImages") {
+        listed += 1;
+        const snapshot = shoot1.map((file) => ({ ...file }));
+        if (listed === 2) await new Promise<void>((go) => held.push(go));
+        return { images: snapshot };
+      }
+      if (method === "setRating" && params.shoot === "shoot2") {
+        await new Promise<void>((go) => held.push(go));
+      } else if (method === "setRating") {
+        shoot1 = [{ ...shoot1[0], rating: params.rating }, shoot1[1]];
+      }
+      return { rating: params.rating };
+    });
+
+    let rate!: ReturnType<typeof useSetRating>;
+    let batch!: ReturnType<typeof useSetRatings>;
+    function Writers() {
+      useImages("shoot1");
+      rate = useSetRating("shoot1");
+      batch = useSetRatings("shoot2");
+      return null;
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Writers />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(listed).toBe(1));
+
+    const batched = batch.mutateAsync(new Map([["/r/s/C.ARW", 4]]));
+    await waitFor(() => expect(held.length).toBe(1));
+    shoot1 = [shoot1[0], { ...shoot1[1], rating: 5 }];
+    void client.invalidateQueries({ queryKey: ["images", "shoot1"] });
+    await waitFor(() => expect(held.length).toBe(2));
+    await act(() => rate.mutateAsync({ path: "/r/shoot1/A.ARW", value: 3 }));
+    held[0]();
+    await act(() => batched);
+
+    await waitFor(() =>
+      expect(
+        client
+          .getQueryData<ImageFile[]>(["images", "shoot1"])
+          ?.map((file) => file.rating),
+      ).toEqual([3, 5]),
+    );
+  });
+
   it("ends on the last rating when the first answer arrives late", async () => {
     const client = new QueryClient();
     client.setQueryData(["images", "shoot1"], [image("A")]);

@@ -279,25 +279,29 @@ function xmpWritesInFlight(queryClient: QueryClient): number {
   );
 }
 
-/// Shoots whose refetch a write cancelled. The poller has already moved past
-/// the change that refetch was for, so the last write has to fetch it again.
-const cancelledRefetches = new Set<string | null>();
+/// Shoots whose list was fetched or cancelled while a write was in flight. It
+/// may hold a pre-write value or a change the poller has already moved past,
+/// so the last write to settle fetches it again.
+const staleLists = new WeakMap<QueryClient, Set<string | null>>();
+
+function markFetching(queryClient: QueryClient, shoot: string | null) {
+  if (queryClient.isFetching({ queryKey: imagesKey(shoot) }) === 0) return;
+  const shoots = staleLists.get(queryClient) ?? new Set();
+  staleLists.set(queryClient, shoots.add(shoot));
+}
 
 async function holdImages(queryClient: QueryClient, shoot: string | null) {
-  if (queryClient.isFetching({ queryKey: imagesKey(shoot) }) > 0) {
-    cancelledRefetches.add(shoot);
-  }
+  markFetching(queryClient, shoot);
   await queryClient.cancelQueries({ queryKey: imagesKey(shoot) });
 }
 
 // Waits for the last write, or the refetch could land over one still in flight.
-function releaseImages(queryClient: QueryClient, shoot: string | null) {
-  if (
-    xmpWritesInFlight(queryClient) === 1 &&
-    cancelledRefetches.delete(shoot)
-  ) {
+function releaseImages(queryClient: QueryClient) {
+  if (xmpWritesInFlight(queryClient) !== 1) return;
+  for (const shoot of staleLists.get(queryClient) ?? []) {
     queryClient.invalidateQueries({ queryKey: imagesKey(shoot) });
   }
+  staleLists.delete(queryClient);
 }
 
 export function cachedImage(
@@ -433,6 +437,7 @@ async function writeField<V>(
   if (written !== null) {
     patchImage(queryClient, shoot, path, field.patch(written));
   }
+  markFetching(queryClient, shoot);
 }
 
 function useFieldWrite<V>(shoot: string | null, field: PhotoField<V>) {
@@ -447,7 +452,7 @@ function useFieldWrite<V>(shoot: string | null, field: PhotoField<V>) {
       patchImage(queryClient, shoot, vars.path, field.patch(vars.value));
       return { previous };
     },
-    onSettled: () => releaseImages(queryClient, shoot),
+    onSettled: () => releaseImages(queryClient),
     onError: (error, vars, context) => {
       if (context?.previous !== undefined) {
         patchImage(
@@ -536,7 +541,7 @@ function useBatchWrite<V>(shoot: string | null, field: PhotoField<V>) {
           description: "Saving failed",
         });
       }
-      releaseImages(queryClient, target);
+      releaseImages(queryClient);
       return {
         written: values.size - failed.length - overtaken,
         failed,
