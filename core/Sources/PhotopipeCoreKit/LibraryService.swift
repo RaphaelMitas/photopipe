@@ -468,7 +468,8 @@ public final class LibraryService: @unchecked Sendable {
     ) {
         let targets = try images(inShoot: shootName, paths: paths).flatMap { image in
             let sidecar = XMP.sidecarURL(forImagePath: image.path).path
-            return FileManager.default.fileExists(atPath: sidecar) ? [image.path, sidecar] : [image.path]
+            return image.usesSidecar && FileManager.default.fileExists(atPath: sidecar)
+                ? [image.path, sidecar] : [image.path]
         }
         guard !targets.isEmpty else { throw ServiceError.unknownImage(paths.first ?? "") }
 

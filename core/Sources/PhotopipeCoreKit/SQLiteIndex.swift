@@ -14,7 +14,7 @@ public final class SQLiteIndex: @unchecked Sendable {
     private let path: String
 
     // bump when the sidecar parser learns a tag, or stale rows get written back over it
-    private static let schemaVersion = 5
+    private static let schemaVersion = 6
 
     public init(path: String) throws {
         self.path = path
