@@ -158,7 +158,6 @@ function startJob(total: number, zip: boolean): ExportProgress {
     running: true,
     cancelled: false,
     archiving: false,
-    error: null,
     failures: [],
   };
   exportJobs.set(job.id, job);

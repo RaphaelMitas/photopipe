@@ -7,22 +7,11 @@ import { TooltipProvider } from "@photopipe/ui/components/tooltip";
 import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import {
-  AlertCircle,
-  Check,
-  Download,
-  SlidersHorizontal,
-  Upload,
-} from "lucide-react";
+import { AlertCircle, Check, SlidersHorizontal, Upload } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AppSidebar } from "@/components/AppSidebar";
-import { BrowserToolbar, type ViewMode } from "@/components/BrowserToolbar";
-import {
-  type CropDraft,
-  commitDraft,
-  draftFromEdit,
-} from "@/components/CropTool";
+import { BrowserPane } from "@/components/BrowserPane";
 import { Dashboard } from "@/components/Dashboard";
 import { EditSidebar } from "@/components/EditPanel";
 import {
@@ -30,22 +19,15 @@ import {
   type ExportOptions,
   exportLabel,
 } from "@/components/ExportDrawer";
-import type { FilmstripMode } from "@/components/Filmstrip";
 import { HistoryControls } from "@/components/HistoryControls";
-import { ImageGrid } from "@/components/ImageGrid";
-import { ImageList } from "@/components/ImageList";
 import { IndexingStatus } from "@/components/IndexingStatus";
 import { Loupe } from "@/components/Loupe";
 import { LoupeSidebar } from "@/components/LoupeSidebar";
 import { NewProjectDialog } from "@/components/NewProjectDialog";
-import {
-  matchesRatingFilter,
-  type RatingOp,
-  ratingCounts,
-} from "@/components/RatingFilter";
+import { ratingCounts, useRatingFilter } from "@/components/RatingFilter";
 import { RootPicker } from "@/components/RootPicker";
 import { SelectionBar } from "@/components/SelectionBar";
-import { SettingsDialog } from "@/components/SettingsDialog";
+import { autoScorePref, SettingsDialog } from "@/components/SettingsDialog";
 import { ShootSettingsDialog } from "@/components/ShootSettingsDialog";
 import { ShowSidebarTrigger } from "@/components/ShowSidebarTrigger";
 import {
@@ -70,10 +52,10 @@ import {
 import { betterThan, scoreRanks } from "@/lib/instinct";
 import { heldOrder } from "@/lib/loupeWalk";
 import { isModalOpen } from "@/lib/modal";
+import { flagPref } from "@/lib/pref";
 import {
   cachedImage,
   jobStatus,
-  type ScoreProgress,
   useExportJobs,
   useImages,
   useLibrarySync,
@@ -84,21 +66,15 @@ import {
 } from "@/lib/queries";
 import { openRoot, type RootError, rootsQuery, toRootError } from "@/lib/roots";
 import { useSelection } from "@/lib/selection";
-import { browserOrder, isSortKey, type SortKey } from "@/lib/sort";
+import { browserOrder, sortPref } from "@/lib/sort";
+import { useCropSession } from "@/lib/useCropSession";
 import { useDebouncedEdit } from "@/lib/useDebouncedEdit";
 import { useRecordedWrites } from "@/lib/useRecordedWrites";
 import { useUpdater } from "@/lib/useUpdater";
 
-const VIEW_KEY = "photopipe.view";
-const EDIT_PANEL_KEY = "photopipe.editPanel";
-const SORT_KEY = "photopipe.sort";
 const NO_HELD = { key: "", paths: [] };
-const AUTO_SCORE_KEY = "photopipe.autoScore";
 const LEGACY_ROOT_KEY = "photopipe.root";
 const LEGACY_RECENTS_KEY = "photopipe.recentRoots";
-/// One toast id for the whole update conversation, so a download replaces the
-/// offer rather than stacking under it.
-const UPDATE_TOAST = "update";
 
 const isTyping = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
@@ -112,6 +88,9 @@ type RootState =
 
 const EDIT_COMMIT_MS = 400;
 
+const editPanelPref = flagPref("photopipe.editPanel", "shown", "hidden", true);
+const toggleEditPanel = () => editPanelPref.set(!editPanelPref.get());
+
 export default function App() {
   const [rootState, setRootState] = useState<RootState>({
     kind: "picking",
@@ -122,64 +101,14 @@ export default function App() {
   const [newProject, setNewProject] = useState(false);
   const [shootSettings, setShootSettings] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const updater = useUpdater();
-  const [view, setView] = useState<ViewMode>(() =>
-    localStorage.getItem(VIEW_KEY) === "list" ? "list" : "grid",
-  );
-  const changeView = (next: ViewMode) => {
-    setView(next);
-    localStorage.setItem(VIEW_KEY, next);
-  };
-  const [sort, setSort] = useState<SortKey>(() => {
-    const stored = localStorage.getItem(SORT_KEY);
-    return isSortKey(stored) ? stored : "name";
-  });
-  const changeSort = (next: SortKey) => {
-    setSort(next);
-    localStorage.setItem(SORT_KEY, next);
-  };
-  const [autoScore, setAutoScore] = useState(
-    () => localStorage.getItem(AUTO_SCORE_KEY) !== "off",
-  );
-  const changeAutoScore = (on: boolean) => {
-    setAutoScore(on);
-    localStorage.setItem(AUTO_SCORE_KEY, on ? "on" : "off");
-  };
+  const sort = sortPref.use();
+  const autoScore = autoScorePref.use();
   // outlives the loupe, so closing it lands the browser on the same photo
   const [currentPath, setCurrentPath] = useState<string | null>(null);
   const [loupeOpen, setLoupeOpen] = useState(false);
-  const [ratingOp, setRatingOp] = useState<RatingOp>("gte");
-  const [ratingStars, setRatingStars] = useState(0);
-  const [showInfo, setShowInfo] = useState(
-    () => localStorage.getItem("photopipe.gridInfo") === "always",
-  );
-  const toggleShowInfo = (show: boolean) => {
-    setShowInfo(show);
-    localStorage.setItem("photopipe.gridInfo", show ? "always" : "hover");
-  };
-  const [filmstrip, setFilmstrip] = useState<FilmstripMode>(() => {
-    const stored = localStorage.getItem("photopipe.filmstrip");
-    if (stored === "0") return "off";
-    if (stored === "off" || stored === "thumbs" || stored === "ratings")
-      return stored;
-    return "thumbs";
-  });
-  const changeFilmstrip = (mode: FilmstripMode) => {
-    setFilmstrip(mode);
-    localStorage.setItem("photopipe.filmstrip", mode);
-  };
+  const filter = useRatingFilter();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState(
-    () => localStorage.getItem(EDIT_PANEL_KEY) !== "hidden",
-  );
-  const toggleEditPanel = useCallback(() => {
-    setEditOpen((open) => {
-      localStorage.setItem(EDIT_PANEL_KEY, open ? "hidden" : "shown");
-      return !open;
-    });
-  }, []);
-  const [cropDraft, setCropDraft] = useState<CropDraft | null>(null);
-  const cropping = cropDraft !== null;
+  const editOpen = editPanelPref.use();
   const [clipboard, setClipboard] = useState<EditClipboard | null>(null);
   const queryClient = useQueryClient();
 
@@ -258,18 +187,12 @@ export default function App() {
   // Sorting a half-rated project would put photos in an order the scores do not
   // support, so until the pass is done the browser falls back to name.
   const activeSort = sort === "score" && !scoreReady ? "name" : sort;
-  const matchesFilter = useCallback(
-    (image: ImageFile) =>
-      matchesRatingFilter(image.rating, ratingOp, ratingStars),
-    [ratingOp, ratingStars],
-  );
   const filteredImages = useMemo(
-    () => browserOrder(allImages, matchesFilter, activeSort),
-    [allImages, matchesFilter, activeSort],
+    () => browserOrder(allImages, filter.matches, activeSort),
+    [allImages, filter.matches, activeSort],
   );
   const ranks = useMemo(() => scoreRanks(allImages), [allImages]);
   const counts = useMemo(() => ratingCounts(allImages), [allImages]);
-  const filterActive = ratingOp === "unrated" || ratingStars > 0;
 
   const orderedPaths = useMemo(
     () => filteredImages.map((image) => image.path),
@@ -314,79 +237,19 @@ export default function App() {
     scrubEdit(image.path, edit);
   };
 
-  const installBlocked = exports.running
-    ? "Finish the running job first; installing restarts Photopipe."
-    : null;
-  const { install: installUpdate } = updater;
-  // Sonner dismisses the toast the moment Install is clicked, so anything that
-  // stops the install has to say so itself or it happens in silence.
-  const startInstall = useCallback(async () => {
-    if (installBlocked) {
-      toast.error(installBlocked, { id: UPDATE_TOAST });
-      return;
-    }
-    flushEdit();
-    const result = await installUpdate();
-    if (result.kind === "error") {
-      toast.error(`Install failed: ${result.message}`, { id: UPDATE_TOAST });
-    }
-  }, [installBlocked, flushEdit, installUpdate]);
+  const updater = useUpdater({
+    blockedReason: exports.running
+      ? "Finish the running job first; installing restarts Photopipe."
+      : null,
+    beforeInstall: flushEdit,
+  });
 
-  const offerUpdate = useCallback(
-    (version: string, id?: string | number) => {
-      toast(`Photopipe ${version} is available`, {
-        id,
-        duration: Number.POSITIVE_INFINITY,
-        action: { label: "Install", onClick: () => void startInstall() },
-      });
-    },
-    [startInstall],
-  );
-
-  const { state: updateState } = updater;
-  const offered = useRef(false);
-  useEffect(() => {
-    if (updateState.kind === "downloading") {
-      toast.loading(
-        updateState.percent === null
-          ? "Downloading update…"
-          : `Downloading update… ${updateState.percent}%`,
-        { id: UPDATE_TOAST, duration: Number.POSITIVE_INFINITY },
-      );
-      return;
-    }
-    if (updateState.kind === "installed") {
-      toast.success("Update installed, restarting…", { id: UPDATE_TOAST });
-      return;
-    }
-    if (updateState.kind !== "available" || offered.current) return;
-    offered.current = true;
-    offerUpdate(updateState.version);
-  }, [updateState, offerUpdate]);
-
-  const { check: checkUpdate } = updater;
-  const checkForUpdates = useCallback(async () => {
-    // The startup check offers on its own; this one owns the toast instead.
-    offered.current = true;
-    toast.loading("Checking for updates…", { id: UPDATE_TOAST });
-    const result = await checkUpdate();
-    if (result.kind === "available") offerUpdate(result.version, UPDATE_TOAST);
-    else if (result.kind === "error")
-      toast.error(result.message, { id: UPDATE_TOAST });
-    else toast.success("Photopipe is up to date", { id: UPDATE_TOAST });
-  }, [checkUpdate, offerUpdate]);
-
-  // Subscribe once for the app's lifetime. Re-subscribing whenever the check
-  // callback changes identity leaves gaps where a menu click reaches nobody.
-  const latestCheck = useRef(checkForUpdates);
-  useEffect(() => {
-    latestCheck.current = checkForUpdates;
-  }, [checkForUpdates]);
-
+  const { check: checkForUpdates } = updater;
+  // check is stable, so this subscribes once and no menu click falls in a gap
   useEffect(() => {
     const subscriptions = [
       listen("menu:settings", () => setSettingsOpen(true)),
-      listen("menu:check-updates", () => void latestCheck.current()),
+      listen("menu:check-updates", () => void checkForUpdates()),
     ];
     for (const subscription of subscriptions) subscription.catch(() => {});
     return () => {
@@ -394,7 +257,7 @@ export default function App() {
         void subscription.then((unlisten) => unlisten()).catch(() => {});
       }
     };
-  }, []);
+  }, [checkForUpdates]);
 
   const currentShoot = shoots.data?.find((s) => s.name === openShoot);
 
@@ -447,7 +310,7 @@ export default function App() {
   // Keyed on the sort you chose, not the one in force: a scoring pass finishing
   // must not re-order the loupe under you mid-visit.
   const held = useRef<{ key: string; paths: string[] }>({ key: "", paths: [] });
-  const heldKey = `${openShoot}|${sort}|${ratingOp}|${ratingStars}`;
+  const heldKey = `${openShoot}|${sort}|${filter.op}|${filter.stars}`;
   const openImage = currentPath
     ? allImages.find((image) => image.path === currentPath)
     : undefined;
@@ -461,13 +324,13 @@ export default function App() {
     if (!openImage) return filteredImages;
     if (!reorder)
       return heldOrder(held.current.paths, filteredImages, openImage);
-    return browserOrder(allImages, matchesFilter, activeSort, openImage);
+    return browserOrder(allImages, filter.matches, activeSort, openImage);
   }, [
     filteredImages,
     allImages,
     openImage,
     reorder,
-    matchesFilter,
+    filter.matches,
     activeSort,
   ]);
 
@@ -482,6 +345,8 @@ export default function App() {
   // The browser keeps the current photo after the loupe closes, so anything
   // acting on "the photo you are looking at" has to ask whether it is open.
   const loupePhoto = loupeOpen ? loupeImage : null;
+  const crop = useCropSession(loupePhoto, loupeEdit, changeEdit);
+  const cropping = crop.draft !== null;
 
   // a filtered-out photo is not in the browser, so land on its neighbour
   const focusPath = useMemo(() => {
@@ -624,9 +489,6 @@ export default function App() {
     }
   }, [currentPath, loupeIndex]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: leave crop mode on any way out of this photo
-  useEffect(() => setCropDraft(null), [currentPath, loupeOpen]);
-
   const openExport = useCallback(() => {
     if (loupePhoto) {
       setLoupeOpen(false);
@@ -686,7 +548,6 @@ export default function App() {
     openShoot,
     cropping,
     openExport,
-    toggleEditPanel,
     copySource,
     copySettings,
     pasteTargets,
@@ -694,22 +555,13 @@ export default function App() {
     travel,
   ]);
 
-  const changeRatingStars = (stars: number) => {
-    setRatingStars(stars);
-    if (stars > 0 && ratingOp === "unrated") setRatingOp("gte");
-  };
-  const clearRatingFilter = () => {
-    setRatingStars(0);
-    setRatingOp("gte");
-  };
-
   const enterShoot = (shoot: string | null) => {
     flushEdit();
     clearHistory();
     setOpenShoot(shoot);
     setCurrentPath(null);
     setLoupeOpen(false);
-    clearRatingFilter();
+    filter.reset();
     selection.clear();
   };
 
@@ -719,8 +571,6 @@ export default function App() {
     <SettingsDialog
       open={settingsOpen}
       onOpenChange={setSettingsOpen}
-      autoScore={autoScore}
-      onAutoScore={changeAutoScore}
       onCheckUpdates={updater.enabled ? checkForUpdates : undefined}
     />
   );
@@ -742,12 +592,53 @@ export default function App() {
 
   const latestJob = exports.jobs[0];
 
-  const applyCrop = () => {
-    if (!cropDraft || !loupeImage) return;
-    changeEdit(loupeImage, { ...loupeEdit, ...commitDraft(cropDraft) });
-    setCropDraft(null);
-  };
-  const cancelCrop = () => setCropDraft(null);
+  const content = !openShoot ? (
+    shoots.data ? (
+      <div className="h-full overflow-auto">
+        <Dashboard
+          shoots={shoots.data}
+          onOpen={enterShoot}
+          onNewProject={() => setNewProject(true)}
+          onSettings={setShootSettings}
+        />
+      </div>
+    ) : (
+      <p className="p-8 text-sm text-muted-foreground">scanning library…</p>
+    )
+  ) : images.data === undefined ? (
+    <p className="p-8 text-sm text-muted-foreground">loading…</p>
+  ) : loupePhoto ? (
+    <Loupe
+      images={loupeImages}
+      index={loupeIndex}
+      edit={loupeEdit}
+      crop={crop}
+      onEditChange={(edit) => changeEdit(loupePhoto, edit)}
+      onNavigate={(next) => setCurrentPath(loupeImages[next]?.path ?? null)}
+      onClose={() => setLoupeOpen(false)}
+      onRate={writes.rate}
+    />
+  ) : (
+    <BrowserPane
+      images={filteredImages}
+      sort={activeSort}
+      scoreReady={scoreReady}
+      scoring={scoring}
+      justRated={justRated}
+      filterActive={filter.active}
+      selected={selection.selected}
+      onSelect={selection.click}
+      focusPath={focusPath}
+      revealed={revealed}
+      onOpen={(index) => {
+        // A new visit walks the browser's order as it stands now.
+        held.current = NO_HELD;
+        setCurrentPath(filteredImages[index]?.path ?? null);
+        setLoupeOpen(true);
+      }}
+      onImport={runImport}
+    />
+  );
 
   return (
     <TooltipProvider>
@@ -779,15 +670,12 @@ export default function App() {
               ranks.get(loupeImage.path) ?? null,
               ranks.size,
             )}
-            filmstrip={filmstrip}
-            onFilmstrip={changeFilmstrip}
+            filter={filter}
             ratingCounts={counts}
-            ratingOp={ratingOp}
-            onRatingOp={setRatingOp}
-            ratingStars={ratingStars}
-            onRatingStars={changeRatingStars}
             onRate={writes.rate}
-            onBackToGrid={() => (cropping ? cancelCrop() : setLoupeOpen(false))}
+            onBackToGrid={() =>
+              cropping ? crop.cancel() : setLoupeOpen(false)
+            }
           />
         ) : (
           <AppSidebar
@@ -796,14 +684,9 @@ export default function App() {
             onImport={runImport}
             onRevealShoot={(path) => reveal.mutate([path])}
             onShootSettings={() => setShootSettings(openShoot)}
+            filter={filter}
             ratingCounts={counts}
-            ratingOp={ratingOp}
-            onRatingOp={setRatingOp}
-            ratingStars={ratingStars}
-            onRatingStars={changeRatingStars}
             filterEnabled={openShoot !== null}
-            showInfo={showInfo}
-            onShowInfo={toggleShowInfo}
             rootPath={rootState.path}
             onChangeRoot={() => {
               clearHistory();
@@ -917,70 +800,14 @@ export default function App() {
             onClear={selection.clear}
           />
           <div className="flex min-h-0 flex-1">
-            <div className="min-w-0 flex-1">
-              <Content
-                openShoot={openShoot}
-                loaded={images.data !== undefined}
-                filteredImages={filteredImages}
-                shoots={shoots.data}
-                onOpenShoot={enterShoot}
-                onNewProject={() => setNewProject(true)}
-                view={view}
-                onView={changeView}
-                sort={activeSort}
-                onSort={changeSort}
-                scoreReady={scoreReady}
-                scoring={scoring}
-                justRated={justRated}
-                onImport={runImport}
-                onShootSettings={setShootSettings}
-                filterActive={filterActive}
-                focusPath={focusPath}
-                revealed={revealed}
-                inLoupe={inLoupe}
-                loupeImages={loupeImages}
-                loupeIndex={loupeIndex}
-                loupeEdit={loupeEdit}
-                cropDraft={cropDraft}
-                onCropDraft={setCropDraft}
-                onApplyCrop={applyCrop}
-                onCancelCrop={cancelCrop}
-                filmstrip={filmstrip}
-                showInfo={showInfo}
-                selection={selection}
-                onEditChange={changeEdit}
-                onNavigate={(next) =>
-                  setCurrentPath(loupeImages[next]?.path ?? null)
-                }
-                onCloseLoupe={() => setLoupeOpen(false)}
-                onRate={writes.rate}
-                onOpenLoupe={(index) => {
-                  // A new visit walks the browser's order as it stands now.
-                  held.current = NO_HELD;
-                  setCurrentPath(filteredImages[index]?.path ?? null);
-                  setLoupeOpen(true);
-                }}
-              />
-            </div>
+            <div className="min-w-0 flex-1">{content}</div>
             {inLoupe && loupeImage && editOpen && (
               <EditSidebar
                 image={loupeImage}
                 edit={loupeEdit}
                 onChange={(edit) => changeEdit(loupeImage, edit)}
                 onHold={holdEdit}
-                cropDraft={cropDraft}
-                onCropDraft={setCropDraft}
-                onEnterCrop={() =>
-                  setCropDraft(
-                    draftFromEdit(
-                      loupeEdit,
-                      loupeImage.width,
-                      loupeImage.height,
-                    ),
-                  )
-                }
-                onApplyCrop={applyCrop}
-                onCancelCrop={cancelCrop}
+                crop={crop}
                 canPaste={clipboard !== null}
                 onCopySettings={() => copySettings(loupeImage)}
                 onPasteSettings={() => pasteSettings([loupeImage])}
@@ -995,12 +822,12 @@ export default function App() {
                 editedCount={editedCount}
                 filteredCount={filteredImages.length}
                 totalCount={allImages.length}
-                filterActive={filterActive}
+                filterActive={filter.active}
                 jobs={exports.jobs}
                 busy={exports.running}
                 onSelectFiltered={() => selection.select(orderedPaths)}
                 onSelectAll={() => {
-                  clearRatingFilter();
+                  filter.reset();
                   selection.select(allImages.map((image) => image.path));
                 }}
                 onClearSelection={selection.clear}
@@ -1014,175 +841,5 @@ export default function App() {
         </SidebarInset>
       </SidebarProvider>
     </TooltipProvider>
-  );
-}
-
-type ContentProps = {
-  openShoot: string | null;
-  loaded: boolean;
-  filteredImages: ImageFile[];
-  shoots: ReturnType<typeof useShoots>["data"];
-  onOpenShoot: (shoot: string) => void;
-  onNewProject: () => void;
-  view: ViewMode;
-  onView: (view: ViewMode) => void;
-  sort: SortKey;
-  onSort: (sort: SortKey) => void;
-  scoreReady: boolean;
-  scoring: ScoreProgress | null;
-  justRated: boolean;
-  onImport: () => void;
-  onShootSettings: (shoot: string) => void;
-  filterActive: boolean;
-  focusPath: string | null;
-  revealed: number;
-  inLoupe: boolean;
-  loupeImages: ImageFile[];
-  loupeIndex: number;
-  loupeEdit: Edit;
-  cropDraft: CropDraft | null;
-  onCropDraft: (draft: CropDraft | null) => void;
-  onApplyCrop: () => void;
-  onCancelCrop: () => void;
-  filmstrip: FilmstripMode;
-  showInfo: boolean;
-  selection: ReturnType<typeof useSelection>;
-  onEditChange: (image: ImageFile, edit: Edit) => void;
-  onNavigate: (index: number) => void;
-  onCloseLoupe: () => void;
-  onRate: (path: string, rating: number) => void;
-  onOpenLoupe: (index: number) => void;
-};
-
-function Content({
-  openShoot,
-  loaded,
-  filteredImages,
-  shoots,
-  onOpenShoot,
-  onNewProject,
-  view,
-  onView,
-  sort,
-  onSort,
-  scoreReady,
-  scoring,
-  justRated,
-  onImport,
-  onShootSettings,
-  filterActive,
-  focusPath,
-  revealed,
-  inLoupe,
-  loupeImages,
-  loupeIndex,
-  loupeEdit,
-  cropDraft,
-  onCropDraft,
-  onApplyCrop,
-  onCancelCrop,
-  filmstrip,
-  showInfo,
-  selection,
-  onEditChange,
-  onNavigate,
-  onCloseLoupe,
-  onRate,
-  onOpenLoupe,
-}: ContentProps) {
-  if (!openShoot) {
-    return shoots ? (
-      <div className="h-full overflow-auto">
-        <Dashboard
-          shoots={shoots}
-          onOpen={onOpenShoot}
-          onNewProject={onNewProject}
-          onSettings={onShootSettings}
-        />
-      </div>
-    ) : (
-      <p className="p-8 text-sm text-muted-foreground">scanning library…</p>
-    );
-  }
-
-  if (!loaded) {
-    return <p className="p-8 text-sm text-muted-foreground">loading…</p>;
-  }
-
-  if (inLoupe) {
-    const image = loupeImages[loupeIndex];
-    return (
-      <Loupe
-        images={loupeImages}
-        index={loupeIndex}
-        edit={loupeEdit}
-        filmstrip={filmstrip}
-        cropDraft={cropDraft}
-        onCropDraft={onCropDraft}
-        onApplyCrop={onApplyCrop}
-        onCancelCrop={onCancelCrop}
-        onEditChange={(edit) => onEditChange(image, edit)}
-        onNavigate={onNavigate}
-        onClose={onCloseLoupe}
-        onRate={onRate}
-      />
-    );
-  }
-
-  const emptyMessage = filterActive
-    ? "Nothing matches the rating filter."
-    : "No photos in this project yet. Import them, or drop files into the folder — subfolders are fine.";
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <BrowserToolbar
-        purpose="Cull and rate. Click a photo for the loupe; Export takes the selection."
-        view={view}
-        onView={onView}
-        sort={sort}
-        onSort={onSort}
-        scoreReady={scoreReady}
-        scoring={scoring}
-        justRated={justRated}
-      />
-      {filteredImages.length === 0 ? (
-        <div className="flex flex-col items-start gap-3 p-8">
-          <p
-            data-testid="browser-empty"
-            className="text-muted-foreground text-sm"
-          >
-            {emptyMessage}
-          </p>
-          {!filterActive && (
-            <Button size="sm" data-testid="empty-import" onClick={onImport}>
-              <Download />
-              Import photos
-            </Button>
-          )}
-        </div>
-      ) : (
-        <div className="min-h-0 flex-1">
-          {view === "grid" ? (
-            <ImageGrid
-              images={filteredImages}
-              onOpen={onOpenLoupe}
-              showInfo={showInfo}
-              selected={selection.selected}
-              onSelect={selection.click}
-              focusPath={focusPath}
-              revealed={revealed}
-            />
-          ) : (
-            <ImageList
-              images={filteredImages}
-              selected={selection.selected}
-              onSelect={selection.click}
-              onOpen={onOpenLoupe}
-              focusPath={focusPath}
-              revealed={revealed}
-            />
-          )}
-        </div>
-      )}
-    </div>
   );
 }

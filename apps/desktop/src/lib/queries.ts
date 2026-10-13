@@ -641,7 +641,6 @@ export function useExportJobs() {
         running: false,
         cancelled: false,
         archiving: false,
-        error: null,
         failures: [],
       };
       const row = {

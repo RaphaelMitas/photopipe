@@ -14,12 +14,8 @@ import {
 import { ChevronLeft } from "lucide-react";
 import type { ImageFile } from "@/lib/core";
 import { instinctScore } from "@/lib/instinct";
-import type { FilmstripMode } from "./Filmstrip";
-import {
-  RatingFilterOps,
-  RatingHistogram,
-  type RatingOp,
-} from "./RatingFilter";
+import { filmstripPref } from "./Filmstrip";
+import { type RatingFilter, RatingFilterGroup } from "./RatingFilter";
 import { SidebarBrandHeader } from "./SidebarBrandHeader";
 import { Stars } from "./Stars";
 
@@ -28,13 +24,8 @@ type Props = {
   position: number;
   count: number;
   betterThan: number | null;
-  filmstrip: FilmstripMode;
-  onFilmstrip: (mode: FilmstripMode) => void;
+  filter: RatingFilter;
   ratingCounts: number[];
-  ratingOp: RatingOp;
-  onRatingOp: (op: RatingOp) => void;
-  ratingStars: number;
-  onRatingStars: (stars: number) => void;
   onRate: (path: string, rating: number) => void;
   onBackToGrid: () => void;
 };
@@ -44,16 +35,12 @@ export function LoupeSidebar({
   position,
   count,
   betterThan,
-  filmstrip,
-  onFilmstrip,
+  filter,
   ratingCounts,
-  ratingOp,
-  onRatingOp,
-  ratingStars,
-  onRatingStars,
   onRate,
   onBackToGrid,
 }: Props) {
+  const filmstrip = filmstripPref.use();
   const instinct = image.score == null ? null : instinctScore(image.score);
 
   return (
@@ -77,21 +64,7 @@ export function LoupeSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel className="justify-between">
-            Rating
-            <RatingFilterOps op={ratingOp} onOp={onRatingOp} />
-          </SidebarGroupLabel>
-          <SidebarGroupContent className="px-2 py-1">
-            <RatingHistogram
-              counts={ratingCounts}
-              op={ratingOp}
-              stars={ratingStars}
-              onOp={onRatingOp}
-              onStars={onRatingStars}
-            />
-          </SidebarGroupContent>
-        </SidebarGroup>
+        <RatingFilterGroup filter={filter} counts={ratingCounts} />
 
         <SidebarSeparator />
 
@@ -151,7 +124,7 @@ export function LoupeSidebar({
                   ["ratings", "Ratings"],
                 ]}
                 testid="filmstrip"
-                onChange={onFilmstrip}
+                onChange={filmstripPref.set}
               />
             </div>
           </SidebarGroupContent>

@@ -10,6 +10,7 @@ import { type Edit, fileSrc, type ImageFile } from "@/lib/core";
 import {
   aspectRatioFor,
   type Box,
+  draftWithAngle,
   fitRect,
   moveCrop,
   rotatedSize,
@@ -23,6 +24,7 @@ import {
   useThumbnail,
   useViewportRender,
 } from "@/lib/queries";
+import type { CropSession } from "@/lib/useCropSession";
 import {
   centerOn,
   clampPan,
@@ -33,8 +35,8 @@ import {
   type ZoomState,
   zoomAt,
 } from "@/lib/zoom";
-import { type CropDraft, CropOverlay, draftWithAngle } from "./CropTool";
-import { Filmstrip, type FilmstripMode } from "./Filmstrip";
+import { CropOverlay } from "./CropTool";
+import { Filmstrip, filmstripPref } from "./Filmstrip";
 
 // Photo pixels, not screen pixels: ten of them stay a fine adjustment on any
 // photo while still showing on screen at a fitted view.
@@ -60,11 +62,7 @@ type Props = {
   images: ImageFile[];
   index: number;
   edit: Edit;
-  filmstrip: FilmstripMode;
-  cropDraft: CropDraft | null;
-  onCropDraft: (draft: CropDraft) => void;
-  onApplyCrop: () => void;
-  onCancelCrop: () => void;
+  crop: CropSession;
   onEditChange: (edit: Edit) => void;
   onNavigate: (index: number) => void;
   onClose: () => void;
@@ -75,19 +73,17 @@ export function Loupe({
   images,
   index,
   edit,
-  filmstrip,
-  cropDraft,
-  onCropDraft,
-  onApplyCrop,
-  onCancelCrop,
+  crop: session,
   onEditChange,
   onNavigate,
   onClose,
   onRate,
 }: Props) {
   const image = images[index];
+  const cropDraft = session.draft;
   const deferredEdit = useDeferredValue(edit);
   const cropping = cropDraft !== null;
+  const filmstrip = filmstripPref.use();
 
   // While cropping the stage shows the full turned frame, uncropped and
   // unstraightened; the crop and the CSS angle preview sit on top.
@@ -189,13 +185,13 @@ export function Loupe({
       if (draft) {
         if (event.key === "Escape") {
           draftRef.current = null;
-          onCancelCrop();
+          session.cancel();
         }
         // A focused button (Cancel, Reset) or the aspect select acts on
         // Enter itself.
         if (event.key === "Enter" && !target?.closest("button, select")) {
           draftRef.current = null;
-          onApplyCrop();
+          session.apply();
         }
         const nudge = NUDGE[event.key];
         if (nudge) {
@@ -212,7 +208,7 @@ export function Loupe({
             ),
           };
           draftRef.current = nudged;
-          onCropDraft(nudged);
+          session.set(nudged);
         }
         return;
       }
@@ -264,10 +260,8 @@ export function Loupe({
     edit,
     displayWidth,
     displayHeight,
-    onApplyCrop,
-    onCancelCrop,
+    session,
     onClose,
-    onCropDraft,
     onEditChange,
     onNavigate,
     onRate,
@@ -320,7 +314,7 @@ export function Loupe({
         {...(cropDraft
           ? {
               onDoubleClick: () =>
-                onCropDraft(
+                session.set(
                   draftWithAngle(cropDraft, 0, displayWidth, displayHeight),
                 ),
             }
@@ -383,7 +377,7 @@ export function Loupe({
             imageWidth={displayWidth}
             imageHeight={displayHeight}
             ratio={ratio}
-            onChange={onCropDraft}
+            onChange={session.set}
           />
         )}
         {cropDraft && (

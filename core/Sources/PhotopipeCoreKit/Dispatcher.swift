@@ -1,16 +1,5 @@
 import Foundation
 
-public enum DispatchOutcome: Equatable, Sendable {
-    case respond(Response)
-    case shutdown(Response)
-
-    public var response: Response {
-        switch self {
-        case .respond(let response), .shutdown(let response): response
-        }
-    }
-}
-
 public final class Dispatcher {
     private let library: LibraryService
 
@@ -18,57 +7,29 @@ public final class Dispatcher {
         self.library = library
     }
 
-    public func dispatch(line: String) -> DispatchOutcome {
+    public func dispatch(line: String) -> Response {
         let request: Request
         do {
             request = try JSONDecoder().decode(Request.self, from: Data(line.utf8))
         } catch {
-            return .respond(
-                .failure(
-                    id: "", code: "bad_request",
-                    message: "malformed request: \(error.localizedDescription)"))
+            return .failure(
+                id: "", code: "bad_request",
+                message: "malformed request: \(error.localizedDescription)")
         }
 
         guard request.v == protocolVersion else {
-            return .respond(
-                .failure(
-                    id: request.id, code: "unsupported_protocol",
-                    message: "protocol v\(request.v) not supported, this core speaks v\(protocolVersion)"
-                ))
+            return .failure(
+                id: request.id, code: "unsupported_protocol",
+                message: "protocol v\(request.v) not supported, this core speaks v\(protocolVersion)")
         }
 
-        switch request.method {
-        case "ping":
-            return .respond(.success(id: request.id, result: .object(["pong": .bool(true)])))
-        case "version":
-            return .respond(
-                .success(
-                    id: request.id,
-                    result: .object([
-                        "version": .string(coreVersion),
-                        "protocol": .number(Double(protocolVersion)),
-                    ])))
-        case "shutdown":
-            library.stopExports()
-            return .shutdown(.success(id: request.id, result: .object(["bye": .bool(true)])))
-        case "setRoot", "listShoots", "listImages", "thumbnail", "render", "setRating",
-            "setEdit", "rawDefaults", "status", "trash", "decoderSupport",
-            "decoderAvailability", "exportFiles",
-            "exportStatus", "cancelExport",
-            "createProject", "importFiles", "updateProject", "captureDate",
-            "scoreShoot", "scoreStatus":
-            return .respond(libraryResponse(request))
-        default:
-            return .respond(
-                .failure(
-                    id: request.id, code: "unknown_method",
-                    message: "unknown method: \(request.method)"))
+        do {
+            return .success(id: request.id, result: try result(for: request))
+        } catch let error as WireError {
+            return .failure(id: request.id, error: error.wire)
+        } catch {
+            return .failure(id: request.id, code: "io_error", message: "\(error)")
         }
-    }
-
-    private static func edit(from value: JSONValue?) throws -> Edit? {
-        guard let value else { return nil }
-        return try JSONDecoder().decode(Edit.self, from: JSONEncoder().encode(value))
     }
 
     /// Dropped rather than rejected when malformed: a bad viewport should cost
@@ -81,299 +42,142 @@ public final class Dispatcher {
         return CropRect(left: left, top: top, right: right, bottom: bottom).sanitized()
     }
 
-    private static func exportProgress(_ job: Exporter.Progress) -> JSONValue {
-        .object([
-            "id": .string(job.id),
-            "done": .number(Double(job.done)),
-            "failed": .number(Double(job.failed)),
-            "total": .number(Double(job.total)),
-            "running": .bool(job.running),
-            "cancelled": .bool(job.cancelled),
-            "archiving": .bool(job.archiving),
-            "error": job.error.map { .string($0) } ?? .null,
-            "failures": .array(job.failures.map { .string($0) }),
-        ])
+    private func result(for request: Request) throws -> JSONValue {
+        switch request.method {
+        case "ping":
+            return .object(["pong": .bool(true)])
+        case "version":
+            return .object([
+                "version": .string(coreVersion),
+                "protocol": .number(Double(protocolVersion)),
+            ])
+        case "shutdown":
+            library.stopExports()
+            return .object(["bye": .bool(true)])
+        case "setRoot":
+            return try JSONValue(
+                encoding: library.setRoot(
+                    path: request.string("path"), indexPath: request.param("indexPath")?.stringValue))
+        case "listShoots":
+            return .object(["shoots": try JSONValue(encoding: library.listShoots())])
+        case "listImages":
+            let images = try library.listImages(shoot: request.string("shoot"))
+            return .object(["images": try JSONValue(encoding: images)])
+        case "scoreShoot":
+            return try JSONValue(encoding: library.scoreShoot(shoot: request.string("shoot")))
+        case "thumbnail":
+            let cachePath = try library.thumbnail(
+                path: request.string("path"), maxPixel: request.param("maxPixel")?.intValue ?? 256)
+            return .object(["cachePath": .string(cachePath)])
+        case "render":
+            let cachePath = try library.render(
+                path: request.string("path"), edit: request.edit() ?? .identity,
+                maxPixel: request.param("maxPixel")?.intValue ?? 2000,
+                viewport: Self.viewport(from: request.param("viewport")),
+                decoderVersion: request.param("decoderVersion")?.intValue)
+            return .object(["cachePath": .string(cachePath)])
+        case "setRating":
+            return try JSONValue(
+                encoding: library.setRating(
+                    shoot: request.string("shoot"), path: request.string("path"),
+                    rating: request.int("rating")))
+        case "setEdit":
+            return try JSONValue(
+                encoding: library.setEdit(
+                    shoot: request.string("shoot"), path: request.string("path"),
+                    edit: required("edit", request.edit())))
+        case "rawDefaults":
+            let asShot = try library.rawDefaults(
+                path: request.string("path"),
+                decoderVersion: request.param("decoderVersion")?.intValue)
+            return .object([
+                "temperature": asShot.map { .number($0.temperature) } ?? .null,
+                "tint": asShot.map { .number($0.tint) } ?? .null,
+                "denoise": asShot.map { .number($0.denoise * 100) } ?? .null,
+            ])
+        case "trash":
+            return try JSONValue(
+                encoding: library.trashImages(
+                    shoot: request.string("shoot"), paths: request.strings("paths")))
+        case "decoderAvailability":
+            return .object(["raw9": library.raw9Availability().map(JSONValue.bool) ?? .null])
+        case "decoderSupport":
+            return try JSONValue(encoding: library.decoderSupport(paths: request.strings("paths")))
+        case "exportFiles":
+            let job = try library.startExport(
+                shoot: request.string("shoot"), paths: request.strings("paths"),
+                destination: request.string("destination"),
+                zip: request.param("zip")?.boolValue ?? false,
+                flatten: request.param("flatten")?.boolValue ?? true,
+                format: ExportFormat(rawValue: request.param("format")?.stringValue ?? "original")
+                    ?? .original,
+                quality: request.param("quality")?.intValue ?? 90,
+                decoderVersion: request.param("decoderVersion")?.intValue)
+            return try JSONValue(encoding: job)
+        case "exportStatus":
+            return try JSONValue(encoding: library.exportStatus(id: request.string("id")))
+        case "cancelExport":
+            return try JSONValue(encoding: library.cancelExport(id: request.string("id")))
+        case "createProject":
+            return try JSONValue(
+                encoding: library.createProject(
+                    name: request.string("name"), notes: request.string("notes")))
+        case "importFiles":
+            let job = try library.startImport(
+                shoot: request.string("shoot"), paths: request.strings("paths"))
+            return try JSONValue(encoding: job)
+        case "updateProject":
+            return try JSONValue(
+                encoding: library.updateProject(
+                    shoot: request.string("shoot"), name: request.string("name"),
+                    day: request.param("day")?.stringValue, notes: request.string("notes"),
+                    cover: request.param("cover")?.stringValue))
+        case "captureDate":
+            let day = try library.captureDate(path: request.string("path"))
+            return .object(["day": day.map(JSONValue.string) ?? .null])
+        case "status":
+            return try JSONValue(encoding: library.status(since: request.param("since")?.intValue))
+        default:
+            throw DispatchError.unknownMethod(request.method)
+        }
+    }
+}
+
+private enum DispatchError: WireError {
+    case invalidParams(String)
+    case unknownMethod(String)
+
+    var wire: ResponseError {
+        switch self {
+        case .invalidParams(let key): ResponseError(code: "invalid_params", message: "\(key) required")
+        case .unknownMethod(let method):
+            ResponseError(code: "unknown_method", message: "unknown method: \(method)")
+        }
+    }
+}
+
+private func required<Value>(_ key: String, _ value: Value?) throws -> Value {
+    guard let value else { throw DispatchError.invalidParams(key) }
+    return value
+}
+
+extension Request {
+    fileprivate func param(_ key: String) -> JSONValue? { params?[key] }
+
+    fileprivate func string(_ key: String) throws -> String {
+        try required(key, param(key)?.stringValue)
     }
 
-    private func libraryResponse(_ request: Request) -> Response {
-        do {
-            switch request.method {
-            case "setRoot":
-                guard let path = request.params?["path"]?.stringValue else {
-                    return .failure(id: request.id, code: "invalid_params", message: "path required")
-                }
-                let indexPath = request.params?["indexPath"]?.stringValue
-                let summary = try library.setRoot(path: path, indexPath: indexPath)
-                return .success(
-                    id: request.id,
-                    result: .object([
-                        "shoots": .number(Double(summary.shoots)),
-                        "files": .number(Double(summary.files)),
-                        "generation": .number(Double(summary.generation)),
-                    ]))
-            case "listShoots":
-                return .success(
-                    id: request.id,
-                    result: .object(["shoots": try JSONValue(encoding: library.listShoots())]))
-            case "listImages":
-                guard let shoot = request.params?["shoot"]?.stringValue else {
-                    return .failure(id: request.id, code: "invalid_params", message: "shoot required")
-                }
-                let images = try library.listImages(shoot: shoot)
-                return .success(
-                    id: request.id, result: .object(["images": try JSONValue(encoding: images)]))
-            case "scoreShoot", "scoreStatus":
-                guard let shoot = request.params?["shoot"]?.stringValue else {
-                    return .failure(id: request.id, code: "invalid_params", message: "shoot required")
-                }
-                let progress =
-                    request.method == "scoreShoot"
-                    ? try library.scoreShoot(shoot: shoot)
-                    : try library.scoreStatus(shoot: shoot)
-                return .success(
-                    id: request.id,
-                    result: .object([
-                        "done": .number(Double(progress.done)),
-                        "total": .number(Double(progress.total)),
-                        "running": .bool(progress.running),
-                    ]))
-            case "thumbnail":
-                guard let path = request.params?["path"]?.stringValue else {
-                    return .failure(id: request.id, code: "invalid_params", message: "path required")
-                }
-                let maxPixel = request.params?["maxPixel"]?.intValue ?? 256
-                let cachePath = try library.thumbnail(path: path, maxPixel: maxPixel)
-                return .success(id: request.id, result: .object(["cachePath": .string(cachePath)]))
-            case "render":
-                guard let path = request.params?["path"]?.stringValue else {
-                    return .failure(id: request.id, code: "invalid_params", message: "path required")
-                }
-                let edit = try Self.edit(from: request.params?["edit"]) ?? .identity
-                let maxPixel = request.params?["maxPixel"]?.intValue ?? 2000
-                let cachePath = try library.render(
-                    path: path, edit: edit, maxPixel: maxPixel,
-                    viewport: Self.viewport(from: request.params?["viewport"]),
-                    decoderVersion: request.params?["decoderVersion"]?.intValue)
-                return .success(id: request.id, result: .object(["cachePath": .string(cachePath)]))
-            case "setRating":
-                guard let shoot = request.params?["shoot"]?.stringValue,
-                    let path = request.params?["path"]?.stringValue,
-                    let rating = request.params?["rating"]?.intValue
-                else {
-                    return .failure(
-                        id: request.id, code: "invalid_params",
-                        message: "shoot, path and rating required")
-                }
-                let result = try library.setRating(shoot: shoot, path: path, rating: rating)
-                return .success(
-                    id: request.id,
-                    result: .object([
-                        "rating": .number(Double(result.rating)),
-                        "generation": .number(Double(result.generation)),
-                    ]))
-            case "setEdit":
-                guard let shoot = request.params?["shoot"]?.stringValue,
-                    let path = request.params?["path"]?.stringValue,
-                    let edit = try Self.edit(from: request.params?["edit"])
-                else {
-                    return .failure(
-                        id: request.id, code: "invalid_params",
-                        message: "shoot, path and edit required")
-                }
-                let result = try library.setEdit(shoot: shoot, path: path, edit: edit)
-                return .success(
-                    id: request.id,
-                    result: .object([
-                        "edit": try JSONValue(encoding: result.edit),
-                        "generation": .number(Double(result.generation)),
-                    ]))
-            case "rawDefaults":
-                guard let path = request.params?["path"]?.stringValue else {
-                    return .failure(id: request.id, code: "invalid_params", message: "path required")
-                }
-                let asShot = try library.rawDefaults(
-                    path: path, decoderVersion: request.params?["decoderVersion"]?.intValue)
-                return .success(
-                    id: request.id,
-                    result: .object([
-                        "temperature": asShot.map { .number($0.temperature) } ?? .null,
-                        "tint": asShot.map { .number($0.tint) } ?? .null,
-                        "denoise": asShot.map { .number($0.denoise * 100) } ?? .null,
-                    ]))
-            case "trash":
-                guard let shoot = request.params?["shoot"]?.stringValue,
-                    let paths = request.params?["paths"]?.stringArrayValue
-                else {
-                    return .failure(
-                        id: request.id, code: "invalid_params", message: "shoot and paths required")
-                }
-                let result = try library.trashImages(shoot: shoot, paths: paths)
-                return .success(
-                    id: request.id,
-                    result: .object([
-                        "files": .number(Double(result.files)),
-                        "generation": .number(Double(result.generation)),
-                    ]))
-            case "decoderAvailability":
-                let raw9 = library.raw9Availability()
-                return .success(
-                    id: request.id,
-                    result: .object(["raw9": raw9.map(JSONValue.bool) ?? .null]))
-            case "decoderSupport":
-                guard let paths = request.params?["paths"]?.stringArrayValue else {
-                    return .failure(
-                        id: request.id, code: "invalid_params", message: "paths required")
-                }
-                let support = try library.decoderSupport(paths: paths)
-                return .success(
-                    id: request.id,
-                    result: .object([
-                        "raw9": .number(Double(support.raw9)),
-                        "rawTotal": .number(Double(support.rawTotal)),
-                    ]))
-            case "exportFiles":
-                guard let shoot = request.params?["shoot"]?.stringValue,
-                    let paths = request.params?["paths"]?.stringArrayValue,
-                    let destination = request.params?["destination"]?.stringValue
-                else {
-                    return .failure(
-                        id: request.id, code: "invalid_params",
-                        message: "shoot, paths and destination required")
-                }
-                let format =
-                    LibraryService.ExportFormat(
-                        rawValue: request.params?["format"]?.stringValue ?? "original")
-                    ?? .original
-                let job = try library.startExport(
-                    shoot: shoot, paths: paths, destination: destination,
-                    zip: request.params?["zip"]?.boolValue ?? false,
-                    flatten: request.params?["flatten"]?.boolValue ?? true,
-                    format: format,
-                    quality: request.params?["quality"]?.intValue ?? 90,
-                    decoderVersion: request.params?["decoderVersion"]?.intValue)
-                return .success(id: request.id, result: Self.exportProgress(job))
-            case "exportStatus", "cancelExport":
-                guard let id = request.params?["id"]?.stringValue else {
-                    return .failure(id: request.id, code: "invalid_params", message: "id required")
-                }
-                let job =
-                    request.method == "exportStatus"
-                    ? try library.exportStatus(id: id)
-                    : try library.cancelExport(id: id)
-                return .success(id: request.id, result: Self.exportProgress(job))
-            case "createProject":
-                guard let name = request.params?["name"]?.stringValue,
-                    let notes = request.params?["notes"]?.stringValue
-                else {
-                    return .failure(
-                        id: request.id, code: "invalid_params",
-                        message: "name and notes required")
-                }
-                let result = try library.createProject(name: name, notes: notes)
-                return .success(
-                    id: request.id,
-                    result: .object([
-                        "shoot": .string(result.shoot),
-                        "path": .string(result.path),
-                        "generation": .number(Double(result.generation)),
-                    ]))
-            case "importFiles":
-                guard let shoot = request.params?["shoot"]?.stringValue,
-                    let paths = request.params?["paths"]?.stringArrayValue
-                else {
-                    return .failure(
-                        id: request.id, code: "invalid_params",
-                        message: "shoot and paths required")
-                }
-                let job = try library.startImport(shoot: shoot, paths: paths)
-                return .success(id: request.id, result: Self.exportProgress(job))
-            case "updateProject":
-                guard let shoot = request.params?["shoot"]?.stringValue,
-                    let name = request.params?["name"]?.stringValue,
-                    let notes = request.params?["notes"]?.stringValue
-                else {
-                    return .failure(
-                        id: request.id, code: "invalid_params",
-                        message: "shoot, name and notes required")
-                }
-                let updated = try library.updateProject(
-                    shoot: shoot, name: name, day: request.params?["day"]?.stringValue,
-                    notes: notes, cover: request.params?["cover"]?.stringValue)
-                return .success(
-                    id: request.id,
-                    result: .object([
-                        "shoot": .string(updated.shoot),
-                        "generation": .number(Double(updated.generation)),
-                    ]))
-            case "captureDate":
-                guard let path = request.params?["path"]?.stringValue else {
-                    return .failure(
-                        id: request.id, code: "invalid_params", message: "path required")
-                }
-                return .success(
-                    id: request.id,
-                    result: .object([
-                        "day": try library.captureDate(path: path).map(JSONValue.string) ?? .null
-                    ]))
-            case "status":
-                let status = library.status(since: request.params?["since"]?.intValue)
-                var result: [String: JSONValue] = [
-                    "generation": .number(Double(status.generation)),
-                    "root": status.root.map { .string($0) } ?? .null,
-                    "shoots": .number(Double(status.shoots)),
-                    "scanning": .bool(status.scanning),
-                    "filesFound": .number(Double(status.filesFound)),
-                    "filesEnriched": .number(Double(status.filesEnriched)),
-                ]
-                if let changed = status.changedShoots {
-                    result["changedShoots"] = .array(changed.map { .string($0) })
-                }
-                return .success(id: request.id, result: .object(result))
-            default:
-                return .failure(id: request.id, code: "unknown_method", message: request.method)
-            }
-        } catch LibraryService.ServiceError.noRoot {
-            return .failure(id: request.id, code: "no_root", message: "call setRoot first")
-        } catch LibraryService.ServiceError.unknownShoot(let name) {
-            return .failure(id: request.id, code: "unknown_shoot", message: name)
-        } catch LibraryService.ServiceError.pathOutsideRoot(let path) {
-            return .failure(id: request.id, code: "path_outside_root", message: path)
-        } catch LibraryService.ServiceError.unknownImage(let stem) {
-            return .failure(id: request.id, code: "unknown_image", message: stem)
-        } catch LibraryService.ServiceError.invalidRating(let rating) {
-            return .failure(
-                id: request.id, code: "invalid_rating", message: "rating \(rating) not in 0...5")
-        } catch LibraryService.ServiceError.invalidProjectName(let name) {
-            return .failure(
-                id: request.id, code: "invalid_project_name",
-                message: "\(name) is not a usable project name")
-        } catch LibraryService.ServiceError.invalidProjectDay(let day) {
-            return .failure(
-                id: request.id, code: "invalid_project_day",
-                message: "\(day) is not a YYYY-MM-DD date")
-        } catch LibraryService.ServiceError.unknownExport(let id) {
-            return .failure(id: request.id, code: "unknown_export", message: id)
-        } catch LibraryService.ServiceError.projectExists(let folder) {
-            return .failure(
-                id: request.id, code: "project_exists", message: "\(folder) already exists")
-        } catch LibraryService.ServiceError.unreadableProjectFile(let shoot) {
-            return .failure(
-                id: request.id, code: "unreadable_project_file",
-                message: "\(shoot) has a photopipe.json that could not be read")
-        } catch FileActions.ActionError.noFiles {
-            return .failure(id: request.id, code: "no_files", message: "nothing selected")
-        } catch FileActions.ActionError.zipFailed(let output) {
-            return .failure(id: request.id, code: "zip_failed", message: output)
-        } catch ExifTool.ExifToolError.notInstalled {
-            return .failure(
-                id: request.id, code: "exiftool_missing",
-                message: "exiftool not found — install it or set PHOTOPIPE_EXIFTOOL")
-        } catch ExifTool.ExifToolError.failed(let output) {
-            return .failure(id: request.id, code: "exiftool_failed", message: output)
-        } catch ScanError.rootNotFound(let path) {
-            return .failure(id: request.id, code: "root_not_found", message: path)
-        } catch {
-            return .failure(id: request.id, code: "io_error", message: "\(error)")
-        }
+    fileprivate func int(_ key: String) throws -> Int {
+        try required(key, param(key)?.intValue)
+    }
+
+    fileprivate func strings(_ key: String) throws -> [String] {
+        try required(key, param(key)?.stringArrayValue)
+    }
+
+    fileprivate func edit() throws -> Edit? {
+        guard let value = param("edit") else { return nil }
+        return try JSONDecoder().decode(Edit.self, from: JSONEncoder().encode(value))
     }
 }

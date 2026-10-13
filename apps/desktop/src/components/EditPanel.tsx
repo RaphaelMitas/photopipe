@@ -40,23 +40,17 @@ import {
   useRawDecoderQuickSwitch,
   useRawDecoderVersion,
 } from "@/lib/rawDecoder";
-import { type CropDraft, CropPanel } from "./CropTool";
+import type { CropSession } from "@/lib/useCropSession";
+import { CropPanel } from "./CropTool";
 import { CurveEditor } from "./CurveEditor";
 import { DecoderSegmented } from "./DecoderSegmented";
-
-type CropProps = {
-  cropDraft: CropDraft | null;
-  onCropDraft: (draft: CropDraft) => void;
-  onEnterCrop: () => void;
-  onApplyCrop: () => void;
-  onCancelCrop: () => void;
-};
 
 type Props = {
   image: ImageFile;
   edit: Edit;
   onChange: (edit: Edit) => void;
-} & CropProps;
+  crop: CropSession;
+};
 
 function Row({
   label,
@@ -228,16 +222,7 @@ function Group({
   );
 }
 
-export function EditPanel({
-  image,
-  edit,
-  onChange,
-  cropDraft,
-  onCropDraft,
-  onEnterCrop,
-  onApplyCrop,
-  onCancelCrop,
-}: Props) {
+export function EditPanel({ image, edit, onChange, crop }: Props) {
   const raw = isRawFile(image);
   const rawDefaults = useRawDefaults(raw ? image : undefined);
   // deferred like the Loupe's request, so both resolve to the same query
@@ -254,13 +239,13 @@ export function EditPanel({
 
   return (
     <div className="flex flex-col gap-3">
-      {cropDraft ? (
+      {crop.draft ? (
         <CropPanel
           image={image}
-          draft={cropDraft}
-          onDraft={onCropDraft}
-          onApply={onApplyCrop}
-          onCancel={onCancelCrop}
+          draft={crop.draft}
+          onDraft={crop.set}
+          onApply={crop.apply}
+          onCancel={crop.cancel}
         />
       ) : (
         <Group id="geometry" title="Geometry" summary={summary}>
@@ -268,7 +253,7 @@ export function EditPanel({
             variant="outline"
             size="sm"
             data-testid="enter-crop"
-            onClick={onEnterCrop}
+            onClick={crop.enter}
             className="justify-start text-xs"
           >
             <Crop />
@@ -285,7 +270,7 @@ export function EditPanel({
       <div
         className={cn(
           "flex flex-col gap-3",
-          cropDraft && "pointer-events-none opacity-40",
+          crop.draft && "pointer-events-none opacity-40",
         )}
       >
         <Group id="tone" title="Tone" summary={toneSummary(edit)}>
@@ -462,11 +447,7 @@ export function EditSidebar({
   edit,
   onChange,
   onHold,
-  cropDraft,
-  onCropDraft,
-  onEnterCrop,
-  onApplyCrop,
-  onCancelCrop,
+  crop,
   canPaste,
   onCopySettings,
   onPasteSettings,
@@ -478,7 +459,7 @@ export function EditSidebar({
   onPasteSettings: () => void;
   onClose: () => void;
 }) {
-  const cropping = cropDraft !== null;
+  const cropping = crop.draft !== null;
   const quickSwitch = useRawDecoderQuickSwitch();
   return (
     <div
@@ -544,11 +525,7 @@ export function EditSidebar({
             image={image}
             edit={edit}
             onChange={onChange}
-            cropDraft={cropDraft}
-            onCropDraft={onCropDraft}
-            onEnterCrop={onEnterCrop}
-            onApplyCrop={onApplyCrop}
-            onCancelCrop={onCancelCrop}
+            crop={crop}
           />
         ) : (
           <p

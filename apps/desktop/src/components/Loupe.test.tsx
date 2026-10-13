@@ -15,11 +15,13 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type Edit, type ImageFile, identityEdit } from "@/lib/core";
+import { type CropDraft, draftFromEdit } from "@/lib/crop";
 import { makeImage } from "@/lib/test-image";
-import { type CropDraft, draftFromEdit } from "./CropTool";
 import { EditSidebar } from "./EditPanel";
+import { filmstripPref } from "./Filmstrip";
 import { Loupe } from "./Loupe";
 import { LoupeSidebar } from "./LoupeSidebar";
+import type { RatingFilter } from "./RatingFilter";
 
 afterEach(cleanup);
 
@@ -64,17 +66,20 @@ function renderLoupe(
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  filmstripPref.set("off");
   render(
     <QueryClientProvider client={client}>
       <Loupe
         images={makeImages()}
         index={index}
         edit={editWith(exposure)}
-        filmstrip="off"
-        cropDraft={cropDraft}
-        onCropDraft={onCropDraft}
-        onApplyCrop={onApplyCrop}
-        onCancelCrop={onCancelCrop}
+        crop={{
+          draft: cropDraft,
+          set: onCropDraft,
+          enter: vi.fn(),
+          apply: onApplyCrop,
+          cancel: onCancelCrop,
+        }}
         onEditChange={onEditChange}
         onNavigate={onNavigate}
         onClose={onClose}
@@ -226,6 +231,16 @@ describe("Loupe crop mode", () => {
 });
 
 describe("LoupeSidebar", () => {
+  const filter: RatingFilter = {
+    op: "gte",
+    stars: 0,
+    setOp: vi.fn(),
+    setStars: vi.fn(),
+    matches: () => true,
+    active: false,
+    reset: vi.fn(),
+  };
+
   it("shows name, position and stars; rates", () => {
     const onRate = vi.fn();
     render(
@@ -236,13 +251,8 @@ describe("LoupeSidebar", () => {
             position={2}
             count={3}
             betterThan={null}
-            filmstrip="thumbs"
-            onFilmstrip={vi.fn()}
             ratingCounts={[3, 0, 0, 0, 0, 0]}
-            ratingOp="gte"
-            onRatingOp={vi.fn()}
-            ratingStars={0}
-            onRatingStars={vi.fn()}
+            filter={filter}
             onRate={onRate}
             onBackToGrid={vi.fn()}
           />
@@ -265,13 +275,8 @@ describe("LoupeSidebar", () => {
             position={2}
             count={3}
             betterThan={betterThan}
-            filmstrip="thumbs"
-            onFilmstrip={vi.fn()}
             ratingCounts={[3, 0, 0, 0, 0, 0]}
-            ratingOp="gte"
-            onRatingOp={vi.fn()}
-            ratingStars={0}
-            onRatingStars={vi.fn()}
+            filter={filter}
             onRate={vi.fn()}
             onBackToGrid={vi.fn()}
           />
@@ -313,11 +318,13 @@ describe("EditSidebar", () => {
             edit={edit}
             onChange={onChange}
             onHold={vi.fn()}
-            cropDraft={cropDraft}
-            onCropDraft={onCropDraft}
-            onEnterCrop={onEnterCrop}
-            onApplyCrop={onApplyCrop}
-            onCancelCrop={onCancelCrop}
+            crop={{
+              draft: cropDraft,
+              set: onCropDraft,
+              enter: onEnterCrop,
+              apply: onApplyCrop,
+              cancel: onCancelCrop,
+            }}
             canPaste={false}
             onCopySettings={vi.fn()}
             onPasteSettings={vi.fn()}

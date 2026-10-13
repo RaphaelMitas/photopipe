@@ -1,13 +1,12 @@
-import { Skeleton } from "@photopipe/ui/components/skeleton";
 import { type Rect, useVirtualizer } from "@tanstack/react-virtual";
 import { Check } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { fileSrc, type ImageFile } from "@/lib/core";
+import type { ImageFile } from "@/lib/core";
 import { fixedRect } from "@/lib/fixedRect";
-import { useThumbnail } from "@/lib/queries";
 import { clickIntent, type SelectModifiers } from "@/lib/selection";
 import { useVirtualJump } from "@/lib/useVirtualJump";
 import { ExposureBadge, RatingBadge } from "./PhotoBadges";
+import { aspectRatio, Thumbnail } from "./Thumbnail";
 
 const TARGET_ROW_HEIGHT = 220;
 const GAP = 8;
@@ -39,8 +38,7 @@ function packRows(images: ImageFile[], containerWidth: number): Row[] {
   };
 
   images.forEach((image, index) => {
-    const ratio =
-      image.width > 0 && image.height > 0 ? image.width / image.height : 1.5;
+    const ratio = aspectRatio(image);
     current.push({ image, index, ratio });
     ratioSum += ratio;
     const naturalWidth =
@@ -80,7 +78,6 @@ function Thumb({
   onOpen?: () => void;
   onSelect?: (modifiers: SelectModifiers) => void;
 }) {
-  const thumb = useThumbnail(image);
   const pressTimer = useRef<number | null>(null);
   const pressFired = useRef(false);
 
@@ -131,16 +128,7 @@ function Thumb({
       }`}
       style={{ width, height }}
     >
-      {thumb.data ? (
-        <img
-          src={fileSrc(thumb.data)}
-          alt={image.rel}
-          loading="lazy"
-          className="h-full w-full object-cover"
-        />
-      ) : (
-        <Skeleton className="h-full w-full rounded-none" />
-      )}
+      <Thumbnail file={image} className="h-full w-full" />
       {selected && (
         <span className="absolute top-1.5 left-1.5 flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
           <Check className="size-3" />
