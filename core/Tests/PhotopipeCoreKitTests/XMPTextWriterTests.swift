@@ -106,7 +106,7 @@ func textWriterMatchesExifTool(fixture: String?) throws {
     try XMP.writeEdit(changedEdit, file: image(writers.text), tool: .shared)
     try writers.write(3)
     try writers.expectEqual("text, exiftool, text")
-    #expect(XMP.readRating(file: try image(writers.text)) == 3)
+    #expect(XMP.read(file: try image(writers.text)).rating == 3)
 }
 
 @Test func textWriterLeavesNestedMaskTagsAlone() throws {
@@ -142,7 +142,7 @@ func textWriterMatchesExifTool(fixture: String?) throws {
         curveBlue: [CurvePoint(x: 0, y: 0.2), CurvePoint(x: 1, y: 0.8)])
     let file = try image(raw)
     try XMP.writeText(XMP.editTags(edit, file: file).tags, clearing: false, file: file)
-    let read = XMP.readEdit(file: file)
+    let read = XMP.read(file: file).edit
     #expect(read.curveRGB == edit.curveRGB)
     #expect(read.curveBlue == edit.curveBlue)
 }
@@ -181,7 +181,7 @@ func textWriterMatchesExifTool(fixture: String?) throws {
         </x:xmpmeta>
         """
     let written = try XMPTextWriter.apply(XMP.ratingTags(5), to: Array(compact.utf8))
-    #expect(XMP.parseRating(String(decoding: written, as: UTF8.self)) == 5)
+    #expect(XMP.parse(written, isRaw: true).rating == 5)
 }
 
 @Test func textWriterRefusesForeignPrefixOnChildElement() throws {

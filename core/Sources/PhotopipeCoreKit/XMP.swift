@@ -14,24 +14,22 @@ public enum XMP {
         return values?.contentModificationDate?.timeIntervalSince1970 ?? 0
     }
 
-    public static func readSidecarRating(at url: URL) -> Int? {
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-        return parseRating(text)
+    // the tag parser costs ~70x the packet in memory
+    static let packetSizeLimit = 4 << 20
+
+    // Lightroom brush masks push real sidecars well past the embedded cap
+    static let sidecarSizeLimit = 64 << 20
+
+    static func sidecarData(forImagePath path: String) -> Data? {
+        guard let handle = try? FileHandle(forReadingFrom: sidecarURL(forImagePath: path)),
+            let data = try? handle.read(upToCount: sidecarSizeLimit + 1),
+            data.count <= sidecarSizeLimit
+        else { return nil }
+        return data
     }
 
-    static func parseRating(_ text: String) -> Int? {
-        if let match = text.firstMatch(of: /xmp:Rating\s*=\s*"(-?\d+)"/) {
-            return Int(match.1)
-        }
-        if let match = text.firstMatch(of: /<xmp:Rating>\s*(-?\d+)\s*<\/xmp:Rating>/) {
-            return Int(match.1)
-        }
-        return nil
-    }
-
-    // foreign sidecars carry exponents, and non-finite or huge values poison
-    // JSON encoding, CI geometry and the integer tag writes downstream
-    private static let number = "([-+]?[\\d.]+(?:[eE][-+]?\\d+)?)"
+    // non-finite or huge values poison JSON encoding, CI geometry and the
+    // integer tag writes downstream
     static let scalarMagnitudeLimit = 1e6
 
     private static func sane(_ parsed: Double?) -> Double? {
@@ -45,45 +43,13 @@ public enum XMP {
         Int(min(max(value.rounded(), -scalarMagnitudeLimit), scalarMagnitudeLimit))
     }
 
-    /// XMP tags appear as attributes (`crs:Tag="v"`) or elements
-    /// (`<crs:Tag>v</crs:Tag>`) depending on the writer; capture either.
-    private static func firstCapture(
-        _ tag: String, ns: String = "crs", pattern: String, in text: String
-    ) -> String? {
-        let attribute = try? Regex("\(ns):\(tag)\\s*=\\s*\"\(pattern)\"")
-        if let attribute, let match = text.firstMatch(of: attribute),
-            let value = match[1].substring
-        {
-            return String(value)
-        }
-        let element = try? Regex("<\(ns):\(tag)>\\s*\(pattern)\\s*</\(ns):\(tag)>")
-        if let element, let match = text.firstMatch(of: element),
-            let value = match[1].substring
-        {
-            return String(value)
-        }
-        return nil
-    }
-
-    static func parseDouble(_ tag: String, in text: String) -> Double? {
-        sane(firstCapture(tag, pattern: number, in: text).flatMap(Double.init))
-    }
-
-    static func parseHasCrop(in text: String) -> Bool? {
-        firstCapture("HasCrop", pattern: "(\\w+)", in: text)
-            .map { $0.lowercased() == "true" }
-    }
-
-    static func parseCurve(_ tag: String, in text: String) -> [CurvePoint] {
-        let block = try? Regex("<crs:\(tag)>(.*?)</crs:\(tag)>").dotMatchesNewlines()
-        guard let block, let match = text.firstMatch(of: block),
-            let body = match[1].substring
-        else { return [] }
-        return body.matches(of: /<rdf:li>\s*([\d.]+)\s*,\s*([\d.]+)\s*<\/rdf:li>/)
-            .compactMap { item in
-                guard let x = Double(item.1), let y = Double(item.2) else { return nil }
-                return CurvePoint(x: x / 255, y: y / 255)
-            }
+    private static func curvePoint(_ text: String) -> CurvePoint? {
+        let pair = text.split(separator: ",")
+        guard pair.count == 2,
+            let x = Double(pair[0].trimmingCharacters(in: .whitespaces)),
+            let y = Double(pair[1].trimmingCharacters(in: .whitespaces))
+        else { return nil }
+        return CurvePoint(x: x / 255, y: y / 255)
     }
 
     private struct Tags {
@@ -123,14 +89,18 @@ public enum XMP {
             rotation: rotation)
     }
 
-    static func parseEdit(_ text: String, isRaw: Bool, baseOrientation: Int = 1) -> Edit {
-        edit(
+    static func parse(
+        _ packet: some Collection<UInt8>, isRaw: Bool, baseOrientation: Int = 1
+    ) -> (rating: Int?, edit: Edit) {
+        let properties = XMPProperties(packet)
+        let edit = edit(
             from: Tags(
-                scalar: { parseDouble($0, in: text) },
-                curve: { parseCurve($0, in: text) },
-                hasCrop: parseHasCrop(in: text)),
+                scalar: { sane(properties.value(.crs, $0).flatMap(Double.init)) },
+                curve: { properties.items(.crs, $0).compactMap(curvePoint) },
+                hasCrop: properties.value(.crs, "HasCrop").map { $0.lowercased() == "true" }),
             isRaw: isRaw,
-            rotation: rotation(fromXMP: parseOrientation(in: text), base: baseOrientation))
+            rotation: rotation(fromXMP: orientation(in: properties), base: baseOrientation))
+        return (properties.value(.xmp, "Rating").flatMap { Int($0) }, edit)
     }
 
     // tiff:Orientation is ABSOLUTE, so our additive rotation is its difference
@@ -162,21 +132,19 @@ public enum XMP {
             mirrored: baseParts.mirrored, degrees: baseParts.degrees + rotation)
     }
 
-    static func parseOrientation(in text: String) -> Int? {
-        firstCapture("Orientation", ns: "tiff", pattern: "([1-8])", in: text)
-            .flatMap(Int.init)
+    static func orientation(in properties: XMPProperties) -> Int? {
+        guard let value = properties.value(.tiff, "Orientation").flatMap({ Int($0) }),
+            orientationParts[value] != nil
+        else { return nil }
+        return value
     }
 
     private static func cropRect(_ value: (String) -> Double?) -> CropRect? {
         guard let left = value("Left"), let top = value("Top"),
             let right = value("Right"), let bottom = value("Bottom"),
-            left.isFinite, top.isFinite, right.isFinite, bottom.isFinite
+            let rect = CropRect(left: left, top: top, right: right, bottom: bottom).sanitized(),
+            rect.width > 0.001, rect.height > 0.001
         else { return nil }
-        // straightened crops overhang the frame box; matches Renderer.saneCrop
-        let clamp = { (value: Double) in min(max(value, -1), 2) }
-        let rect = CropRect(
-            left: clamp(left), top: clamp(top), right: clamp(right), bottom: clamp(bottom))
-        guard rect.right - rect.left > 0.001, rect.bottom - rect.top > 0.001 else { return nil }
         return rect
     }
 
@@ -203,22 +171,21 @@ public enum XMP {
         }
         // a segment walk, so a decoy packet in a comment cannot win
         if data.starts(with: [0xFF, 0xD8]) {
-            return jpegXMPPacket(in: data).flatMap { parseOrientation(in: $0) }
+            return jpegXMPPacket(in: data).flatMap { orientation(in: XMPProperties($0)) }
         }
         // HEIC, PNG, TIFF: a crafted delimiter pair must not become a giant String
         let head = data.prefix(16 << 20)
         guard let start = head.range(of: Data("<x:xmpmeta".utf8)),
             let end = head.range(
                 of: Data("</x:xmpmeta>".utf8), in: start.upperBound..<head.endIndex),
-            end.upperBound - start.lowerBound <= 4 << 20
+            end.upperBound - start.lowerBound <= packetSizeLimit
         else { return nil }
-        let text = String(decoding: head[start.lowerBound..<end.upperBound], as: UTF8.self)
-        return parseOrientation(in: text)
+        return orientation(in: XMPProperties(head[start.lowerBound..<end.upperBound]))
     }
 
     private static let jpegPacketHeader = Data("http://ns.adobe.com/xap/1.0/\0".utf8)
 
-    private static func jpegXMPPacket(in data: Data) -> String? {
+    private static func jpegXMPPacket(in data: Data) -> Data? {
         var index = data.startIndex + 2
         while index + 4 <= data.endIndex {
             guard data[index] == 0xFF else { return nil }
@@ -238,8 +205,7 @@ public enum XMP {
             if marker == 0xE1 {
                 let payload = data[(index + 4)..<(index + 2 + length)]
                 if payload.starts(with: jpegPacketHeader) {
-                    return String(
-                        decoding: payload.dropFirst(jpegPacketHeader.count), as: UTF8.self)
+                    return payload.dropFirst(jpegPacketHeader.count)
                 }
             }
             index += 2 + length
@@ -297,51 +263,22 @@ public enum XMP {
             } else if CFGetTypeID(item as CFTypeRef) == CGImageMetadataTagGetTypeID() {
                 text = CGImageMetadataTagCopyValue(item as! CGImageMetadataTag) as? String
             }
-            guard let pair = text?.split(separator: ","), pair.count == 2,
-                let x = Double(pair[0].trimmingCharacters(in: .whitespaces)),
-                let y = Double(pair[1].trimmingCharacters(in: .whitespaces))
-            else { return nil }
-            return CurvePoint(x: x / 255, y: y / 255)
+            return text.flatMap(curvePoint)
         }
     }
 
-    public static func readRating(file: ImageFile) -> Int {
-        if file.usesSidecar {
-            return readSidecarRating(at: sidecarURL(forImagePath: file.path)) ?? 0
+    public static func read(file: ImageFile) -> (rating: Int, edit: Edit) {
+        let fileURL = URL(fileURLWithPath: file.path)
+        let read: (rating: Int?, edit: Edit)
+        if !file.usesSidecar {
+            read = readEmbedded(at: fileURL, isRaw: file.isRaw)
+        } else if let sidecar = sidecarData(forImagePath: file.path) {
+            read = parse(
+                sidecar, isRaw: file.isRaw, baseOrientation: baseOrientation(at: fileURL) ?? 1)
+        } else {
+            read = (nil, .identity)
         }
-        return embeddedCached(for: file).rating ?? 0
-    }
-
-    public static func readEdit(file: ImageFile) -> Edit {
-        if file.usesSidecar {
-            guard
-                let text = try? String(
-                    contentsOf: sidecarURL(forImagePath: file.path), encoding: .utf8)
-            else { return .identity }
-            return parseEdit(
-                text, isRaw: file.isRaw,
-                baseOrientation: baseOrientation(at: URL(fileURLWithPath: file.path)) ?? 1)
-        }
-        return embeddedCached(for: file).edit
-    }
-
-    private static let cacheLock = NSLock()
-    nonisolated(unsafe) private static var embeddedCache:
-        [String: (mtime: Double, rating: Int?, edit: Edit)] = [:]
-
-    private static func embeddedCached(for file: ImageFile) -> (rating: Int?, edit: Edit) {
-        cacheLock.lock()
-        if let cached = embeddedCache[file.path], cached.mtime == file.mtime {
-            cacheLock.unlock()
-            return (cached.rating, cached.edit)
-        }
-        cacheLock.unlock()
-
-        let read = readEmbedded(at: URL(fileURLWithPath: file.path), isRaw: file.isRaw)
-        cacheLock.lock()
-        embeddedCache[file.path] = (file.mtime, read.rating, read.edit)
-        cacheLock.unlock()
-        return read
+        return (read.rating ?? 0, read.edit)
     }
 
     struct TagWrite {
@@ -471,9 +408,7 @@ public enum XMP {
             baseOrientation(at: fileURL) ?? (file.usesSidecar ? 1 : nil)
         let currentXMP =
             file.usesSidecar
-            ? (try? String(
-                contentsOf: sidecarURL(forImagePath: file.path), encoding: .utf8))
-                .flatMap { parseOrientation(in: $0) }
+            ? sidecarData(forImagePath: file.path).flatMap { orientation(in: XMPProperties($0)) }
             : embeddedXMPOrientation(at: fileURL)
         var exifOrientationPin: Int?
         if edit.normalizedRotation == 0 {
