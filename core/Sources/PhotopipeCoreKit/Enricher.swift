@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// Runs `enrich` over everything the walk left as a placeholder, off the
 /// request path and across every core, publishing each batch as it lands.
@@ -29,27 +30,28 @@ final class Enricher: @unchecked Sendable {
     /// Replaces the queue wholesale. Batches from an older epoch may still be
     /// in flight; they carry their epoch so the receiver can drop them.
     func start(epoch: Int, work: [(shoot: String, files: [ImageFile])], publish: @escaping Publish) {
-        lock.lock()
-        self.epoch = epoch
-        self.publish = publish
-        pending = [:]
-        order = []
-        for (shoot, files) in work where !files.isEmpty {
-            pending[shoot] = files
-            order.append(shoot)
+        let wake = lock.withLock {
+            self.epoch = epoch
+            self.publish = publish
+            pending = [:]
+            order = []
+            for (shoot, files) in work where !files.isEmpty {
+                pending[shoot] = files
+                order.append(shoot)
+            }
+            moveWantedToFront()
+            let wake = !draining && !order.isEmpty
+            if wake { draining = true }
+            return wake
         }
-        moveWantedToFront()
-        let wake = !draining && !order.isEmpty
-        if wake { draining = true }
-        lock.unlock()
         if wake { queue.async { self.drain() } }
     }
 
     func prioritize(shoot: String) {
-        lock.lock()
-        wanted = shoot
-        moveWantedToFront()
-        lock.unlock()
+        lock.withLock {
+            wanted = shoot
+            moveWantedToFront()
+        }
     }
 
     /// Callers must hold the lock.
@@ -61,25 +63,24 @@ final class Enricher: @unchecked Sendable {
 
     private func drain() {
         while true {
-            lock.lock()
-            guard let shoot = order.first, let queued = pending[shoot] else {
-                draining = false
-                lock.unlock()
-                return
+            let next = lock.withLock {
+                () -> (epoch: Int, shoot: String, batch: [ImageFile], done: Bool, Publish?)? in
+                guard let shoot = order.first, let queued = pending[shoot] else {
+                    draining = false
+                    return nil
+                }
+                let batch = Array(queued.prefix(Self.batchSize))
+                let rest = Array(queued.dropFirst(batch.count))
+                if rest.isEmpty {
+                    pending[shoot] = nil
+                    order.removeFirst()
+                } else {
+                    pending[shoot] = rest
+                }
+                return (epoch, shoot, batch, rest.isEmpty, publish)
             }
-            let batch = Array(queued.prefix(Self.batchSize))
-            let rest = Array(queued.dropFirst(batch.count))
-            if rest.isEmpty {
-                pending[shoot] = nil
-                order.removeFirst()
-            } else {
-                pending[shoot] = rest
-            }
-            let currentEpoch = epoch
-            let publish = self.publish
-            lock.unlock()
-
-            publish?(currentEpoch, shoot, Self.enrichConcurrently(batch), rest.isEmpty)
+            guard let (epoch, shoot, batch, done, publish) = next else { return }
+            publish?(epoch, shoot, Self.enrichConcurrently(batch), done)
         }
     }
 
@@ -89,30 +90,14 @@ final class Enricher: @unchecked Sendable {
         let lanes = min(ProcessInfo.processInfo.activeProcessorCount, files.count)
         guard lanes > 1 else { return files.map(enrich) }
         let chunk = (files.count + lanes - 1) / lanes
-        let collector = Collector()
+        let byLane = Mutex<[Int: [ImageFile]]>([:])
         DispatchQueue.concurrentPerform(iterations: lanes) { lane in
             let start = lane * chunk
             guard start < files.count else { return }
             let end = min(start + chunk, files.count)
-            collector.store(lane, files[start..<end].map(enrich))
+            let enriched = files[start..<end].map(enrich)
+            byLane.withLock { $0[lane] = enriched }
         }
-        return collector.ordered(lanes)
-    }
-
-    private final class Collector: @unchecked Sendable {
-        private let lock = NSLock()
-        private var lanes: [Int: [ImageFile]] = [:]
-
-        func store(_ lane: Int, _ files: [ImageFile]) {
-            lock.lock()
-            lanes[lane] = files
-            lock.unlock()
-        }
-
-        func ordered(_ count: Int) -> [ImageFile] {
-            lock.lock()
-            defer { lock.unlock() }
-            return (0..<count).flatMap { lanes[$0] ?? [] }
-        }
+        return byLane.withLock { done in (0..<lanes).flatMap { done[$0] ?? [] } }
     }
 }

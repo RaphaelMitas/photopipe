@@ -10,6 +10,14 @@ private func tempDir() throws -> URL {
     return dir
 }
 
+extension FileActions {
+    fileprivate static func list(zip path: String) throws -> [String] {
+        let result = try run("/usr/bin/unzip", ["-Z", "-1", path])
+        guard result.status == 0 else { throw ActionError.zipFailed(result.output) }
+        return result.output.split(separator: "\n").map(String.init)
+    }
+}
+
 /// A project with a raw + sidecar + JPEG at the root and the same basename
 /// sorted into two subfolders — the flatten-collision shape.
 private func makeShoot(in root: URL, named name: String = "2026-06-06_actions") throws -> URL {
@@ -41,7 +49,7 @@ private func settled(_ service: LibraryService, _ job: Exporter.Progress) throws
 @discardableResult
 private func exportNow(
     _ service: LibraryService, shoot: String, paths: [String], destination: String,
-    zip: Bool = false, flatten: Bool = true, format: LibraryService.ExportFormat = .original,
+    zip: Bool = false, flatten: Bool = true, format: ExportFormat = .original,
     quality: Int = 90
 ) throws -> Exporter.Progress {
     try settled(

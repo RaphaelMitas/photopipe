@@ -35,8 +35,14 @@ public struct LibrarySnapshot: Equatable, Sendable {
     }
 }
 
-public enum ScanError: Error {
+public enum ScanError: WireError {
     case rootNotFound(String)
+
+    public var wire: ResponseError {
+        switch self {
+        case .rootNotFound(let path): ResponseError(code: "root_not_found", message: path)
+        }
+    }
 }
 
 /// Finds every shoot and file by stat alone. Nothing here opens an image, so
