@@ -17,10 +17,13 @@ public enum XMP {
     // the tag parser costs ~70x the packet in memory
     static let packetSizeLimit = 4 << 20
 
+    // Lightroom brush masks push real sidecars well past the embedded cap
+    static let sidecarSizeLimit = 64 << 20
+
     static func sidecarData(forImagePath path: String) -> Data? {
         guard let handle = try? FileHandle(forReadingFrom: sidecarURL(forImagePath: path)),
-            let data = try? handle.read(upToCount: packetSizeLimit + 1),
-            data.count <= packetSizeLimit
+            let data = try? handle.read(upToCount: sidecarSizeLimit + 1),
+            data.count <= sidecarSizeLimit
         else { return nil }
         return data
     }

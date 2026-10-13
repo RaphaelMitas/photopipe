@@ -82,7 +82,7 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> (rating:
     #expect(contents.sorted() == ["DSC00001.ARW", "DSC00001.xmp"])
 }
 
-@Test func oversizedSidecarReadsAsNoSidecar() throws {
+@Test func onlyAnAbsurdlyLargeSidecarReadsAsNoSidecar() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
     let arw = dir.appendingPathComponent("DSC00002.ARW")
@@ -97,10 +97,10 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> (rating:
         """.utf8)
     let sidecar = XMP.sidecarURL(forImagePath: arw.path)
 
-    try (packet + Data(repeating: 0x20, count: XMP.packetSizeLimit - packet.count)).write(to: sidecar)
+    try (packet + Data(repeating: 0x20, count: XMP.packetSizeLimit)).write(to: sidecar)
     #expect(XMP.read(file: try image(arw)).rating == 4)
 
-    try (packet + Data(repeating: 0x20, count: XMP.packetSizeLimit)).write(to: sidecar)
+    try (packet + Data(repeating: 0x20, count: XMP.sidecarSizeLimit)).write(to: sidecar)
     #expect(XMP.read(file: try image(arw)).rating == 0)
 }
 
