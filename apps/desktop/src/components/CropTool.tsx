@@ -3,136 +3,23 @@ import { Check, ChevronDown, RotateCw, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { type CropRect, type ImageFile, identityEdit } from "@/lib/core";
 import {
+  ASPECTS,
   aspectRatioFor,
   type Box,
+  type CropDraft,
   type CropHandle,
   centeredAspectCrop,
-  constrainCrop,
-  fullCrop,
-  isFullCrop,
+  draftFromEdit,
+  draftWithAngle,
+  isIdentityDraft,
   moveCrop,
   resizeCrop,
   rotatedSize,
-  snapCropEdges,
+  STRAIGHTEN_RANGE,
   transposeCrop,
   turnCrop,
 } from "@/lib/crop";
 import { capturePointer, cursorIn } from "@/lib/pointer";
-
-export type CropDraft = {
-  crop: CropRect;
-  angle: number;
-  rotation: number;
-  aspect: string;
-  flipped: boolean;
-};
-
-// Freehand corner rotation runs the full circle; ±180 covers it after the
-// wrap-safe accumulation.
-const STRAIGHTEN_RANGE = 180;
-
-const ASPECTS: [string, string][] = [
-  ["free", "Free"],
-  ["original", "Original"],
-  ["transposed", "Transposed"],
-  ["1:1", "1:1"],
-  ["4:5", "4:5"],
-  ["2:3", "2:3"],
-  ["3:4", "3:4"],
-  ["5:7", "5:7"],
-  ["16:9", "16:9"],
-  ["16:10", "16:10"],
-  ["21:9", "21:9"],
-];
-
-/// The dropdown entry a crop already sits at, so re-entering crop mode keeps
-/// a locked shape locked.
-function matchAspect(
-  crop: CropRect,
-  displayWidth: number,
-  displayHeight: number,
-): { aspect: string; flipped: boolean } {
-  const ratio =
-    ((crop.right - crop.left) * displayWidth) /
-    ((crop.bottom - crop.top) * displayHeight);
-  for (const flipped of [false, true]) {
-    for (const [value] of ASPECTS) {
-      const candidate = aspectRatioFor(
-        value,
-        flipped,
-        displayWidth,
-        displayHeight,
-      );
-      // 0.5%: a crop that round-tripped through the sidecar's three decimals
-      // comes back a hair off its ratio.
-      if (candidate !== null && Math.abs(candidate - ratio) < ratio * 0.005) {
-        return { aspect: value, flipped };
-      }
-    }
-  }
-  return { aspect: "original", flipped: false };
-}
-
-export function draftFromEdit(
-  edit: {
-    crop?: CropRect | null;
-    cropAngle?: number;
-    rotation?: number;
-  },
-  imageWidth: number,
-  imageHeight: number,
-): CropDraft {
-  const crop = edit.crop ?? fullCrop;
-  const rotation = edit.rotation ?? 0;
-  const [displayWidth, displayHeight] = rotatedSize(
-    imageWidth,
-    imageHeight,
-    rotation,
-  );
-  return {
-    crop,
-    angle: edit.cropAngle ?? 0,
-    rotation,
-    ...matchAspect(crop, displayWidth, displayHeight),
-  };
-}
-
-function isIdentityDraft(draft: CropDraft): boolean {
-  return isFullCrop(draft.crop) && draft.angle === 0 && draft.rotation === 0;
-}
-
-export function commitDraft(draft: CropDraft): {
-  crop: CropRect | null;
-  cropAngle: number;
-  rotation: number;
-} {
-  // A near-flush sliver like left=3e-05 would survive isFullCrop yet
-  // round-trip badly through the sidecar's decimal formatting.
-  const crop = snapCropEdges(draft.crop, 0.001);
-  const identity = isFullCrop(crop) && draft.angle === 0;
-  return {
-    crop: identity ? null : crop,
-    cropAngle: draft.angle,
-    rotation: draft.rotation,
-  };
-}
-
-export function draftWithAngle(
-  draft: CropDraft,
-  angle: number,
-  imageWidth: number,
-  imageHeight: number,
-): CropDraft {
-  const clamped = Math.min(
-    Math.max(angle, -STRAIGHTEN_RANGE),
-    STRAIGHTEN_RANGE,
-  );
-  return {
-    ...draft,
-    angle: clamped,
-    crop: constrainCrop(draft.crop, clamped, imageWidth, imageHeight),
-  };
-}
 
 type PanelProps = {
   image: ImageFile;

@@ -14,7 +14,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@photopipe/ui/components/popover";
-import { Skeleton } from "@photopipe/ui/components/skeleton";
 import { cn } from "@photopipe/ui/lib/utils";
 import { CalendarIcon, Check } from "lucide-react";
 import {
@@ -25,13 +24,9 @@ import {
   useState,
 } from "react";
 import { type ProjectDraft, ProjectFields } from "@/components/ProjectFields";
-import { fileSrc, type ImageFile, type Shoot } from "@/lib/core";
-import {
-  useCaptureDate,
-  useImages,
-  useThumbnail,
-  useUpdateProject,
-} from "@/lib/queries";
+import { Thumbnail } from "@/components/Thumbnail";
+import type { ImageFile, Shoot } from "@/lib/core";
+import { useCaptureDate, useImages, useUpdateProject } from "@/lib/queries";
 
 function CoverChoice({
   image,
@@ -42,7 +37,6 @@ function CoverChoice({
   chosen: boolean;
   onChoose: () => void;
 }) {
-  const thumb = useThumbnail(image);
   return (
     <button
       type="button"
@@ -56,16 +50,7 @@ function CoverChoice({
         chosen ? "ring-2 ring-primary" : "opacity-70 hover:opacity-100",
       )}
     >
-      {thumb.data ? (
-        <img
-          src={fileSrc(thumb.data)}
-          alt={image.rel}
-          loading="lazy"
-          className="h-full w-full object-cover"
-        />
-      ) : (
-        <Skeleton className="h-full w-full rounded-none" />
-      )}
+      <Thumbnail file={image} className="h-full w-full" />
       {chosen && (
         <span className="absolute right-1 bottom-1 flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
           <Check className="size-3" strokeWidth={3} />

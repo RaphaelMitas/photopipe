@@ -8,10 +8,17 @@ import {
   DropdownMenuTrigger,
 } from "@photopipe/ui/components/dropdown-menu";
 import { ArrowUpDown, LayoutGrid, Rows3, Sparkles } from "lucide-react";
+import { pref } from "@/lib/pref";
 import type { ScoreProgress } from "@/lib/queries";
 import { isSortKey, type SortKey } from "@/lib/sort";
 
 export type ViewMode = "grid" | "list";
+
+export const viewPref = pref(
+  "photopipe.view",
+  (raw): ViewMode => (raw === "list" ? "list" : "grid"),
+  String,
+);
 
 const SORT_LABELS: Record<SortKey, string> = {
   name: "Name",

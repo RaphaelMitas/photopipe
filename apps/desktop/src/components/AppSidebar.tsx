@@ -19,12 +19,16 @@ import {
   Settings2,
 } from "lucide-react";
 import type { Shoot } from "@/lib/core";
-import {
-  RatingFilterOps,
-  RatingHistogram,
-  type RatingOp,
-} from "./RatingFilter";
+import { flagPref } from "@/lib/pref";
+import { type RatingFilter, RatingFilterGroup } from "./RatingFilter";
 import { SidebarBrandHeader } from "./SidebarBrandHeader";
+
+export const showInfoPref = flagPref(
+  "photopipe.gridInfo",
+  "always",
+  "hover",
+  false,
+);
 
 type Props = {
   currentShoot: Shoot | undefined;
@@ -32,14 +36,9 @@ type Props = {
   onImport: () => void;
   onRevealShoot: (path: string) => void;
   onShootSettings: () => void;
+  filter: RatingFilter;
   ratingCounts: number[];
-  ratingOp: RatingOp;
-  onRatingOp: (op: RatingOp) => void;
-  ratingStars: number;
-  onRatingStars: (rating: number) => void;
   filterEnabled: boolean;
-  showInfo: boolean;
-  onShowInfo: (show: boolean) => void;
   rootPath: string;
   onChangeRoot: () => void;
   onSettings: () => void;
@@ -51,18 +50,14 @@ export function AppSidebar({
   onImport,
   onRevealShoot,
   onShootSettings,
+  filter,
   ratingCounts,
-  ratingOp,
-  onRatingOp,
-  ratingStars,
-  onRatingStars,
   filterEnabled,
-  showInfo,
-  onShowInfo,
   rootPath,
   onChangeRoot,
   onSettings,
 }: Props) {
+  const showInfo = showInfoPref.use();
   return (
     <Sidebar>
       <SidebarBrandHeader />
@@ -144,34 +139,20 @@ export function AppSidebar({
             </SidebarGroupContent>
           </SidebarGroup>
         )}
-        <SidebarGroup>
-          <SidebarGroupLabel className="justify-between">
-            Rating
-            <RatingFilterOps
-              op={ratingOp}
-              disabled={!filterEnabled}
-              onOp={onRatingOp}
-            />
-          </SidebarGroupLabel>
-          <SidebarGroupContent className="px-2 py-1">
-            <RatingHistogram
-              counts={ratingCounts}
-              op={ratingOp}
-              stars={ratingStars}
-              disabled={!filterEnabled}
-              onOp={onRatingOp}
-              onStars={onRatingStars}
-            />
-            {currentShoot && !currentShoot.indexed && (
-              <p
-                data-testid="ratings-indexing"
-                className="mt-1 text-[10px] text-muted-foreground/70"
-              >
-                Still reading ratings — counts will move.
-              </p>
-            )}
-          </SidebarGroupContent>
-        </SidebarGroup>
+        <RatingFilterGroup
+          filter={filter}
+          counts={ratingCounts}
+          disabled={!filterEnabled}
+        >
+          {currentShoot && !currentShoot.indexed && (
+            <p
+              data-testid="ratings-indexing"
+              className="mt-1 text-[10px] text-muted-foreground/70"
+            >
+              Still reading ratings — counts will move.
+            </p>
+          )}
+        </RatingFilterGroup>
 
         <SidebarGroup>
           <SidebarGroupLabel>View</SidebarGroupLabel>
@@ -182,7 +163,7 @@ export function AppSidebar({
                 data-testid="grid-info-toggle"
                 aria-label="Always show image info"
                 checked={showInfo}
-                onCheckedChange={onShowInfo}
+                onCheckedChange={showInfoPref.set}
               />
             </div>
           </SidebarGroupContent>

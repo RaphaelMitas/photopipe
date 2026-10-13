@@ -1,33 +1,27 @@
-import { Skeleton } from "@photopipe/ui/components/skeleton";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Star } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
-import { fileSrc, type ImageFile } from "@/lib/core";
-import { useThumbnail } from "@/lib/queries";
+import type { ImageFile } from "@/lib/core";
+import { pref } from "@/lib/pref";
+import { aspectRatio, Thumbnail } from "./Thumbnail";
 
 export type FilmstripMode = "off" | "thumbs" | "ratings";
+
+export const filmstripPref = pref(
+  "photopipe.filmstrip",
+  (raw): FilmstripMode => {
+    if (raw === "0") return "off";
+    if (raw === "off" || raw === "thumbs" || raw === "ratings") return raw;
+    return "thumbs";
+  },
+  String,
+);
 
 const STRIP_HEIGHT = 64;
 const GAP = 4;
 const FIXED_CELL_WIDTH = 56;
 const FIXED_THUMB_HEIGHT = 56;
 const RATING_ROW_HEIGHT = 16;
-const THUMB_CLASS = "min-h-0 w-full flex-1";
-
-function Thumb({ image }: { image: ImageFile }) {
-  const thumb = useThumbnail(image);
-  if (!thumb.data) {
-    return <Skeleton className={`${THUMB_CLASS} rounded-none`} />;
-  }
-  return (
-    <img
-      src={fileSrc(thumb.data)}
-      alt={image.rel}
-      loading="lazy"
-      className={`${THUMB_CLASS} object-cover`}
-    />
-  );
-}
 
 type Props = {
   images: ImageFile[];
@@ -40,11 +34,9 @@ export function Filmstrip({ images, index, mode, onNavigate }: Props) {
   const parentRef = useRef<HTMLDivElement>(null);
   const widths = useMemo(() => {
     if (mode === "ratings") return images.map(() => FIXED_CELL_WIDTH);
-    return images.map((image) => {
-      const ratio =
-        image.width > 0 && image.height > 0 ? image.width / image.height : 1.5;
-      return Math.max(28, Math.round(STRIP_HEIGHT * ratio));
-    });
+    return images.map((image) =>
+      Math.max(28, Math.round(STRIP_HEIGHT * aspectRatio(image))),
+    );
   }, [images, mode]);
 
   const virtualizer = useVirtualizer({
@@ -94,7 +86,7 @@ export function Filmstrip({ images, index, mode, onNavigate }: Props) {
                 width: widths[item.index],
               }}
             >
-              <Thumb image={image} />
+              <Thumbnail file={image} className="min-h-0 w-full flex-1" />
               {mode === "ratings" && (
                 <span
                   data-testid="filmstrip-rating"

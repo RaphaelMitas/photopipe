@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { commitDraft, draftFromEdit } from "@/components/CropTool";
 import { type CropRect, editKey, identityEdit, isIdentityEdit } from "./core";
 import {
   aspectRatioFor,
   centeredAspectCrop,
+  commitDraft,
   constrainCrop,
   cropInsideImage,
+  draftFromEdit,
   fitRect,
   fullCrop,
   isFullCrop,
