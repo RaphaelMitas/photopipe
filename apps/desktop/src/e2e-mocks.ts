@@ -249,14 +249,14 @@ const E2E_HANDLERS: CoreHandlers = {
     const target = all.find((entry) => entry.path === params.path);
     if (!target) throw `unknown_image: ${params.path}`;
     target.rating = params.rating;
-    return { rating: target.rating, generation: 1 };
+    return { rating: target.rating };
   },
   setEdit: (params) => {
     const all = [...zellImages, ...miscImages, ...bigImages];
     const target = all.find((entry) => entry.path === params.path);
     if (!target) throw `unknown_image: ${params.path}`;
     target.edit = params.edit;
-    return { edit: target.edit, generation: 1 };
+    return { edit: target.edit };
   },
   rawDefaults: (params) =>
     params.path.toLowerCase().endsWith(".arw")

@@ -697,11 +697,10 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> (rating:
     try writeGrayJPEG(to: jpg)
 
     let service = makeService(in: dir)
-    let before = try service.setRoot(path: dir.path, indexPath: nil)
+    _ = try service.setRoot(path: dir.path, indexPath: nil)
 
     let result = try service.setRating(shoot: "2026-01-01_xmptest", path: arw.path, rating: 4)
     #expect(result.rating == 4)
-    #expect(result.generation > before.generation, "rating must bump the generation")
     let edit = Edit(
         exposure: 1.25, highlights: -30, vibrance: 20,
         curveRGB: [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.55), CurvePoint(x: 1, y: 1)])

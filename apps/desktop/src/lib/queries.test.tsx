@@ -3,6 +3,7 @@ import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type Edit, type ImageFile, identityEdit } from "./core";
 import {
+  useImages,
   useLibrarySync,
   usePasteEdits,
   useRender,
@@ -23,15 +24,6 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 function image(name: string): ImageFile {
   return makeImage(`${name}.ARW`, { path: `/r/shoot1/${name}.ARW` });
-}
-
-function Harness({
-  capture,
-}: {
-  capture: (mutation: ReturnType<typeof useSetRating>) => void;
-}) {
-  capture(useSetRating("shoot1"));
-  return null;
 }
 
 describe("useLibrarySync", () => {
@@ -89,7 +81,7 @@ describe("useSetRatings", () => {
     invoke.mockImplementation(async (_command, { params }) => {
       await new Promise<void>((resolve) => release.push(resolve));
       if (params.path.endsWith("B.ARW")) throw new Error("disk");
-      return {};
+      return { rating: params.rating };
     });
     let ratings!: ReturnType<typeof useSetRatings>;
     function Harness() {
@@ -137,7 +129,7 @@ describe("usePasteEdits", () => {
       (_command, args: { params: { path: string; edit: Edit } }) =>
         args.params.path.endsWith("B.ARW")
           ? Promise.reject("disk full")
-          : Promise.resolve({ edit: args.params.edit, generation: 2 }),
+          : Promise.resolve({ edit: args.params.edit }),
     );
 
     let mutation!: ReturnType<typeof usePasteEdits>;
@@ -173,12 +165,14 @@ describe("usePasteEdits", () => {
     });
     client.setQueryData(["images", "shoot1"], names.map(image));
 
-    const gate: Array<(value: unknown) => void> = [];
+    const gate: Array<() => void> = [];
     const written: string[] = [];
     invoke.mockImplementation(
       (_command, args: { params: { path: string; edit: Edit } }) => {
         written.push(args.params.path);
-        return new Promise((resolve) => gate.push(resolve));
+        return new Promise((resolve) =>
+          gate.push(() => resolve({ edit: args.params.edit })),
+        );
       },
     );
 
@@ -209,7 +203,7 @@ describe("usePasteEdits", () => {
     );
     let released = 0;
     await waitFor(() => {
-      while (released < gate.length) gate[released++]({ generation: 2 });
+      while (released < gate.length) gate[released++]();
       expect(mutation.isSuccess).toBe(true);
     });
 
@@ -263,9 +257,9 @@ describe("edit writes to one photo", () => {
     );
 
     await waitFor(() => expect(gate.length).toBe(1));
-    gate[0]({ edit: identityEdit, generation: 2 });
+    gate[0]({ edit: identityEdit });
     await waitFor(() => expect(gate.length).toBe(2));
-    gate[1]({ edit: identityEdit, generation: 3 });
+    gate[1]({ edit: identityEdit });
 
     await waitFor(() => expect(paste.isSuccess).toBe(true));
     expect(events).toEqual(["start 1", "end 1", "start 2", "end 2"]);
@@ -330,49 +324,95 @@ describe("useRender and the RAW decoder", () => {
   });
 });
 
-describe("useSetRating burst behavior", () => {
-  it("keeps optimistic state through a burst and reconciles exactly once", async () => {
+describe("useSetRating", () => {
+  beforeEach(() => {
+    invoke.mockReset();
+  });
+
+  it("takes the core's answer instead of reloading the shoot", async () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
-    client.setQueryData(["images", "shoot1"], [image("A"), image("B")]);
-    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+    const status = {
+      generation: 1,
+      root: "/r",
+      shoots: 1,
+      scanning: true,
+      filesFound: 2,
+      filesEnriched: 2,
+      changedShoots: [],
+    };
+    invoke.mockImplementation(async (_command, { method, params }) => {
+      if (method === "status") return status;
+      if (method === "listImages") return { images: [image("A"), image("B")] };
+      if (method === "setRating") return { rating: params.rating };
+      throw new Error(`unexpected ${method}`);
+    });
+    const calls = (method: string) =>
+      invoke.mock.calls.filter(([, args]) => args.method === method).length;
 
-    const pending: Array<(value: unknown) => void> = [];
+    let mutation!: ReturnType<typeof useSetRating>;
+    function Rater() {
+      useImages("shoot1");
+      useLibrarySync(true, 1);
+      mutation = useSetRating("shoot1");
+      return null;
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Rater />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(calls("listImages")).toBe(1));
+
+    await act(() =>
+      mutation.mutateAsync({ path: "/r/shoot1/A.ARW", value: 3 }),
+    );
+    const polled = calls("status");
+    await waitFor(() => expect(calls("status")).toBeGreaterThan(polled + 1));
+
+    expect(calls("listImages")).toBe(1);
+    expect(
+      client.getQueryData<ImageFile[]>(["images", "shoot1"])?.[0].rating,
+    ).toBe(3);
+  });
+
+  it("ends on the last rating when the first answer arrives late", async () => {
+    const client = new QueryClient();
+    client.setQueryData(["images", "shoot1"], [image("A")]);
+    const pending: Array<() => void> = [];
     invoke.mockImplementation(
-      () => new Promise((resolve) => pending.push(resolve)),
+      (_command, { params }: { params: { rating: number } }) =>
+        new Promise((resolve) =>
+          pending.push(() => resolve({ rating: params.rating })),
+        ),
     );
 
     let mutation!: ReturnType<typeof useSetRating>;
+    function Rater() {
+      mutation = useSetRating("shoot1");
+      return null;
+    }
     render(
       <QueryClientProvider client={client}>
-        <Harness
-          capture={(m) => {
-            mutation = m;
-          }}
-        />
+        <Rater />
       </QueryClientProvider>,
     );
+    const rating = () =>
+      client.getQueryData<ImageFile[]>(["images", "shoot1"])?.[0].rating;
 
-    mutation.mutate({ path: "/r/shoot1/A.ARW", value: 3 });
-    mutation.mutate({ path: "/r/shoot1/B.ARW", value: 4 });
+    const first = mutation.mutateAsync({ path: "/r/shoot1/A.ARW", value: 3 });
+    const second = mutation.mutateAsync({ path: "/r/shoot1/A.ARW", value: 4 });
+    await waitFor(() => expect(pending.length).toBe(1));
+    expect(rating()).toBe(4);
+
+    pending[0]();
+    await first;
+    expect(rating()).toBe(4);
+
     await waitFor(() => expect(pending.length).toBe(2));
-
-    const optimistic = client.getQueryData<ImageFile[]>(["images", "shoot1"]);
-    expect(optimistic?.[0].rating).toBe(3);
-    expect(optimistic?.[1].rating).toBe(4);
-
-    pending[0]({ rating: 3, generation: 10 });
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(invalidateSpy).not.toHaveBeenCalled();
-    expect(
-      client.getQueryData<ImageFile[]>(["images", "shoot1"])?.[1].rating,
-    ).toBe(4);
-
-    pending[1]({ rating: 4, generation: 11 });
-    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(1));
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: ["images", "shoot1"],
-    });
+    pending[1]();
+    await second;
+    expect(rating()).toBe(4);
   });
 });

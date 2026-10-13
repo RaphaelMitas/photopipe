@@ -355,6 +355,8 @@ public final class LibraryService: @unchecked Sendable {
             sidecarMtime: file.usesSidecar ? XMP.sidecarMtime(forImagePath: file.path) : 0)
     }
 
+    /// Not announced through `status`: the writer gets the new value in its
+    /// answer, and a shoot named as changed costs every client a full refetch.
     private func replace(_ image: ImageFile, inShoot shootName: String) {
         lock.withLock {
             guard var updated = snapshot.imagesByShoot[shootName],
@@ -362,14 +364,11 @@ public final class LibraryService: @unchecked Sendable {
             else { return }
             updated[index] = image
             snapshot = snapshot.replacingImages(inShoot: shootName, with: updated)
-            generation += 1
-            shootGenerations[shootName] = generation
         }
     }
 
     public struct RatingChange: Sendable, Encodable {
         public let rating: Int
-        public let generation: Int
     }
 
     public func setRating(shoot shootName: String, path: String, rating: Int) throws
@@ -379,19 +378,18 @@ public final class LibraryService: @unchecked Sendable {
         let settled = try write(shoot: shootName, path: path) { image in
             try XMP.writeRating(rating, file: image, tool: .shared)
         }
-        return RatingChange(rating: settled.rating, generation: status().generation)
+        return RatingChange(rating: settled.rating)
     }
 
     public struct EditChange: Sendable, Encodable {
         public let edit: Edit
-        public let generation: Int
     }
 
     public func setEdit(shoot shootName: String, path: String, edit: Edit) throws -> EditChange {
         let settled = try write(shoot: shootName, path: path) { image in
             try XMP.writeEdit(edit, file: image, tool: .shared)
         }
-        return EditChange(edit: settled.edit, generation: status().generation)
+        return EditChange(edit: settled.edit)
     }
 
     /// A leading dot is refused because the scan would hide the folder.

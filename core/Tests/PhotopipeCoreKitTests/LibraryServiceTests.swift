@@ -235,19 +235,31 @@ private func tempIndexPath() -> String {
     let settled = service.status().generation
     #expect(service.status(since: settled).changedShoots == [])
 
-    _ = try service.setRating(
-        shoot: "2026-07-12_zell",
-        path:
-            root
-            .appendingPathComponent("2026-07-12_zell/DSC001.ARW").path, rating: 2)
-    #expect(service.status(since: settled).changedShoots == ["2026-07-12_zell"])
-
     // Disappearing is a change too: a client that never hears about it keeps
     // serving photos from a folder that is gone.
-    let rated = service.status().generation
     try FileManager.default.removeItem(at: root.appendingPathComponent("2026-08-01_beach"))
     service.rescanNow()
-    #expect(service.status(since: rated).changedShoots?.contains("2026-08-01_beach") == true)
+    #expect(service.status(since: settled).changedShoots?.contains("2026-08-01_beach") == true)
+}
+
+@Test func aRatingDoesNotMakeTheClientRefetchItsShoot() throws {
+    let root = try makeTree(["2026-07-12_zell": ["DSC001.ARW", "DSC002.ARW"]])
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let service = makeService()
+    _ = try service.setRoot(path: root.path, indexPath: tempIndexPath())
+    waitUntilIndexed(service)
+    let settled = service.status().generation
+
+    let target = root.appendingPathComponent("2026-07-12_zell/DSC001.ARW").path
+    let change = try service.setRating(shoot: "2026-07-12_zell", path: target, rating: 2)
+    #expect(change.rating == 2)
+    #expect(service.status(since: settled).changedShoots == [])
+    #expect(try service.listImages(shoot: "2026-07-12_zell").first?.rating == 2)
+
+    // The watcher's rescan after our own sidecar write must not read as a change.
+    service.rescanNow()
+    #expect(service.status(since: settled).changedShoots == [])
 }
 
 @Test func aRatingWrittenDuringIndexingIsNotOverwrittenByIt() throws {
