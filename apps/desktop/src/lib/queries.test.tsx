@@ -5,6 +5,7 @@ import { type Edit, type ImageFile, identityEdit } from "./core";
 import {
   useLibrarySync,
   usePasteEdits,
+  usePrefetchRender,
   useRender,
   useSetEdit,
   useSetRating,
@@ -327,6 +328,101 @@ describe("useRender and the RAW decoder", () => {
       method: "render",
       params: expect.objectContaining({ decoderVersion: 8 }),
     });
+  });
+});
+
+describe("usePrefetchRender", () => {
+  const next = { path: "/r/shoot1/B.ARW", mtime: 1, ext: "ARW" };
+
+  function Loupe({ landed }: { landed: boolean }) {
+    usePrefetchRender(next, identityEdit);
+    return landed ? <Landed /> : null;
+  }
+
+  function Landed() {
+    const render = useRender(next, identityEdit);
+    return render.data ? <p>{render.data}</p> : null;
+  }
+
+  async function arrive(landed: boolean) {
+    invoke.mockReset();
+    let reject: (reason: string) => void = () => {};
+    invoke.mockReturnValueOnce(
+      new Promise((_, rejectFirst) => {
+        reject = rejectFirst;
+      }),
+    );
+    invoke.mockResolvedValue({ cachePath: "/cache/b.jpg" });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, retryDelay: 0 } },
+    });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <Loupe landed={false} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <Loupe landed={landed} />
+      </QueryClientProvider>,
+    );
+    act(() => reject("superseded: dropped for a newer render request"));
+    return view;
+  }
+
+  it("asks again for a superseded prefetch the loupe landed on mid-flight", async () => {
+    const view = await arrive(true);
+    expect(await view.findByText("/cache/b.jpg")).toBeTruthy();
+    expect(invoke).toHaveBeenCalledTimes(2);
+  });
+
+  it("lets a superseded prefetch nobody landed on go", async () => {
+    await arrive(false);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not revive a passed photo's retries by prefetching it as a neighbour", async () => {
+    const photos = ["A", "B", "C", "D"].map((name) => ({
+      path: `/r/shoot1/${name}.ARW`,
+      mtime: 1,
+      ext: "ARW",
+    }));
+    function Walk({ index }: { index: number }) {
+      useRender(photos[index], identityEdit);
+      usePrefetchRender(photos[index + 1], identityEdit);
+      usePrefetchRender(photos[index - 1], identityEdit);
+      return null;
+    }
+    invoke.mockReset();
+    let rejectA: (reason: string) => void = () => {};
+    invoke.mockImplementation((_, { params }) =>
+      params.path === photos[0].path
+        ? new Promise((_, reject) => {
+            rejectA = reject;
+          })
+        : new Promise(() => {}),
+    );
+    const client = new QueryClient({
+      defaultOptions: { queries: { retryDelay: 0 } },
+    });
+    const walk = (index: number) => (
+      <QueryClientProvider client={client}>
+        <Walk index={index} />
+      </QueryClientProvider>
+    );
+    const view = render(walk(0));
+    view.rerender(walk(1));
+    view.rerender(walk(2));
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(4));
+
+    act(() => rejectA("superseded: dropped for a newer render request"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const requestsForA = invoke.mock.calls.filter(
+      ([, { params }]) => params.path === photos[0].path,
+    );
+    expect(requestsForA).toHaveLength(1);
   });
 });
 
