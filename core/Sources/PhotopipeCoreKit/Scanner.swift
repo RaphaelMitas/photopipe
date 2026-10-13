@@ -92,13 +92,14 @@ public func walkLibrary(root: String) throws -> LibrarySnapshot {
     return LibrarySnapshot(shoots: shoots, imagesByShoot: imagesByShoot, fileCount: fileCount)
 }
 
-/// Each call opens the file, twice for a raw with a sidecar, which is why this
-/// runs off the request path. Already-settled files are returned untouched.
+/// Each call opens the file, and its sidecar for a raw, which is why this runs
+/// off the request path. Already-settled files are returned untouched.
 public func enrich(_ file: ImageFile) -> ImageFile {
     guard !file.enriched else { return file }
+    let (rating, edit) = XMP.read(file: file)
     return file.with(
-        rating: XMP.readRating(file: file),
-        edit: XMP.readEdit(file: file),
+        rating: rating,
+        edit: edit,
         dimensions: Dimensions.cached(for: file) ?? Dimensions.fallback,
         enriched: true)
 }
