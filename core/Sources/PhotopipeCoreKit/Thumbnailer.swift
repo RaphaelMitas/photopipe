@@ -11,7 +11,7 @@ public struct Thumbnailer: Sendable {
     private let cache: CacheFolder
 
     public init(cacheDir: URL) {
-        cache = CacheFolder(dir: cacheDir)
+        cache = CacheFolder(dir: cacheDir, maxBytes: 512 * 1024 * 1024)
         cache.pruneInBackground()
     }
 

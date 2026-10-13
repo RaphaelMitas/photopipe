@@ -1,9 +1,10 @@
 import CryptoKit
 import Foundation
 
-/// An entry's mtime is when it was last served, so pruning by age drops only what nobody looks at.
+/// An entry's mtime is when it was last served, so pruning by age or size drops what nobody looks at first.
 struct CacheFolder: Sendable {
     let dir: URL
+    let maxBytes: Int
 
     private static let maxAge: TimeInterval = 7 * 24 * 3600
     private static let touchInterval: TimeInterval = 24 * 3600
@@ -20,7 +21,8 @@ struct CacheFolder: Sendable {
         let fm = FileManager.default
         let hit = Self.lock.withLock { () -> Bool in
             guard let modified = Self.modified(url) else { return false }
-            if modified.timeIntervalSinceNow > -Self.touchInterval { return true }
+            // half, so an entry just handed out stays at least 12h clear of the size prune's cutoff
+            if modified.timeIntervalSinceNow > -Self.touchInterval / 2 { return true }
             return (try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)) != nil
         }
         if hit { return url }
@@ -43,12 +45,34 @@ struct CacheFolder: Sendable {
             let entries = try? fm.contentsOfDirectory(
                 at: dir, includingPropertiesForKeys: nil)
         else { return }
+        var kept: [(url: URL, modified: Date, size: Int)] = []
         for var entry in entries where entry.pathExtension == "jpg" {
             entry.removeAllCachedResourceValues()
             Self.lock.withLock {
-                if let modified = Self.modified(entry), modified < cutoff {
+                guard
+                    let values = try? entry.resourceValues(forKeys: [
+                        .contentModificationDateKey, .fileSizeKey,
+                    ]),
+                    let modified = values.contentModificationDate
+                else { return }
+                if modified < cutoff {
                     try? fm.removeItem(at: entry)
+                } else if !entry.lastPathComponent.hasPrefix("tmp-") {
+                    kept.append((entry, modified, values.fileSize ?? 0))
                 }
+            }
+        }
+        var total = kept.reduce(0) { $0 + $1.size }
+        // a hit only touches entries over 12h old, so a younger mtime may hide a recent hit
+        for var file in kept.sorted(by: { $0.modified < $1.modified })
+        where total > maxBytes && file.modified.timeIntervalSinceNow < -Self.touchInterval {
+            file.url.removeAllCachedResourceValues()
+            Self.lock.withLock {
+                // served since the listing, so no longer the least recent
+                guard Self.modified(file.url) == file.modified,
+                    (try? fm.removeItem(at: file.url)) != nil
+                else { return }
+                total -= file.size
             }
         }
     }
