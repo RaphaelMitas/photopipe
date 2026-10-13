@@ -591,6 +591,53 @@ describe("useSetRating", () => {
     ).toBe(0);
   });
 
+  it("shows what is on disk after two failed batches to one photo", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const refusals: Array<() => void> = [];
+    invoke.mockImplementation(async (_command, { method }) => {
+      if (method === "listImages") return { images: [image("A")] };
+      if (method === "setRating") {
+        await new Promise<void>((go) => refusals.push(go));
+        throw new Error("read-only card");
+      }
+      throw new Error(`unexpected ${method}`);
+    });
+
+    let batch!: ReturnType<typeof useSetRatings>;
+    function Rater() {
+      useImages("shoot1");
+      batch = useSetRatings("shoot1");
+      return null;
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Rater />
+      </QueryClientProvider>,
+    );
+    await waitFor(() =>
+      expect(client.getQueryData(["images", "shoot1"])).toBeDefined(),
+    );
+
+    const first = batch.mutateAsync(new Map([["/r/shoot1/A.ARW", 3]]));
+    const second = batch.mutateAsync(new Map([["/r/shoot1/A.ARW", 4]]));
+    let settled = false;
+    void Promise.all([first, second]).then(() => {
+      settled = true;
+    });
+    let released = 0;
+    await waitFor(() => {
+      while (released < refusals.length) refusals[released++]();
+      expect(settled).toBe(true);
+    });
+
+    await waitFor(() => expect(client.isFetching()).toBe(0));
+    expect(
+      client.getQueryData<ImageFile[]>(["images", "shoot1"])?.[0].rating,
+    ).toBe(0);
+  });
+
   it("ends on the last rating when the first answer arrives late", async () => {
     const client = new QueryClient();
     client.setQueryData(["images", "shoot1"], [image("A")]);
