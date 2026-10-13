@@ -62,7 +62,9 @@ struct CacheFolder: Sendable {
             }
         }
         var total = kept.reduce(0) { $0 + $1.size }
-        for var file in kept.sorted(by: { $0.modified < $1.modified }) where total > maxBytes {
+        // a hit inside the touch interval leaves mtime alone, so a younger entry may have just been served
+        for var file in kept.sorted(by: { $0.modified < $1.modified })
+        where total > maxBytes && file.modified.timeIntervalSinceNow < -Self.touchInterval {
             file.url.removeAllCachedResourceValues()
             Self.lock.withLock {
                 // served since the listing, so no longer the least recent

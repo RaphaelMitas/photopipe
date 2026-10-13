@@ -195,7 +195,7 @@ private func writeEntry(_ name: String, in dir: URL, bytes: Int, hoursAgo: Doubl
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
     let entries = try (1...5).map {
-        try writeEntry("\($0).jpg", in: cacheDir, bytes: 100, hoursAgo: Double($0))
+        try writeEntry("\($0).jpg", in: cacheDir, bytes: 100, hoursAgo: Double(24 + $0))
     }
     let inFlight = try writeEntry("tmp-write.jpg", in: cacheDir, bytes: 1000, hoursAgo: 10)
 
@@ -223,18 +223,22 @@ private func writeEntry(_ name: String, in dir: URL, bytes: Int, hoursAgo: Doubl
     #expect(!FileManager.default.fileExists(atPath: other.path), "the unserved entry goes")
 }
 
-@Test func aZeroBudgetEmptiesTheCacheAndAnEmptyOrMissingDirIsFine() throws {
+@Test func aZeroBudgetKeepsOnlyWhatMayHaveBeenServedToday() throws {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     CacheFolder(dir: cacheDir, maxBytes: 0).prune(olderThan: 7 * 24 * 3600)
     try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
     CacheFolder(dir: cacheDir, maxBytes: 0).prune(olderThan: 7 * 24 * 3600)
 
-    let entry = try writeEntry("a.jpg", in: cacheDir, bytes: 100, hoursAgo: 1)
-    let foreign = try writeEntry("notes.txt", in: cacheDir, bytes: 100, hoursAgo: 1)
+    let old = try writeEntry("old.jpg", in: cacheDir, bytes: 100, hoursAgo: 25)
+    let recent = try writeEntry("recent.jpg", in: cacheDir, bytes: 100, hoursAgo: 23)
+    let foreign = try writeEntry("notes.txt", in: cacheDir, bytes: 100, hoursAgo: 25)
     CacheFolder(dir: cacheDir, maxBytes: 0).prune(olderThan: 7 * 24 * 3600)
 
-    #expect(!FileManager.default.fileExists(atPath: entry.path))
+    #expect(!FileManager.default.fileExists(atPath: old.path))
+    #expect(
+        FileManager.default.fileExists(atPath: recent.path),
+        "a hit inside the touch interval leaves mtime alone, so it may be on screen")
     #expect(FileManager.default.fileExists(atPath: foreign.path), "non-render files untouched")
 }
 
