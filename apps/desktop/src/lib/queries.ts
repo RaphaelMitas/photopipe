@@ -1,6 +1,8 @@
 import {
   keepPreviousData,
   type QueryClient,
+  queryOptions,
+  skipToken,
   useMutation,
   useQueries,
   useQuery,
@@ -10,18 +12,15 @@ import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
-  type CreateProjectResult,
+  type CoreMethods,
   coreRequest,
   type Edit,
-  type ExportFormat,
+  type ExportProgress,
   editKey,
   type ImageFile,
   isRawFile,
   normalizeImage,
-  type RawDefaultsResult,
-  type SetEditResult,
-  type SetRatingResult,
-  type Shoot,
+  normalizeShoot,
   type StatusResult,
 } from "./core";
 import { fileName } from "./fileName";
@@ -32,27 +31,32 @@ export function useShoots(enabled: boolean) {
   return useQuery({
     queryKey: ["shoots"],
     queryFn: async () =>
-      (await coreRequest<{ shoots: Shoot[] }>("listShoots")).shoots,
+      (await coreRequest("listShoots")).shoots.map(normalizeShoot),
     enabled,
   });
 }
 
+const imagesKey = (shoot: string | null) => ["images", shoot];
+
+function invalidateLibrary(queryClient: QueryClient) {
+  queryClient.invalidateQueries({ queryKey: ["shoots"] });
+  queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
+}
+
 export function useImages(shoot: string | null) {
   return useQuery({
-    queryKey: ["images", shoot],
-    queryFn: async () =>
-      (
-        await coreRequest<{ images: ImageFile[] }>("listImages", { shoot })
-      ).images.map(normalizeImage),
-    enabled: shoot !== null,
+    queryKey: imagesKey(shoot),
+    queryFn:
+      shoot === null
+        ? skipToken
+        : async () =>
+            (await coreRequest("listImages", { shoot })).images.map(
+              normalizeImage,
+            ),
   });
 }
 
-export type ScoreProgress = {
-  done: number;
-  total: number;
-  running: boolean;
-};
+export type ScoreProgress = CoreMethods["scoreShoot"]["result"];
 
 const RATED_OFFER_MS = 8000;
 
@@ -67,8 +71,9 @@ export function useScoring(shoot: string | null, enabled: boolean) {
 
   const query = useQuery({
     queryKey: ["scoring", shoot],
-    queryFn: () => coreRequest<ScoreProgress>("scoreShoot", { shoot }),
-    enabled: enabled && shoot !== null,
+    queryFn:
+      shoot === null ? skipToken : () => coreRequest("scoreShoot", { shoot }),
+    enabled,
     refetchInterval: (query) => (query.state.data?.running ? 1000 : false),
   });
 
@@ -83,7 +88,7 @@ export function useScoring(shoot: string | null, enabled: boolean) {
       return;
     }
     if (!finished) return;
-    void client.invalidateQueries({ queryKey: ["images", shoot] });
+    void client.invalidateQueries({ queryKey: imagesKey(shoot) });
     setJustRated(true);
     const timer = setTimeout(() => setJustRated(false), RATED_OFFER_MS);
     return () => clearTimeout(timer);
@@ -98,14 +103,11 @@ export function useThumbnail(
 ) {
   return useQuery({
     queryKey: ["thumb", file?.path, file?.mtime],
-    queryFn: async () =>
-      (
-        await coreRequest<{ cachePath: string }>("thumbnail", {
-          path: file?.path,
-          maxPixel: 512,
-        })
-      ).cachePath,
-    enabled: file !== undefined,
+    queryFn: file
+      ? async () =>
+          (await coreRequest("thumbnail", { path: file.path, maxPixel: 512 }))
+            .cachePath
+      : skipToken,
     staleTime: Number.POSITIVE_INFINITY,
   });
 }
@@ -125,7 +127,7 @@ function renderQueryOptions(
   viewport?: ViewportRequest["viewport"],
   decoderVersion?: number,
 ) {
-  return {
+  return queryOptions({
     queryKey: [
       "render",
       file?.path,
@@ -136,19 +138,21 @@ function renderQueryOptions(
         ? `${viewport.left},${viewport.top},${viewport.right},${viewport.bottom}`
         : "",
       decoderVersion ?? "",
-    ] as const,
-    queryFn: async () =>
-      (
-        await coreRequest<{ cachePath: string }>("render", {
-          path: file?.path,
-          edit,
-          maxPixel,
-          ...(viewport ? { viewport } : {}),
-          ...(decoderVersion ? { decoderVersion } : {}),
-        })
-      ).cachePath,
+    ],
+    queryFn: file
+      ? async () =>
+          (
+            await coreRequest("render", {
+              path: file.path,
+              edit,
+              maxPixel,
+              ...(viewport ? { viewport } : {}),
+              ...(decoderVersion ? { decoderVersion } : {}),
+            })
+          ).cachePath
+      : skipToken,
     staleTime: Number.POSITIVE_INFINITY,
-  };
+  });
 }
 
 export function useRender(file: RenderFile, edit: Edit) {
@@ -161,7 +165,6 @@ export function useRender(file: RenderFile, edit: Edit) {
       undefined,
       renderDecoderVersion(file, decoder),
     ),
-    enabled: file !== undefined,
     placeholderData: (previous: string | undefined, previousQuery) =>
       previousQuery?.queryKey[1] === file?.path ? previous : undefined,
   });
@@ -184,7 +187,7 @@ export function useViewportRender(
       request?.viewport,
       renderDecoderVersion(file, decoder),
     ),
-    enabled: file !== undefined && request !== null,
+    enabled: request !== null,
   });
 }
 
@@ -211,27 +214,23 @@ export function useRawDefaults(
   const decoderVersion = useRawDecoderVersion();
   return useQuery({
     queryKey: ["rawDefaults", file?.path, file?.mtime, decoderVersion],
-    queryFn: async () =>
-      coreRequest<RawDefaultsResult>("rawDefaults", {
-        path: file?.path,
-        decoderVersion,
-      }),
-    enabled: file !== undefined && isRawFile(file),
+    queryFn:
+      file && isRawFile(file)
+        ? () => coreRequest("rawDefaults", { path: file.path, decoderVersion })
+        : skipToken,
     staleTime: Number.POSITIVE_INFINITY,
   });
 }
-
-type DecoderSupport = { raw9: number; rawTotal: number };
 
 /// The core reads one file header per photo before its per-camera cache can
 /// help. A whole shoot off an SD card would outrun the sidecar's read timeout
 /// and take the process down, so ask in batches it can always answer in time.
 const SUPPORT_BATCH = 400;
 
-async function decoderSupport(paths: string[]): Promise<DecoderSupport> {
+async function decoderSupport(paths: string[]) {
   const total = { raw9: 0, rawTotal: 0 };
   for (let start = 0; start < paths.length; start += SUPPORT_BATCH) {
-    const batch = await coreRequest<DecoderSupport>("decoderSupport", {
+    const batch = await coreRequest("decoderSupport", {
       paths: paths.slice(start, start + SUPPORT_BATCH),
     });
     total.raw9 += batch.raw9;
@@ -263,8 +262,7 @@ export function useRaw9Availability(enabled: boolean) {
   return useQuery({
     queryKey: DECODER_AVAILABILITY_KEY,
     queryFn: async () =>
-      (await coreRequest<{ raw9: boolean | null }>("decoderAvailability"))
-        .raw9 ?? null,
+      (await coreRequest("decoderAvailability")).raw9 ?? null,
     enabled,
     staleTime: Number.POSITIVE_INFINITY,
   });
@@ -273,13 +271,20 @@ export function useRaw9Availability(enabled: boolean) {
 const SET_RATING_KEY = ["setRating"];
 const SET_EDIT_KEY = ["setEdit"];
 
-function xmpWritesInFlight(
-  queryClient: ReturnType<typeof useQueryClient>,
-): number {
+function xmpWritesInFlight(queryClient: QueryClient): number {
   return (
     queryClient.isMutating({ mutationKey: SET_RATING_KEY }) +
     queryClient.isMutating({ mutationKey: SET_EDIT_KEY })
   );
+}
+
+function invalidateAfterLastWrite(
+  queryClient: QueryClient,
+  shoot: string | null,
+) {
+  if (xmpWritesInFlight(queryClient) === 1) {
+    queryClient.invalidateQueries({ queryKey: imagesKey(shoot) });
+  }
 }
 
 export function cachedImage(
@@ -288,7 +293,7 @@ export function cachedImage(
   path: string,
 ) {
   return queryClient
-    .getQueryData<ImageFile[]>(["images", shoot])
+    .getQueryData<ImageFile[]>(imagesKey(shoot))
     ?.find((image) => image.path === path);
 }
 
@@ -299,7 +304,7 @@ function patchImages(
   shoot: string | null,
   patches: Map<string, Partial<ImageFile>>,
 ) {
-  queryClient.setQueryData<ImageFile[]>(["images", shoot], (old) =>
+  queryClient.setQueryData<ImageFile[]>(imagesKey(shoot), (old) =>
     old?.map((image) => {
       const patch = patches.get(image.path);
       return patch ? { ...image, ...patch } : image;
@@ -314,55 +319,12 @@ const patchImage = (
   patch: Partial<ImageFile>,
 ) => patchImages(queryClient, shoot, new Map([[path, patch]]));
 
-export function useSetRating(shoot: string | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationKey: SET_RATING_KEY,
-    mutationFn: ({ path, rating }: { path: string; rating: number }) =>
-      writeInOrder(path, () =>
-        coreRequest<SetRatingResult>("setRating", { shoot, path, rating }),
-      ),
-    onMutate: async ({ path, rating }) => {
-      await queryClient.cancelQueries({ queryKey: ["images", shoot] });
-      const previous = cachedImage(queryClient, shoot, path)?.rating;
-      patchImage(queryClient, shoot, path, { rating });
-      return { previous };
-    },
-    onError: (error, vars, context) => {
-      if (context?.previous !== undefined) {
-        patchImage(queryClient, shoot, vars.path, { rating: context.previous });
-      }
-      toast.error(`Rating ${fileName(vars.path)} failed`, {
-        description: String(error),
-      });
-    },
-    onSettled: () => {
-      if (xmpWritesInFlight(queryClient) === 1) {
-        queryClient.invalidateQueries({ queryKey: ["images", shoot] });
-      }
-    },
-  });
-}
-
-export type EditWrite = { path: string; edit: Edit };
-
-const patchEdits = (
-  queryClient: QueryClient,
-  shoot: string | null,
-  edits: Map<string, Edit>,
-) =>
-  patchImages(
-    queryClient,
-    shoot,
-    new Map(Array.from(edits, ([path, edit]) => [path, { edit }])),
-  );
-
 export function currentEdits(
   queryClient: QueryClient,
   shoot: string | null,
   paths: string[],
 ): Map<string, Edit> {
-  const images = queryClient.getQueryData<ImageFile[]>(["images", shoot]) ?? [];
+  const images = queryClient.getQueryData<ImageFile[]>(imagesKey(shoot)) ?? [];
   const byPath = new Map(images.map((image) => [image.path, image.edit]));
   const wanted = new Map<string, Edit>();
   for (const path of paths) {
@@ -387,35 +349,83 @@ function writeInOrder<T>(path: string, write: () => Promise<T>): Promise<T> {
   return done;
 }
 
-const writeEdit = (shoot: string | null, { path, edit }: EditWrite) =>
-  writeInOrder(path, () =>
-    coreRequest<SetEditResult>("setEdit", { shoot, path, edit }),
-  );
+type PhotoField<V> = {
+  mutationKey: string[];
+  of: (image: ImageFile) => V;
+  same: (a: V, b: V) => boolean;
+  patch: (value: V) => Partial<ImageFile>;
+  write: (shoot: string | null, path: string, value: V) => Promise<unknown>;
+  failedOne: (path: string) => string;
+  failedMany: (count: number) => string;
+};
 
-export function useSetEdit(shoot: string | null) {
+const photos = (count: number) =>
+  `${count} ${count === 1 ? "photo" : "photos"}`;
+
+const RATING_FIELD: PhotoField<number> = {
+  mutationKey: SET_RATING_KEY,
+  of: (image) => image.rating,
+  same: (a, b) => a === b,
+  patch: (rating) => ({ rating }),
+  write: (shoot, path, rating) =>
+    writeInOrder(path, () => coreRequest("setRating", { shoot, path, rating })),
+  failedOne: (path) => `Rating ${fileName(path)} failed`,
+  failedMany: (count) => `${photos(count)} kept the rating they had`,
+};
+
+const EDIT_FIELD: PhotoField<Edit> = {
+  mutationKey: SET_EDIT_KEY,
+  of: (image) => image.edit,
+  same: (a, b) => editKey(a) === editKey(b),
+  patch: (edit) => ({ edit }),
+  write: (shoot, path, edit) =>
+    writeInOrder(path, () => coreRequest("setEdit", { shoot, path, edit })),
+  failedOne: (path) => `Saving edits for ${fileName(path)} failed`,
+  failedMany: (count) => `${photos(count)} kept the settings they had`,
+};
+
+function cachedValue<V>(
+  queryClient: QueryClient,
+  shoot: string | null,
+  path: string,
+  field: PhotoField<V>,
+): V | undefined {
+  const image = cachedImage(queryClient, shoot, path);
+  return image && field.of(image);
+}
+
+function useFieldWrite<V>(shoot: string | null, field: PhotoField<V>) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationKey: SET_EDIT_KEY,
-    mutationFn: (write: EditWrite) => writeEdit(shoot, write),
-    onMutate: async ({ path, edit }) => {
-      await queryClient.cancelQueries({ queryKey: ["images", shoot] });
-      const previous = currentEdits(queryClient, shoot, [path]);
-      patchEdits(queryClient, shoot, new Map([[path, edit]]));
+    mutationKey: field.mutationKey,
+    mutationFn: ({ path, value }: { path: string; value: V }) =>
+      field.write(shoot, path, value),
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: imagesKey(shoot) });
+      const previous = cachedValue(queryClient, shoot, vars.path, field);
+      patchImage(queryClient, shoot, vars.path, field.patch(vars.value));
       return { previous };
     },
     onError: (error, vars, context) => {
-      if (context?.previous) patchEdits(queryClient, shoot, context.previous);
-      toast.error(`Saving edits for ${fileName(vars.path)} failed`, {
-        description: String(error),
-      });
-    },
-    onSettled: () => {
-      if (xmpWritesInFlight(queryClient) === 1) {
-        queryClient.invalidateQueries({ queryKey: ["images", shoot] });
+      if (context?.previous !== undefined) {
+        patchImage(
+          queryClient,
+          shoot,
+          vars.path,
+          field.patch(context.previous),
+        );
       }
+      toast.error(field.failedOne(vars.path), { description: String(error) });
     },
+    onSettled: () => invalidateAfterLastWrite(queryClient, shoot),
   });
 }
+
+export const useSetRating = (shoot: string | null) =>
+  useFieldWrite(shoot, RATING_FIELD);
+
+export const useSetEdit = (shoot: string | null) =>
+  useFieldWrite(shoot, EDIT_FIELD);
 
 export type BatchResult = {
   written: number;
@@ -426,31 +436,18 @@ export type BatchResult = {
 /// Enough to keep exiftool busy without starving renders and thumbnails.
 const BATCH_CONCURRENCY = 4;
 
-type BatchField<I, V> = {
-  mutationKey: string[];
-  values: (input: I) => Map<string, V>;
-  of: (image: ImageFile) => V;
-  same: (a: V, b: V) => boolean;
-  patch: (value: V) => Partial<ImageFile>;
-  write: (shoot: string | null, path: string, value: V) => Promise<unknown>;
-  failedToast: (count: number) => string;
-};
-
 /// One mutation for the batch, under the single-write key so the library poller
 /// leaves the images cache alone until every write has settled.
-function useBatchWrite<I, V>(shoot: string | null, field: BatchField<I, V>) {
+function useBatchWrite<V>(shoot: string | null, field: PhotoField<V>) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: field.mutationKey,
-    mutationFn: async (input: I): Promise<BatchResult> => {
+    mutationFn: async (values: Map<string, V>): Promise<BatchResult> => {
       // A long batch outlives its shoot, so it keeps the one it started with.
       const target = shoot;
-      const values = field.values(input);
-      const live = (path: string) => {
-        const image = cachedImage(queryClient, target, path);
-        return image && field.of(image);
-      };
-      await queryClient.cancelQueries({ queryKey: ["images", target] });
+      const live = (path: string) =>
+        cachedValue(queryClient, target, path, field);
+      await queryClient.cancelQueries({ queryKey: imagesKey(target) });
       const previous = new Map<string, V>();
       const patches = new Map<string, Partial<ImageFile>>();
       for (const [path, value] of values) {
@@ -494,13 +491,11 @@ function useBatchWrite<I, V>(shoot: string | null, field: BatchField<I, V>) {
         ),
       );
       if (failed.length > 0) {
-        toast.error(field.failedToast(failed.length), {
+        toast.error(field.failedMany(failed.length), {
           description: "Saving failed",
         });
       }
-      if (xmpWritesInFlight(queryClient) === 1) {
-        queryClient.invalidateQueries({ queryKey: ["images", target] });
-      }
+      invalidateAfterLastWrite(queryClient, target);
       return {
         written: values.size - failed.length - overtaken,
         failed,
@@ -510,37 +505,11 @@ function useBatchWrite<I, V>(shoot: string | null, field: BatchField<I, V>) {
   });
 }
 
-const photos = (count: number) =>
-  `${count} ${count === 1 ? "photo" : "photos"}`;
-
 export const usePasteEdits = (shoot: string | null) =>
-  useBatchWrite(shoot, {
-    mutationKey: SET_EDIT_KEY,
-    values: (edits: Map<string, Edit>) => edits,
-    of: (image) => image.edit,
-    same: (a, b) => editKey(a) === editKey(b),
-    patch: (edit) => ({ edit }),
-    write: (target, path, edit) => writeEdit(target, { path, edit }),
-    failedToast: (count) => `${photos(count)} kept the settings they had`,
-  });
+  useBatchWrite(shoot, EDIT_FIELD);
 
 export const useSetRatings = (shoot: string | null) =>
-  useBatchWrite(shoot, {
-    mutationKey: SET_RATING_KEY,
-    values: (ratings: Map<string, number>) => ratings,
-    of: (image) => image.rating,
-    same: (a, b) => a === b,
-    patch: (rating) => ({ rating }),
-    write: (target, path, rating) =>
-      writeInOrder(path, () =>
-        coreRequest<SetRatingResult>("setRating", {
-          shoot: target,
-          path,
-          rating,
-        }),
-      ),
-    failedToast: (count) => `${photos(count)} kept the rating they had`,
-  });
+  useBatchWrite(shoot, RATING_FIELD);
 
 export function useReveal() {
   return useMutation({
@@ -556,19 +525,13 @@ export function useTrash(shoot: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["write", "trash"],
-    mutationFn: (paths: string[]) =>
-      coreRequest<{ files: number; generation: number }>("trash", {
-        shoot,
-        paths,
-      }),
+    mutationFn: (paths: string[]) => coreRequest("trash", { shoot, paths }),
     onSuccess: (result, paths) => {
-      toast.success(
-        `Moved ${paths.length} ${paths.length === 1 ? "photo" : "photos"} to the Trash`,
-        { description: `${result.files} files` },
-      );
-      queryClient.invalidateQueries({ queryKey: ["images", shoot] });
-      queryClient.invalidateQueries({ queryKey: ["shoots"] });
-      queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
+      toast.success(`Moved ${photos(paths.length)} to the Trash`, {
+        description: `${result.files} files`,
+      });
+      queryClient.invalidateQueries({ queryKey: imagesKey(shoot) });
+      invalidateLibrary(queryClient);
     },
     onError: (error) => {
       toast.error("Could not delete", { description: String(error) });
@@ -580,55 +543,20 @@ export function useUpdateProject() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["write", "updateProject"],
-    mutationFn: (vars: {
-      shoot: string;
-      name: string;
-      day: string | null;
-      notes: string;
-      cover: string | null;
-    }) =>
-      coreRequest<{ shoot: string; generation: number }>("updateProject", vars),
+    mutationFn: (vars: CoreMethods["updateProject"]["params"]) =>
+      coreRequest("updateProject", vars),
     onSuccess: (result, vars) => {
       if (result.shoot !== vars.shoot) {
         toast.success(`Renamed to ${result.shoot}`);
         queryClient.invalidateQueries({ queryKey: ["images"] });
       }
-      queryClient.invalidateQueries({ queryKey: ["shoots"] });
-      queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
+      invalidateLibrary(queryClient);
     },
     onError: (error) => {
       toast.error("Could not save the project", { description: String(error) });
     },
   });
 }
-
-type ExportRequest = {
-  shoot: string;
-  paths: string[];
-  destination: string;
-  zip: boolean;
-  flatten: boolean;
-  format: ExportFormat;
-  quality: number;
-  decoderVersion: number;
-};
-
-export type ExportProgress = {
-  id: string;
-  done: number;
-  failed: number;
-  total: number;
-  running: boolean;
-  cancelled: boolean;
-  archiving: boolean;
-  error?: string;
-  failures: string[];
-};
-
-type ImportRequest = {
-  shoot: string;
-  paths: string[];
-};
 
 export type ExportJob = ExportProgress & {
   key: string;
@@ -668,8 +596,7 @@ export function useExportJobs() {
   const results = useQueries({
     queries: rows.map((row) => ({
       queryKey: ["export", row.key],
-      queryFn: () =>
-        coreRequest<ExportProgress>("exportStatus", { id: row.id }),
+      queryFn: () => coreRequest("exportStatus", { id: row.id }),
       initialData: row.initial,
       enabled: row.id !== "",
       refetchInterval: (query: { state: { data?: ExportProgress } }) =>
@@ -692,12 +619,16 @@ export function useExportJobs() {
   const start = useCallback(
     async (
       job:
-        | { method: "exportFiles"; label: string; request: ExportRequest }
+        | {
+            method: "exportFiles";
+            label: string;
+            request: CoreMethods["exportFiles"]["params"];
+          }
         | {
             method: "importFiles";
             label: string;
             destination: string;
-            request: ImportRequest;
+            request: CoreMethods["importFiles"]["params"];
           },
     ): Promise<ExportProgress | null> => {
       const { method, label, request } = job;
@@ -722,7 +653,7 @@ export function useExportJobs() {
         startedAt: Date.now(),
       };
       try {
-        const started = await coreRequest<ExportProgress>(method, request);
+        const started = await coreRequest(method, request);
         setRows((current) => [
           { ...row, id: started.id, initial: started },
           ...current,
@@ -748,7 +679,7 @@ export function useExportJobs() {
     (key: string) => {
       const row = rows.find((candidate) => candidate.key === key);
       if (!row) return;
-      coreRequest<ExportProgress>("cancelExport", { id: row.id })
+      coreRequest("cancelExport", { id: row.id })
         .then((update) => client.setQueryData(["export", key], update))
         .catch((error: unknown) => {
           toast.error("Could not cancel the export", {
@@ -766,12 +697,11 @@ export function useCreateProject() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["write", "createProject"],
-    mutationFn: (vars: { name: string; notes: string }) =>
-      coreRequest<CreateProjectResult>("createProject", vars),
+    mutationFn: (vars: CoreMethods["createProject"]["params"]) =>
+      coreRequest("createProject", vars),
     onSuccess: (result) => {
       toast.success(`Created ${result.shoot}`);
-      queryClient.invalidateQueries({ queryKey: ["shoots"] });
-      queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
+      invalidateLibrary(queryClient);
     },
     onError: (error) => {
       toast.error("Could not create the project", {
@@ -783,8 +713,7 @@ export function useCreateProject() {
 
 export function useCaptureDate() {
   return useMutation({
-    mutationFn: (path: string) =>
-      coreRequest<{ day: string | null }>("captureDate", { path }),
+    mutationFn: (path: string) => coreRequest("captureDate", { path }),
     onError: (error) => {
       toast.error("Could not read the photo's date", {
         description: String(error),
@@ -830,9 +759,7 @@ export function useLibrarySync(
     const poll = async () => {
       let next = IDLE_POLL_MS;
       try {
-        const status = await coreRequest<StatusResult>("status", {
-          since: seen.current,
-        });
+        const status = await coreRequest("status", { since: seen.current });
         if (stopped) return;
         setProgress(status);
         next = status.scanning ? INDEXING_POLL_MS : IDLE_POLL_MS;
@@ -841,10 +768,9 @@ export function useLibrarySync(
           status.generation !== seen.current &&
           xmpWritesInFlight(queryClient) === 0
         ) {
-          queryClient.invalidateQueries({ queryKey: ["shoots"] });
-          queryClient.invalidateQueries({ queryKey: DECODER_AVAILABILITY_KEY });
+          invalidateLibrary(queryClient);
           for (const shoot of status.changedShoots ?? []) {
-            queryClient.invalidateQueries({ queryKey: ["images", shoot] });
+            queryClient.invalidateQueries({ queryKey: imagesKey(shoot) });
             // newly arrived photos need rating, and only scoreShoot picks them up
             queryClient.invalidateQueries({ queryKey: ["scoring", shoot] });
           }

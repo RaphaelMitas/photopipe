@@ -256,7 +256,7 @@ describe("edit writes to one photo", () => {
 
     single.mutate({
       path: "/r/shoot1/A.ARW",
-      edit: { ...identityEdit, exposure: 1 },
+      value: { ...identityEdit, exposure: 1 },
     });
     paste.mutate(
       new Map([["/r/shoot1/A.ARW", { ...identityEdit, exposure: 2 }]]),
@@ -304,14 +304,18 @@ describe("useRender and the RAW decoder", () => {
     localStorage.setItem("photopipe.rawDecoder", "8");
     renderHarness(["/r/shoot1/A.ARW", "/r/shoot1/B.JPG"]);
     await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
-    const params = invoke.mock.calls.map(
-      ([, args]) =>
-        (args as { params: { path: string; decoderVersion?: number } }).params,
+    const render = (path: string, decoderVersion?: number) => ({
+      method: "render",
+      params: { path, edit: identityEdit, maxPixel: 2560, decoderVersion },
+    });
+    expect(invoke).toHaveBeenCalledWith(
+      "core_request",
+      render("/r/shoot1/A.ARW", 8),
     );
-    expect(params.find((p) => p.path.endsWith(".ARW"))?.decoderVersion).toBe(8);
-    expect(
-      params.find((p) => p.path.endsWith(".JPG"))?.decoderVersion,
-    ).toBeUndefined();
+    expect(invoke).toHaveBeenCalledWith(
+      "core_request",
+      render("/r/shoot1/B.JPG"),
+    );
   });
 
   it("flipping the global decoder requests a fresh raw render", async () => {
@@ -319,10 +323,10 @@ describe("useRender and the RAW decoder", () => {
     await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
     act(() => setRawDecoderVersion(8));
     await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
-    const last = invoke.mock.calls[1][1] as {
-      params: { decoderVersion?: number };
-    };
-    expect(last.params.decoderVersion).toBe(8);
+    expect(invoke).toHaveBeenLastCalledWith("core_request", {
+      method: "render",
+      params: expect.objectContaining({ decoderVersion: 8 }),
+    });
   });
 });
 
@@ -350,8 +354,8 @@ describe("useSetRating burst behavior", () => {
       </QueryClientProvider>,
     );
 
-    mutation.mutate({ path: "/r/shoot1/A.ARW", rating: 3 });
-    mutation.mutate({ path: "/r/shoot1/B.ARW", rating: 4 });
+    mutation.mutate({ path: "/r/shoot1/A.ARW", value: 3 });
+    mutation.mutate({ path: "/r/shoot1/B.ARW", value: 4 });
     await waitFor(() => expect(pending.length).toBe(2));
 
     const optimistic = client.getQueryData<ImageFile[]>(["images", "shoot1"]);
