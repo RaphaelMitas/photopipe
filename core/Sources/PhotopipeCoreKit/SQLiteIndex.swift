@@ -237,20 +237,22 @@ public final class SQLiteIndex: @unchecked Sendable {
         guard !rows.isEmpty else { return }
         let sql =
             "INSERT OR REPLACE INTO scores (path, score, mtime, size, version) VALUES (?,?,?,?,?)"
-        try withStatement(sql) { statement in
-            for (path, row) in rows {
-                sqlite3_reset(statement)
-                sqlite3_bind_text(statement, 1, path, -1, transientDestructor)
-                if let score = row.score {
-                    sqlite3_bind_double(statement, 2, score)
-                } else {
-                    sqlite3_bind_null(statement, 2)
-                }
-                sqlite3_bind_double(statement, 3, row.mtime)
-                sqlite3_bind_int64(statement, 4, row.size)
-                sqlite3_bind_int64(statement, 5, Int64(row.version))
-                guard sqlite3_step(statement) == SQLITE_DONE else {
-                    throw IndexError.exec(errorMessage)
+        try write {
+            try withStatement(sql) { statement in
+                for (path, row) in rows {
+                    sqlite3_reset(statement)
+                    sqlite3_bind_text(statement, 1, path, -1, transientDestructor)
+                    if let score = row.score {
+                        sqlite3_bind_double(statement, 2, score)
+                    } else {
+                        sqlite3_bind_null(statement, 2)
+                    }
+                    sqlite3_bind_double(statement, 3, row.mtime)
+                    sqlite3_bind_int64(statement, 4, row.size)
+                    sqlite3_bind_int64(statement, 5, Int64(row.version))
+                    guard sqlite3_step(statement) == SQLITE_DONE else {
+                        throw IndexError.exec(errorMessage)
+                    }
                 }
             }
         }
