@@ -114,9 +114,11 @@ reveal button), or failed with the error text kept on screen. A toast that
 takes the error with it after four seconds is the wrong container for "two
 files were skipped".
 
-The core runs requests concurrently (an 8-wide queue, responses matched by
-envelope id), so a long JPEG export occupies one slot while thumbnails and
-ratings keep flowing. Per-file export progress needs mid-request events the
+The core runs requests concurrently (responses matched by envelope id).
+Renders and thumbnails each have a newest-first lane that answers the oldest
+waiting request "superseded" once too many pile up; everything else shares an
+8-wide queue, so a long JPEG export occupies one slot while ratings keep
+flowing. Per-file export progress needs mid-request events the
 protocol doesn't have yet; until then the job shows an indeterminate state.
 
 ## Deliberately not built
