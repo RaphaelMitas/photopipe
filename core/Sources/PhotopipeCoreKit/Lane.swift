@@ -23,7 +23,7 @@ public final class Lane: Sendable {
         self.window = window
     }
 
-    /// Calls exactly one of the two; `superseded` for the oldest waiting job once more than `window` wait.
+    /// Calls exactly one of the two.
     public func submit(
         _ run: @escaping @Sendable () -> Void,
         superseded: @escaping @Sendable () -> Void

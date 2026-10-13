@@ -5,6 +5,7 @@ import { type Edit, type ImageFile, identityEdit } from "./core";
 import {
   useLibrarySync,
   usePasteEdits,
+  usePrefetchRender,
   useRender,
   useSetEdit,
   useSetRating,
@@ -327,6 +328,59 @@ describe("useRender and the RAW decoder", () => {
       method: "render",
       params: expect.objectContaining({ decoderVersion: 8 }),
     });
+  });
+});
+
+describe("usePrefetchRender", () => {
+  const next = { path: "/r/shoot1/B.ARW", mtime: 1, ext: "ARW" };
+
+  function Loupe({ landed }: { landed: boolean }) {
+    usePrefetchRender(next, identityEdit);
+    return landed ? <Landed /> : null;
+  }
+
+  function Landed() {
+    const render = useRender(next, identityEdit);
+    return render.data ? <p>{render.data}</p> : null;
+  }
+
+  async function arrive(landed: boolean) {
+    invoke.mockReset();
+    let reject: (reason: string) => void = () => {};
+    invoke.mockReturnValueOnce(
+      new Promise((_, rejectFirst) => {
+        reject = rejectFirst;
+      }),
+    );
+    invoke.mockResolvedValue({ cachePath: "/cache/b.jpg" });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, retryDelay: 0 } },
+    });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <Loupe landed={false} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <Loupe landed={landed} />
+      </QueryClientProvider>,
+    );
+    act(() => reject("superseded: dropped for a newer render request"));
+    return view;
+  }
+
+  it("asks again for a superseded prefetch the loupe landed on mid-flight", async () => {
+    const view = await arrive(true);
+    expect(await view.findByText("/cache/b.jpg")).toBeTruthy();
+    expect(invoke).toHaveBeenCalledTimes(2);
+  });
+
+  it("lets a superseded prefetch nobody landed on go", async () => {
+    await arrive(false);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(invoke).toHaveBeenCalledTimes(1);
   });
 });
 

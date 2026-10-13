@@ -196,15 +196,23 @@ export function usePrefetchRender(file: RenderFile, edit: Edit | undefined) {
   const decoder = useRawDecoderVersion();
   useEffect(() => {
     if (!file || !edit) return;
-    queryClient.prefetchQuery(
-      renderQueryOptions(
-        file,
-        edit,
-        PREVIEW_MAX_PIXEL,
-        undefined,
-        renderDecoderVersion(file, decoder),
-      ),
+    const options = renderQueryOptions(
+      file,
+      edit,
+      PREVIEW_MAX_PIXEL,
+      undefined,
+      renderDecoderVersion(file, decoder),
     );
+    queryClient.prefetchQuery({
+      ...options,
+      // the loupe may land on it mid-flight and inherit this fetch's retry
+      retry: (failures) =>
+        failures < 3 &&
+        (queryClient
+          .getQueryCache()
+          .find({ queryKey: options.queryKey })
+          ?.getObserversCount() ?? 0) > 0,
+    });
   }, [queryClient, file, edit, decoder]);
 }
 
