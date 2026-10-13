@@ -4,7 +4,8 @@
 //! transport: requests from any thread interleave on one stdin pipe, a reader
 //! thread routes responses to waiters by id, so a slow render never blocks a
 //! ping. A request that times out fails on its own and the core keeps running,
-//! so a slow request never takes running exports down. Only a core that dies is
+//! so a slow request never takes running exports down. The one exception is
+//! setRoot, whose timeout discards the core. Otherwise only a core that dies is
 //! respawned: the library root is replayed and a request is re-sent only if it
 //! never reached the core. A wedged core stays until the app restarts.
 
@@ -86,6 +87,7 @@ enum RoundTripError {
 pub struct Sidecar {
     bin: PathBuf,
     read_timeout: Duration,
+    set_root_timeout: Duration,
     next_id: AtomicU64,
     running: Mutex<Option<Arc<Running>>>,
     /// Params of the last successful `setRoot`, replayed after a respawn so
@@ -98,6 +100,7 @@ impl Sidecar {
         Self {
             bin,
             read_timeout: READ_TIMEOUT,
+            set_root_timeout: SET_ROOT_TIMEOUT,
             next_id: AtomicU64::new(1),
             running: Mutex::new(None),
             last_root: Mutex::new(None),
@@ -238,7 +241,7 @@ impl Sidecar {
         }
 
         let timeout = if method == "setRoot" {
-            SET_ROOT_TIMEOUT
+            self.set_root_timeout
         } else {
             self.read_timeout
         };
@@ -285,6 +288,11 @@ impl Sidecar {
                         *self.last_root.lock().unwrap() = params.clone();
                     }
                     return Ok(result);
+                }
+                // A walk still running would later switch the core to a root the app gave up on.
+                Err(RoundTripError::TimedOut(message)) if method == "setRoot" => {
+                    self.discard(&running);
+                    return Err(message);
                 }
                 Err(RoundTripError::Remote(message) | RoundTripError::TimedOut(message)) => {
                     return Err(message)
@@ -558,6 +566,25 @@ done
         assert!(!exited(&core), "a timeout killed the core");
         assert_eq!(sidecar.request("ping", None).expect("ping")["pong"], true);
         assert!(Arc::ptr_eq(&core, &sidecar.connection().unwrap()));
+        sidecar.shutdown();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_timed_out_set_root_discards_the_core() {
+        let dir = temp_dir("set-root");
+        let script = script_core(&dir, "while read -r _line; do :; done\n");
+        let mut sidecar = Sidecar::new(script);
+        sidecar.set_root_timeout = Duration::from_millis(200);
+        let core = sidecar.connection().expect("spawn");
+        sidecar
+            .request("setRoot", Some(json!({"path": "/slow/nas"})))
+            .expect_err("must time out");
+        assert!(
+            exited(&core),
+            "the core kept walking a root the app gave up on"
+        );
+        assert!(!Arc::ptr_eq(&core, &sidecar.connection().unwrap()));
         sidecar.shutdown();
         let _ = std::fs::remove_dir_all(&dir);
     }
