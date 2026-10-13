@@ -25,6 +25,8 @@ public struct Request: Codable, Equatable, Sendable {
         self.params = params
         self.deadline = deadline
     }
+
+    var deadlineDate: Date? { deadline.map(Date.init(timeIntervalSince1970:)) }
 }
 
 public struct ResponseError: Codable, Equatable, Sendable {

@@ -1,9 +1,10 @@
 import Foundation
 
 public final class ExifTool: @unchecked Sendable {
-    public enum ExifToolError: Error {
+    public enum ExifToolError: Error, Equatable {
         case notInstalled
         case failed(String)
+        case expired
     }
 
     public static let shared = ExifTool()
@@ -51,12 +52,13 @@ public final class ExifTool: @unchecked Sendable {
 
     public var available: Bool { Self.findBinary() != nil }
 
-    public func execute(_ args: [String]) throws -> String {
+    public func execute(_ args: [String], deadline: Date? = nil) throws -> String {
         guard !args.contains(where: { $0.contains("\n") }) else {
             throw ExifToolError.failed("argument contains a newline")
         }
         lock.lock()
         defer { lock.unlock() }
+        if let deadline, Date() > deadline { throw ExifToolError.expired }
         try ensureRunning()
         guard let stdin = stdinPipe?.fileHandleForWriting,
             let stdout = stdoutPipe?.fileHandleForReading
@@ -84,8 +86,8 @@ public final class ExifTool: @unchecked Sendable {
         }
     }
 
-    public func write(_ args: [String]) throws {
-        let output = try execute(args)
+    public func write(_ args: [String], deadline: Date? = nil) throws {
+        let output = try execute(args, deadline: deadline)
         let succeeded =
             output.contains("1 image files updated")
             || output.contains("1 image files created")
