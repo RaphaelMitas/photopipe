@@ -2,6 +2,7 @@
 @import "@photopipe/ui/tokens.css";
 
 @source "../";
+/* Tailwind does not follow imports: add each ui component the site imports, or its classes go missing */
 @source "../../../../packages/ui/src/components/{button,card,photopipe-mark,photopipe-wordmark,separator}.tsx";
 
 @theme inline {

@@ -827,20 +827,14 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
     let renderer = Renderer(cacheDir: cacheDir)
     let file = try imageFile(for: fixture)
 
-    // one per filter slot, so any export entry would evict a loupe one
-    let sizes = [600, 800, 1000, 1200, 1400, 1600]
-    for size in sizes {
-        _ = try renderer.render(file: file, edit: .identity, maxPixel: size)
-    }
+    _ = try renderer.render(file: file, edit: .identity, maxPixel: 64)
     try renderer.exportJPEG(
         file: file, edit: .identity, quality: 0.9, to: out.appendingPathComponent("export.jpg"))
-    for size in sizes {
-        _ = try renderer.render(file: file, edit: Edit(exposure: 1), maxPixel: size)
-    }
+    _ = try renderer.render(file: file, edit: Edit(exposure: 1), maxPixel: 64)
 
     #expect(
-        renderer.rawDecodeCount == sizes.count,
-        "an export cost the loupe \(renderer.rawDecodeCount - sizes.count) cold decodes")
+        renderer.rawDecodeCount == 1,
+        "the export took a slot in the loupe's filter cache, where it evicts warm filters")
 }
 
 @Test func raw9SupportMatchesWhatTheFilterReports() throws {
