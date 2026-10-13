@@ -382,6 +382,48 @@ describe("usePrefetchRender", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(invoke).toHaveBeenCalledTimes(1);
   });
+
+  it("does not revive a passed photo's retries by prefetching it as a neighbour", async () => {
+    const photos = ["A", "B", "C", "D"].map((name) => ({
+      path: `/r/shoot1/${name}.ARW`,
+      mtime: 1,
+      ext: "ARW",
+    }));
+    function Walk({ index }: { index: number }) {
+      useRender(photos[index], identityEdit);
+      usePrefetchRender(photos[index + 1], identityEdit);
+      usePrefetchRender(photos[index - 1], identityEdit);
+      return null;
+    }
+    invoke.mockReset();
+    let rejectA: (reason: string) => void = () => {};
+    invoke.mockImplementation((_, { params }) =>
+      params.path === photos[0].path
+        ? new Promise((_, reject) => {
+            rejectA = reject;
+          })
+        : new Promise(() => {}),
+    );
+    const client = new QueryClient({
+      defaultOptions: { queries: { retryDelay: 0 } },
+    });
+    const walk = (index: number) => (
+      <QueryClientProvider client={client}>
+        <Walk index={index} />
+      </QueryClientProvider>
+    );
+    const view = render(walk(0));
+    view.rerender(walk(1));
+    view.rerender(walk(2));
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(4));
+
+    act(() => rejectA("superseded: dropped for a newer render request"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const requestsForA = invoke.mock.calls.filter(
+      ([, { params }]) => params.path === photos[0].path,
+    );
+    expect(requestsForA).toHaveLength(1);
+  });
 });
 
 describe("useSetRating burst behavior", () => {

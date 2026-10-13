@@ -203,6 +203,9 @@ export function usePrefetchRender(file: RenderFile, edit: Edit | undefined) {
       undefined,
       renderDecoderVersion(file, decoder),
     );
+    // prefetching an in-flight query would re-enable the retries its last observer cancelled
+    if (queryClient.getQueryState(options.queryKey)?.fetchStatus === "fetching")
+      return;
     queryClient.prefetchQuery({
       ...options,
       // the loupe may land on it mid-flight and inherit this fetch's retry
