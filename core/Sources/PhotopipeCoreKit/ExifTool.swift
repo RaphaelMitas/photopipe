@@ -140,11 +140,4 @@ public final class ExifTool: @unchecked Sendable {
         stdinPipe = nil
         stdoutPipe = nil
     }
-
-    deinit {
-        if let process, process.isRunning {
-            stdinPipe?.fileHandleForWriting.write(Data("-stay_open\nFalse\n".utf8))
-            process.terminate()
-        }
-    }
 }

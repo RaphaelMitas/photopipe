@@ -47,22 +47,22 @@ public final class Exporter: @unchecked Sendable {
     public init() {}
 
     public func start(plan: Plan) -> Progress {
-        lock.lock()
         // A counter would restart at 1 with the process, and a client that
         // outlives a sidecar respawn would poll and cancel a stranger's job.
         let id = UUID().uuidString
-        for (old, settled) in settledAt where settled.timeIntervalSinceNow < -600 {
-            jobs[old] = nil
-            settledAt[old] = nil
-        }
         let initial = Progress(
             id: id, total: plan.items.count, done: 0, failed: 0, running: true,
             cancelled: false, archiving: false, error: nil, failures: [])
-        jobs[id] = initial
-        tasks[id] = Task.detached(priority: .utility) { [weak self] in
-            await self?.run(id: id, plan: plan)
+        lock.withLock {
+            for (old, settled) in settledAt where settled.timeIntervalSinceNow < -600 {
+                jobs[old] = nil
+                settledAt[old] = nil
+            }
+            jobs[id] = initial
+            tasks[id] = Task.detached(priority: .utility) { [weak self] in
+                await self?.run(id: id, plan: plan)
+            }
         }
-        lock.unlock()
         return initial
     }
 
@@ -80,40 +80,28 @@ public final class Exporter: @unchecked Sendable {
 
     private func run(id: String, plan: Plan) async {
         var failures: [String] = []
-        await withTaskGroup(of: String?.self) { group in
-            var next = 0
-            func submit() {
-                guard next < plan.items.count else { return }
-                let item = plan.items[next]
-                next += 1
-                group.addTask {
-                    do {
-                        try item.write()
-                        return nil
-                    } catch {
-                        return "\(item.label): \(error)"
-                    }
-                }
+        // A render cannot be interrupted mid-file, so cancelling stops the
+        // queue rather than the writes already under way.
+        await forEachConcurrently(plan.items, width: Self.concurrency) { item -> String? in
+            do {
+                try item.write()
+                return nil
+            } catch {
+                return "\(item.label): \(error)"
             }
-            for _ in 0..<min(Self.concurrency, plan.items.count) { submit() }
-
-            while let failure = await group.next() {
-                // A render cannot be interrupted mid-file, so cancelling stops
-                // the queue rather than the writes already under way.
-                if Task.isCancelled { group.cancelAll() } else { submit() }
-                if let failure {
-                    failures.append(failure)
-                    // the drawer is the only other place these show, and it
-                    // goes away with the window
-                    FileHandle.standardError.write(Data("job failed: \(failure)\n".utf8))
-                }
-                lock.withLock {
-                    if failure == nil {
-                        jobs[id]?.done += 1
-                    } else {
-                        jobs[id]?.failed += 1
-                        jobs[id]?.failures = failures
-                    }
+        } onResult: { failure, _ in
+            if let failure {
+                failures.append(failure)
+                // the drawer is the only other place these show, and it
+                // goes away with the window
+                FileHandle.standardError.write(Data("job failed: \(failure)\n".utf8))
+            }
+            lock.withLock {
+                if failure == nil {
+                    jobs[id]?.done += 1
+                } else {
+                    jobs[id]?.failed += 1
+                    jobs[id]?.failures = failures
                 }
             }
         }

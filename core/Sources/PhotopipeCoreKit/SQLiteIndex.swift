@@ -37,7 +37,7 @@ public final class SQLiteIndex: @unchecked Sendable {
 
     private func open() throws {
         guard sqlite3_open(path, &db) == SQLITE_OK else {
-            throw IndexError.open(String(cString: sqlite3_errmsg(db)))
+            throw IndexError.open(errorMessage)
         }
         try exec("PRAGMA journal_mode = WAL")
         // A locked database is a reason to wait, not to conclude the file is
@@ -89,14 +89,22 @@ public final class SQLiteIndex: @unchecked Sendable {
         }
     }
 
-    private func scalarInt(_ sql: String) throws -> Int? {
+    private var errorMessage: String { String(cString: sqlite3_errmsg(db)) }
+
+    private func withStatement<T>(_ sql: String, _ body: (OpaquePointer?) throws -> T) throws -> T {
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
-            throw IndexError.exec(String(cString: sqlite3_errmsg(db)))
+            throw IndexError.exec(errorMessage)
         }
         defer { sqlite3_finalize(statement) }
-        guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
-        return Int(sqlite3_column_int64(statement, 0))
+        return try body(statement)
+    }
+
+    private func scalarInt(_ sql: String) throws -> Int? {
+        try withStatement(sql) { statement in
+            guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+            return Int(sqlite3_column_int64(statement, 0))
+        }
     }
 
     public func save(root: String, filesByShoot: [String: [ImageFile]]) throws {
@@ -128,144 +136,122 @@ public final class SQLiteIndex: @unchecked Sendable {
     }
 
     private func insert(_ filesByShoot: [String: [ImageFile]]) throws {
-        var statement: OpaquePointer?
         let sql = """
             INSERT OR REPLACE INTO files
             (path, shoot, rel, ext, size, mtime, rating, edit, width, height, enriched,
              sidecar_mtime)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
             """
-        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
-            throw IndexError.exec(String(cString: sqlite3_errmsg(db)))
-        }
-        defer { sqlite3_finalize(statement) }
-        let encoder = JSONEncoder()
-        for (shoot, files) in filesByShoot {
-            for file in files {
-                sqlite3_reset(statement)
-                sqlite3_bind_text(statement, 1, file.path, -1, transientDestructor)
-                sqlite3_bind_text(statement, 2, shoot, -1, transientDestructor)
-                sqlite3_bind_text(statement, 3, file.rel, -1, transientDestructor)
-                sqlite3_bind_text(statement, 4, file.ext, -1, transientDestructor)
-                sqlite3_bind_int64(statement, 5, file.size)
-                sqlite3_bind_double(statement, 6, file.mtime)
-                sqlite3_bind_int64(statement, 7, Int64(file.rating))
-                // The overwhelming majority of photos carry no edit; storing
-                // NULL for those keeps the index small on a big library.
-                if file.edit == .identity {
-                    sqlite3_bind_null(statement, 8)
-                } else {
-                    let json = String(decoding: try encoder.encode(file.edit), as: UTF8.self)
-                    sqlite3_bind_text(statement, 8, json, -1, transientDestructor)
-                }
-                sqlite3_bind_int64(statement, 9, Int64(file.width))
-                sqlite3_bind_int64(statement, 10, Int64(file.height))
-                // a row another build writes carries its own version, so it reads as unparsed
-                sqlite3_bind_int64(statement, 11, file.enriched ? Int64(Self.schemaVersion) : 0)
-                sqlite3_bind_double(statement, 12, file.sidecarMtime)
-                guard sqlite3_step(statement) == SQLITE_DONE else {
-                    throw IndexError.exec(String(cString: sqlite3_errmsg(db)))
+        try withStatement(sql) { statement in
+            let encoder = JSONEncoder()
+            for (shoot, files) in filesByShoot {
+                for file in files {
+                    sqlite3_reset(statement)
+                    sqlite3_bind_text(statement, 1, file.path, -1, transientDestructor)
+                    sqlite3_bind_text(statement, 2, shoot, -1, transientDestructor)
+                    sqlite3_bind_text(statement, 3, file.rel, -1, transientDestructor)
+                    sqlite3_bind_text(statement, 4, file.ext, -1, transientDestructor)
+                    sqlite3_bind_int64(statement, 5, file.size)
+                    sqlite3_bind_double(statement, 6, file.mtime)
+                    sqlite3_bind_int64(statement, 7, Int64(file.rating))
+                    // The overwhelming majority of photos carry no edit; storing
+                    // NULL for those keeps the index small on a big library.
+                    if file.edit == .identity {
+                        sqlite3_bind_null(statement, 8)
+                    } else {
+                        let json = String(decoding: try encoder.encode(file.edit), as: UTF8.self)
+                        sqlite3_bind_text(statement, 8, json, -1, transientDestructor)
+                    }
+                    sqlite3_bind_int64(statement, 9, Int64(file.width))
+                    sqlite3_bind_int64(statement, 10, Int64(file.height))
+                    // a row another build writes carries its own version, so it reads as unparsed
+                    sqlite3_bind_int64(statement, 11, file.enriched ? Int64(Self.schemaVersion) : 0)
+                    sqlite3_bind_double(statement, 12, file.sidecarMtime)
+                    guard sqlite3_step(statement) == SQLITE_DONE else {
+                        throw IndexError.exec(errorMessage)
+                    }
                 }
             }
         }
     }
 
     public func load() throws -> (root: String, filesByShoot: [String: [ImageFile]])? {
-        var rootStatement: OpaquePointer?
-        guard
-            sqlite3_prepare_v2(
-                db, "SELECT value FROM meta WHERE key = 'root'", -1, &rootStatement, nil) == SQLITE_OK
-        else {
-            throw IndexError.exec(String(cString: sqlite3_errmsg(db)))
+        let root = try withStatement("SELECT value FROM meta WHERE key = 'root'") { statement in
+            sqlite3_step(statement) == SQLITE_ROW
+                ? sqlite3_column_text(statement, 0).map { String(cString: $0) } : nil
         }
-        defer { sqlite3_finalize(rootStatement) }
-        guard sqlite3_step(rootStatement) == SQLITE_ROW,
-            let rootText = sqlite3_column_text(rootStatement, 0)
-        else { return nil }
-        let root = String(cString: rootText)
+        guard let root else { return nil }
 
-        var statement: OpaquePointer?
         let sql = """
             SELECT path, shoot, rel, ext, size, mtime, rating, edit, width, height, enriched,
                    sidecar_mtime
             FROM files
             """
-        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
-            throw IndexError.exec(String(cString: sqlite3_errmsg(db)))
-        }
-        defer { sqlite3_finalize(statement) }
-
-        let decoder = JSONDecoder()
-        var filesByShoot: [String: [ImageFile]] = [:]
-        while sqlite3_step(statement) == SQLITE_ROW {
-            guard let pathText = sqlite3_column_text(statement, 0),
-                let shootText = sqlite3_column_text(statement, 1),
-                let relText = sqlite3_column_text(statement, 2),
-                let extText = sqlite3_column_text(statement, 3)
-            else { continue }
-            let edit = sqlite3_column_text(statement, 7).flatMap { json in
-                try? decoder.decode(Edit.self, from: Data(String(cString: json).utf8))
+        return try withStatement(sql) { statement in
+            let decoder = JSONDecoder()
+            var filesByShoot: [String: [ImageFile]] = [:]
+            while sqlite3_step(statement) == SQLITE_ROW {
+                guard let pathText = sqlite3_column_text(statement, 0),
+                    let shootText = sqlite3_column_text(statement, 1),
+                    let relText = sqlite3_column_text(statement, 2),
+                    let extText = sqlite3_column_text(statement, 3)
+                else { continue }
+                let edit = sqlite3_column_text(statement, 7).flatMap { json in
+                    try? decoder.decode(Edit.self, from: Data(String(cString: json).utf8))
+                }
+                let record = ImageFile(
+                    path: String(cString: pathText),
+                    rel: String(cString: relText),
+                    ext: String(cString: extText),
+                    size: sqlite3_column_int64(statement, 4),
+                    mtime: sqlite3_column_double(statement, 5),
+                    rating: Int(sqlite3_column_int64(statement, 6)),
+                    edit: edit ?? .identity,
+                    width: Int(sqlite3_column_int64(statement, 8)),
+                    height: Int(sqlite3_column_int64(statement, 9)),
+                    enriched: sqlite3_column_int64(statement, 10) == Self.schemaVersion,
+                    sidecarMtime: sqlite3_column_double(statement, 11))
+                filesByShoot[String(cString: shootText), default: []].append(record)
             }
-            let record = ImageFile(
-                path: String(cString: pathText),
-                rel: String(cString: relText),
-                ext: String(cString: extText),
-                size: sqlite3_column_int64(statement, 4),
-                mtime: sqlite3_column_double(statement, 5),
-                rating: Int(sqlite3_column_int64(statement, 6)),
-                edit: edit ?? .identity,
-                width: Int(sqlite3_column_int64(statement, 8)),
-                height: Int(sqlite3_column_int64(statement, 9)),
-                enriched: sqlite3_column_int64(statement, 10) == Self.schemaVersion,
-                sidecarMtime: sqlite3_column_double(statement, 11))
-            filesByShoot[String(cString: shootText), default: []].append(record)
+            return (root, filesByShoot)
         }
-        return (root, filesByShoot)
     }
 
     public func loadScores() throws -> [String: ScoreRow] {
-        var statement: OpaquePointer?
-        let sql = "SELECT path, score, mtime, size, version FROM scores"
-        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
-            throw IndexError.exec(String(cString: sqlite3_errmsg(db)))
+        try withStatement("SELECT path, score, mtime, size, version FROM scores") { statement in
+            var rows: [String: ScoreRow] = [:]
+            while sqlite3_step(statement) == SQLITE_ROW {
+                guard let pathText = sqlite3_column_text(statement, 0) else { continue }
+                rows[String(cString: pathText)] = ScoreRow(
+                    score: sqlite3_column_type(statement, 1) == SQLITE_NULL
+                        ? nil : sqlite3_column_double(statement, 1),
+                    mtime: sqlite3_column_double(statement, 2),
+                    size: sqlite3_column_int64(statement, 3),
+                    version: Int(sqlite3_column_int64(statement, 4)))
+            }
+            return rows
         }
-        defer { sqlite3_finalize(statement) }
-
-        var rows: [String: ScoreRow] = [:]
-        while sqlite3_step(statement) == SQLITE_ROW {
-            guard let pathText = sqlite3_column_text(statement, 0) else { continue }
-            rows[String(cString: pathText)] = ScoreRow(
-                score: sqlite3_column_type(statement, 1) == SQLITE_NULL
-                    ? nil : sqlite3_column_double(statement, 1),
-                mtime: sqlite3_column_double(statement, 2),
-                size: sqlite3_column_int64(statement, 3),
-                version: Int(sqlite3_column_int64(statement, 4)))
-        }
-        return rows
     }
 
     public func saveScores(_ rows: [(String, ScoreRow)]) throws {
         guard !rows.isEmpty else { return }
-        var statement: OpaquePointer?
         let sql =
             "INSERT OR REPLACE INTO scores (path, score, mtime, size, version) VALUES (?,?,?,?,?)"
-        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
-            throw IndexError.exec(String(cString: sqlite3_errmsg(db)))
-        }
-        defer { sqlite3_finalize(statement) }
-        for (path, row) in rows {
-            sqlite3_reset(statement)
-            sqlite3_bind_text(statement, 1, path, -1, transientDestructor)
-            if let score = row.score {
-                sqlite3_bind_double(statement, 2, score)
-            } else {
-                sqlite3_bind_null(statement, 2)
-            }
-            sqlite3_bind_double(statement, 3, row.mtime)
-            sqlite3_bind_int64(statement, 4, row.size)
-            sqlite3_bind_int64(statement, 5, Int64(row.version))
-            guard sqlite3_step(statement) == SQLITE_DONE else {
-                throw IndexError.exec(String(cString: sqlite3_errmsg(db)))
+        try withStatement(sql) { statement in
+            for (path, row) in rows {
+                sqlite3_reset(statement)
+                sqlite3_bind_text(statement, 1, path, -1, transientDestructor)
+                if let score = row.score {
+                    sqlite3_bind_double(statement, 2, score)
+                } else {
+                    sqlite3_bind_null(statement, 2)
+                }
+                sqlite3_bind_double(statement, 3, row.mtime)
+                sqlite3_bind_int64(statement, 4, row.size)
+                sqlite3_bind_int64(statement, 5, Int64(row.version))
+                guard sqlite3_step(statement) == SQLITE_DONE else {
+                    throw IndexError.exec(errorMessage)
+                }
             }
         }
     }
