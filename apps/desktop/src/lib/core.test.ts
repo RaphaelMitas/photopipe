@@ -1,12 +1,5 @@
-import { QueryClient } from "@tanstack/react-query";
-import { describe, expect, it, vi } from "vitest";
-import {
-  editKey,
-  identityEdit,
-  isIdentityEdit,
-  normalizeImage,
-  retryCoreRequest,
-} from "./core";
+import { describe, expect, it } from "vitest";
+import { editKey, identityEdit, isIdentityEdit, normalizeImage } from "./core";
 import { makeImage } from "./test-image";
 
 describe("normalizeImage", () => {
@@ -49,26 +42,5 @@ describe("normalizeImage", () => {
     expect(edit.whites).toBe(40);
     expect(edit.blacks).toBe(-15);
     expect(isIdentityEdit(edit)).toBe(false);
-  });
-});
-
-describe("retryCoreRequest", () => {
-  async function attempts(rejection: string) {
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: retryCoreRequest, retryDelay: 0 } },
-    });
-    const queryFn = vi.fn().mockRejectedValue(rejection);
-    await client.fetchQuery({ queryKey: ["x"], queryFn }).catch(() => {});
-    return queryFn.mock.calls.length;
-  }
-
-  it("does not ask again for a request the core superseded", async () => {
-    expect(
-      await attempts("superseded: dropped for a newer render request"),
-    ).toBe(1);
-  });
-
-  it("still retries other failures", async () => {
-    expect(await attempts("sidecar did not answer within 10s")).toBe(4);
   });
 });

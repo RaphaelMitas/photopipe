@@ -10,7 +10,7 @@ work.maxConcurrentOperationCount = 8
 let lanes = [
     // measured: parallel cold renders share the machine and the newest lands later
     "render": Lane(workers: 1, window: 4),
-    // a superseded thumbnail stays blank while mounted, so cover a large grid's mounted cells
+    // covers a large grid's mounted cells, so an on-screen thumbnail never waits on a retry
     "thumbnail": Lane(workers: 8, window: 256),
 ]
 let out = DispatchQueue(label: "photopipe.stdout")
