@@ -751,7 +751,7 @@ dependencies = [
 
 [[package]]
 name = "desktop"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "objc2",
  "objc2-foundation",
