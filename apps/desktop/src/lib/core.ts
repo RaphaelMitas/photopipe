@@ -164,7 +164,7 @@ export type ExportProgress = {
   running: boolean;
   cancelled: boolean;
   archiving: boolean;
-  error: string | null;
+  error?: string | null;
   failures: string[];
 };
 
@@ -176,7 +176,7 @@ export type SetRootResult = {
 
 export type StatusResult = {
   generation: number;
-  root: string | null;
+  root?: string | null;
   shoots: number;
   scanning: boolean;
   filesFound: number;
