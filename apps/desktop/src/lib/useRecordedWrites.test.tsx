@@ -104,8 +104,9 @@ describe("useRecordedWrites", () => {
       }
       if (method === "setRating") {
         disk.set(params.path, { ...image, rating: params.rating });
+        return { rating: params.rating };
       }
-      return {};
+      return { edit: params.edit };
     });
     const client = new QueryClient();
     const wrapper = ({ children }: { children: ReactNode }) => (

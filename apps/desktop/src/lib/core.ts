@@ -117,11 +117,15 @@ type WireImage = Omit<ImageFile, "score" | "edit"> & {
   edit: Partial<Edit>;
 };
 
+export function normalizeEdit(edit: Partial<Edit>): Edit {
+  return { ...identityEdit, ...edit };
+}
+
 export function normalizeImage(image: WireImage): ImageFile {
   return {
     ...image,
     score: image.score ?? null,
-    edit: { ...identityEdit, ...image.edit },
+    edit: normalizeEdit(image.edit),
   };
 }
 
@@ -221,11 +225,11 @@ export type CoreMethods = {
   decoderAvailability: { params: undefined; result: { raw9: boolean | null } };
   setRating: {
     params: { shoot: string | null; path: string; rating: number };
-    result: { rating: number; generation: number };
+    result: { rating: number };
   };
   setEdit: {
     params: { shoot: string | null; path: string; edit: Edit };
-    result: { edit: Partial<Edit>; generation: number };
+    result: { edit: Partial<Edit> };
   };
   trash: {
     params: { shoot: string | null; paths: string[] };

@@ -19,6 +19,7 @@ import {
   editKey,
   type ImageFile,
   isRawFile,
+  normalizeEdit,
   normalizeImage,
   normalizeShoot,
   type StatusResult,
@@ -289,13 +290,32 @@ function xmpWritesInFlight(queryClient: QueryClient): number {
   );
 }
 
-function invalidateAfterLastWrite(
-  queryClient: QueryClient,
-  shoot: string | null,
-) {
-  if (xmpWritesInFlight(queryClient) === 1) {
+/// A failed write or a list fetched during a write: refetch that shoot once the burst ends.
+const staleLists = new WeakMap<QueryClient, Set<string | null>>();
+
+function markStale(queryClient: QueryClient, shoot: string | null) {
+  const shoots = staleLists.get(queryClient) ?? new Set();
+  staleLists.set(queryClient, shoots.add(shoot));
+}
+
+function markFetching(queryClient: QueryClient, shoot: string | null) {
+  if (queryClient.isFetching({ queryKey: imagesKey(shoot) }) > 0) {
+    markStale(queryClient, shoot);
+  }
+}
+
+async function holdImages(queryClient: QueryClient, shoot: string | null) {
+  markFetching(queryClient, shoot);
+  await queryClient.cancelQueries({ queryKey: imagesKey(shoot) });
+}
+
+// Waits for the last write, or the refetch could land over one still in flight.
+function releaseImages(queryClient: QueryClient) {
+  if (xmpWritesInFlight(queryClient) !== 1) return;
+  for (const shoot of staleLists.get(queryClient) ?? []) {
     queryClient.invalidateQueries({ queryKey: imagesKey(shoot) });
   }
+  staleLists.delete(queryClient);
 }
 
 export function cachedImage(
@@ -349,8 +369,17 @@ export function currentEdits(
 /// writes to one photo can land in either order.
 const writesByPath = new Map<string, Promise<unknown>>();
 
-function writeInOrder<T>(path: string, write: () => Promise<T>): Promise<T> {
-  const done = (writesByPath.get(path) ?? Promise.resolve()).then(write, write);
+/// Resolves to null when a newer write to the photo is already queued: that
+/// one's answer is the one the cache should end on.
+function writeInOrder<T>(
+  path: string,
+  write: () => Promise<T>,
+): Promise<T | null> {
+  const run = async (): Promise<T | null> => {
+    const answer = await write();
+    return writesByPath.get(path) === settled ? answer : null;
+  };
+  const done = (writesByPath.get(path) ?? Promise.resolve()).then(run, run);
   const settled = done
     .catch(() => undefined)
     .then(() => {
@@ -365,7 +394,7 @@ type PhotoField<V> = {
   of: (image: ImageFile) => V;
   same: (a: V, b: V) => boolean;
   patch: (value: V) => Partial<ImageFile>;
-  write: (shoot: string | null, path: string, value: V) => Promise<unknown>;
+  write: (shoot: string | null, path: string, value: V) => Promise<V | null>;
   failedOne: (path: string) => string;
   failedMany: (count: number) => string;
 };
@@ -379,7 +408,11 @@ const RATING_FIELD: PhotoField<number> = {
   same: (a, b) => a === b,
   patch: (rating) => ({ rating }),
   write: (shoot, path, rating) =>
-    writeInOrder(path, () => coreRequest("setRating", { shoot, path, rating })),
+    writeInOrder(
+      path,
+      async () =>
+        (await coreRequest("setRating", { shoot, path, rating })).rating,
+    ),
   failedOne: (path) => `Rating ${fileName(path)} failed`,
   failedMany: (count) => `${photos(count)} kept the rating they had`,
 };
@@ -390,7 +423,9 @@ const EDIT_FIELD: PhotoField<Edit> = {
   same: (a, b) => editKey(a) === editKey(b),
   patch: (edit) => ({ edit }),
   write: (shoot, path, edit) =>
-    writeInOrder(path, () => coreRequest("setEdit", { shoot, path, edit })),
+    writeInOrder(path, async () =>
+      normalizeEdit((await coreRequest("setEdit", { shoot, path, edit })).edit),
+    ),
   failedOne: (path) => `Saving edits for ${fileName(path)} failed`,
   failedMany: (count) => `${photos(count)} kept the settings they had`,
 };
@@ -405,17 +440,35 @@ function cachedValue<V>(
   return image && field.of(image);
 }
 
+async function writeField<V>(
+  queryClient: QueryClient,
+  shoot: string | null,
+  path: string,
+  field: PhotoField<V>,
+  value: V,
+) {
+  const written = await field.write(shoot, path, value);
+  if (written !== null) {
+    patchImage(queryClient, shoot, path, field.patch(written));
+  }
+  markFetching(queryClient, shoot);
+}
+
 function useFieldWrite<V>(shoot: string | null, field: PhotoField<V>) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: field.mutationKey,
     mutationFn: ({ path, value }: { path: string; value: V }) =>
-      field.write(shoot, path, value),
+      writeField(queryClient, shoot, path, field, value),
     onMutate: async (vars) => {
-      await queryClient.cancelQueries({ queryKey: imagesKey(shoot) });
+      await holdImages(queryClient, shoot);
       const previous = cachedValue(queryClient, shoot, vars.path, field);
       patchImage(queryClient, shoot, vars.path, field.patch(vars.value));
       return { previous };
+    },
+    onSettled: (_data, error) => {
+      if (error) markStale(queryClient, shoot);
+      releaseImages(queryClient);
     },
     onError: (error, vars, context) => {
       if (context?.previous !== undefined) {
@@ -428,7 +481,6 @@ function useFieldWrite<V>(shoot: string | null, field: PhotoField<V>) {
       }
       toast.error(field.failedOne(vars.path), { description: String(error) });
     },
-    onSettled: () => invalidateAfterLastWrite(queryClient, shoot),
   });
 }
 
@@ -458,7 +510,7 @@ function useBatchWrite<V>(shoot: string | null, field: PhotoField<V>) {
       const target = shoot;
       const live = (path: string) =>
         cachedValue(queryClient, target, path, field);
-      await queryClient.cancelQueries({ queryKey: imagesKey(target) });
+      await holdImages(queryClient, target);
       const previous = new Map<string, V>();
       const patches = new Map<string, Partial<ImageFile>>();
       for (const [path, value] of values) {
@@ -486,7 +538,7 @@ function useBatchWrite<V>(shoot: string | null, field: PhotoField<V>) {
             continue;
           }
           try {
-            await field.write(target, path, value);
+            await writeField(queryClient, target, path, field, value);
           } catch {
             failed.push(path);
             if (before !== undefined) {
@@ -502,11 +554,12 @@ function useBatchWrite<V>(shoot: string | null, field: PhotoField<V>) {
         ),
       );
       if (failed.length > 0) {
+        markStale(queryClient, target);
         toast.error(field.failedMany(failed.length), {
           description: "Saving failed",
         });
       }
-      invalidateAfterLastWrite(queryClient, target);
+      releaseImages(queryClient);
       return {
         written: values.size - failed.length - overtaken,
         failed,
