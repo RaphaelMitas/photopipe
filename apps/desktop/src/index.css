@@ -3,6 +3,8 @@
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/montserrat";
 
+@source "../../../packages/ui/src/components";
+
 @theme inline {
   --font-sans: "Inter Variable", sans-serif;
   --font-heading: "Montserrat Variable", sans-serif;

@@ -894,6 +894,28 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
     #expect(width > 2000, "export must be full resolution, got width \(width)")
 }
 
+@Test func exportLeavesTheLoupeFilterCacheWarm() throws {
+    guard let fixture = fixtureARW() else { return }
+    let cacheDir = tempCacheDir()
+    let out = tempCacheDir()
+    defer {
+        try? FileManager.default.removeItem(at: cacheDir)
+        try? FileManager.default.removeItem(at: out)
+    }
+    try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: fixture)
+
+    _ = try renderer.render(file: file, edit: .identity, maxPixel: 64)
+    try renderer.exportJPEG(
+        file: file, edit: .identity, quality: 0.9, to: out.appendingPathComponent("export.jpg"))
+    _ = try renderer.render(file: file, edit: Edit(exposure: 1), maxPixel: 64)
+
+    #expect(
+        renderer.rawDecodeCount == 1,
+        "the export took a slot in the loupe's filter cache, where it evicts warm filters")
+}
+
 @Test func raw9SupportMatchesWhatTheFilterReports() throws {
     guard let fixture = fixtureARW() else { return }
     let cacheDir = tempCacheDir()
