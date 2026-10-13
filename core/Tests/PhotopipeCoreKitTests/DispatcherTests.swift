@@ -64,3 +64,20 @@ func request(_ method: String, id: String = "1", v: Int = protocolVersion) -> St
     #expect(request.params?["depth"] == .number(2))
     #expect(request.params?["tags"] == .array([.string("a")]))
 }
+
+@Test func aRequestPastItsDeadlineIsSkipped() {
+    let past = Date().timeIntervalSince1970 - 1
+    let line =
+        "{\"v\":1,\"id\":\"9\",\"method\":\"setRating\",\"deadline\":\(past),"
+        + "\"params\":{\"path\":\"/nowhere/DSC1.ARW\",\"rating\":3}}"
+    let response = Dispatcher().dispatch(line: line).response
+    #expect(response.error?.code == "expired")
+    #expect(response.id == "9")
+}
+
+@Test func aRequestWithinItsDeadlineRuns() {
+    let future = Date().timeIntervalSince1970 + 60
+    let line = "{\"v\":1,\"id\":\"9\",\"method\":\"listShoots\",\"deadline\":\(future)}"
+    let response = Dispatcher().dispatch(line: line).response
+    #expect(response.error?.code != "expired")
+}

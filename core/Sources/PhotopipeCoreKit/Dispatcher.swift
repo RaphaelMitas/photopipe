@@ -57,6 +57,13 @@ public final class Dispatcher {
             "exportStatus", "cancelExport",
             "createProject", "importFiles", "updateProject", "captureDate",
             "scoreShoot", "scoreStatus":
+            // The caller already reported this request as failed, so it must not act late.
+            if let deadline = request.deadline, Date().timeIntervalSince1970 > deadline {
+                return .respond(
+                    .failure(
+                        id: request.id, code: "expired",
+                        message: "\(request.method) waited past its deadline and was skipped"))
+            }
             return .respond(libraryResponse(request))
         default:
             return .respond(
