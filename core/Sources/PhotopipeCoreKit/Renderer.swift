@@ -304,8 +304,9 @@ public final class Renderer: @unchecked Sendable {
     private func rawFilter(
         for file: ImageFile, maxPixel: Int?, decoderVersion: Int?
     ) throws -> CachedFilter {
-        let key =
-            "\(file.path)|\(maxPixel.map(String.init) ?? "full")\(Self.decoderTag(decoderVersion))"
+        // a full-sensor export is decoded once; caching it would evict the loupe's warm filters
+        guard let maxPixel else { return try makeFilter(for: file, decoderVersion: decoderVersion) }
+        let key = "\(file.path)|\(maxPixel)\(Self.decoderTag(decoderVersion))"
         let warm = lock.withLock { () -> CachedFilter? in
             guard let cached = filtersByPathAndSize[key], cached.mtime == file.mtime else {
                 return nil
