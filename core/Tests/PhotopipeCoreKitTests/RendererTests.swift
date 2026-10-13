@@ -197,7 +197,7 @@ private func writeEntry(_ name: String, in dir: URL, bytes: Int, hoursAgo: Doubl
     let entries = try (1...5).map {
         try writeEntry("\($0).jpg", in: cacheDir, bytes: 100, hoursAgo: Double(24 + $0))
     }
-    let inFlight = try writeEntry("tmp-write.jpg", in: cacheDir, bytes: 1000, hoursAgo: 10)
+    let inFlight = try writeEntry("tmp-write.jpg", in: cacheDir, bytes: 1000, hoursAgo: 30)
 
     CacheFolder(dir: cacheDir, maxBytes: 250).prune(olderThan: 7 * 24 * 3600)
 
@@ -223,7 +223,26 @@ private func writeEntry(_ name: String, in dir: URL, bytes: Int, hoursAgo: Doubl
     #expect(!FileManager.default.fileExists(atPath: other.path), "the unserved entry goes")
 }
 
-@Test func aZeroBudgetKeepsOnlyWhatMayHaveBeenServedToday() throws {
+@Test func aHitOnAnEntryHalfADayOldRefreshesItsMtime() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let cache = CacheFolder(dir: cacheDir, maxBytes: .max)
+    let served = try cache.cachedFile(at: cache.url(forKey: "served")) { try Data(count: 100).write(to: $0) }
+    try FileManager.default.setAttributes(
+        [.modificationDate: Date().addingTimeInterval(-13 * 3600)], ofItemAtPath: served.path)
+
+    _ = try cache.cachedFile(at: cache.url(forKey: "served")) { _ in
+        Issue.record("a hit must not rewrite the entry")
+    }
+
+    let modified = try #require(
+        try cache.url(forKey: "served").resourceValues(forKeys: [.contentModificationDateKey])
+            .contentModificationDate)
+    #expect(
+        modified.timeIntervalSinceNow > -60, "so the size prune's one-day cutoff stays 12h clear of a hit")
+}
+
+@Test func aZeroBudgetKeepsEntriesYoungerThanADay() throws {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     CacheFolder(dir: cacheDir, maxBytes: 0).prune(olderThan: 7 * 24 * 3600)
@@ -238,7 +257,7 @@ private func writeEntry(_ name: String, in dir: URL, bytes: Int, hoursAgo: Doubl
     #expect(!FileManager.default.fileExists(atPath: old.path))
     #expect(
         FileManager.default.fileExists(atPath: recent.path),
-        "a hit inside the touch interval leaves mtime alone, so it may be on screen")
+        "an entry younger than a day may have just been served")
     #expect(FileManager.default.fileExists(atPath: foreign.path), "non-render files untouched")
 }
 

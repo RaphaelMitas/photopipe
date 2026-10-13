@@ -21,7 +21,8 @@ struct CacheFolder: Sendable {
         let fm = FileManager.default
         let hit = Self.lock.withLock { () -> Bool in
             guard let modified = Self.modified(url) else { return false }
-            if modified.timeIntervalSinceNow > -Self.touchInterval { return true }
+            // half, so an entry just handed out stays at least 12h clear of the size prune's cutoff
+            if modified.timeIntervalSinceNow > -Self.touchInterval / 2 { return true }
             return (try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)) != nil
         }
         if hit { return url }
@@ -62,7 +63,7 @@ struct CacheFolder: Sendable {
             }
         }
         var total = kept.reduce(0) { $0 + $1.size }
-        // a hit inside the touch interval leaves mtime alone, so a younger entry may have just been served
+        // a hit only touches entries over 12h old, so a younger mtime may hide a recent hit
         for var file in kept.sorted(by: { $0.modified < $1.modified })
         where total > maxBytes && file.modified.timeIntervalSinceNow < -Self.touchInterval {
             file.url.removeAllCachedResourceValues()
