@@ -9,7 +9,7 @@ import {
 } from "@photopipe/ui/components/dropdown-menu";
 import { ArrowUpDown, LayoutGrid, Rows3, Sparkles } from "lucide-react";
 import type { ScoreProgress } from "@/lib/queries";
-import type { SortKey } from "@/lib/sort";
+import { isSortKey, type SortKey } from "@/lib/sort";
 
 export type ViewMode = "grid" | "list";
 
@@ -79,7 +79,9 @@ export function BrowserToolbar({
         <DropdownMenuContent align="end">
           <DropdownMenuRadioGroup
             value={sort}
-            onValueChange={(value) => onSort(value as SortKey)}
+            onValueChange={(value) => {
+              if (isSortKey(value)) onSort(value);
+            }}
           >
             <DropdownMenuRadioItem value="name">
               {SORT_LABELS.name}

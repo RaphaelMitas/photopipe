@@ -14,7 +14,9 @@ import {
   moveCrop,
   rotatedSize,
 } from "@/lib/crop";
-import { capturePointer, cursorIn } from "@/lib/pointer";
+import { EXPOSURE_RANGE, EXPOSURE_STEP } from "@/lib/editSliders";
+import { isModalOpen } from "@/lib/modal";
+import { capturePointer, cursorIn, normalizedIn } from "@/lib/pointer";
 import {
   usePrefetchRender,
   useRender,
@@ -33,9 +35,6 @@ import {
 } from "@/lib/zoom";
 import { type CropDraft, CropOverlay, draftWithAngle } from "./CropTool";
 import { Filmstrip, type FilmstripMode } from "./Filmstrip";
-
-export const EXPOSURE_STEP = 0.25;
-export const EXPOSURE_RANGE = 3;
 
 // Photo pixels, not screen pixels: ten of them stay a fine adjustment on any
 // photo while still showing on screen at a fitted view.
@@ -178,11 +177,11 @@ export function Loupe({
     const handler = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       // an open popover has already spent this Escape on closing itself
-      if (event.defaultPrevented) return;
-      const target = event.target as HTMLElement | null;
+      if (event.defaultPrevented || isModalOpen()) return;
+      const target = event.target instanceof Element ? event.target : null;
       if (
         event.key.startsWith("Arrow") &&
-        target?.closest?.("[data-slot='slider'], select")
+        target?.closest("[data-slot='slider'], select")
       ) {
         return;
       }
@@ -194,7 +193,7 @@ export function Loupe({
         }
         // A focused button (Cancel, Reset) or the aspect select acts on
         // Enter itself.
-        if (event.key === "Enter" && !target?.closest?.("button, select")) {
+        if (event.key === "Enter" && !target?.closest("button, select")) {
           draftRef.current = null;
           onApplyCrop();
         }
@@ -528,17 +527,15 @@ function useZoom({
       panBy(-event.deltaX, -event.deltaY);
     };
     // WebKit reports trackpad pinches as gesture events, not ctrl+wheel.
-    const onGestureStart = (event: Event) => {
+    const onGestureStart = (event: GestureEvent) => {
       event.preventDefault();
       inGesture = true;
       gestureScale = 1;
     };
-    const onGestureChange = (event: Event) => {
+    const onGestureChange = (event: GestureEvent) => {
       event.preventDefault();
-      const scale = (event as unknown as { scale: number }).scale;
-      const position = event as unknown as { clientX: number; clientY: number };
-      applyZoom(cursorIn(node, position), scale / gestureScale);
-      gestureScale = scale;
+      applyZoom(cursorIn(node, event), event.scale / gestureScale);
+      gestureScale = event.scale;
     };
     const onGestureEnd = () => {
       inGesture = false;
@@ -626,11 +623,7 @@ function Navigator({
   const dragging = useRef(false);
 
   const centerFrom = (event: React.PointerEvent<HTMLDivElement>) => {
-    const bounds = event.currentTarget.getBoundingClientRect();
-    onCenter({
-      x: (event.clientX - bounds.left) / bounds.width,
-      y: (event.clientY - bounds.top) / bounds.height,
-    });
+    onCenter(normalizedIn(event.currentTarget, event));
   };
 
   if (box.width <= 0) return null;

@@ -69,6 +69,7 @@ import {
 } from "@/lib/history";
 import { betterThan, scoreRanks } from "@/lib/instinct";
 import { heldOrder } from "@/lib/loupeWalk";
+import { isModalOpen } from "@/lib/modal";
 import {
   cachedImage,
   type EditWrite,
@@ -84,7 +85,7 @@ import {
 } from "@/lib/queries";
 import { openRoot, type RootError, rootsQuery, toRootError } from "@/lib/roots";
 import { useSelection } from "@/lib/selection";
-import { browserOrder, type SortKey } from "@/lib/sort";
+import { browserOrder, isSortKey, type SortKey } from "@/lib/sort";
 import { useDebouncedEdit } from "@/lib/useDebouncedEdit";
 import { useRecordedWrites } from "@/lib/useRecordedWrites";
 import { useUpdater } from "@/lib/useUpdater";
@@ -132,9 +133,7 @@ export default function App() {
   };
   const [sort, setSort] = useState<SortKey>(() => {
     const stored = localStorage.getItem(SORT_KEY);
-    return stored === "date" || stored === "rating" || stored === "score"
-      ? stored
-      : "name";
+    return isSortKey(stored) ? stored : "name";
   });
   const changeSort = (next: SortKey) => {
     setSort(next);
@@ -579,7 +578,6 @@ export default function App() {
   );
 
   const [historyOpen, setHistoryOpen] = useState(false);
-  const modalOpen = newProject || shootSettings !== null || settingsOpen;
   const [revealed, setRevealed] = useState(0);
   // Before the write, so you are on the photo when the step lands.
   const showPhoto = useCallback(
@@ -642,7 +640,9 @@ export default function App() {
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
-      if (isTyping(event.target) || event.defaultPrevented) return;
+      if (isTyping(event.target) || event.defaultPrevented || isModalOpen()) {
+        return;
+      }
       if (event.metaKey || event.ctrlKey) {
         // Case-insensitive, so the Lightroom pair ⌘⇧C/⌘⇧V lands here too.
         const key = event.key.toLowerCase();
@@ -654,11 +654,11 @@ export default function App() {
           event.preventDefault();
           pasteSettings(pasteTargets);
         }
-        if (key === "z" && !cropping && !modalOpen) {
+        if (key === "z" && !cropping) {
           event.preventDefault();
           travel(event.shiftKey ? "redo" : "undo");
         }
-        if (key === "y" && openShoot && !cropping && !modalOpen) {
+        if (key === "y" && openShoot && !cropping) {
           event.preventDefault();
           setHistoryOpen((open) => !open);
         }
@@ -693,12 +693,15 @@ export default function App() {
     pasteTargets,
     pasteSettings,
     travel,
-    modalOpen,
   ]);
 
   const changeRatingStars = (stars: number) => {
     setRatingStars(stars);
     if (stars > 0 && ratingOp === "unrated") setRatingOp("gte");
+  };
+  const clearRatingFilter = () => {
+    setRatingStars(0);
+    setRatingOp("gte");
   };
 
   const enterShoot = (shoot: string | null) => {
@@ -707,7 +710,7 @@ export default function App() {
     setOpenShoot(shoot);
     setCurrentPath(null);
     setLoupeOpen(false);
-    setRatingStars(0);
+    clearRatingFilter();
     selection.clear();
   };
 
@@ -998,8 +1001,7 @@ export default function App() {
                 busy={exports.running}
                 onSelectFiltered={() => selection.select(orderedPaths)}
                 onSelectAll={() => {
-                  setRatingStars(0);
-                  if (ratingOp === "unrated") setRatingOp("gte");
+                  clearRatingFilter();
                   selection.select(allImages.map((image) => image.path));
                 }}
                 onClearSelection={selection.clear}
@@ -1131,7 +1133,6 @@ function Content({
   const emptyMessage = filterActive
     ? "Nothing matches the rating filter."
     : "No photos in this project yet. Import them, or drop files into the folder — subfolders are fine.";
-  const selectMode = !selection.isEmpty;
   return (
     <div className="flex h-full min-h-0 flex-col">
       <BrowserToolbar
@@ -1167,7 +1168,6 @@ function Content({
               onOpen={onOpenLoupe}
               showInfo={showInfo}
               selected={selection.selected}
-              selectMode={selectMode}
               onSelect={selection.click}
               focusPath={focusPath}
               revealed={revealed}
@@ -1176,10 +1176,8 @@ function Content({
             <ImageList
               images={filteredImages}
               selected={selection.selected}
-              selectMode={selectMode}
               onSelect={selection.click}
               onOpen={onOpenLoupe}
-              emptyMessage={emptyMessage}
               focusPath={focusPath}
               revealed={revealed}
             />

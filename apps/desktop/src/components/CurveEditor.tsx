@@ -7,9 +7,11 @@ import {
   CURVE_CHANNELS,
   type CurveChannel,
   type CurvePoint,
+  clamp01,
   isIdentityCurve,
   sampleCurve,
 } from "@/lib/curve";
+import { capturePointer, normalizedIn } from "@/lib/pointer";
 
 const W = 200;
 const H = 140;
@@ -99,7 +101,6 @@ type Props = {
 
 export function CurveEditor({ edit, imageSrc, onChange }: Props) {
   const [channel, setChannel] = useState<CurveChannel>("rgb");
-  const svgRef = useRef<SVGSVGElement | null>(null);
   const dragIndex = useRef<number | null>(null);
   const active =
     CURVE_CHANNELS.find((entry) => entry.channel === channel) ??
@@ -111,33 +112,32 @@ export function CurveEditor({ edit, imageSrc, onChange }: Props) {
     onChange({ [active.key]: isIdentityCurve(next) ? [] : next });
   };
 
-  const eventPoint = (event: React.PointerEvent): CurvePoint => {
-    const svg = svgRef.current;
-    if (!svg) return { x: 0, y: 0 };
-    const rect = svg.getBoundingClientRect();
-    return {
-      x: Math.min(Math.max((event.clientX - rect.left) / rect.width, 0), 1),
-      y: Math.min(Math.max(1 - (event.clientY - rect.top) / rect.height, 0), 1),
-    };
+  const eventPoint = (event: React.MouseEvent<SVGSVGElement>): CurvePoint => {
+    const at = normalizedIn(event.currentTarget, event);
+    return { x: clamp01(at.x), y: clamp01(1 - at.y) };
   };
 
-  const onPointerDown = (event: React.PointerEvent) => {
-    const at = eventPoint(event);
-    const svgAt = toSvg(at);
-    let index = points.findIndex((point) => {
-      const svg = toSvg(point);
-      return Math.hypot(svg.x - svgAt.x, svg.y - svgAt.y) <= HIT_RADIUS;
+  const hitIndex = (at: CurvePoint) => {
+    const c = toSvg(at);
+    return points.findIndex((point) => {
+      const p = toSvg(point);
+      return Math.hypot(p.x - c.x, p.y - c.y) <= HIT_RADIUS;
     });
+  };
+
+  const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
+    const at = eventPoint(event);
+    let index = hitIndex(at);
     if (index === -1) {
       const insertAt = points.findIndex((point) => point.x > at.x);
       index = insertAt === -1 ? points.length : insertAt;
       emit([...points.slice(0, index), at, ...points.slice(index)]);
     }
     dragIndex.current = index;
-    svgRef.current?.setPointerCapture(event.pointerId);
+    capturePointer(event);
   };
 
-  const onPointerMove = (event: React.PointerEvent) => {
+  const onPointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
     const index = dragIndex.current;
     if (index === null) return;
     const at = eventPoint(event);
@@ -152,17 +152,9 @@ export function CurveEditor({ edit, imageSrc, onChange }: Props) {
     dragIndex.current = null;
   };
 
-  const onDoubleClick = (event: React.MouseEvent) => {
+  const onDoubleClick = (event: React.MouseEvent<SVGSVGElement>) => {
     if (points.length <= 2) return;
-    const svg = svgRef.current;
-    if (!svg) return;
-    const rect = svg.getBoundingClientRect();
-    const atX = ((event.clientX - rect.left) / rect.width) * W;
-    const atY = ((event.clientY - rect.top) / rect.height) * H;
-    const index = points.findIndex((point) => {
-      const p = toSvg(point);
-      return Math.hypot(p.x - atX, p.y - atY) <= HIT_RADIUS;
-    });
+    const index = hitIndex(eventPoint(event));
     if (index === -1) return;
     dragIndex.current = null;
     emit(points.filter((_, i) => i !== index));
@@ -202,7 +194,6 @@ export function CurveEditor({ edit, imageSrc, onChange }: Props) {
         </Button>
       </div>
       <svg
-        ref={svgRef}
         viewBox={`0 0 ${W} ${H}`}
         role="img"
         aria-label="Tone curve"

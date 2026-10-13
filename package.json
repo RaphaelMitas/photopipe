@@ -1,7 +1,6 @@
 {
   "name": "photopipe",
   "private": true,
-  "version": "0.1.0",
   "license": "MIT",
   "packageManager": "pnpm@12.10.1",
   "scripts": {

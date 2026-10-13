@@ -23,7 +23,7 @@ test("the rating row stays above a classic scrollbar", async ({ page }) => {
   await expect(rating).toHaveText("2");
 
   // Without a reserved gutter the assertion below passes on the bug too.
-  const gutter = await strip.evaluate((el) => {
+  const gutter = await strip.evaluate((el: HTMLElement) => {
     const style = getComputedStyle(el);
     return (
       el.offsetHeight -

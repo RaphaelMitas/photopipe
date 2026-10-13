@@ -1,3 +1,8 @@
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@photopipe/ui/components/dialog";
 import { SidebarProvider } from "@photopipe/ui/components/sidebar";
 import { TooltipProvider } from "@photopipe/ui/components/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -137,6 +142,25 @@ describe("Loupe keyboard culling", () => {
     const { onRate, onClose } = renderLoupe();
     fireEvent.keyDown(window, { key: "3", metaKey: true });
     fireEvent.keyDown(window, { key: "Escape", ctrlKey: true });
+    expect(onRate).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("leaves the photo alone while a dialog is open over it", () => {
+    const { onRate, onNavigate, onEditChange, onClose } = renderLoupe();
+    render(
+      <Dialog open>
+        <DialogContent>
+          <DialogTitle>Settings</DialogTitle>
+        </DialogContent>
+      </Dialog>,
+    );
+    const focused = document.activeElement ?? window;
+    for (const key of ["ArrowRight", "ArrowUp", "3", "r", "Escape"]) {
+      fireEvent.keyDown(focused, { key });
+    }
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(onEditChange).not.toHaveBeenCalled();
     expect(onRate).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
   });

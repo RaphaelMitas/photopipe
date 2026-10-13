@@ -3,7 +3,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export type UpdateState =
+type UpdateState =
   | { kind: "idle" }
   | { kind: "current" }
   | { kind: "available"; version: string; notes: string }
@@ -11,7 +11,7 @@ export type UpdateState =
   | { kind: "installed" }
   | { kind: "error"; message: string };
 
-export type Updater = {
+type Updater = {
   enabled: boolean;
   state: UpdateState;
   /// Both resolve with what happened, so the caller can report it in the toast

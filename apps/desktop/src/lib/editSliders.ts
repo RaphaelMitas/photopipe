@@ -1,5 +1,8 @@
 import type { Edit } from "./core";
 
+export const EXPOSURE_STEP = 0.25;
+export const EXPOSURE_RANGE = 3;
+
 export type SliderSpec = {
   key: keyof Pick<
     Edit,

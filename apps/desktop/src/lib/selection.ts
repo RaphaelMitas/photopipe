@@ -1,5 +1,17 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 
+export type SelectModifiers = { meta: boolean; shift: boolean };
+
+export function clickIntent(
+  event: { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean },
+  selecting: boolean,
+): SelectModifiers | "open" {
+  const meta = event.metaKey || event.ctrlKey;
+  if (meta || event.shiftKey) return { meta, shift: event.shiftKey };
+  if (selecting) return { meta: true, shift: false };
+  return "open";
+}
+
 export function useSelection(ordered: string[]) {
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const anchor = useRef<string | null>(null);

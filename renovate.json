@@ -3,9 +3,7 @@
   "extends": [
     "config:best-practices",
     ":semanticCommits",
-    ":dependencyDashboard",
-    ":separateMajorReleases",
-    ":combinePatchMinorReleases"
+    ":dependencyDashboard"
   ],
   "timezone": "Europe/Berlin",
   "schedule": ["before 7am on monday"],
@@ -33,10 +31,6 @@
       "description": "Automerge non-major updates",
       "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
       "automerge": true
-    },
-    {
-      "description": "One PR per major, each waiting for manual approval from the dashboard",
-      "matchUpdateTypes": ["major"]
     },
     {
       "description": "tauri, @tauri-apps/*, tauri-build, tauri-plugin-* move in lockstep across npm and cargo, so their majors stay together",
@@ -84,17 +78,12 @@
       "matchPackageNames": ["/^@testing-library//", "/^@playwright//", "jsdom"]
     },
     {
-      "description": "Group Biome",
-      "groupName": "biome",
-      "matchPackageNames": ["/^@biomejs//"]
-    },
-    {
       "description": "Group Fontsource",
       "groupName": "fontsource",
       "matchPackageNames": ["/^@fontsource/"]
     },
     {
-      "description": "Group type definitions",
+      "description": "Group type definitions and automerge them, majors included",
       "groupName": "types",
       "automerge": true,
       "matchPackageNames": ["/^@types//"]

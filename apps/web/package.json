@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@photopipe/ui": "workspace:*",
-    "lucide-react": "^1.30.0",
+    "lucide-react": "catalog:",
     "next": "16.4.0",
     "react": "catalog:",
     "react-dom": "catalog:"
@@ -22,10 +22,10 @@
   "devDependencies": {
     "@photopipe/tsconfig": "workspace:*",
     "@tailwindcss/postcss": "4.3.3",
-    "@types/node": "24.19.1",
+    "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
-    "tailwindcss": "4.3.3",
-    "typescript": "7.0.2"
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:"
   }
 }

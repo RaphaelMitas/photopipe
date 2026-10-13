@@ -164,18 +164,33 @@ settings:
 
 catalogs:
   default:
+    '@types/node':
+      specifier: 24.19.1
+      version: 24.19.1
     '@types/react':
       specifier: 19.3.0
       version: 19.3.0
     '@types/react-dom':
       specifier: 19.3.0
       version: 19.3.0
+    lucide-react:
+      specifier: ^1.30.0
+      version: 1.55.0
     react:
       specifier: ^19.3.0
       version: 19.3.0
     react-dom:
       specifier: ^19.3.0
       version: 19.3.0
+    sonner:
+      specifier: ^2.0.7
+      version: 2.0.8
+    tailwindcss:
+      specifier: 4.3.3
+      version: 4.3.3
+    typescript:
+      specifier: 7.0.2
+      version: 7.0.2
 
 importers:
 
@@ -218,7 +233,7 @@ importers:
         specifier: ^2.10.1
         version: 2.13.3
       lucide-react:
-        specifier: ^1.30.0
+        specifier: 'catalog:'
         version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
       react:
         specifier: 'catalog:'
@@ -227,7 +242,7 @@ importers:
         specifier: 'catalog:'
         version: 19.3.0(react@19.3.0)
       sonner:
-        specifier: ^2.0.7
+        specifier: 'catalog:'
         version: 2.0.8(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
     devDependencies:
       '@photopipe/tsconfig':
@@ -249,7 +264,7 @@ importers:
         specifier: 16.3.3
         version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@types/node':
-        specifier: 24.19.1
+        specifier: 'catalog:'
         version: 24.19.1
       '@types/react':
         specifier: 'catalog:'
@@ -264,10 +279,10 @@ importers:
         specifier: 30.1.2
         version: 30.1.2
       tailwindcss:
-        specifier: 4.3.3
+        specifier: 'catalog:'
         version: 4.3.3
       typescript:
-        specifier: 7.0.2
+        specifier: 'catalog:'
         version: 7.0.2
       vite:
         specifier: 8.3.4
@@ -282,7 +297,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ui
       lucide-react:
-        specifier: ^1.30.0
+        specifier: 'catalog:'
         version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
       next:
         specifier: 16.4.0
@@ -301,7 +316,7 @@ importers:
         specifier: 4.3.3
         version: 4.3.3
       '@types/node':
-        specifier: 24.19.1
+        specifier: 'catalog:'
         version: 24.19.1
       '@types/react':
         specifier: 'catalog:'
@@ -310,10 +325,10 @@ importers:
         specifier: 'catalog:'
         version: 19.3.0(@types/react@19.3.0)
       tailwindcss:
-        specifier: 4.3.3
+        specifier: 'catalog:'
         version: 4.3.3
       typescript:
-        specifier: 7.0.2
+        specifier: 'catalog:'
         version: 7.0.2
 
   packages/ui:
@@ -325,11 +340,8 @@ importers:
         specifier: ^2.1.1
         version: 2.1.1
       lucide-react:
-        specifier: ^1.30.0
+        specifier: 'catalog:'
         version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
-      next-themes:
-        specifier: ^0.4.6
-        version: 0.4.6(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       radix-ui:
         specifier: ^1.6.7
         version: 1.7.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -340,7 +352,7 @@ importers:
         specifier: 4.21.4
         version: 4.21.4
       sonner:
-        specifier: ^2.0.7
+        specifier: 'catalog:'
         version: 2.0.8(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       tailwind-merge:
         specifier: ^3.3.1
@@ -365,7 +377,7 @@ importers:
         specifier: 'catalog:'
         version: 19.3.0(react@19.3.0)
       typescript:
-        specifier: 7.0.2
+        specifier: 'catalog:'
         version: 7.0.2
 
   tooling/typescript: {}
@@ -3060,12 +3072,6 @@ packages:
   negotiator@1.1.0:
     resolution: {integrity: sha512-NMPBRMJgiQHjbd8phG3Vebdx4kZ1H121rbl5IkMqeOsahptB9BKo/d7oJ3zTXqTgagn2bWlNSXkh0QUGM31RYg==}
     engines: {node: '>=18'}
-
-  next-themes@0.4.6:
-    resolution: {integrity: sha512-pZvgD5L0IEvX5/9GWyHMf3m8BKiVQwsCMHfoFosXtXBMnaS0ZnIJ9ST4b4NqLVKDEm8QBxoNNGNaBv2JNF6XNA==}
-    peerDependencies:
-      react: ^16.8 || ^17 || ^18 || ^19 || ^19.0.0-rc
-      react-dom: ^16.8 || ^17 || ^18 || ^19 || ^19.0.0-rc
 
   next@16.4.0:
     resolution: {integrity: sha512-N2C+9q89Z/oLrsepSRS4jRMtwmUZAoZuAHU0e9T6+sAB5DdhADmrnOW+zjYijlrYFmVfmQhGVGy9eMFoB7UgKg==}
@@ -6235,11 +6241,6 @@ snapshots:
   negotiator@1.1.0:
     dependencies:
       content-type: 2.1.0
-
-  next-themes@0.4.6(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
-    dependencies:
-      react: 19.3.0
-      react-dom: 19.3.0(react@19.3.0)
 
   next@16.4.0(@babel/core@7.29.7)(@playwright/test@1.64.0)(@types/node@24.19.1)(react-dom@19.3.0(react@19.3.0))(react@19.3.0):
     dependencies:

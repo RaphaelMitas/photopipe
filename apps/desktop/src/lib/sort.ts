@@ -1,6 +1,11 @@
 import type { ImageFile } from "./core";
 
-export type SortKey = "name" | "date" | "rating" | "score";
+export const SORT_KEYS = ["name", "date", "rating", "score"] as const;
+export type SortKey = (typeof SORT_KEYS)[number];
+
+export function isSortKey(value: unknown): value is SortKey {
+  return SORT_KEYS.some((key) => key === value);
+}
 
 /// The core lists a shoot by name, so that order is the baseline every other
 /// sort falls back to for ties and for files that have no score.

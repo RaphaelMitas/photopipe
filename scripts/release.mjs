@@ -18,7 +18,6 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CONF = "apps/desktop/src-tauri/tauri.conf.json";
-const APP_PKG = "apps/desktop/package.json";
 const CARGO = "apps/desktop/src-tauri/Cargo.toml";
 
 function run(cmd, args, opts = {}) {
@@ -94,7 +93,7 @@ console.log(`Releasing v${next} (current: v${current})`);
 if (dryRun) {
   console.log(`
 Dry run; nothing written or pushed. A real run would:
-  1. set ${next} in tauri.conf.json, package.json, Cargo.toml and Cargo.lock
+  1. set ${next} in tauri.conf.json, Cargo.toml and Cargo.lock
   2. ${noShots ? "skip screenshots" : "regenerate docs/screenshots from the live UI"}${
     direct
       ? `
@@ -108,22 +107,15 @@ Dry run; nothing written or pushed. A real run would:
   process.exit(0);
 }
 
-// The workflow refuses to build when these disagree, so keep them in step.
-for (const path of [CONF, APP_PKG]) {
+function setVersion(path, pattern) {
   const full = join(repoRoot, path);
   const text = readFileSync(full, "utf8");
-  const updated = text.replace(/("version":\s*")[^"]*(")/, `$1${next}$2`);
+  const updated = text.replace(pattern, `$1${next}$2`);
   if (updated === text) fail(`Could not find a version field in ${path}`);
   writeFileSync(full, updated);
 }
-const cargoPath = join(repoRoot, CARGO);
-const cargo = readFileSync(cargoPath, "utf8");
-const cargoUpdated = cargo.replace(
-  /^(version\s*=\s*")[^"]*(")/m,
-  `$1${next}$2`,
-);
-if (cargoUpdated === cargo) fail(`Could not find a version field in ${CARGO}`);
-writeFileSync(cargoPath, cargoUpdated);
+setVersion(CONF, /("version":\s*")[^"]*(")/);
+setVersion(CARGO, /^(version\s*=\s*")[^"]*(")/m);
 
 // Cargo.lock pins the local crate; let cargo rewrite it rather than editing
 // the lockfile by hand.
@@ -131,7 +123,7 @@ run("cargo", ["metadata", "--format-version", "1"], {
   cwd: join(repoRoot, "apps/desktop/src-tauri"),
   stdio: ["inherit", "ignore", "inherit"],
 });
-console.log("✓ Bumped tauri.conf.json, package.json, Cargo.toml, Cargo.lock");
+console.log("✓ Bumped tauri.conf.json, Cargo.toml, Cargo.lock");
 
 if (!noShots) {
   // Captured from the running UI, so the README can never show a version of

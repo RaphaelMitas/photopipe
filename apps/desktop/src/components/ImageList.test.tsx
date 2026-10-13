@@ -22,10 +22,8 @@ function renderList(images: ImageFile[], onOpen?: (index: number) => void) {
       <ImageList
         images={images}
         selected={new Set(["/r/s/B.ARW"])}
-        selectMode={false}
         onSelect={onSelect}
         onOpen={onOpen}
-        emptyMessage="nothing here"
         initialRect={{ width: 900, height: 600 }}
       />
     </QueryClientProvider>,
@@ -68,8 +66,12 @@ describe("ImageList", () => {
     });
   });
 
-  it("says so when there is nothing to work on", () => {
-    renderList([]);
-    expect(screen.getByTestId("list-empty").textContent).toBe("nothing here");
+  it("shift-click replaces the selection with the range, like the grid", () => {
+    const { onSelect } = renderList([image("A.ARW"), image("B.ARW")]);
+    fireEvent.click(screen.getAllByTestId("image-row")[0], { shiftKey: true });
+    expect(onSelect).toHaveBeenCalledWith("/r/s/A.ARW", {
+      meta: false,
+      shift: true,
+    });
   });
 });

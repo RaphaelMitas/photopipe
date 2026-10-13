@@ -1,9 +1,11 @@
 import { Skeleton } from "@photopipe/ui/components/skeleton";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { type Rect, useVirtualizer } from "@tanstack/react-virtual";
 import { Check } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { fileSrc, type ImageFile } from "@/lib/core";
+import { fixedRect } from "@/lib/fixedRect";
 import { useThumbnail } from "@/lib/queries";
+import { clickIntent, type SelectModifiers } from "@/lib/selection";
 import { useVirtualJump } from "@/lib/useVirtualJump";
 import { ExposureBadge, RatingBadge } from "./PhotoBadges";
 
@@ -74,9 +76,9 @@ function Thumb({
   showInfo?: boolean;
   selected?: boolean;
   current?: boolean;
-  selectMode?: boolean;
+  selectMode: boolean;
   onOpen?: () => void;
-  onSelect?: (modifiers: { meta: boolean; shift: boolean }) => void;
+  onSelect?: (modifiers: SelectModifiers) => void;
 }) {
   const thumb = useThumbnail(image);
   const pressTimer = useRef<number | null>(null);
@@ -120,14 +122,9 @@ function Thumb({
           pressFired.current = false;
           return;
         }
-        const meta = event.metaKey || event.ctrlKey;
-        if (meta || event.shiftKey) {
-          onSelect?.({ meta, shift: event.shiftKey });
-        } else if (selectMode) {
-          onSelect?.({ meta: true, shift: false });
-        } else {
-          onOpen?.();
-        }
+        const intent = clickIntent(event, selectMode);
+        if (intent === "open") onOpen?.();
+        else onSelect?.(intent);
       }}
       className={`group relative shrink-0 overflow-hidden rounded-md bg-card transition-shadow focus-visible:ring-2 focus-visible:ring-ring hover:shadow-lg ${
         selected || current ? "ring-2 ring-primary" : ""
@@ -182,14 +179,10 @@ type Props = {
   onOpen?: (index: number) => void;
   showInfo?: boolean;
   selected?: ReadonlySet<string>;
-  selectMode?: boolean;
-  onSelect?: (
-    path: string,
-    modifiers: { meta: boolean; shift: boolean },
-  ) => void;
+  onSelect?: (path: string, modifiers: SelectModifiers) => void;
   focusPath?: string | null;
   revealed?: number;
-  initialRect?: { width: number; height: number };
+  initialRect?: Rect;
 };
 
 export function ImageGrid({
@@ -197,7 +190,6 @@ export function ImageGrid({
   onOpen,
   showInfo,
   selected,
-  selectMode,
   onSelect,
   focusPath,
   revealed,
@@ -236,17 +228,9 @@ export function ImageGrid({
     getScrollElement: () => parentRef.current,
     estimateSize: (index) => rows[index].height + GAP,
     overscan: 4,
-    initialRect,
-    ...(initialRect && {
-      observeElementRect: (
-        _instance: unknown,
-        cb: (rect: { width: number; height: number }) => void,
-      ) => {
-        cb(initialRect);
-        return () => {};
-      },
-    }),
+    ...fixedRect(initialRect),
   });
+  const selectMode = (selected?.size ?? 0) > 0;
 
   const focusRow = useMemo(
     () =>
