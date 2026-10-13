@@ -7,7 +7,7 @@ import Vision
 /// background for one shoot at a time and reports how far it has got, because the browser
 /// keeps the sort by score disabled until every file in the shoot has an answer.
 public final class Scorer: @unchecked Sendable {
-    public struct Progress: Equatable, Sendable {
+    public struct Progress: Equatable, Sendable, Encodable {
         public let done: Int
         public let total: Int
         public let running: Bool
@@ -82,7 +82,7 @@ public final class Scorer: @unchecked Sendable {
 
     /// Only a running pass reports stored progress. Once it ends the answer is recomputed from
     /// the cache, so a file that changed since goes back to being unscored.
-    public func progress(shoot: String, files: [ImageFile]) -> Progress {
+    func progress(shoot: String, files: [ImageFile]) -> Progress {
         lock.withLock {
             if let current = progressByShoot[shoot], current.running { return current }
             return Progress(done: scoredCount(files), total: files.count, running: false)

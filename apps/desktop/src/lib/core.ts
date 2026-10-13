@@ -171,7 +171,7 @@ export type SetRootResult = {
 };
 export type StatusResult = {
   generation: number;
-  root: string | null;
+  root?: string;
   shoots: number;
   scanning: boolean;
   filesFound: number;

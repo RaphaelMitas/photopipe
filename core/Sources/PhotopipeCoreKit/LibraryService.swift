@@ -53,12 +53,16 @@ public final class LibraryService: @unchecked Sendable {
             .appendingPathComponent("Photopipe/index.sqlite").path
     }
 
+    public struct RootSummary: Sendable, Encodable {
+        public let shoots: Int
+        public let files: Int
+        public let generation: Int
+    }
+
     /// Returns as soon as the tree has been walked. Ratings, edits and
     /// dimensions arrive afterwards, either straight from the index or from
     /// background enrichment, and are visible through `status`.
-    public func setRoot(path: String, indexPath: String?) throws -> (
-        shoots: Int, files: Int, generation: Int
-    ) {
+    public func setRoot(path: String, indexPath: String?) throws -> RootSummary {
         let path = Self.canonical(path)
         // Opening the database is itself a write (pragmas, schema, and a delete
         // if it turns out corrupt), so it has to queue behind whatever the
@@ -86,7 +90,8 @@ public final class LibraryService: @unchecked Sendable {
         }
         lock.withLock { watcher = newWatcher }
 
-        return (scanned.shoots.count, scanned.fileCount, currentGeneration)
+        return RootSummary(
+            shoots: scanned.shoots.count, files: scanned.fileCount, generation: currentGeneration)
     }
 
     public func listShoots() -> [Shoot] {
@@ -103,10 +108,6 @@ public final class LibraryService: @unchecked Sendable {
 
     public func scoreShoot(shoot: String) throws -> Scorer.Progress {
         scorer.start(shoot: shoot, files: try images(inShoot: shoot))
-    }
-
-    public func scoreStatus(shoot: String) throws -> Scorer.Progress {
-        scorer.progress(shoot: shoot, files: try images(inShoot: shoot))
     }
 
     private func images(inShoot shoot: String) throws -> [ImageFile] {
@@ -126,30 +127,29 @@ public final class LibraryService: @unchecked Sendable {
         }
     }
 
-    public struct Status: Sendable {
+    public struct Status: Sendable, Encodable {
         public let generation: Int
         public let root: String?
         public let shoots: Int
         public let filesFound: Int
         public let filesEnriched: Int
+        public let scanning: Bool
         /// Shoots whose images changed after the caller's generation, so the
         /// client can refetch just those instead of the whole library. Nil
         /// when the caller did not say where it left off.
         public let changedShoots: [String]?
-
-        public var scanning: Bool { filesEnriched < filesFound }
     }
 
     public func status(since: Int? = nil) -> Status {
         lock.withLock {
-            Status(
+            let enriched = snapshot.imagesByShoot.values.reduce(0) { $0 + $1.count(where: \.enriched) }
+            return Status(
                 generation: generation,
                 root: root,
                 shoots: snapshot.shoots.count,
                 filesFound: snapshot.fileCount,
-                filesEnriched: snapshot.imagesByShoot.values.reduce(0) {
-                    $0 + $1.count(where: \.enriched)
-                },
+                filesEnriched: enriched,
+                scanning: enriched < snapshot.fileCount,
                 changedShoots: since.map { seen in
                     shootGenerations.filter { $0.value > seen }.keys.sorted()
                 })
@@ -262,18 +262,24 @@ public final class LibraryService: @unchecked Sendable {
         return verdicts.contains(true)
     }
 
-    public func decoderSupport(paths: [String]) throws -> (raw9: Int, rawTotal: Int) {
+    public struct DecoderSupport: Sendable, Encodable {
+        public let raw9: Int
+        public let rawTotal: Int
+    }
+
+    public func decoderSupport(paths: [String]) throws -> DecoderSupport {
         let files = try pathsUnderRoot(paths)
             .compactMap { try? recordUnderRoot(path: $0) }
             .filter(\.isRaw)
-        guard !files.isEmpty else { return (0, 0) }
+        guard !files.isEmpty else { return DecoderSupport(raw9: 0, rawTotal: 0) }
         // a whole shoot serially outruns the caller's read timeout, and a
         // timeout takes the sidecar down mid-export
         DispatchQueue.concurrentPerform(iterations: files.count) { index in
             _ = renderer.supports(file: files[index], major: 9)
         }
         // every answer is cached now, so this pass never touches a file
-        return (files.count { renderer.supports(file: $0, major: 9) }, files.count)
+        return DecoderSupport(
+            raw9: files.count { renderer.supports(file: $0, major: 9) }, rawTotal: files.count)
     }
 
     private func recordUnderRoot(path: String) throws -> ImageFile {
@@ -361,23 +367,31 @@ public final class LibraryService: @unchecked Sendable {
         }
     }
 
-    public func setRating(shoot shootName: String, path: String, rating: Int) throws -> (
-        rating: Int, generation: Int
-    ) {
+    public struct RatingChange: Sendable, Encodable {
+        public let rating: Int
+        public let generation: Int
+    }
+
+    public func setRating(shoot shootName: String, path: String, rating: Int) throws
+        -> RatingChange
+    {
         guard (0...5).contains(rating) else { throw ServiceError.invalidRating(rating) }
         let settled = try write(shoot: shootName, path: path) { image in
             try XMP.writeRating(rating, file: image, tool: .shared)
         }
-        return (settled.rating, status().generation)
+        return RatingChange(rating: settled.rating, generation: status().generation)
     }
 
-    public func setEdit(shoot shootName: String, path: String, edit: Edit) throws -> (
-        edit: Edit, generation: Int
-    ) {
+    public struct EditChange: Sendable, Encodable {
+        public let edit: Edit
+        public let generation: Int
+    }
+
+    public func setEdit(shoot shootName: String, path: String, edit: Edit) throws -> EditChange {
         let settled = try write(shoot: shootName, path: path) { image in
             try XMP.writeEdit(edit, file: image, tool: .shared)
         }
-        return (settled.edit, status().generation)
+        return EditChange(edit: settled.edit, generation: status().generation)
     }
 
     /// A leading dot is refused because the scan would hide the folder.
@@ -400,9 +414,14 @@ public final class LibraryService: @unchecked Sendable {
         return url
     }
 
+    public struct UpdatedProject: Sendable, Encodable {
+        public let shoot: String
+        public let generation: Int
+    }
+
     public func updateProject(
         shoot shootName: String, name: String, day: String?, notes: String, cover: String?
-    ) throws -> (shoot: String, generation: Int) {
+    ) throws -> UpdatedProject {
         let shoot = try self.shoot(named: shootName)
         let source = URL(fileURLWithPath: shoot.path)
         if day != nil, day.map(isDay) != true { throw ServiceError.invalidProjectDay(day ?? "") }
@@ -427,12 +446,16 @@ public final class LibraryService: @unchecked Sendable {
         }
 
         rescanNow()
-        return (folder, status().generation)
+        return UpdatedProject(shoot: folder, generation: status().generation)
     }
 
-    public func createProject(name: String, notes: String)
-        throws -> (shoot: String, path: String, generation: Int)
-    {
+    public struct CreatedProject: Sendable, Encodable {
+        public let shoot: String
+        public let path: String
+        public let generation: Int
+    }
+
+    public func createProject(name: String, notes: String) throws -> CreatedProject {
         let currentRoot = try requireRoot()
         let folder = try Self.projectFolder(name: name)
         let path = try Self.freeProjectURL(root: currentRoot, folder: folder)
@@ -440,7 +463,7 @@ public final class LibraryService: @unchecked Sendable {
         try ProjectFile(notes: notes).write(inShoot: path.path)
 
         rescanNow()
-        return (folder, path.path, status().generation)
+        return CreatedProject(shoot: folder, path: path.path, generation: status().generation)
     }
 
     public func captureDate(path: String) throws -> String? {
@@ -463,9 +486,12 @@ public final class LibraryService: @unchecked Sendable {
         return shoot
     }
 
-    public func trashImages(shoot shootName: String, paths: [String]) throws -> (
-        files: Int, generation: Int
-    ) {
+    public struct TrashResult: Sendable, Encodable {
+        public let files: Int
+        public let generation: Int
+    }
+
+    public func trashImages(shoot shootName: String, paths: [String]) throws -> TrashResult {
         let targets = try images(inShoot: shootName, paths: paths).flatMap { image in
             let sidecar = XMP.sidecarURL(forImagePath: image.path).path
             return image.usesSidecar && FileManager.default.fileExists(atPath: sidecar)
@@ -475,7 +501,7 @@ public final class LibraryService: @unchecked Sendable {
 
         let trashed = try FileActions.trash(paths: try pathsUnderRoot(targets))
         rescanNow()
-        return (trashed.count, status().generation)
+        return TrashResult(files: trashed.count, generation: status().generation)
     }
 
     /// Everything that can be refused outright is refused here, so a bad
@@ -573,6 +599,30 @@ public final class LibraryService: @unchecked Sendable {
         indexQueue.async { [weak self] in
             try? index?.save(root: root, filesByShoot: scanned.imagesByShoot)
             self?.startEnrichment()
+        }
+    }
+}
+
+extension LibraryService.ServiceError: WireError {
+    public var wire: ResponseError {
+        switch self {
+        case .noRoot: ResponseError(code: "no_root", message: "call setRoot first")
+        case .unknownShoot(let name): ResponseError(code: "unknown_shoot", message: name)
+        case .pathOutsideRoot(let path): ResponseError(code: "path_outside_root", message: path)
+        case .unknownImage(let stem): ResponseError(code: "unknown_image", message: stem)
+        case .invalidRating(let rating):
+            ResponseError(code: "invalid_rating", message: "rating \(rating) not in 0...5")
+        case .invalidProjectName(let name):
+            ResponseError(code: "invalid_project_name", message: "\(name) is not a usable project name")
+        case .invalidProjectDay(let day):
+            ResponseError(code: "invalid_project_day", message: "\(day) is not a YYYY-MM-DD date")
+        case .unknownExport(let id): ResponseError(code: "unknown_export", message: id)
+        case .projectExists(let folder):
+            ResponseError(code: "project_exists", message: "\(folder) already exists")
+        case .unreadableProjectFile(let shoot):
+            ResponseError(
+                code: "unreadable_project_file",
+                message: "\(shoot) has a photopipe.json that could not be read")
         }
     }
 }

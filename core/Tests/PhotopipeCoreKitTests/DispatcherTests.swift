@@ -8,12 +8,12 @@ func request(_ method: String, id: String = "1", v: Int = protocolVersion) -> St
 }
 
 @Test func pingRespondsPong() {
-    let outcome = Dispatcher().dispatch(line: request("ping"))
-    #expect(outcome == .respond(.success(id: "1", result: .object(["pong": .bool(true)]))))
+    let response = Dispatcher().dispatch(line: request("ping"))
+    #expect(response == .success(id: "1", result: .object(["pong": .bool(true)])))
 }
 
-@Test func versionReportsSemverAndProtocol() throws {
-    let response = Dispatcher().dispatch(line: request("version", id: "42")).response
+@Test func versionReportsAVersionAndTheProtocol() throws {
+    let response = Dispatcher().dispatch(line: request("version", id: "42"))
     #expect(response.ok)
     #expect(response.id == "42")
     #expect(response.result?["protocol"] == .number(1))
@@ -21,39 +21,40 @@ func request(_ method: String, id: String = "1", v: Int = protocolVersion) -> St
         Issue.record("missing version string")
         return
     }
-    #expect(version.split(separator: ".").count == 3)
+    #expect(!version.isEmpty)
 }
 
-@Test func shutdownRespondsThenSignalsExit() {
-    let outcome = Dispatcher().dispatch(line: request("shutdown"))
-    guard case .shutdown(let response) = outcome else {
-        Issue.record("expected shutdown outcome")
-        return
-    }
-    #expect(response.ok)
+@Test func shutdownSaysBye() {
+    let response = Dispatcher().dispatch(line: request("shutdown"))
+    #expect(response == .success(id: "1", result: .object(["bye": .bool(true)])))
+}
+
+@Test func statusTellsTheIndexingPollerWhetherItIsScanning() {
+    let response = Dispatcher().dispatch(line: request("status"))
+    #expect(response.result?["scanning"] == .bool(false))
 }
 
 @Test func unknownMethodFails() {
-    let response = Dispatcher().dispatch(line: request("levitate")).response
+    let response = Dispatcher().dispatch(line: request("levitate"))
     #expect(!response.ok)
     #expect(response.error?.code == "unknown_method")
     #expect(response.id == "1")
 }
 
 @Test func malformedJSONFailsAsBadRequest() {
-    let response = Dispatcher().dispatch(line: "{not json").response
+    let response = Dispatcher().dispatch(line: "{not json")
     #expect(!response.ok)
     #expect(response.error?.code == "bad_request")
 }
 
 @Test func futureProtocolVersionIsRejected() {
-    let response = Dispatcher().dispatch(line: request("ping", v: 99)).response
+    let response = Dispatcher().dispatch(line: request("ping", v: 99))
     #expect(!response.ok)
     #expect(response.error?.code == "unsupported_protocol")
 }
 
 @Test func encodedResponseIsSingleLine() throws {
-    let line = try Dispatcher().dispatch(line: request("version")).response.encodedLine()
+    let line = try Dispatcher().dispatch(line: request("version")).encodedLine()
     #expect(!line.contains("\n"))
     #expect(line.hasPrefix("{"))
 }

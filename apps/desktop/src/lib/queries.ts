@@ -621,7 +621,7 @@ export type ExportProgress = {
   running: boolean;
   cancelled: boolean;
   archiving: boolean;
-  error: string | null;
+  error?: string;
   failures: string[];
 };
 
@@ -710,7 +710,6 @@ export function useExportJobs() {
         running: false,
         cancelled: false,
         archiving: false,
-        error: null,
         failures: [],
       };
       const row = {
