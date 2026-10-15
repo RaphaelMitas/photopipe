@@ -125,8 +125,10 @@ export function useStacking(shoot: string | null, enabled: boolean) {
   // newly imported photos must not take stacks away mid-visit
   const [readyShoot, setReadyShoot] = useState<string | null>(null);
   useEffect(() => {
-    if (complete) setReadyShoot(shoot);
-  }, [complete, shoot]);
+    // switching it off, or another library, forgets the latch; a same-named shoot is another shoot
+    if (!enabled) setReadyShoot(null);
+    else if (complete) setReadyShoot(shoot);
+  }, [enabled, complete, shoot]);
   return { progress, ready: enabled && (complete || readyShoot === shoot) };
 }
 

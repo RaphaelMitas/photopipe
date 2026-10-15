@@ -105,7 +105,6 @@ function stackOf(images: ImageFile[], inside: boolean): LoupeStacks {
     list: [{ id: images[0].path, frames: images }],
     current: { id: images[0].path, frames: images },
     inside,
-    onGo: vi.fn(),
     onEnter: vi.fn(),
     onLeave: vi.fn(),
     onPick: vi.fn(),
@@ -130,11 +129,11 @@ describe("Loupe with stacks", () => {
 
   it("rates one frame inside, picks with P or the button, and goes up on escape", () => {
     const stacks = stackOf(makeImages(), true);
-    const { onRate, onClose } = renderLoupe(1, 0, null, stacks);
+    const { onRate, onClose, onNavigate } = renderLoupe(1, 0, null, stacks);
     fireEvent.keyDown(window, { key: "3" });
     expect(onRate).toHaveBeenCalledWith("/r/s/DSC00002.ARW", 3);
     fireEvent.keyDown(window, { key: "ArrowRight" });
-    expect(stacks.onGo).toHaveBeenCalledWith("/r/s/DSC00003.ARW");
+    expect(onNavigate).toHaveBeenCalledWith(2);
     fireEvent.keyDown(window, { key: "p" });
     fireEvent.click(screen.getByTestId("stack-pick"));
     expect(stacks.onPick).toHaveBeenCalledTimes(2);
@@ -163,18 +162,18 @@ describe("Loupe keyboard culling", () => {
     expect(onRate).toHaveBeenCalledWith("/r/s/DSC00001.ARW", 0);
   });
 
-  it("navigates with arrows and clamps at the edges", () => {
+  it("navigates with arrows and stays put at the first image", () => {
     const { onNavigate } = renderLoupe(0);
     fireEvent.keyDown(window, { key: "ArrowRight" });
     expect(onNavigate).toHaveBeenCalledWith(1);
     fireEvent.keyDown(window, { key: "ArrowLeft" });
-    expect(onNavigate).toHaveBeenCalledWith(0);
+    expect(onNavigate).toHaveBeenCalledTimes(1);
   });
 
-  it("clamps forward navigation at the last image", () => {
+  it("stays put at the last image", () => {
     const { onNavigate } = renderLoupe(2);
     fireEvent.keyDown(window, { key: "ArrowRight" });
-    expect(onNavigate).toHaveBeenCalledWith(2);
+    expect(onNavigate).not.toHaveBeenCalled();
   });
 
   it("scrubs exposure with up/down arrows, clamped, and resets with r", () => {

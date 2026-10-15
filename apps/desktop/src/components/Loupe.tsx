@@ -24,7 +24,7 @@ import {
   useThumbnail,
   useViewportRender,
 } from "@/lib/queries";
-import { pickInStack, type Stack, stackRating, stepPath } from "@/lib/stacks";
+import { pickInStack, type Stack, stackRating, step } from "@/lib/stacks";
 import type { CropSession } from "@/lib/useCropSession";
 import {
   centerOn,
@@ -63,7 +63,6 @@ export type LoupeStacks = {
   list: Stack[];
   current: Stack;
   inside: boolean;
-  onGo: (path: string) => void;
   onEnter: () => void;
   onLeave: () => void;
   onPick: () => void;
@@ -110,11 +109,12 @@ export function Loupe({
   );
   const render = useRender(image, previewEdit);
   const thumb = useThumbnail(image);
-  const neighbour = (direction: 1 | -1) => {
-    if (!stacks || !image) return images[index + direction];
-    const path = stepPath(stacks.list, image.path, stacks.inside, direction);
-    return images.find((candidate) => candidate.path === path);
-  };
+  const neighbour = (direction: 1 | -1) =>
+    stacks && image
+      ? step(stacks.list, image.path, stacks.inside, direction)
+      : images[index + direction];
+  const indexOfPath = (path: string) =>
+    images.findIndex((candidate) => candidate.path === path);
   const next = neighbour(1);
   const previous = neighbour(-1);
   usePrefetchRender(next, next?.edit);
@@ -240,13 +240,11 @@ export function Loupe({
           break;
         case "ArrowRight":
           event.preventDefault();
-          if (!stacks) onNavigate(Math.min(index + 1, images.length - 1));
-          else if (next) stacks.onGo(next.path);
+          if (next) onNavigate(indexOfPath(next.path));
           break;
         case "ArrowLeft":
           event.preventDefault();
-          if (!stacks) onNavigate(Math.max(index - 1, 0));
-          else if (previous) stacks.onGo(previous.path);
+          if (previous) onNavigate(indexOfPath(previous.path));
           break;
         case "Enter":
           // a focused button acts on Enter itself
@@ -290,7 +288,7 @@ export function Loupe({
     return () => window.removeEventListener("keydown", handler);
   }, [
     image,
-    images.length,
+    images,
     index,
     edit,
     displayWidth,

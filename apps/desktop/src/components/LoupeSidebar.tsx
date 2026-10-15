@@ -167,18 +167,15 @@ export function LoupeSidebar({
       </SidebarContent>
       <SidebarFooter>
         <p className="px-2 py-1 text-[10px] text-muted-foreground">
-          {!stacks.current
-            ? "←→ navigate · 1–5 rate · 0 clear"
-            : stacks.current.inside
-              ? "←→ frames · 1–5 rate this frame · 0 clear · p pick"
-              : "←→ stacks · 1–5 rate every frame · 0 clear · enter inside"}{" "}
-          · ↑↓ exposure · pinch or double-click zoom · r reset · e edit · ⌘C/⌘V
-          settings · ⌘Z undo · s stacks ·{" "}
-          {!stacks.current
-            ? "esc"
-            : stacks.current.inside
-              ? "esc up"
-              : "esc grid"}
+          {`${
+            !stacks.current
+              ? "←→ navigate · 1–5 rate"
+              : stacks.current.inside
+                ? "←→ frames · 1–5 rate this frame · p pick"
+                : "←→ stacks · 1–5 rate every frame · enter inside"
+          } · 0 clear · ↑↓ exposure · pinch or double-click zoom · r reset · e edit · ⌘C/⌘V settings · ⌘Z undo · s stacks · ${
+            stacks.current?.inside ? "esc up" : "esc"
+          }`}
         </p>
       </SidebarFooter>
     </Sidebar>

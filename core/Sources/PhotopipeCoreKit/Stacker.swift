@@ -72,7 +72,7 @@ public enum Stacker {
 
     /// The stack each photo belongs to, named by the path of its first photo. Photos that stand
     /// alone, or that have no capture time to order them by, are left out. A photo must look like
-    /// every frame already in the stack, not just the last, so slow drift cannot chain a song.
+    /// every frame already in the stack, not just the last, so slow drift cannot chain a whole song into one stack.
     public static func stacks(_ prints: [String: Print]) -> [String: String] {
         let ordered = prints.compactMap { path, print in
             print.captured.map { (path: path, print: print, captured: $0) }

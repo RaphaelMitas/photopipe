@@ -90,21 +90,18 @@ export function stackedOrder(
     .flatMap((stack) => stack.frames);
 }
 
-export function stepPath(
+export function step(
   stacks: Stack[],
   path: string,
   inside: boolean,
   direction: 1 | -1,
-): string | null {
-  const at = stacks.findIndex((stack) =>
-    stack.frames.some((frame) => frame.path === path),
-  );
-  if (at === -1) return null;
+): ImageFile | undefined {
+  const stack = stackOf(stacks, path);
+  if (!stack) return undefined;
   if (inside) {
-    const frames = stacks[at].frames;
-    const index = frames.findIndex((frame) => frame.path === path);
-    return frames[index + direction]?.path ?? null;
+    const index = stack.frames.findIndex((frame) => frame.path === path);
+    return stack.frames[index + direction];
   }
-  const next = stacks[at + direction];
-  return next ? coverOf(next).path : null;
+  const next = stacks[stacks.indexOf(stack) + direction];
+  return next && coverOf(next);
 }

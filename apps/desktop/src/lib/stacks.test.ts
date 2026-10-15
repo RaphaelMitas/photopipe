@@ -6,7 +6,7 @@ import {
   pickInStack,
   rateStack,
   stackedOrder,
-  stepPath,
+  step,
 } from "./stacks";
 import { makeImage, rels } from "./test-image";
 
@@ -108,7 +108,7 @@ describe("stackedOrder", () => {
   });
 });
 
-describe("stepPath", () => {
+describe("step", () => {
   const stacks = groupStacks([
     makeImage("solo.arw"),
     frame("a1.arw", { score: 0.1 }),
@@ -117,15 +117,15 @@ describe("stepPath", () => {
   ]);
 
   it("lands on the next stack's cover at stack level", () => {
-    expect(stepPath(stacks, "/r/s/solo.arw", false, 1)).toBe("/r/s/a2.arw");
-    expect(stepPath(stacks, "/r/s/a2.arw", false, 1)).toBe("/r/s/last.arw");
-    expect(stepPath(stacks, "/r/s/last.arw", false, 1)).toBeNull();
+    expect(step(stacks, "/r/s/solo.arw", false, 1)?.path).toBe("/r/s/a2.arw");
+    expect(step(stacks, "/r/s/a2.arw", false, 1)?.path).toBe("/r/s/last.arw");
+    expect(step(stacks, "/r/s/last.arw", false, 1)).toBeUndefined();
   });
 
   it("stays inside the stack and stops at its ends", () => {
-    expect(stepPath(stacks, "/r/s/a1.arw", true, 1)).toBe("/r/s/a2.arw");
-    expect(stepPath(stacks, "/r/s/a2.arw", true, 1)).toBeNull();
-    expect(stepPath(stacks, "/r/s/a1.arw", true, -1)).toBeNull();
+    expect(step(stacks, "/r/s/a1.arw", true, 1)?.path).toBe("/r/s/a2.arw");
+    expect(step(stacks, "/r/s/a2.arw", true, 1)).toBeUndefined();
+    expect(step(stacks, "/r/s/a1.arw", true, -1)).toBeUndefined();
   });
 });
 

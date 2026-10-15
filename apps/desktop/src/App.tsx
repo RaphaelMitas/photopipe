@@ -119,8 +119,8 @@ export default function App() {
   // outlives the loupe, so closing it lands the browser on the same photo
   const [currentPath, setCurrentPath] = useState<string | null>(null);
   const [loupeOpen, setLoupeOpen] = useState(false);
-  // The frame you went inside on, not a flag or the stack's id: landing in another stack
-  // (undo, a jump) leaves you outside, and a stack renamed by an imported earlier frame does not.
+  // the frame you went inside on, not a flag or the stack's id: reaching another stack any other
+  // way leaves you outside, and an imported earlier frame renaming the stack does not
   const [insideAnchor, setInsideAnchor] = useState<string | null>(null);
   const filter = useRatingFilter();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -427,7 +427,6 @@ export default function App() {
     currentStack && multiFrame && !insideStack
       ? rateWholeStack(currentStack, rating)
       : writes.rate(path, rating);
-  // Every way of landing on a photo says whether you are inside its stack.
   const visit = (path: string | null, stacks: Stack[] | null) => {
     setCurrentPath(path);
     const stack = path && stacks ? stackOf(stacks, path) : undefined;
@@ -536,23 +535,36 @@ export default function App() {
 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [revealed, setRevealed] = useState(0);
-  // Before the write, so you are on the photo when the step lands.
   // an undo resolves after the keypress, so it reads where you are now, not then
   const currentPathNow = useRef(currentPath);
   currentPathNow.current = currentPath;
+  const stacksNow = useRef(loupeStacks);
+  // the browser has no stacks, so undo there lands on the photo it changed as before
+  stacksNow.current = loupeOpen ? loupeStacks : null;
+  // Before the write, so you are on the photo when the step lands.
   const showPhoto = useCallback(
     (entry: HistoryEntry) => {
       const present = (path: string) =>
         cachedImage(queryClient, openShoot, path) !== undefined;
       const current = currentPathNow.current;
-      if (current && entry.paths.includes(current)) {
+      const stacks = stacksNow.current;
+      const here = current && stacks ? stackOf(stacks, current) : undefined;
+      // a step on the photo or stack you are at leaves you where you are
+      const touchesHere = entry.paths.some((path) =>
+        here
+          ? here.frames.some((frame) => frame.path === path)
+          : path === current,
+      );
+      if (touchesHere) {
         setRevealed((count) => count + 1);
         return;
       }
-      const next = entry.paths.find(present) ?? current;
-      setCurrentPath(next);
-      // you land on the frame the step changed, inside its stack if it has one
-      setInsideAnchor(next);
+      const next = entry.paths.find(present);
+      if (next) {
+        setCurrentPath(next);
+        // you land on the frame the step changed, inside its stack if it has one
+        setInsideAnchor(next);
+      }
       setRevealed((count) => count + 1);
     },
     [queryClient, openShoot],
@@ -724,14 +736,7 @@ export default function App() {
               list: loupeStacks,
               current: currentStack,
               inside: insideStack,
-              onGo: (path) => {
-                setCurrentPath(path);
-                if (!insideStack) setInsideAnchor(null);
-              },
-              onEnter: () => {
-                setCurrentPath(loupePhoto.path);
-                setInsideAnchor(loupePhoto.path);
-              },
+              onEnter: () => setInsideAnchor(loupePhoto.path),
               onLeave: () => {
                 setCurrentPath(coverOf(currentStack).path);
                 setInsideAnchor(null);
