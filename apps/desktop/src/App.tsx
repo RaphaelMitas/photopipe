@@ -379,11 +379,10 @@ export default function App() {
   const loupePhoto = loupeOpen ? loupeImage : null;
 
   const toggleStacks = useCallback(() => stacksPref.set(!stacksPref.get()), []);
-  const anchorFor = (stack: Stack | undefined, path: string) =>
-    stack && opensInside(stack, path) ? path : null;
-  // Stacks can arrive after you opened a photo, and undo or a jump can take you out of the
-  // stack you were inside or onto a frame that is not its cover. Snapping to the cover only
-  // when you move onto a stack keeps a rating or a score from swapping the photo under an edit.
+  const anchorFor = (stack: Stack | undefined, path: string | null) =>
+    path && opensInside(stack, path) ? path : null;
+  // Stacks can arrive after you opened a photo. Snapping to the cover only when you move onto
+  // a stack keeps a rating or a score from swapping the photo under an edit.
   const stacksWereOn = useRef(stacksOn);
   const lastPath = useRef(currentPath);
   useEffect(() => {
@@ -452,7 +451,7 @@ export default function App() {
   const visit = (path: string | null, stacks: Stack[] | null) => {
     setCurrentPath(path);
     const stack = path && stacks ? stackOf(stacks, path) : undefined;
-    setInsideAnchor(path ? anchorFor(stack, path) : null);
+    setInsideAnchor(anchorFor(stack, path));
   };
   const crop = useCropSession(loupePhoto, loupeEdit, changeEdit);
   const cropping = crop.draft !== null;

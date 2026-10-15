@@ -87,12 +87,12 @@ private func writeJPEG(
     defer { try? FileManager.default.removeItem(atPath: path) }
     let index = try SQLiteIndex(path: path)
     let rows: [(String, Printer.Row)] = [
-        ("/a", .init(value: Print(feature: [0.25, -1, 3], captured: 12.5), mtime: 1, size: 2, version: 1)),
-        ("/b", .init(value: Print(feature: [1], captured: nil), mtime: 3, size: 4, version: 1)),
-        ("/c", .init(value: nil, mtime: 5, size: 6, version: 1)),
+        ("/r/a", .init(value: Print(feature: [0.25, -1, 3], captured: 12.5), mtime: 1, size: 2, version: 1)),
+        ("/r/b", .init(value: Print(feature: [1], captured: nil), mtime: 3, size: 4, version: 1)),
+        ("/r/c", .init(value: nil, mtime: 5, size: 6, version: 1)),
     ]
     try index.savePrints(rows)
-    #expect(try index.loadPrints() == Dictionary(uniqueKeysWithValues: rows))
+    #expect(try index.loadPrints(under: "/r") == Dictionary(uniqueKeysWithValues: rows))
 }
 
 @Test func listImagesStacksNearIdenticalPhotos() async throws {

@@ -59,7 +59,6 @@ function useSettled<T>(value: T, delayMs: number): T {
   return settled;
 }
 
-/// ←→ steps between stacks until you go inside one.
 export type LoupeStacks = {
   list: Stack[];
   current: Stack;

@@ -24,7 +24,7 @@ private func touched(_ file: ImageFile) -> ImageFile {
 /// Wires a scorer to an index the way LibraryService does, minus the queue hop
 /// so a finished pass has already been written by the time a test looks.
 private func attach(_ scorer: Scorer, to index: SQLiteIndex) {
-    scorer.use(cache: (try? index.loadScores()) ?? [:]) { rows in
+    scorer.use(cache: (try? index.loadScores(under: tempRoot)) ?? [:]) { rows in
         try? index.saveScores(rows)
     }
 }
@@ -76,7 +76,7 @@ private func attach(_ scorer: Scorer, to index: SQLiteIndex) {
     scorer.use(cache: [:]) { _ in }
     try await Task.sleep(for: .milliseconds(300))
 
-    let stored = try index.loadScores()
+    let stored = try index.loadScores(under: tempRoot)
     #expect(stored.values.allSatisfy { $0.value != nil })
 }
 

@@ -62,10 +62,8 @@ const RATED_OFFER_MS = 8000;
 
 const PASSES = ["scoreShoot", "stackShoot"] as const;
 
-/// A pass's answers reach the grid through `listImages`, so images refetch when
-/// it ends, not every tick; every fetch asks the core to run, which is what
-/// picks up newly imported photos. `listed` turns true once a fetch of the
-/// photos, not an optimistic patch, has landed since the pass ended.
+/// Every fetch asks the core to run, which is what picks up new imports.
+/// `listed`: a real fetch, not an optimistic patch, has landed since the pass ended.
 function usePass(
   method: (typeof PASSES)[number],
   shoot: string | null,

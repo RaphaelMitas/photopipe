@@ -18,7 +18,7 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
     public typealias Flush = @Sendable ([(String, Row)]) -> Void
 
     /// Rows cached under another version are ignored, so a bump replaces the cache without a migration.
-    public let version: Int
+    private let version: Int
     private let concurrency: Int
     private let analyze: @Sendable (String) async -> Value?
     private let flushEvery = 32

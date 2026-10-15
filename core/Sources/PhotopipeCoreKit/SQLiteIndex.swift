@@ -226,7 +226,7 @@ public final class SQLiteIndex: @unchecked Sendable {
     }
 
     /// `root` limits the load to one library; the table holds every library ever opened.
-    public func loadScores(under root: String? = nil) throws -> [String: Scorer.Row] {
+    public func loadScores(under root: String) throws -> [String: Scorer.Row] {
         try loadRows("score", from: "scores", under: root) { columnDouble($0, 1) }
     }
 
@@ -237,7 +237,7 @@ public final class SQLiteIndex: @unchecked Sendable {
         ) { statement, score in bindDouble(statement, 2, score) }
     }
 
-    public func loadPrints(under root: String? = nil) throws -> [String: Printer.Row] {
+    public func loadPrints(under root: String) throws -> [String: Printer.Row] {
         try loadRows("feature, captured", from: "prints", under: root) { statement in
             guard let blob = sqlite3_column_blob(statement, 1) else { return nil }
             let bytes = UnsafeRawBufferPointer(
@@ -283,17 +283,15 @@ public final class SQLiteIndex: @unchecked Sendable {
 
     /// Selects the path, `columns` for `value` to read from column 1 on, then the row's stamps.
     private func loadRows<Value>(
-        _ columns: String, from table: String, under root: String?,
+        _ columns: String, from table: String, under root: String,
         value: (OpaquePointer?) -> Value?
     ) throws -> [String: AnalysisRow<Value>] {
-        let scope = root == nil ? "" : " WHERE path > ? AND path < ?"
-        let sql = "SELECT path, \(columns), mtime, size, version FROM \(table)\(scope)"
+        let sql =
+            "SELECT path, \(columns), mtime, size, version FROM \(table) WHERE path > ? AND path < ?"
         return try withStatement(sql) { statement in
-            if let root {
-                // every path under the root sorts between "root/" and "root0"
-                sqlite3_bind_text(statement, 1, root + "/", -1, transientDestructor)
-                sqlite3_bind_text(statement, 2, root + "0", -1, transientDestructor)
-            }
+            // every path under the root sorts between "root/" and "root0"
+            sqlite3_bind_text(statement, 1, root + "/", -1, transientDestructor)
+            sqlite3_bind_text(statement, 2, root + "0", -1, transientDestructor)
             let stamps = sqlite3_column_count(statement) - 3
             var rows: [String: AnalysisRow<Value>] = [:]
             while sqlite3_step(statement) == SQLITE_ROW {

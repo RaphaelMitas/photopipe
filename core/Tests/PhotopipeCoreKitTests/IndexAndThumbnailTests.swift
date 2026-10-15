@@ -7,6 +7,9 @@ import UniformTypeIdentifiers
 
 @testable import PhotopipeCoreKit
 
+/// What `tempFile` paths sit under, for loads scoped to a library root.
+let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory()).path
+
 func tempFile(_ name: String) -> String {
     URL(fileURLWithPath: NSTemporaryDirectory())
         .appendingPathComponent("photopipe-\(UUID().uuidString)-\(name)").path
@@ -89,7 +92,7 @@ private let sampleFiles: [String: [ImageFile]] = [
 
     let reopened = try SQLiteIndex(path: path)
     #expect(try reopened.load() == nil, "rows parsed by an older reader are re-read")
-    #expect(try reopened.loadScores()["/r/misc/a.dng"] == row, "scores are still valid")
+    #expect(try reopened.loadScores(under: "/r")["/r/misc/a.dng"] == row, "scores are still valid")
 }
 
 @Test func schemaBumpReplacesAnOlderTableLayout() throws {
