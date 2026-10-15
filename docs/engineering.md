@@ -24,7 +24,7 @@ photopipe/
 ├── packages/ui/        shadcn components and tokens shared by both apps
 ├── tooling/            shared tsconfig
 ├── core/               Swift package: the core, linked into the app
-├── scripts/            build, vendor, smoke test, release
+├── scripts/            vendor exiftool, sign, smoke test, release
 ├── fastlane/           App Store metadata and upload lanes
 ├── fixtures/           XMP sidecars, curve samples, raw fetch script
 ├── docs/               this, design.md, screenshots
