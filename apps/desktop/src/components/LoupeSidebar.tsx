@@ -35,7 +35,7 @@ export type SidebarStacks = {
 
 type Props = {
   image: ImageFile;
-  /// Of the stack you are at, or of the frame when inside one.
+  /// Among stacks with Stacks on, among frames inside one, else among photos.
   position: number;
   count: number;
   stacks: SidebarStacks;

@@ -593,9 +593,6 @@ public final class LibraryService: @unchecked Sendable {
         store(scanned, root: currentRoot, in: index)
     }
 
-    /// Writes the file list out and hands whatever is still a placeholder to
-    /// the enricher. Both happen on the index queue, in that order, so an
-    /// interrupted session still starts warm next time.
     /// Each analyzer keeps its own copy of the cache and hands results back here to
     /// be written, so the sqlite handle stays on one queue with the enricher.
     private func useAnalyzers(with index: SQLiteIndex?, root: String) {
@@ -614,6 +611,9 @@ public final class LibraryService: @unchecked Sendable {
         }
     }
 
+    /// Writes the file list out and hands whatever is still a placeholder to
+    /// the enricher. Both happen on the index queue, in that order, so an
+    /// interrupted session still starts warm next time.
     private func store(_ scanned: LibrarySnapshot, root: String, in index: SQLiteIndex?) {
         indexQueue.async { [weak self] in
             try? index?.save(root: root, filesByShoot: scanned.imagesByShoot)

@@ -92,7 +92,8 @@ export function Filmstrip({ images, index, mode, stacks, onNavigate }: Props) {
           const image = images[item.index];
           const place = places?.[item.index];
           const mine = place !== undefined && place.stack === stacks?.current;
-          const wholeStackActive = mine && !stacks?.inside;
+          const wholeStackActive =
+            mine && !stacks?.inside && place.stack.frames.length > 1;
           const active = item.index === index && !wholeStackActive;
           const faded = stacks?.inside && !mine;
           return (

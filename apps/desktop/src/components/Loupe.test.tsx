@@ -105,7 +105,7 @@ function stackOf(images: ImageFile[], inside: boolean): LoupeStacks {
     list: [{ id: images[0].path, frames: images }],
     current: { id: images[0].path, frames: images },
     inside,
-    onStep: vi.fn(),
+    onGo: vi.fn(),
     onEnter: vi.fn(),
     onLeave: vi.fn(),
     onRateStack: vi.fn(),
@@ -124,7 +124,6 @@ describe("Loupe with stacks", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(stacks.onRateStack).toHaveBeenCalledWith(4);
     expect(onRate).not.toHaveBeenCalled();
-    expect(stacks.onStep).toHaveBeenCalledWith(1);
     expect(stacks.onPick).not.toHaveBeenCalled();
     expect(stacks.onEnter).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
@@ -136,6 +135,8 @@ describe("Loupe with stacks", () => {
     const { onRate, onClose } = renderLoupe(1, 0, null, stacks);
     fireEvent.keyDown(window, { key: "3" });
     expect(onRate).toHaveBeenCalledWith("/r/s/DSC00002.ARW", 3);
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(stacks.onGo).toHaveBeenCalledWith("/r/s/DSC00003.ARW");
     expect(stacks.onRateStack).not.toHaveBeenCalled();
     fireEvent.keyDown(window, { key: "p" });
     fireEvent.click(screen.getByTestId("stack-pick"));

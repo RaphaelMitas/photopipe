@@ -78,10 +78,10 @@ frame stays one keypress away.
 
 "Near-identical" is a Vision feature-print distance under 0.40 to every frame
 already in the stack, within 60 s of its first. The number was set by eye on
-consecutive pairs from a real event; capture time alone grouped whole songs.
-Instinct does not choose inside a stack: on shoots culled without it, its pick
-matched the kept frame no better than chance, so it only breaks ties for the
-cover.
+consecutive pairs from a real event; capture time alone also grouped
+different pictures of the same moment. Instinct does not choose inside a stack:
+on shoots culled without it, its pick matched the kept frame no better than
+chance, so it only breaks ties for the cover and is shown, not applied.
 
 ## The histogram is the filter
 

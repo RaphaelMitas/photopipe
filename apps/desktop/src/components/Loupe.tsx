@@ -65,7 +65,7 @@ export type LoupeStacks = {
   list: Stack[];
   current: Stack;
   inside: boolean;
-  onStep: (direction: 1 | -1) => void;
+  onGo: (path: string) => void;
   onEnter: () => void;
   onLeave: () => void;
   onRateStack: (rating: number) => void;
@@ -243,16 +243,20 @@ export function Loupe({
           break;
         case "ArrowRight":
           event.preventDefault();
-          if (stacks) stacks.onStep(1);
-          else onNavigate(Math.min(index + 1, images.length - 1));
+          if (!stacks) onNavigate(Math.min(index + 1, images.length - 1));
+          else if (next) stacks.onGo(next.path);
           break;
         case "ArrowLeft":
           event.preventDefault();
-          if (stacks) stacks.onStep(-1);
-          else onNavigate(Math.max(index - 1, 0));
+          if (!stacks) onNavigate(Math.max(index - 1, 0));
+          else if (previous) stacks.onGo(previous.path);
           break;
         case "Enter":
-          if (multiFrame && !stacks.inside) stacks.onEnter();
+          // a focused button acts on Enter itself
+          if (multiFrame && !stacks.inside && !target?.closest("button")) {
+            event.preventDefault();
+            stacks.onEnter();
+          }
           break;
         case "p":
         case "P":
@@ -301,6 +305,8 @@ export function Loupe({
     session,
     stacks,
     multiFrame,
+    next,
+    previous,
     onClose,
     onEditChange,
     onNavigate,
@@ -523,7 +529,7 @@ function StackOverlay({ stacks, path }: { stacks: LoupeStacks; path: string }) {
         >
           <span className="font-semibold">Pick this one</span>
           <span className="font-mono text-[11px] text-muted-foreground">
-            {`keeps `}
+            {rating > 0 ? "keeps " : "gets "}
             <span className="text-amber-400">{`★${kept}`}</span>
             {cleared > 0 &&
               ` · clears ${cleared} other${cleared === 1 ? "" : "s"}`}

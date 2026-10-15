@@ -62,7 +62,6 @@ extension Analyzer where Value == Print {
     }
 }
 
-/// A photo must look like every frame already in the stack, not just the last, so slow drift can't chain a whole song.
 public enum Stacker {
     /// Tuned by eye on dance-event pairs: 0.35–0.40 still looked the same, 0.40–0.45 did not.
     static let threshold: Float = 0.40
@@ -72,7 +71,8 @@ public enum Stacker {
     static let previewSize = 1024
 
     /// The stack each photo belongs to, named by the path of its first photo. Photos that stand
-    /// alone, or that have no capture time to order them by, are left out.
+    /// alone, or that have no capture time to order them by, are left out. A photo must look like
+    /// every frame already in the stack, not just the last, so slow drift cannot chain a song.
     public static func stacks(_ prints: [String: Print]) -> [String: String] {
         let ordered = prints.compactMap { path, print in
             print.captured.map { (path: path, print: print, captured: $0) }

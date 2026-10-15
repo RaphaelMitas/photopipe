@@ -56,6 +56,7 @@ import { flagPref } from "@/lib/pref";
 import {
   cachedImage,
   jobStatus,
+  photos,
   useExportJobs,
   useImages,
   useLibrarySync,
@@ -78,7 +79,6 @@ import {
   stackedOrder,
   stackOf,
   stacksPref,
-  stepPath,
 } from "@/lib/stacks";
 import { useCropSession } from "@/lib/useCropSession";
 import { useDebouncedEdit } from "@/lib/useDebouncedEdit";
@@ -119,7 +119,8 @@ export default function App() {
   // outlives the loupe, so closing it lands the browser on the same photo
   const [currentPath, setCurrentPath] = useState<string | null>(null);
   const [loupeOpen, setLoupeOpen] = useState(false);
-  const [insideId, setInsideId] = useState<string | null>(null);
+  // the frame you went inside on; you are inside whichever stack holds it
+  const [insideAnchor, setInsideAnchor] = useState<string | null>(null);
   const filter = useRatingFilter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const editOpen = editPanelPref.use();
@@ -366,8 +367,11 @@ export default function App() {
     loupeStacks && openImage ? stackOf(loupeStacks, openImage.path) : undefined;
   const multiFrame =
     currentStack !== undefined && currentStack.frames.length > 1;
-  // an id rather than a flag, so landing in another stack (undo, a jump) leaves you outside it
-  const insideStack = multiFrame && currentStack.id === insideId;
+  // a frame, not a flag or the stack's id: landing in another stack (undo, a jump) leaves you
+  // outside it, and a stack renamed by a newly imported earlier frame keeps you inside
+  const holdsAnchor = (stack: Stack | undefined) =>
+    stack?.frames.some((frame) => frame.path === insideAnchor) ?? false;
+  const insideStack = multiFrame && holdsAnchor(currentStack);
   const shownImage =
     multiFrame && !insideStack ? coverOf(currentStack) : openImage;
   const loupeIndex = shownImage ? loupeImages.indexOf(shownImage) : -1;
@@ -377,15 +381,22 @@ export default function App() {
   // acting on "the photo you are looking at" has to ask whether it is open.
   const loupePhoto = loupeOpen ? loupeImage : null;
 
-  const toggleStacks = useCallback(() => {
-    const on = !stacksPref.get();
-    stacksPref.set(on);
-    if (!on || !currentPath) return;
-    const stack = stackOf(groupStacks(allImages), currentPath);
-    setInsideId(stack && opensInside(stack, currentPath) ? stack.id : null);
-  }, [allImages, currentPath]);
+  const toggleStacks = useCallback(() => stacksPref.set(!stacksPref.get()), []);
+  // Stacks can arrive after you opened a photo, and undo or a jump can take you out of the
+  // stack you were inside without passing through Esc.
+  const stacksWereOn = useRef(stacksOn);
+  useEffect(() => {
+    const arrived = stacksOn && !stacksWereOn.current;
+    stacksWereOn.current = stacksOn;
+    if (arrived && currentStack && currentPath) {
+      setInsideAnchor(
+        opensInside(currentStack, currentPath) ? currentPath : null,
+      );
+    } else if (insideAnchor !== null && !holdsAnchor(currentStack)) {
+      setInsideAnchor(null);
+    }
+  }, [stacksOn, currentStack, currentPath, insideAnchor, holdsAnchor]);
   // Read at keypress, not render: a rating typed a moment ago may not have re-rendered yet.
-  // Before the core has read a frame its rating is a placeholder the writes would be built on.
   const liveStack = (stack: Stack): Stack | null => {
     const frames = stack.frames.map(
       (frame) => cachedImage(queryClient, openShoot, frame.path) ?? frame,
@@ -396,11 +407,14 @@ export default function App() {
     }
     return { ...stack, frames };
   };
+  const ratingsOf = (stack: Stack) =>
+    new Map(stack.frames.map((frame) => [frame.path, frame.rating]));
   const rateWholeStack = (stack: Stack, rating: number) => {
     const live = liveStack(stack);
     if (!live) return;
     writes.rateMany(
       rateStack(live, rating),
+      ratingsOf(live),
       "Rating",
       `${ratingDetail(rating)} · stack of ${live.frames.length}`,
     );
@@ -409,20 +423,18 @@ export default function App() {
     const live = liveStack(stack);
     if (!live) return;
     const { writes: ratings, cleared } = pickInStack(live, path);
-    writes.rateMany(ratings, "Pick", fileName(path));
-    setInsideId(null);
+    writes.rateMany(ratings, ratingsOf(live), "Pick", fileName(path));
+    setInsideAnchor(null);
     toast(`Picked ${fileName(path)}`, {
       id: "pick",
       description:
-        cleared > 0
-          ? `${cleared} other ${cleared === 1 ? "photo" : "photos"} cleared · ⌘Z undoes`
-          : undefined,
+        cleared > 0 ? `${photos(cleared)} cleared · ⌘Z undoes` : undefined,
     });
   };
   const visit = (path: string | null, stacks: Stack[] | null) => {
     setCurrentPath(path);
     const stack = path && stacks ? stackOf(stacks, path) : undefined;
-    setInsideId(stack && path && opensInside(stack, path) ? stack.id : null);
+    setInsideAnchor(stack && path && opensInside(stack, path) ? path : null);
   };
   const crop = useCropSession(loupePhoto, loupeEdit, changeEdit);
   const cropping = crop.draft !== null;
@@ -647,7 +659,7 @@ export default function App() {
     setOpenShoot(shoot);
     setCurrentPath(null);
     setLoupeOpen(false);
-    setInsideId(null);
+    setInsideAnchor(null);
     filter.reset();
     selection.clear();
   };
@@ -706,20 +718,15 @@ export default function App() {
               list: loupeStacks,
               current: currentStack,
               inside: insideStack,
-              onStep: (direction) => {
-                const next = stepPath(
-                  loupeStacks,
-                  loupePhoto.path,
-                  insideStack,
-                  direction,
-                );
-                if (next) setCurrentPath(next);
-              },
+              onGo: setCurrentPath,
               onEnter: () => {
                 setCurrentPath(loupePhoto.path);
-                setInsideId(currentStack.id);
+                setInsideAnchor(loupePhoto.path);
               },
-              onLeave: () => setInsideId(null),
+              onLeave: () => {
+                setCurrentPath(coverOf(currentStack).path);
+                setInsideAnchor(null);
+              },
               onRateStack: (rating) => rateWholeStack(currentStack, rating),
               onPick: () => pick(currentStack, loupePhoto.path),
             }

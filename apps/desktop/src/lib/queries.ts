@@ -57,16 +57,14 @@ export function useImages(shoot: string | null) {
   });
 }
 
-export type ScoreProgress = CoreMethods["scoreShoot"]["result"];
-
 const RATED_OFFER_MS = 8000;
+
+const PASSES = ["scoreShoot", "stackShoot"] as const;
 
 /// A background pass's answers reach the grid through `listImages`, so images
 /// refetch when the pass ends, not every tick. Every fetch asks the core to
 /// run, not just the first: an empty pass is free, and it is what picks up
-/// newly imported photos.
-const PASSES = ["scoreShoot", "stackShoot"] as const;
-
+/// newly imported photos. A pass counts as finished once that refetch is in.
 function usePass(
   method: (typeof PASSES)[number],
   shoot: string | null,
@@ -74,6 +72,7 @@ function usePass(
 ) {
   const client = useQueryClient();
   const wasRunning = useRef(false);
+  const [ranPass, setRanPass] = useState(false);
   const [finishedPasses, setFinishedPasses] = useState(0);
 
   const query = useQuery({
@@ -90,17 +89,27 @@ function usePass(
     wasRunning.current = running;
     if (lastShoot.current !== shoot) {
       lastShoot.current = shoot;
+      setRanPass(running);
       setFinishedPasses(0);
       return;
     }
+    if (running) setRanPass(true);
     if (!ended) return;
-    void client.invalidateQueries({ queryKey: imagesKey(shoot) });
-    setFinishedPasses((count) => count + 1);
+    // a refetch landing mid-write would put pre-write ratings back; the last write refetches
+    if (xmpWritesInFlight(client) > 0) {
+      markStale(client, shoot);
+      setFinishedPasses((count) => count + 1);
+      return;
+    }
+    void client
+      .invalidateQueries({ queryKey: imagesKey(shoot) })
+      .then(() => setFinishedPasses((count) => count + 1));
   }, [running, shoot, client]);
 
   // a stale `running` would freeze a progress line where it stopped
   return {
     progress: enabled ? (query.data ?? null) : null,
+    ranPass,
     finishedPasses,
   };
 }
@@ -122,9 +131,17 @@ export function useScoring(shoot: string | null, enabled: boolean) {
 /// Stacks are trusted only once every photo in the shoot has a print, or they
 /// would regroup under you as the pass fills them in.
 export function useStacking(shoot: string | null, enabled: boolean) {
-  const { progress } = usePass("stackShoot", shoot, enabled);
+  const { progress, ranPass, finishedPasses } = usePass(
+    "stackShoot",
+    shoot,
+    enabled,
+  );
+  // a pass that ran here only counts once the photos carrying its stacks are back
   const complete =
-    progress !== null && !progress.running && progress.done >= progress.total;
+    progress !== null &&
+    !progress.running &&
+    progress.done >= progress.total &&
+    (!ranPass || finishedPasses > 0);
   // a later pass for newly arrived photos must not take stacks away mid-visit
   const [readyShoot, setReadyShoot] = useState<string | null>(null);
   useEffect(() => {
@@ -433,7 +450,7 @@ type PhotoField<V> = {
   failedMany: (count: number) => string;
 };
 
-const photos = (count: number) =>
+export const photos = (count: number) =>
   `${count} ${count === 1 ? "photo" : "photos"}`;
 
 const RATING_FIELD: PhotoField<number> = {

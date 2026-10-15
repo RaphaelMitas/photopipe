@@ -70,28 +70,25 @@ export function useRecordedWrites(shoot: string | null) {
     [queryClient, shoot, setRating, ratings],
   );
 
-  /// One undo step for a rating that lands on several photos at once.
+  /// One undo step for a rating that lands on several photos at once. `before`
+  /// has to be read, not placeholder, ratings: undo writes them back.
   const rateMany = useCallback(
-    (values: Map<string, number>, label: string, detail: string) => {
-      const images = [...values.keys()].map((path) =>
-        cachedImage(queryClient, shoot, path),
-      );
-      if (values.size === 0 || images.some((image) => !image)) return;
+    (
+      values: Map<string, number>,
+      before: Map<string, number>,
+      label: string,
+      detail: string,
+    ) => {
+      if (values.size === 0) return;
       const written = landed(setRatings(values));
       void written.catch(() => {});
-      // before the core has read a file, its old rating is a placeholder
-      if (images.some((image) => !image?.enriched)) return;
       void ratings.record(
         { icon: Star, label, detail, paths: [...values.keys()], written },
-        new Map(
-          images.flatMap((image) =>
-            image ? [[image.path, image.rating]] : [],
-          ),
-        ),
+        before,
         values,
       );
     },
-    [queryClient, shoot, setRatings, ratings],
+    [setRatings, ratings],
   );
 
   const writeEdit = useCallback(

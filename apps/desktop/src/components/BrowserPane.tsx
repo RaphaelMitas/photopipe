@@ -1,7 +1,6 @@
 import { Button } from "@photopipe/ui/components/button";
 import { Download } from "lucide-react";
-import type { ImageFile } from "@/lib/core";
-import type { ScoreProgress } from "@/lib/queries";
+import type { ImageFile, PassProgress } from "@/lib/core";
 import type { SelectModifiers } from "@/lib/selection";
 import { type SortKey, sortPref } from "@/lib/sort";
 import { showInfoPref } from "./AppSidebar";
@@ -13,7 +12,7 @@ type Props = {
   images: ImageFile[];
   sort: SortKey;
   scoreReady: boolean;
-  scoring: ScoreProgress | null;
+  scoring: PassProgress | null;
   justRated: boolean;
   filterActive: boolean;
   selected: ReadonlySet<string>;
