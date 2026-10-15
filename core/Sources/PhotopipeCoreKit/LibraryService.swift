@@ -25,7 +25,9 @@ public final class LibraryService: @unchecked Sendable {
     private var epoch = 0
     private var shootGenerations: [String: Int] = [:]
     private var shootPublished: [String: Date] = [:]
-    private var watcher: Watcher?
+    #if os(macOS)
+        private var watcher: Watcher?
+    #endif
     private var index: SQLiteIndex?
     private let thumbnailer: Thumbnailer
     private let renderer: Renderer
@@ -85,10 +87,12 @@ public final class LibraryService: @unchecked Sendable {
         store(scanned, root: path, in: index)
         useScorer(with: index)
 
-        let newWatcher = Watcher(path: path, queue: rescanQueue) { [weak self] in
-            self?.scheduleRescan()
-        }
-        lock.withLock { watcher = newWatcher }
+        #if os(macOS)
+            let newWatcher = Watcher(path: path, queue: rescanQueue) { [weak self] in
+                self?.scheduleRescan()
+            }
+            lock.withLock { watcher = newWatcher }
+        #endif
 
         return RootSummary(
             shoots: scanned.shoots.count, files: scanned.fileCount, generation: currentGeneration)
@@ -376,7 +380,7 @@ public final class LibraryService: @unchecked Sendable {
     {
         guard (0...5).contains(rating) else { throw ServiceError.invalidRating(rating) }
         let settled = try write(shoot: shootName, path: path) { image in
-            try XMP.writeRating(rating, file: image, tool: .shared)
+            try XMP.writeRating(rating, file: image)
         }
         return RatingChange(rating: settled.rating)
     }
@@ -387,7 +391,7 @@ public final class LibraryService: @unchecked Sendable {
 
     public func setEdit(shoot shootName: String, path: String, edit: Edit) throws -> EditChange {
         let settled = try write(shoot: shootName, path: path) { image in
-            try XMP.writeEdit(edit, file: image, tool: .shared)
+            try XMP.writeEdit(edit, file: image)
         }
         return EditChange(edit: settled.edit)
     }

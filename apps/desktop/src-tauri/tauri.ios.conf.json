@@ -1,0 +1,18 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "net.photopipe.app",
+  "app": {
+    "windows": [
+      {
+        "title": "Photopipe",
+        "backgroundColor": "#09090b"
+      }
+    ]
+  },
+  "bundle": {
+    "resources": null,
+    "iOS": {
+      "minimumSystemVersion": "18.0"
+    }
+  }
+}

@@ -158,22 +158,14 @@ jobs:
           fi
           echo "SIGNING_IDENTITY=$IDENTITY" >> $GITHUB_ENV
 
-      # Inside-out, deliberately. `--deep` is deprecated and does not sign
-      # nested helpers reliably, and this bundle has one: the Swift core in
-      # Contents/MacOS. Sign it first, then seal the app around it.
       # exiftool needs no signature of its own: it is a Perl script, not a
       # Mach-O, and the app's seal covers it as a resource.
       - name: Sign
         run: |
           codesign --force --options runtime --timestamp \
-            --sign "$SIGNING_IDENTITY" "$APP/Contents/MacOS/photopipe-core"
-          codesign --force --options runtime --timestamp \
             --sign "$SIGNING_IDENTITY" "$APP"
 
           codesign --verify --strict --verbose=2 "$APP"
-          # Prove the nested binary is signed in its own right, not just
-          # swept up by the outer seal.
-          codesign --verify --strict --verbose=2 "$APP/Contents/MacOS/photopipe-core"
 
       - name: Notarize the app
         env:
@@ -382,14 +374,10 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "$APP/Contents/Info.plist"
           echo "build=$BUILD" >> $GITHUB_OUTPUT
           codesign --force --timestamp \
-            --entitlements apps/desktop/src-tauri/entitlements.mas.inherit.plist \
-            --sign "$APP_IDENTITY" "$APP/Contents/MacOS/photopipe-core"
-          codesign --force --timestamp \
             --entitlements apps/desktop/src-tauri/entitlements.mas.plist \
             --sign "$APP_IDENTITY" "$APP"
 
           codesign --verify --strict --verbose=2 "$APP"
-          codesign --verify --strict --verbose=2 "$APP/Contents/MacOS/photopipe-core"
 
       - name: Smoke test the bundle
         run: ./scripts/smoke-bundle.sh --mas "$APP"

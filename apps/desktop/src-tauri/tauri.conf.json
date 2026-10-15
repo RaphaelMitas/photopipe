@@ -43,7 +43,6 @@
       "icons/128x128@2x.png",
       "icons/icon.icns"
     ],
-    "externalBin": ["binaries/photopipe-core"],
     "macOS": {
       "minimumSystemVersion": "15.0"
     },

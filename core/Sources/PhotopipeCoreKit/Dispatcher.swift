@@ -1,6 +1,6 @@
 import Foundation
 
-public final class Dispatcher {
+public final class Dispatcher: Sendable {
     private let library: LibraryService
 
     public init(library: LibraryService = LibraryService()) {

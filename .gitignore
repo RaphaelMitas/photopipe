@@ -11,4 +11,3 @@ playwright-report/
 # Vendored into the bundle by scripts/fetch-exiftool.sh (21MB)
 apps/desktop/src-tauri/resources/exiftool/
 # Staged by scripts/prepare-bundle.sh
-apps/desktop/src-tauri/binaries/
