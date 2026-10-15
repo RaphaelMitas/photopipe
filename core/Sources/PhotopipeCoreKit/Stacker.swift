@@ -14,7 +14,7 @@ public struct Print: Equatable, Sendable {
     }
 }
 
-/// Vision feature prints, read from the preview a camera embeds rather than the raw itself.
+/// Vision feature prints of a ~1024 px preview.
 public typealias Printer = Analyzer<Print>
 
 extension Analyzer where Value == Print {

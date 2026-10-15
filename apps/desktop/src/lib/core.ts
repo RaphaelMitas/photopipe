@@ -108,7 +108,7 @@ export type ImageFile = {
   // Vision's aesthetic score, -1..1, null for a photo it has not rated.
   score: number | null;
   captured: number | null;
-  // first photo of its stack of near-identical photos, null for one alone
+  // path of the first photo in its stack, null when it stands alone
   stack: string | null;
   enriched: boolean;
 };

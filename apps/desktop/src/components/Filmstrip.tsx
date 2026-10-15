@@ -68,11 +68,13 @@ export function Filmstrip({ images, index, mode, stacks, onNavigate }: Props) {
     overscan: 12,
   });
 
+  // every rating rebuilds the stacks, so the grouping is compared by shape, not identity
+  const grouping = list?.map((stack) => stack.frames.length).join() ?? "";
   // biome-ignore lint/correctness/useExhaustiveDependencies: recenter on navigation, re-measure on mode or grouping change
   useEffect(() => {
     virtualizer.measure();
     virtualizer.scrollToIndex(index, { align: "center" });
-  }, [index, mode, places]);
+  }, [index, mode, grouping]);
 
   const cellHeight =
     mode === "ratings" ? FIXED_THUMB_HEIGHT + RATING_ROW_HEIGHT : STRIP_HEIGHT;

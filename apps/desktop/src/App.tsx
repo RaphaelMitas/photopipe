@@ -372,9 +372,7 @@ export default function App() {
   const holdsAnchor = (stack: Stack | undefined) =>
     stack?.frames.some((frame) => frame.path === insideAnchor) ?? false;
   const insideStack = multiFrame && holdsAnchor(currentStack);
-  const shownImage =
-    multiFrame && !insideStack ? coverOf(currentStack) : openImage;
-  const loupeIndex = shownImage ? loupeImages.indexOf(shownImage) : -1;
+  const loupeIndex = openImage ? loupeImages.indexOf(openImage) : -1;
   const loupeImage = loupeIndex >= 0 ? loupeImages[loupeIndex] : null;
   const loupeEdit = loupeImage === null ? identityEdit : editOf(loupeImage);
   // The browser keeps the current photo after the loupe closes, so anything
@@ -382,20 +380,32 @@ export default function App() {
   const loupePhoto = loupeOpen ? loupeImage : null;
 
   const toggleStacks = useCallback(() => stacksPref.set(!stacksPref.get()), []);
+  const anchorFor = (stack: Stack | undefined, path: string) =>
+    stack && opensInside(stack, path) ? path : null;
   // Stacks can arrive after you opened a photo, and undo or a jump can take you out of the
-  // stack you were inside without passing through Esc.
+  // stack you were inside or onto a frame that is not its cover. Snapping to the cover only
+  // when you arrive keeps a rating or a score from swapping the photo under an edit.
   const stacksWereOn = useRef(stacksOn);
+  const lastPath = useRef(currentPath);
   useEffect(() => {
     const arrived = stacksOn && !stacksWereOn.current;
+    const moved = lastPath.current !== currentPath;
     stacksWereOn.current = stacksOn;
-    if (arrived && currentStack && currentPath) {
-      setInsideAnchor(
-        opensInside(currentStack, currentPath) ? currentPath : null,
-      );
-    } else if (insideAnchor !== null && !holdsAnchor(currentStack)) {
-      setInsideAnchor(null);
+    lastPath.current = currentPath;
+    if (!currentStack || !currentPath) return;
+    if (arrived) {
+      setInsideAnchor(anchorFor(currentStack, currentPath));
+      return;
     }
-  }, [stacksOn, currentStack, currentPath, insideAnchor, holdsAnchor]);
+    const left = insideAnchor !== null && !holdsAnchor(currentStack);
+    if (left) setInsideAnchor(null);
+    if (
+      (left || (moved && insideAnchor === null)) &&
+      opensInside(currentStack, currentPath)
+    ) {
+      setCurrentPath(coverOf(currentStack).path);
+    }
+  });
   // Read at keypress, not render: a rating typed a moment ago may not have re-rendered yet.
   const liveStack = (stack: Stack): Stack | null => {
     const frames = stack.frames.map(
@@ -431,10 +441,15 @@ export default function App() {
         cleared > 0 ? `${photos(cleared)} cleared · ⌘Z undoes` : undefined,
     });
   };
+  // outside a stack, a rating is the whole stack's
+  const rateShown = (path: string, rating: number) =>
+    currentStack && multiFrame && !insideStack
+      ? rateWholeStack(currentStack, rating)
+      : writes.rate(path, rating);
   const visit = (path: string | null, stacks: Stack[] | null) => {
     setCurrentPath(path);
     const stack = path && stacks ? stackOf(stacks, path) : undefined;
-    setInsideAnchor(stack && path && opensInside(stack, path) ? path : null);
+    setInsideAnchor(path ? anchorFor(stack, path) : null);
   };
   const crop = useCropSession(loupePhoto, loupeEdit, changeEdit);
   const cropping = crop.draft !== null;
@@ -727,15 +742,22 @@ export default function App() {
                 setCurrentPath(coverOf(currentStack).path);
                 setInsideAnchor(null);
               },
-              onRateStack: (rating) => rateWholeStack(currentStack, rating),
               onPick: () => pick(currentStack, loupePhoto.path),
             }
           : null
       }
       onEditChange={(edit) => changeEdit(loupePhoto, edit)}
-      onNavigate={(next) => visit(loupeImages[next]?.path ?? null, loupeStacks)}
+      onNavigate={(next) => {
+        const path = loupeImages[next]?.path ?? null;
+        // a click inside the stack you are in keeps you inside it
+        if (insideStack && currentStack.frames.some((f) => f.path === path)) {
+          setCurrentPath(path);
+        } else {
+          visit(path, loupeStacks);
+        }
+      }}
       onClose={() => setLoupeOpen(false)}
-      onRate={writes.rate}
+      onRate={rateShown}
     />
   ) : (
     <BrowserPane
@@ -813,11 +835,7 @@ export default function App() {
             )}
             filter={filter}
             ratingCounts={counts}
-            onRate={(path, rating) =>
-              currentStack && multiFrame && !insideStack
-                ? rateWholeStack(currentStack, rating)
-                : writes.rate(path, rating)
-            }
+            onRate={rateShown}
             onBackToGrid={() =>
               cropping ? crop.cancel() : setLoupeOpen(false)
             }

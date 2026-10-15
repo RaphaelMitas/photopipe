@@ -68,7 +68,6 @@ export type LoupeStacks = {
   onGo: (path: string) => void;
   onEnter: () => void;
   onLeave: () => void;
-  onRateStack: (rating: number) => void;
   onPick: () => void;
 };
 
@@ -268,11 +267,7 @@ export function Loupe({
         case "3":
         case "4":
         case "5":
-          if (multiFrame && !stacks.inside) {
-            stacks.onRateStack(Number(event.key));
-          } else {
-            onRate(image.path, Number(event.key));
-          }
+          onRate(image.path, Number(event.key));
           break;
         case "ArrowUp":
           event.preventDefault();
@@ -513,7 +508,9 @@ function StackOverlay({ stacks, path }: { stacks: LoupeStacks; path: string }) {
               <span className="text-amber-400">
                 {rated === frames.length
                   ? `all ★${rating}`
-                  : `★${rating} picked`}
+                  : rated === 1
+                    ? `★${rating} picked`
+                    : `★${rating} on ${rated} of ${frames.length}`}
               </span>
             )}
             <span className="text-muted-foreground">enter to look inside</span>

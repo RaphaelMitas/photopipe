@@ -47,9 +47,9 @@ private func exifDate(_ stamp: String, subsec: String) -> [CFString: Any] {
 /// A JPEG with a capture time, filled with `pattern`'s squares so different patterns read as
 /// different pictures.
 private func writeJPEG(
-    _ url: URL, pattern: Int, stamp: String = "2026:08:08 19:24:28", subsec: String = "000"
+    _ url: URL, pattern: Int, stamp: String = "2026:08:08 19:24:28", subsec: String = "000",
+    size: Int = 256, embedThumbnail: Bool = false
 ) throws {
-    let size = 256
     let context = CGContext(
         data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
         space: CGColorSpace(name: CGColorSpace.sRGB)!,
@@ -65,8 +65,9 @@ private func writeJPEG(
     }
     let destination = CGImageDestinationCreateWithURL(
         url as CFURL, UTType.jpeg.identifier as CFString, 1, nil)!
-    CGImageDestinationAddImage(
-        destination, context.makeImage()!, exifDate(stamp, subsec: subsec) as CFDictionary)
+    var props = exifDate(stamp, subsec: subsec)
+    props[kCGImageDestinationEmbedThumbnail] = embedThumbnail
+    CGImageDestinationAddImage(destination, context.makeImage()!, props as CFDictionary)
     #expect(CGImageDestinationFinalize(destination))
 }
 
@@ -129,16 +130,7 @@ private func writeJPEG(
 @Test func aJPEGsTinyEmbeddedThumbnailIsNotWhatGetsPrinted() throws {
     let url = URL(fileURLWithPath: tempFile("thumbnailed.jpg"))
     defer { try? FileManager.default.removeItem(at: url) }
-    let context = CGContext(
-        data: nil, width: 2048, height: 1536, bitsPerComponent: 8, bytesPerRow: 0,
-        space: CGColorSpace(name: CGColorSpace.sRGB)!,
-        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-    let destination = CGImageDestinationCreateWithURL(
-        url as CFURL, UTType.jpeg.identifier as CFString, 1, nil)!
-    CGImageDestinationAddImage(
-        destination, context.makeImage()!,
-        [kCGImageDestinationEmbedThumbnail: true] as CFDictionary)
-    #expect(CGImageDestinationFinalize(destination))
+    try writeJPEG(url, pattern: 3, size: 2048, embedThumbnail: true)
 
     let source = try #require(CGImageSourceCreateWithURL(url as CFURL, nil))
     let preview = try #require(Printer.preview(source))
