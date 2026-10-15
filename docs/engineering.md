@@ -217,11 +217,12 @@ to iPad. Library and export folders are picked in place by a Swift document
 picker in the core's C ABI, because the dialog plugin cannot pick a folder on
 iOS. The webview is pinned to the safe area, since the layout assumes nothing
 covers it. CI runs clippy for the simulator and builds the simulator app,
-which is the only step that links the core into it. Not there yet: watching the folder for
-changes, zip export (hidden through the `features` command), import, ratings
-and edits on anything but ARW (they are embedded, and only exiftool writes
-those), ratings in exported JPEGs, Reveal (the opener plugin has no iOS
-version), and aesthetic scoring, which fails in the simulator.
+which is the only step that links the core into it. Not there yet: watching
+the folder for changes, zip export (hidden through the `features` command),
+import, ratings and edits on anything but ARW (they are embedded, and only
+exiftool writes those), ratings in exported JPEGs, Reveal (the opener
+plugin's reveal-in-folder is desktop-only), and aesthetic scoring, which fails
+in the simulator.
 
 ### Updates
 
