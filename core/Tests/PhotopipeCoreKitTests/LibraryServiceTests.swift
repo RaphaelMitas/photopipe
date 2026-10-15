@@ -349,13 +349,13 @@ private func tempIndexPath() -> String {
 
     let setRoot = dispatcher.dispatch(
         line:
-            "{\"v\":1,\"id\":\"1\",\"method\":\"setRoot\",\"params\":{\"path\":\"\(escapedRoot)\",\"indexPath\":\"\(tempIndexPath())\"}}"
+            "{\"method\":\"setRoot\",\"params\":{\"path\":\"\(escapedRoot)\",\"indexPath\":\"\(tempIndexPath())\"}}"
     )
     #expect(setRoot.ok)
     #expect(setRoot.result?["files"] == .number(2))
 
     let shoots = dispatcher.dispatch(
-        line: "{\"v\":1,\"id\":\"2\",\"method\":\"listShoots\"}"
+        line: "{\"method\":\"listShoots\"}"
     )
     #expect(shoots.ok)
     guard case .array(let shootList)? = shoots.result?["shoots"] else {
@@ -367,7 +367,7 @@ private func tempIndexPath() -> String {
     #expect(shootList[0]["imageCount"] == .number(2))
 
     let images = dispatcher.dispatch(
-        line: "{\"v\":1,\"id\":\"3\",\"method\":\"listImages\",\"params\":{\"shoot\":\"2026-07-12_zell\"}}"
+        line: "{\"method\":\"listImages\",\"params\":{\"shoot\":\"2026-07-12_zell\"}}"
     )
     #expect(images.ok)
     guard case .array(let imageList)? = images.result?["images"] else {
@@ -379,7 +379,7 @@ private func tempIndexPath() -> String {
     #expect(imageList[1]["rel"] == .string("DSC001.jpg"))
 
     let unknown = dispatcher.dispatch(
-        line: "{\"v\":1,\"id\":\"4\",\"method\":\"listImages\",\"params\":{\"shoot\":\"nope\"}}"
+        line: "{\"method\":\"listImages\",\"params\":{\"shoot\":\"nope\"}}"
     )
     #expect(unknown.error?.code == "unknown_shoot")
 }
@@ -387,7 +387,7 @@ private func tempIndexPath() -> String {
 @Test func libraryMethodsWithoutRootFailCleanly() {
     let dispatcher = Dispatcher(library: makeService())
     let response = dispatcher.dispatch(
-        line: "{\"v\":1,\"id\":\"1\",\"method\":\"listImages\",\"params\":{\"shoot\":\"x\"}}"
+        line: "{\"method\":\"listImages\",\"params\":{\"shoot\":\"x\"}}"
     )
     #expect(response.error?.code == "no_root")
 }
@@ -396,7 +396,7 @@ private func tempIndexPath() -> String {
     let dispatcher = Dispatcher(library: makeService())
     let response = dispatcher.dispatch(
         line:
-            "{\"v\":1,\"id\":\"1\",\"method\":\"setRoot\",\"params\":{\"path\":\"/nope/\(UUID().uuidString)\"}}"
+            "{\"method\":\"setRoot\",\"params\":{\"path\":\"/nope/\(UUID().uuidString)\"}}"
     )
     #expect(response.error?.code == "root_not_found")
 }

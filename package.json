@@ -4,7 +4,7 @@
   "license": "MIT",
   "packageManager": "pnpm@12.10.1",
   "scripts": {
-    "dev": "./scripts/prepare-bundle.sh && pnpm --filter desktop tauri dev",
+    "dev": "./scripts/fetch-exiftool.sh && pnpm --filter desktop tauri dev",
     "check": "biome check .",
     "typecheck": "pnpm -r typecheck",
     "check:fix": "biome check --write .",

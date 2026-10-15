@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Toaster, toast } from "sonner";
 import { afterEach, expect, it, vi } from "vitest";
@@ -21,19 +22,35 @@ function Updater({ blockedReason }: { blockedReason: string | null }) {
   return <Toaster />;
 }
 
+const client = new QueryClient();
+
+function renderUpdater(blockedReason: string | null) {
+  const view = render(
+    <QueryClientProvider client={client}>
+      <Updater blockedReason={blockedReason} />
+    </QueryClientProvider>,
+  );
+  return (next: string | null) =>
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <Updater blockedReason={next} />
+      </QueryClientProvider>,
+    );
+}
+
 it("Install checks the block when clicked and keeps the reason on screen", async () => {
   vi.stubEnv("PROD", true);
-  invoke.mockResolvedValue(true);
+  invoke.mockResolvedValue({ updater: true, zipExport: true });
   const update = {
     version: "2.0.0",
     close: vi.fn(),
     downloadAndInstall: vi.fn(),
   };
   findUpdate.mockResolvedValue(update);
-  const { rerender } = render(<Updater blockedReason={null} />);
+  const rerender = renderUpdater(null);
   const installButton = await screen.findByRole("button", { name: "Install" });
 
-  rerender(<Updater blockedReason="Finish the running job first" />);
+  rerender("Finish the running job first");
   fireEvent.click(installButton);
   await screen.findByText("Finish the running job first");
   await new Promise((resolve) => setTimeout(resolve, 500));
@@ -44,7 +61,7 @@ it("Install checks the block when clicked and keeps the reason on screen", async
 
 it("Install drops the button once the download starts", async () => {
   vi.stubEnv("PROD", true);
-  invoke.mockResolvedValue(true);
+  invoke.mockResolvedValue({ updater: true, zipExport: true });
   const update = {
     version: "2.0.0",
     close: vi.fn(),
@@ -57,7 +74,7 @@ it("Install drops the button once the download starts", async () => {
     ),
   };
   findUpdate.mockResolvedValue(update);
-  render(<Updater blockedReason={null} />);
+  renderUpdater(null);
 
   fireEvent.click(await screen.findByRole("button", { name: "Install" }));
   await screen.findByText("Downloading update… 40%");

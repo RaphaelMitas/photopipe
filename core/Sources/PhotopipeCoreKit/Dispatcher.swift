@@ -13,22 +13,15 @@ public final class Dispatcher: Sendable {
             request = try JSONDecoder().decode(Request.self, from: Data(line.utf8))
         } catch {
             return .failure(
-                id: "", code: "bad_request",
-                message: "malformed request: \(error.localizedDescription)")
-        }
-
-        guard request.v == protocolVersion else {
-            return .failure(
-                id: request.id, code: "unsupported_protocol",
-                message: "protocol v\(request.v) not supported, this core speaks v\(protocolVersion)")
+                code: "bad_request", message: "malformed request: \(error.localizedDescription)")
         }
 
         do {
-            return .success(id: request.id, result: try result(for: request))
+            return .success(result: try result(for: request))
         } catch let error as WireError {
-            return .failure(id: request.id, error: error.wire)
+            return .failure(error: error.wire)
         } catch {
-            return .failure(id: request.id, code: "io_error", message: "\(error)")
+            return .failure(code: "io_error", message: "\(error)")
         }
     }
 
@@ -46,14 +39,6 @@ public final class Dispatcher: Sendable {
         switch request.method {
         case "ping":
             return .object(["pong": .bool(true)])
-        case "version":
-            return .object([
-                "version": .string(coreVersion),
-                "protocol": .number(Double(protocolVersion)),
-            ])
-        case "shutdown":
-            library.stopExports()
-            return .object(["bye": .bool(true)])
         case "setRoot":
             return try JSONValue(
                 encoding: library.setRoot(

@@ -8,7 +8,8 @@ import { Progress } from "@photopipe/ui/components/progress";
 import { Segmented } from "@photopipe/ui/components/segmented";
 import { Switch } from "@photopipe/ui/components/switch";
 import { cn } from "@photopipe/ui/lib/utils";
-import { open as openDialog, save } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import {
   AlertCircle,
   Check,
@@ -19,6 +20,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { ExportFormat } from "@/lib/core";
+import { useFeatures } from "@/lib/features";
 import { pref } from "@/lib/pref";
 import {
   type ExportJob,
@@ -157,6 +159,8 @@ export function ExportDrawer({
   onClose,
 }: Props) {
   const options = optionsPref.use();
+  const { zipExport } = useFeatures();
+  const zip = options.zip && zipExport;
   const [decoderVersion, setDecoderVersion] =
     useState<RawDecoderVersion>(rawDecoderVersion);
   const [dismissed, setDismissed] = useState<string | null>(null);
@@ -224,7 +228,7 @@ export function ExportDrawer({
     optionsPref.set({ ...optionsPref.get(), ...next });
 
   const pickDestination = async (): Promise<string | null> => {
-    if (options.zip) {
+    if (zip) {
       const chosen = await save({
         title: "Save zip",
         defaultPath: `${shoot}.zip`,
@@ -232,17 +236,18 @@ export function ExportDrawer({
       }).catch(() => null);
       return typeof chosen === "string" ? chosen : null;
     }
-    const chosen = await openDialog({
+    return invoke<string | null>("pick_folder", {
       title: "Export to folder",
-      directory: true,
     }).catch(() => null);
-    return typeof chosen === "string" ? chosen : null;
   };
 
   const runExport = async () => {
     const destination = await pickDestination();
     if (destination)
-      onExport({ ...options, decoderVersion: effectiveDecoder }, destination);
+      onExport(
+        { ...options, zip, decoderVersion: effectiveDecoder },
+        destination,
+      );
   };
 
   return (
@@ -371,15 +376,17 @@ export function ExportDrawer({
       </Section>
 
       <Section label="Destination">
-        <Segmented
-          value={options.zip ? "zip" : "folder"}
-          options={[
-            ["folder", "Folder"],
-            ["zip", "Zip"],
-          ]}
-          testid="dest"
-          onChange={(dest) => patch({ zip: dest === "zip" })}
-        />
+        {zipExport && (
+          <Segmented
+            value={zip ? "zip" : "folder"}
+            options={[
+              ["folder", "Folder"],
+              ["zip", "Zip"],
+            ]}
+            testid="dest"
+            onChange={(dest) => patch({ zip: dest === "zip" })}
+          />
+        )}
         <div className="flex items-center justify-between gap-2 text-muted-foreground text-xs">
           <span>Flatten subfolders</span>
           <Switch

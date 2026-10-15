@@ -14,11 +14,13 @@ public final class LibraryService: @unchecked Sendable {
         case projectExists(String)
         case unreadableProjectFile(String)
         case unknownExport(String)
+        case rootSuperseded(String)
     }
 
     private let lock = NSLock()
     private var snapshot = LibrarySnapshot.empty
     private var root: String?
+    private var rootRequests = 0
     private var generation = 0
     /// Bumped whenever the file list itself is replaced. Enrichment batches
     /// carry the epoch they were queued under and are dropped if it moved on.
@@ -66,6 +68,10 @@ public final class LibraryService: @unchecked Sendable {
     /// background enrichment, and are visible through `status`.
     public func setRoot(path: String, indexPath: String?) throws -> RootSummary {
         let path = Self.canonical(path)
+        let request = lock.withLock {
+            rootRequests += 1
+            return rootRequests
+        }
         // Opening the database is itself a write (pragmas, schema, and a delete
         // if it turns out corrupt), so it has to queue behind whatever the
         // previous root left in flight rather than race it on a second handle.
@@ -78,7 +84,9 @@ public final class LibraryService: @unchecked Sendable {
         }
         let scanned = carryEnrichment(into: try walkLibrary(root: path), from: warm)
 
-        let currentGeneration = lock.withLock {
+        let currentGeneration = try lock.withLock {
+            // the caller may have timed out and opened another folder while this one was walked
+            guard rootRequests == request else { throw ServiceError.rootSuperseded(path) }
             root = path
             self.index = index
             return publish(scanned)
@@ -619,6 +627,8 @@ extension LibraryService.ServiceError: WireError {
         case .invalidProjectDay(let day):
             ResponseError(code: "invalid_project_day", message: "\(day) is not a YYYY-MM-DD date")
         case .unknownExport(let id): ResponseError(code: "unknown_export", message: id)
+        case .rootSuperseded(let path):
+            ResponseError(code: "superseded", message: "\(path) was replaced by a newer folder")
         case .projectExists(let folder):
             ResponseError(code: "project_exists", message: "\(folder) already exists")
         case .unreadableProjectFile(let shoot):

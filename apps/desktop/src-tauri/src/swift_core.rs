@@ -1,12 +1,16 @@
-//! The Swift core, linked in and called over a C ABI.
-
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::ffi::{c_char, c_void, CStr, CString};
-use std::sync::mpsc::{sync_channel, SyncSender};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::time::Duration;
 
-const PROTOCOL_VERSION: u64 = 1;
+/// Generous: most methods answer instantly, warm renders in ~35ms; the ceiling
+/// exists for cold full-res renders.
+const TIMEOUT: Duration = Duration::from_secs(10);
+
+/// `setRoot` walks the whole tree before answering, which on a slow external
+/// disk can take a while.
+const SET_ROOT_TIMEOUT: Duration = Duration::from_secs(120);
 
 type Reply = extern "C" fn(*mut c_void, *const c_char);
 
@@ -30,10 +34,10 @@ extern "C" fn deliver(context: *mut c_void, text: *const c_char) {
     let _ = sender.send(text);
 }
 
-fn call(start: impl FnOnce(*mut c_void, Reply)) -> Option<String> {
+fn call(start: impl FnOnce(*mut c_void, Reply)) -> Receiver<Option<String>> {
     let (sender, receiver) = sync_channel(1);
     start(Box::into_raw(Box::new(sender)).cast(), deliver);
-    receiver.recv().ok().flatten()
+    receiver
 }
 
 #[derive(Deserialize)]
@@ -49,12 +53,19 @@ struct WireResponse {
     error: Option<WireError>,
 }
 
-/// Blocks until the core answers.
+/// A request that times out keeps running in the core; its late answer is dropped.
 pub fn request(method: &str, params: Option<Value>) -> Result<Value, String> {
-    let line = json!({ "v": PROTOCOL_VERSION, "id": "", "method": method, "params": params });
+    let line = json!({ "method": method, "params": params });
     let line = CString::new(line.to_string()).expect("JSON escapes NUL");
+    let timeout = if method == "setRoot" {
+        SET_ROOT_TIMEOUT
+    } else {
+        TIMEOUT
+    };
     let text =
         call(|context, reply| unsafe { photopipe_core_request(line.as_ptr(), context, reply) })
+            .recv_timeout(timeout)
+            .map_err(|_| format!("the core did not answer within {timeout:?}"))?
             .ok_or("the core sent no answer")?;
     let response: WireResponse =
         serde_json::from_str(&text).map_err(|e| format!("unparseable response: {e}"))?;
@@ -68,21 +79,22 @@ pub fn request(method: &str, params: Option<Value>) -> Result<Value, String> {
     }
 }
 
-/// Long enough for a running export to drop its queue and clean up; quitting
-/// does not wait for a library walk.
 pub fn shutdown() {
     let (sender, receiver) = sync_channel(1);
     std::thread::spawn(move || {
         unsafe { photopipe_core_shutdown() };
         let _ = sender.send(());
     });
+    // long enough for a running export to drop its queue and clean up; a library walk is not waited out
     let _ = receiver.recv_timeout(Duration::from_secs(3));
 }
 
-/// The picked folder's path, or `None` when cancelled.
 #[cfg(target_os = "ios")]
 pub fn pick_folder() -> Option<String> {
     call(|context, reply| unsafe { photopipe_pick_folder(context, reply) })
+        .recv()
+        .ok()
+        .flatten()
 }
 
 /// Must run on the main thread with the window's WKWebView.

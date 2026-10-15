@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 #if os(macOS)
 
@@ -15,6 +16,8 @@ import Foundation
         private var stdinPipe: Pipe?
         private var stdoutPipe: Pipe?
         private var executeCount = 0
+        /// Readable without `lock`, which a stuck write may hold while the process exits.
+        private let pid = Atomic<Int32>(0)
 
         public static func findBinary() -> String? {
             if let env = ProcessInfo.processInfo.environment["PHOTOPIPE_EXIFTOOL"],
@@ -68,7 +71,8 @@ import Foundation
             let marker = "{ready\(executeCount)}"
             var command = args.joined(separator: "\n")
             command += "\n-execute\(executeCount)\n"
-            stdin.write(Data(command.utf8))
+            // throws rather than raising: the app ignores SIGPIPE, so a dead exiftool is EPIPE here
+            try stdin.write(contentsOf: Data(command.utf8))
 
             var buffer = Data()
             while true {
@@ -103,13 +107,14 @@ import Foundation
             lock.lock()
             defer { lock.unlock() }
             guard let process, process.isRunning else { return }
-            stdinPipe?.fileHandleForWriting.write(Data("-stay_open\nFalse\n".utf8))
+            try? stdinPipe?.fileHandleForWriting.write(contentsOf: Data("-stay_open\nFalse\n".utf8))
             let deadline = Date().addingTimeInterval(0.5)
             while process.isRunning && Date() < deadline {
                 usleep(10_000)
             }
             if process.isRunning { process.terminate() }
             self.process = nil
+            pid.store(0, ordering: .relaxed)
             stdinPipe = nil
             stdoutPipe = nil
         }
@@ -117,7 +122,6 @@ import Foundation
         private func ensureRunning() throws {
             if let process, process.isRunning { return }
             guard let binary = Self.findBinary() else { throw ExifToolError.notInstalled }
-            _ = Self.exitHook
 
             let process = Process()
             process.executableURL = URL(fileURLWithPath: binary)
@@ -127,18 +131,25 @@ import Foundation
             process.standardInput = stdinPipe
             process.standardOutput = stdoutPipe
             try process.run()
+            pid.store(process.processIdentifier, ordering: .relaxed)
+            _ = Self.exitHook
             self.process = process
             self.stdinPipe = stdinPipe
             self.stdoutPipe = stdoutPipe
         }
 
+        // exiftool outlives a closed stdin, and would hold the app's stderr open after it exits
         private static let exitHook: Void = {
-            atexit { ExifTool.shared.shutdown() }
+            atexit {
+                let pid = ExifTool.shared.pid.load(ordering: .relaxed)
+                if pid > 0 { kill(pid, SIGTERM) }
+            }
         }()
 
         private func terminate() {
             process?.terminate()
             process = nil
+            pid.store(0, ordering: .relaxed)
             stdinPipe = nil
             stdoutPipe = nil
         }

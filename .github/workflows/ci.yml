@@ -53,8 +53,8 @@ jobs:
         run: swift format lint --strict --recursive .
       # tauri-build resolves bundle.resources at compile time, so a missing
       # exiftool fails every cargo command, not just the bundle.
-      - name: Prepare bundle inputs
-        run: ./scripts/prepare-bundle.sh
+      - name: Vendor exiftool
+        run: ./scripts/fetch-exiftool.sh
       - name: Swift test
         working-directory: core
         env:
@@ -71,6 +71,9 @@ jobs:
         run: |
           rustup target add aarch64-apple-ios-sim
           cargo clippy --target aarch64-apple-ios-sim -- -D warnings
+      # clippy compiles the Swift core for iOS; only the Xcode build links it into the app
+      - name: Build the iPad app for the simulator
+        run: pnpm --filter desktop tauri ios build --debug --target aarch64-sim
       - name: Cargo tests (against the linked core)
         working-directory: apps/desktop/src-tauri
         run: cargo test

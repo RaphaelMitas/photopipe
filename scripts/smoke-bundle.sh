@@ -80,7 +80,6 @@ fi
 ROOT=$(mktemp -d -t photopipe-smoke)
 trap 'rm -rf "$ROOT"' EXIT
 SIDECAR="$ROOT/SMOKE1.xmp"
-# No Homebrew, no PHOTOPIPE_* overrides: whatever exiftool reaches for has to come from inside the bundle.
 env -i PATH=/usr/bin:/bin HOME="$ROOT" "$EXIFTOOL" -q -XMP:Rating=4 -o "$SIDECAR" \
   || fail "the bundled exiftool did not run"
 grep -q "<xmp:Rating>4</xmp:Rating>" "$SIDECAR" || fail "sidecar written but the rating is missing"

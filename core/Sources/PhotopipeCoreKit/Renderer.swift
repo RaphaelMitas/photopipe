@@ -166,8 +166,6 @@ public final class Renderer: @unchecked Sendable {
             guard let output else { throw RenderError.unreadable(file.path) }
             image = output
         } else {
-            // the crop rect is against the displayed frame, not the sensor
-            // layout, and the option drops the tag so nothing rotates twice
             // CIImage(contentsOf:) segfaults on a JPEG whose header claims a huge frame
             guard
                 let source = CGImageSourceCreateWithURL(
@@ -175,6 +173,8 @@ public final class Renderer: @unchecked Sendable {
             else {
                 throw RenderError.unreadable(file.path)
             }
+            // the crop rect is against the displayed frame, not the sensor
+            // layout, and the option drops the tag so nothing rotates twice
             let base = CIImage(
                 cgImageSource: source, index: 0, options: [.applyOrientationProperty: true])
             guard !base.extent.isEmpty else { throw RenderError.unreadable(file.path) }

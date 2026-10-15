@@ -6,16 +6,7 @@ use bookmark::Failure;
 use roots::{Listing, Roots};
 use serde::Serialize;
 use std::sync::Arc;
-#[cfg(desktop)]
-use tauri::menu::{
-    AboutMetadataBuilder, MenuBuilder, MenuItemBuilder, SubmenuBuilder, HELP_SUBMENU_ID,
-    WINDOW_SUBMENU_ID,
-};
-#[cfg(desktop)]
-use tauri::Emitter;
 use tauri::{AppHandle, Manager, State};
-#[cfg(desktop)]
-use tauri_plugin_dialog::DialogExt;
 
 /// Core requests and bookmark resolution can stall, so neither runs on the main
 /// thread or a tokio worker.
@@ -60,7 +51,7 @@ async fn open_root(
     blocking(move || -> Result<_, Failure> {
         let path = match path {
             Some(path) => path,
-            None => match pick_folder(&app)? {
+            None => match choose_folder(&app, "Choose your photos folder")? {
                 Some(path) => path,
                 None => return Ok(None),
             },
@@ -80,14 +71,16 @@ async fn open_root(
     .await?
 }
 
+/// The export destination comes through here too, so iOS can pick it in place.
+#[tauri::command]
+async fn pick_folder(app: AppHandle, title: String) -> Result<Option<String>, Failure> {
+    blocking(move || choose_folder(&app, &title)).await?
+}
+
 #[cfg(desktop)]
-fn pick_folder(app: &AppHandle) -> Result<Option<String>, Failure> {
-    let Some(picked) = app
-        .dialog()
-        .file()
-        .set_title("Choose your photos folder")
-        .blocking_pick_folder()
-    else {
+fn choose_folder(app: &AppHandle, title: &str) -> Result<Option<String>, Failure> {
+    use tauri_plugin_dialog::DialogExt;
+    let Some(picked) = app.dialog().file().set_title(title).blocking_pick_folder() else {
         return Ok(None);
     };
     Ok(Some(
@@ -99,9 +92,9 @@ fn pick_folder(app: &AppHandle) -> Result<Option<String>, Failure> {
     ))
 }
 
-/// The dialog plugin copies picks into the app's caches on iOS; a library is opened in place.
+/// The dialog plugin cannot pick a folder on iOS, and copies files it picks into the app's caches.
 #[cfg(mobile)]
-fn pick_folder(_app: &AppHandle) -> Result<Option<String>, Failure> {
+fn choose_folder(_app: &AppHandle, _title: &str) -> Result<Option<String>, Failure> {
     Ok(swift_core::pick_folder())
 }
 
@@ -111,13 +104,29 @@ async fn forget_root(roots: State<'_, Arc<Roots>>, path: String) -> Result<(), F
     Ok(blocking(move || roots.forget(&path)).await?)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Features {
+    updater: bool,
+    zip_export: bool,
+}
+
 #[tauri::command]
-fn updater_available() -> bool {
-    cfg!(all(desktop, feature = "updater"))
+fn features() -> Features {
+    Features {
+        updater: cfg!(all(desktop, feature = "updater")),
+        // zipping shells out to /usr/bin/zip, and the iOS save dialog only exports a copy
+        zip_export: cfg!(desktop),
+    }
 }
 
 #[cfg(desktop)]
 fn install_menu(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{
+        AboutMetadataBuilder, MenuBuilder, MenuItemBuilder, SubmenuBuilder, HELP_SUBMENU_ID,
+        WINDOW_SUBMENU_ID,
+    };
+    use tauri::Emitter;
     let settings = MenuItemBuilder::new("Settings…")
         .id("settings")
         .accelerator("CmdOrCtrl+,")
@@ -180,6 +189,16 @@ fn install_menu(app: &tauri::App) -> tauri::Result<()> {
         .items(&[&app_menu, &edit_menu, &view_menu, &window_menu, &help_menu])
         .build()?;
     app.set_menu(menu)?;
+    app.on_menu_event(|app, event| match event.id().as_ref() {
+        "settings" => {
+            let _ = app.emit("menu:settings", ());
+        }
+        #[cfg(feature = "updater")]
+        "check-updates" => {
+            let _ = app.emit("menu:check-updates", ());
+        }
+        _ => {}
+    });
     Ok(())
 }
 
@@ -192,7 +211,7 @@ pub fn run() {
     let builder = builder
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build());
-    let builder = builder
+    builder
         .setup(|app| {
             app.manage(Arc::new(Roots::load(None)));
             // not in capabilities/: tauri-build rejects permissions for plugins the store build compiles out
@@ -216,20 +235,9 @@ pub fn run() {
             list_roots,
             open_root,
             forget_root,
-            updater_available
-        ]);
-    #[cfg(desktop)]
-    let builder = builder.on_menu_event(|app, event| match event.id().as_ref() {
-        "settings" => {
-            let _ = app.emit("menu:settings", ());
-        }
-        #[cfg(feature = "updater")]
-        "check-updates" => {
-            let _ = app.emit("menu:check-updates", ());
-        }
-        _ => {}
-    });
-    builder
+            pick_folder,
+            features
+        ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|_app, event| {

@@ -24,8 +24,7 @@ public func shutdown() {
     import UniformTypeIdentifiers
     import WebKit
 
-    /// The UI is laid out for a window with nothing on top of it, so the webview stops at the
-    /// status bar and home indicator instead of scrolling under them.
+    /// The UI assumes nothing overlaps it, so the webview stops at the status bar and home indicator.
     @_cdecl("photopipe_fit_to_safe_area")
     public func fitToSafeArea(_ webview: UnsafeMutableRawPointer) {
         nonisolated(unsafe) let webview = webview
@@ -44,8 +43,7 @@ public func shutdown() {
         }
     }
 
-    /// Replies with the picked folder's path, or nil when cancelled. The scope stays started for
-    /// the life of the process, as on macOS.
+    /// The scope is never stopped: the core reads the folder for the life of the process.
     @_cdecl("photopipe_pick_folder")
     public func pickFolder(_ context: UnsafeMutableRawPointer?, _ reply: Reply) {
         nonisolated(unsafe) let context = context

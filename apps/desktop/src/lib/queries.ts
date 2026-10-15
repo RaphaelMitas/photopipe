@@ -235,8 +235,8 @@ export function useRawDefaults(
 }
 
 /// The core reads one file header per photo before its per-camera cache can
-/// help. A whole shoot off an SD card would outrun the sidecar's read timeout
-/// and take the process down, so ask in batches it can always answer in time.
+/// help. A whole shoot off an SD card would outrun the request timeout, so ask
+/// in batches it can always answer in time.
 const SUPPORT_BATCH = 400;
 
 async function decoderSupport(paths: string[]) {
@@ -643,7 +643,7 @@ export function jobStatus(job: ExportJob): JobStatus {
 const EXPORT_POLL_MS = 400;
 let nextJobKey = 1;
 
-/// Addressed by `key`, so a row outlives the core process that issued its `id`.
+/// Addressed by `key`: every start that failed shares the empty `id`.
 type JobRow = {
   key: string;
   id: string;
@@ -672,7 +672,7 @@ export function useExportJobs() {
   const jobs: ExportJob[] = rows.map((row, index) => {
     const result = results[index];
     const progress = result?.data ?? row.initial;
-    // The core went away mid-export; this job is not coming back.
+    // Its status can no longer be read; this job is not coming back.
     const lost = result?.error
       ? { running: false, error: String(result.error) }
       : null;

@@ -12,6 +12,7 @@ settingGroups:
     base:
       PRODUCT_NAME: Photopipe
       PRODUCT_BUNDLE_IDENTIFIER: net.photopipe.app
+      TARGETED_DEVICE_FAMILY: 2
 targetTemplates:
   app:
     type: application

@@ -18,9 +18,15 @@ vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (path: string) => path,
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({
-  open: vi.fn(async () => "/fake/delivery"),
   save: vi.fn(async () => "/fake/delivery.zip"),
 }));
+
+/// Commands the drawer sends besides the core requests a test is about.
+function shell(cmd: string) {
+  if (cmd === "features") return { updater: false, zipExport: true };
+  if (cmd === "pick_folder") return "/fake/delivery";
+  return undefined;
+}
 
 const RAWS = ["/r/s/A.ARW", "/r/s/B.ARW", "/r/s/C.ARW"];
 
@@ -59,9 +65,11 @@ function renderDrawer(rawPaths: string[] = RAWS) {
 }
 
 function mockSupport(raw9: number, rawTotal: number) {
-  invoke.mockImplementation(async (_cmd, args: { method?: string }) => {
-    if (args.method === "decoderSupport") return { raw9, rawTotal };
-    throw `unexpected method ${String(args.method)}`;
+  invoke.mockImplementation(async (cmd: string, args?: { method?: string }) => {
+    const answer = shell(cmd);
+    if (answer !== undefined) return answer;
+    if (args?.method === "decoderSupport") return { raw9, rawTotal };
+    throw `unexpected ${cmd} ${String(args?.method)}`;
   });
 }
 
@@ -200,10 +208,12 @@ describe("export decoder row", () => {
     const sizes: number[] = [];
     invoke.mockImplementation(
       async (
-        _cmd,
-        args: { method?: string; params?: { paths?: string[] } },
+        cmd: string,
+        args?: { method?: string; params?: { paths?: string[] } },
       ) => {
-        if (args.method !== "decoderSupport") throw "unexpected";
+        const answer = shell(cmd);
+        if (answer !== undefined) return answer;
+        if (args?.method !== "decoderSupport") throw "unexpected";
         const count = args.params?.paths?.length ?? 0;
         sizes.push(count);
         return { raw9: count, rawTotal: count };
@@ -215,15 +225,17 @@ describe("export decoder row", () => {
         "detail",
       ),
     );
-    // one 900-path request is what outran the sidecar timeout
+    // one 900-path request is what outran the request timeout
     expect(sizes.every((size) => size <= 400)).toBe(true);
     expect(sizes.reduce((sum, size) => sum + size, 0)).toBe(900);
   });
 
   it("hides the row entirely for a selection with no raws", () => {
-    const calls = invoke.mock.calls.length;
+    const coreCalls = () =>
+      invoke.mock.calls.filter(([cmd]) => cmd === "core_request").length;
+    const calls = coreCalls();
     renderDrawer([]);
     expect(screen.queryByTestId("export-decoder-8")).not.toBeInTheDocument();
-    expect(invoke.mock.calls.length).toBe(calls);
+    expect(coreCalls()).toBe(calls);
   });
 });

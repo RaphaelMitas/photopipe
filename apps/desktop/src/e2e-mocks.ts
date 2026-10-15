@@ -197,6 +197,8 @@ function argPath(args: unknown): string | undefined {
 }
 
 export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
+  features: () => ({ updater: false, zipExport: true }),
+  pick_folder: () => "/fake/delivery",
   list_roots: () => roots,
   open_root: (args) => {
     const wanted = argPath(args);

@@ -101,8 +101,8 @@ pnpm dev
 
 `pnpm dev` vendors `exiftool` into `src-tauri/resources/` and starts
 `tauri dev`; the crate's build script compiles and links the Swift core.
-Running `tauri dev` directly fails until exiftool is staged once:
-`./scripts/prepare-bundle.sh`.
+Running `tauri dev` directly fails until exiftool is vendored once:
+`./scripts/fetch-exiftool.sh`.
 
 You need Rust, Swift (Xcode command line tools) and Node 24.
 

@@ -47,11 +47,12 @@ const RESOLUTION: NSURLBookmarkResolutionOptions =
         .union(NSURLBookmarkResolutionOptions::WithoutUI)
         .union(NSURLBookmarkResolutionOptions::WithoutMounting);
 
-// iOS bookmarks carry their scope implicitly and reject the macOS-only flags
+// iOS bookmarks carry their scope implicitly and have no WithSecurityScope flag
 #[cfg(target_os = "ios")]
 const CREATION: NSURLBookmarkCreationOptions = NSURLBookmarkCreationOptions::empty();
 #[cfg(target_os = "ios")]
-const RESOLUTION: NSURLBookmarkResolutionOptions = NSURLBookmarkResolutionOptions::WithoutUI;
+const RESOLUTION: NSURLBookmarkResolutionOptions = NSURLBookmarkResolutionOptions::WithoutUI
+    .union(NSURLBookmarkResolutionOptions::WithoutMounting);
 
 fn mint_url(url: &NSURL) -> Result<Vec<u8>, Failure> {
     url.bookmarkDataWithOptions_includingResourceValuesForKeys_relativeToURL_error(

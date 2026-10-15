@@ -1,24 +1,12 @@
 import Foundation
 
-/// Sidecar protocol v1: line-delimited JSON over stdio.
-///
-/// Request:  {"v":1,"id":"<caller id>","method":"ping","params":{...}}
-/// Response: {"v":1,"id":"<caller id>","ok":true,"result":{...}}
-///           {"v":1,"id":"<caller id>","ok":false,"error":{"code":"...","message":"..."}}
-public let protocolVersion = 1
-/// Shipped, the core sits in the app's Contents/MacOS and so reads the app's Info.plist.
-public let coreVersion =
-    Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
-
+/// Request:  {"method":"ping","params":{...}}
+/// Response: {"ok":true,"result":{...}} or {"ok":false,"error":{"code":"...","message":"..."}}
 public struct Request: Codable, Equatable, Sendable {
-    public let v: Int
-    public let id: String
     public let method: String
     public let params: JSONValue?
 
-    public init(v: Int = protocolVersion, id: String, method: String, params: JSONValue? = nil) {
-        self.v = v
-        self.id = id
+    public init(method: String, params: JSONValue? = nil) {
         self.method = method
         self.params = params
     }
@@ -35,25 +23,22 @@ public struct ResponseError: Codable, Equatable, Sendable {
 }
 
 public struct Response: Codable, Equatable, Sendable {
-    public let v: Int
-    public let id: String
     public let ok: Bool
     public let result: JSONValue?
     public let error: ResponseError?
 
-    public static func success(id: String, result: JSONValue) -> Response {
-        Response(v: protocolVersion, id: id, ok: true, result: result, error: nil)
+    public static func success(result: JSONValue) -> Response {
+        Response(ok: true, result: result, error: nil)
     }
 
-    public static func failure(id: String, code: String, message: String) -> Response {
-        failure(id: id, error: ResponseError(code: code, message: message))
+    public static func failure(code: String, message: String) -> Response {
+        failure(error: ResponseError(code: code, message: message))
     }
 
-    public static func failure(id: String, error: ResponseError) -> Response {
-        Response(v: protocolVersion, id: id, ok: false, result: nil, error: error)
+    public static func failure(error: ResponseError) -> Response {
+        Response(ok: false, result: nil, error: error)
     }
 
-    /// Single-line JSON, deterministic key order.
     public func encodedLine() throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
