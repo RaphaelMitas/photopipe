@@ -62,33 +62,32 @@ const changes = (stack: Stack, ratingOf: (frame: ImageFile) => number) =>
 export const rateStack = (stack: Stack, rating: number) =>
   changes(stack, () => rating);
 
-/// The writes that keep only `path`: it gets the stack's rating, or 5 when
-/// nothing in the stack is rated, and every other frame is cleared.
 export function pickInStack(stack: Stack, path: string) {
   const kept = stackRating(stack) > 0 ? stackRating(stack) : 5;
-  return changes(stack, (frame) => (frame.path === path ? kept : 0));
+  return {
+    writes: changes(stack, (frame) => (frame.path === path ? kept : 0)),
+    kept,
+    cleared: stack.frames.filter(
+      (frame) => frame.path !== path && frame.rating !== 0,
+    ).length,
+  };
 }
 
-/// The loupe's walk with stacks on. A stack sits where `sorted` puts its first
-/// photo and stays in the walk while its rating passes the filter or it holds
-/// `keep`, the photo you are on.
 export function stackedOrder(
   sorted: ImageFile[],
   matches: (image: { rating: number }) => boolean,
-  keep?: ImageFile,
+  current?: ImageFile,
 ): ImageFile[] {
   return groupStacks(sorted)
     .filter(
       (stack) =>
         matches({ rating: stackRating(stack) }) ||
-        (keep !== undefined &&
-          stack.frames.some((frame) => frame.path === keep.path)),
+        (current !== undefined &&
+          stack.frames.some((frame) => frame.path === current.path)),
     )
     .flatMap((stack) => stack.frames);
 }
 
-/// Where ← or → lands: the cover of the neighbouring stack, or inside a stack
-/// its neighbouring frame. Null at either end.
 export function stepPath(
   stacks: Stack[],
   path: string,

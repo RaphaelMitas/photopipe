@@ -92,9 +92,8 @@ export function Filmstrip({ images, index, mode, stacks, onNavigate }: Props) {
           const image = images[item.index];
           const place = places?.[item.index];
           const mine = place !== undefined && place.stack === stacks?.current;
-          // at stack level the whole stack is what you are on
-          const lit = mine && !stacks?.inside;
-          const active = item.index === index && !lit;
+          const wholeStackActive = mine && !stacks?.inside;
+          const active = item.index === index && !wholeStackActive;
           const faded = stacks?.inside && !mine;
           return (
             <div
@@ -107,11 +106,13 @@ export function Filmstrip({ images, index, mode, stacks, onNavigate }: Props) {
             >
               {place && place.stack.frames.length > 1 && (
                 <span
-                  data-testid={lit ? "filmstrip-stack-current" : undefined}
+                  data-testid={
+                    wholeStackActive ? "filmstrip-stack-current" : undefined
+                  }
                   className={`pointer-events-none absolute -inset-y-1 border-y ${
                     place.first ? "-left-1 rounded-l-md border-l" : "left-0"
                   } ${place.last ? "-right-1 rounded-r-md border-r" : ""} ${
-                    lit
+                    wholeStackActive
                       ? "border-primary bg-primary/10"
                       : "border-foreground/20"
                   } ${faded ? "opacity-30" : ""}`}
@@ -125,7 +126,7 @@ export function Filmstrip({ images, index, mode, stacks, onNavigate }: Props) {
                 className={`relative flex h-full w-full flex-col overflow-hidden rounded-sm transition-opacity ${
                   active
                     ? "ring-2 ring-primary opacity-100"
-                    : lit
+                    : wholeStackActive
                       ? "opacity-100"
                       : faded
                         ? "opacity-25 hover:opacity-60"

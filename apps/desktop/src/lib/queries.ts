@@ -64,15 +64,17 @@ const RATED_OFFER_MS = 8000;
 /// A background pass's answers reach the grid through `listImages`, so images
 /// refetch when the pass ends, not every tick. Every fetch asks the core to
 /// run, not just the first: an empty pass is free, and it is what picks up
-/// newly imported photos. `finished` counts passes that ended in this shoot.
+/// newly imported photos.
+const PASSES = ["scoreShoot", "stackShoot"] as const;
+
 function usePass(
-  method: "scoreShoot" | "stackShoot",
+  method: (typeof PASSES)[number],
   shoot: string | null,
   enabled: boolean,
 ) {
   const client = useQueryClient();
   const wasRunning = useRef(false);
-  const [finished, setFinished] = useState(0);
+  const [finishedPasses, setFinishedPasses] = useState(0);
 
   const query = useQuery({
     queryKey: [method, shoot],
@@ -88,29 +90,32 @@ function usePass(
     wasRunning.current = running;
     if (lastShoot.current !== shoot) {
       lastShoot.current = shoot;
-      setFinished(0);
+      setFinishedPasses(0);
       return;
     }
     if (!ended) return;
     void client.invalidateQueries({ queryKey: imagesKey(shoot) });
-    setFinished((count) => count + 1);
+    setFinishedPasses((count) => count + 1);
   }, [running, shoot, client]);
 
   // a stale `running` would freeze a progress line where it stopped
-  return { progress: enabled ? (query.data ?? null) : null, finished };
+  return {
+    progress: enabled ? (query.data ?? null) : null,
+    finishedPasses,
+  };
 }
 
 /// `justRated` is the window after a pass where the browser can hand the sort
 /// over to Instinct.
 export function useScoring(shoot: string | null, enabled: boolean) {
-  const { progress, finished } = usePass("scoreShoot", shoot, enabled);
+  const { progress, finishedPasses } = usePass("scoreShoot", shoot, enabled);
   const [justRated, setJustRated] = useState(false);
   useEffect(() => {
-    setJustRated(finished > 0);
-    if (finished === 0) return;
+    setJustRated(finishedPasses > 0);
+    if (finishedPasses === 0) return;
     const timer = setTimeout(() => setJustRated(false), RATED_OFFER_MS);
     return () => clearTimeout(timer);
-  }, [finished]);
+  }, [finishedPasses]);
   return { progress, justRated };
 }
 
@@ -118,9 +123,14 @@ export function useScoring(shoot: string | null, enabled: boolean) {
 /// would regroup under you as the pass fills them in.
 export function useStacking(shoot: string | null, enabled: boolean) {
   const { progress } = usePass("stackShoot", shoot, enabled);
-  const ready =
+  const complete =
     progress !== null && !progress.running && progress.done >= progress.total;
-  return { progress, ready };
+  // a later pass for newly arrived photos must not take stacks away mid-visit
+  const [readyShoot, setReadyShoot] = useState<string | null>(null);
+  useEffect(() => {
+    if (complete) setReadyShoot(shoot);
+  }, [complete, shoot]);
+  return { progress, ready: enabled && (complete || readyShoot === shoot) };
 }
 
 export function useThumbnail(
@@ -859,8 +869,10 @@ export function useLibrarySync(
           invalidateLibrary(queryClient);
           for (const shoot of status.changedShoots ?? []) {
             queryClient.invalidateQueries({ queryKey: imagesKey(shoot) });
-            // newly arrived photos need rating, and only scoreShoot picks them up
-            queryClient.invalidateQueries({ queryKey: ["scoring", shoot] });
+            // newly arrived photos need a score and a print, and only the passes pick them up
+            for (const method of PASSES) {
+              queryClient.invalidateQueries({ queryKey: [method, shoot] });
+            }
           }
           seen.current = status.generation;
         }

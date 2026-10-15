@@ -255,6 +255,7 @@ export function Loupe({
           if (multiFrame && !stacks.inside) stacks.onEnter();
           break;
         case "p":
+        case "P":
           if (multiFrame && stacks.inside) stacks.onPick();
           break;
         case "0":
@@ -484,9 +485,7 @@ function StackOverlay({ stacks, path }: { stacks: LoupeStacks; path: string }) {
   const { frames } = stacks.current;
   const rating = stackRating(stacks.current);
   const rated = frames.filter((frame) => frame.rating === rating).length;
-  const picks = pickInStack(stacks.current, path);
-  const cleared = [...picks.values()].filter((value) => value === 0).length;
-  const kept = rating > 0 ? rating : 5;
+  const { kept, cleared } = pickInStack(stacks.current, path);
   return (
     <>
       <div

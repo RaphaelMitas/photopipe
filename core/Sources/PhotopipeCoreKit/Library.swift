@@ -24,11 +24,9 @@ public struct ImageFile: Codable, Equatable, Sendable {
     /// rated yet. Lives in its own table rather than the file record, so it is
     /// filled in on the way out rather than carried through the snapshot.
     public let score: Double?
-    /// When the camera took it, in seconds, or nil before the stacking pass has read it.
-    /// Filled in on the way out, like `score`.
+    /// Capture time in seconds, nil when unknown; filled in on the way out, like `score`.
     public let captured: Double?
-    /// The near-identical photos this one belongs with, named by the path of the first of them.
-    /// Nil for a photo that stands alone.
+    /// Path of the first photo in its stack of near-identical photos, nil when it stands alone.
     public let stack: String?
     /// False while the walk's placeholder rating, edit and dimensions are still
     /// standing in for the real ones. Writing an edit against a placeholder

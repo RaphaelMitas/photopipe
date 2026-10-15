@@ -116,3 +116,40 @@ private func writeJPEG(
     #expect(stack["3.jpg"] == .some(nil))
     #expect(images.allSatisfy { $0.captured != nil })
 }
+
+@Test func aSubsecondThatIsNotDigitsIsIgnored() throws {
+    let stamp = "2026:08:08 19:24:28"
+    let base = try #require(Dimensions.captureTime(exifDate(stamp, subsec: "0")))
+    for junk in ["1e999", "nan", "-5", "12a"] {
+        #expect(Dimensions.captureTime(exifDate(stamp, subsec: junk)) == base)
+    }
+    #expect(Dimensions.captureTime(exifDate(stamp, subsec: " 25 ")) == base + 0.25)
+}
+
+@Test func aJPEGsTinyEmbeddedThumbnailIsNotWhatGetsPrinted() throws {
+    let url = URL(fileURLWithPath: tempFile("thumbnailed.jpg"))
+    defer { try? FileManager.default.removeItem(at: url) }
+    let context = CGContext(
+        data: nil, width: 2048, height: 1536, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    let destination = CGImageDestinationCreateWithURL(
+        url as CFURL, UTType.jpeg.identifier as CFString, 1, nil)!
+    CGImageDestinationAddImage(
+        destination, context.makeImage()!,
+        [kCGImageDestinationEmbedThumbnail: true] as CFDictionary)
+    #expect(CGImageDestinationFinalize(destination))
+
+    let source = try #require(CGImageSourceCreateWithURL(url as CFURL, nil))
+    let preview = try #require(Printer.preview(source))
+    #expect(max(preview.width, preview.height) == Stacker.previewSize)
+}
+
+@Test func analysisLoadsOnlyTheOpenLibrary() throws {
+    let path = tempFile("index.sqlite")
+    defer { try? FileManager.default.removeItem(atPath: path) }
+    let index = try SQLiteIndex(path: path)
+    let row = Printer.Row(value: Print(feature: [1], captured: 1), mtime: 1, size: 1, version: 1)
+    try index.savePrints([("/lib/a.arw", row), ("/lib2/b.arw", row), ("/li/c.arw", row)])
+    #expect(try index.loadPrints(under: "/lib").keys.sorted() == ["/lib/a.arw"])
+}

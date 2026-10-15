@@ -22,6 +22,9 @@ const landed = (batch: Promise<BatchResult>) =>
     }
   });
 
+export const ratingDetail = (rating: number) =>
+  rating === 0 ? "cleared" : "★".repeat(rating);
+
 export function useRecordedWrites(shoot: string | null) {
   const queryClient = useQueryClient();
   // stable across renders, so an entry can hold on to them
@@ -56,7 +59,7 @@ export function useRecordedWrites(shoot: string | null) {
         {
           icon: Star,
           label: "Rating",
-          detail: rating === 0 ? "cleared" : "★".repeat(rating),
+          detail: ratingDetail(rating),
           paths: [path],
           written,
         },

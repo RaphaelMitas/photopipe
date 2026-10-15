@@ -5,13 +5,8 @@ import Vision
 public typealias Scorer = Analyzer<Double>
 
 extension Analyzer where Value == Double {
-    /// Vision reads the RAW file itself, so nothing here decodes an image.
     public convenience init() {
         self.init(version: 1, concurrency: 6, analyze: Self.score)
-    }
-
-    public func scores(for files: [ImageFile]) -> [String: Double] {
-        values(for: files)
     }
 
     static func score(path: String) async -> Double? {

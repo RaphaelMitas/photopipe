@@ -17,8 +17,7 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
     public typealias Row = AnalysisRow<Value>
     public typealias Flush = @Sendable ([(String, Row)]) -> Void
 
-    /// Every cached row carries this. Bump it when the model or its input changes and the
-    /// whole cache is ignored, no migration needed.
+    /// Rows cached under another version are ignored, so a bump replaces the cache without a migration.
     public let version: Int
     private let concurrency: Int
     private let analyze: @Sendable (String) async -> Value?
@@ -29,6 +28,8 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
     private var cache: [String: Row] = [:]
     private var progressByShoot: [String: Progress] = [:]
     private var passes: [String: Task<Void, Never>] = [:]
+    /// Bumped by `use`, so a cancelled pass still finishing its reads can tell it is stale.
+    private var generation = 0
     /// Files one of our writes moved while a pass had them queued. The pass reads them as they
     /// are now, so it records its answer under these stamps, not the ones it queued with.
     private var moved: [String: ImageFile] = [:]
@@ -50,6 +51,7 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
             passes.removeAll()
             progressByShoot.removeAll()
             moved.removeAll()
+            generation += 1
             self.flush = flush
             self.cache = cache
             return cancelled
@@ -111,14 +113,16 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
             let start = Progress(
                 done: files.count - pending.count, total: files.count, running: true)
             progressByShoot[shoot] = start
+            let generation = generation
             passes[shoot] = Task.detached(priority: .utility) { [weak self] in
-                await self?.run(shoot: shoot, pending: pending, total: files.count)
+                await self?.run(
+                    shoot: shoot, pending: pending, total: files.count, generation: generation)
             }
             return start
         }
     }
 
-    private func run(shoot: String, pending: [ImageFile], total: Int) async {
+    private func run(shoot: String, pending: [ImageFile], total: Int, generation: Int) async {
         var buffer: [(String, Row)] = []
         let analyze = self.analyze
         await forEachConcurrently(pending, width: concurrency) { file in
@@ -131,6 +135,7 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
             if cancelled && value == nil { return }
 
             let (write, full) = lock.withLock { () -> (Flush?, Bool) in
+                guard generation == self.generation else { return (nil, false) }
                 let row = Row(value: value, for: moved[file.path] ?? file, version: version)
                 cache[file.path] = row
                 buffer.append((file.path, row))
@@ -146,6 +151,7 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
         }
 
         let write = lock.withLock { () -> Flush? in
+            guard generation == self.generation else { return nil }
             progressByShoot[shoot] = nil
             passes[shoot] = nil
             if passes.isEmpty { moved.removeAll() }

@@ -107,7 +107,7 @@ export type ImageFile = {
   height: number;
   // Vision's aesthetic score, -1..1, null for a photo it has not rated.
   score: number | null;
-  // Capture time in seconds, null until the stacking pass has read it.
+  // capture time in seconds, null when unknown
   captured: number | null;
   // first photo of its stack of near-identical photos, null for one alone
   stack: string | null;

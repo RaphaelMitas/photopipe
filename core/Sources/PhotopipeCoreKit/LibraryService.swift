@@ -86,7 +86,7 @@ public final class LibraryService: @unchecked Sendable {
         }
 
         store(scanned, root: path, in: index)
-        useAnalyzers(with: index)
+        useAnalyzers(with: index, root: path)
 
         let newWatcher = Watcher(path: path, queue: rescanQueue) { [weak self] in
             self?.scheduleRescan()
@@ -103,8 +103,8 @@ public final class LibraryService: @unchecked Sendable {
 
     public func listImages(shoot: String) throws -> [ImageFile] {
         let images = try images(inShoot: shoot)
-        let scores = scorer.scores(for: images)
-        let prints = printer.prints(for: images)
+        let scores = scorer.values(for: images)
+        let prints = printer.values(for: images)
         let stacks = Stacker.stacks(prints)
         return images.map { image in
             image.with(
@@ -598,9 +598,12 @@ public final class LibraryService: @unchecked Sendable {
     /// interrupted session still starts warm next time.
     /// Each analyzer keeps its own copy of the cache and hands results back here to
     /// be written, so the sqlite handle stays on one queue with the enricher.
-    private func useAnalyzers(with index: SQLiteIndex?) {
+    private func useAnalyzers(with index: SQLiteIndex?, root: String) {
         let (scores, prints) = indexQueue.sync {
-            ((try? index?.loadScores()) ?? [:], (try? index?.loadPrints()) ?? [:])
+            (
+                (try? index?.loadScores(under: root)) ?? [:],
+                (try? index?.loadPrints(under: root)) ?? [:]
+            )
         }
         let queue = indexQueue
         scorer.use(cache: scores) { rows in

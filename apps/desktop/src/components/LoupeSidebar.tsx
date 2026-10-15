@@ -17,6 +17,7 @@ import { ChevronLeft } from "lucide-react";
 import type { ImageFile, PassProgress } from "@/lib/core";
 import { fileName } from "@/lib/fileName";
 import { instinctScore } from "@/lib/instinct";
+import { sortImages } from "@/lib/sort";
 import { type Stack, stackRating } from "@/lib/stacks";
 import { filmstripPref } from "./Filmstrip";
 import { type RatingFilter, RatingFilterGroup } from "./RatingFilter";
@@ -193,9 +194,7 @@ const finding = (progress: PassProgress | null) =>
 function StackGroup({ stack, inside }: { stack: Stack; inside: boolean }) {
   const rating = stackRating(stack);
   const rated = stack.frames.filter((frame) => frame.rating === rating).length;
-  const instinct = stack.frames.reduce((best, frame) =>
-    (frame.score ?? -2) > (best.score ?? -2) ? frame : best,
-  );
+  const [instinct] = sortImages(stack.frames, "score");
   const rows: [string, string][] = [
     ["frames", String(stack.frames.length)],
     [

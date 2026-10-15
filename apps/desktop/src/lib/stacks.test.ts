@@ -64,19 +64,23 @@ describe("pickInStack", () => {
       frame("a2.arw", { rating: 4 }),
       frame("a3.arw", { rating: 2 }),
     ]);
-    expect(pickInStack(stack, "/r/s/a2.arw")).toEqual(
-      new Map([
+    expect(pickInStack(stack, "/r/s/a2.arw")).toEqual({
+      writes: new Map([
         ["/r/s/a1.arw", 0],
         ["/r/s/a3.arw", 0],
       ]),
-    );
+      kept: 4,
+      cleared: 2,
+    });
   });
 
   it("gives the pick five stars when nothing in the stack is rated", () => {
     const [stack] = groupStacks([frame("a1.arw"), frame("a2.arw")]);
-    expect(pickInStack(stack, "/r/s/a1.arw")).toEqual(
-      new Map([["/r/s/a1.arw", 5]]),
-    );
+    expect(pickInStack(stack, "/r/s/a1.arw")).toEqual({
+      writes: new Map([["/r/s/a1.arw", 5]]),
+      kept: 5,
+      cleared: 0,
+    });
   });
 });
 

@@ -225,37 +225,29 @@ public final class SQLiteIndex: @unchecked Sendable {
         }
     }
 
-    public func loadScores() throws -> [String: Scorer.Row] {
-        try loadRows("SELECT path, score, mtime, size, version FROM scores") { statement in
-            sqlite3_column_type(statement, 1) == SQLITE_NULL
-                ? nil : sqlite3_column_double(statement, 1)
-        }
+    /// `root` limits the load to one library; the table holds every library ever opened.
+    public func loadScores(under root: String? = nil) throws -> [String: Scorer.Row] {
+        try loadRows("score", from: "scores", under: root) { columnDouble($0, 1) }
     }
 
     public func saveScores(_ rows: [(String, Scorer.Row)]) throws {
         try saveRows(
             "INSERT OR REPLACE INTO scores (path, score, mtime, size, version) VALUES (?,?,?,?,?)",
             rows
-        ) { statement, score in
-            if let score {
-                sqlite3_bind_double(statement, 2, score)
-            } else {
-                sqlite3_bind_null(statement, 2)
-            }
-        }
+        ) { statement, score in bindDouble(statement, 2, score) }
     }
 
-    public func loadPrints() throws -> [String: Printer.Row] {
-        try loadRows("SELECT path, feature, captured, mtime, size, version FROM prints") {
-            statement in
+    public func loadPrints(under root: String? = nil) throws -> [String: Printer.Row] {
+        try loadRows("feature, captured", from: "prints", under: root) { statement in
             guard let blob = sqlite3_column_blob(statement, 1) else { return nil }
-            let count = Int(sqlite3_column_bytes(statement, 1)) / MemoryLayout<Float>.stride
-            let feature = Array(
-                UnsafeBufferPointer(start: blob.assumingMemoryBound(to: Float.self), count: count))
-            let captured =
-                sqlite3_column_type(statement, 2) == SQLITE_NULL
-                ? nil : sqlite3_column_double(statement, 2)
-            return Print(feature: feature, captured: captured)
+            let bytes = UnsafeRawBufferPointer(
+                start: blob, count: Int(sqlite3_column_bytes(statement, 1)))
+            // sqlite promises no alignment for a blob, so copy rather than rebind
+            var feature = [Float](repeating: 0, count: bytes.count / MemoryLayout<Float>.stride)
+            feature.withUnsafeMutableBytes {
+                $0.copyMemory(from: UnsafeRawBufferPointer(rebasing: bytes[..<$0.count]))
+            }
+            return Print(feature: feature, captured: columnDouble(statement, 2))
         }
     }
 
@@ -264,29 +256,44 @@ public final class SQLiteIndex: @unchecked Sendable {
             "INSERT OR REPLACE INTO prints (path, feature, captured, mtime, size, version) VALUES (?,?,?,?,?,?)",
             rows
         ) { statement, print in
-            guard let print else {
-                sqlite3_bind_null(statement, 2)
-                sqlite3_bind_null(statement, 3)
-                return
-            }
-            _ = print.feature.withUnsafeBytes { bytes in
-                sqlite3_bind_blob(
-                    statement, 2, bytes.baseAddress, Int32(bytes.count), transientDestructor)
-            }
-            if let captured = print.captured {
-                sqlite3_bind_double(statement, 3, captured)
+            if let print {
+                _ = print.feature.withUnsafeBytes { bytes in
+                    sqlite3_bind_blob(
+                        statement, 2, bytes.baseAddress, Int32(bytes.count), transientDestructor)
+                }
             } else {
-                sqlite3_bind_null(statement, 3)
+                sqlite3_bind_null(statement, 2)
             }
+            bindDouble(statement, 3, print?.captured)
         }
     }
 
-    /// `sql` selects the path first and the row's mtime, size and version last; `value` reads
-    /// whatever sits between.
+    private func columnDouble(_ statement: OpaquePointer?, _ column: Int32) -> Double? {
+        sqlite3_column_type(statement, column) == SQLITE_NULL
+            ? nil : sqlite3_column_double(statement, column)
+    }
+
+    private func bindDouble(_ statement: OpaquePointer?, _ index: Int32, _ value: Double?) {
+        if let value {
+            sqlite3_bind_double(statement, index, value)
+        } else {
+            sqlite3_bind_null(statement, index)
+        }
+    }
+
+    /// Selects the path, `columns` for `value` to read from column 1 on, then the row's stamps.
     private func loadRows<Value>(
-        _ sql: String, value: (OpaquePointer?) -> Value?
+        _ columns: String, from table: String, under root: String?,
+        value: (OpaquePointer?) -> Value?
     ) throws -> [String: AnalysisRow<Value>] {
-        try withStatement(sql) { statement in
+        let scope = root == nil ? "" : " WHERE path > ? AND path < ?"
+        let sql = "SELECT path, \(columns), mtime, size, version FROM \(table)\(scope)"
+        return try withStatement(sql) { statement in
+            if let root {
+                // every path under the root sorts between "root/" and "root0"
+                sqlite3_bind_text(statement, 1, root + "/", -1, transientDestructor)
+                sqlite3_bind_text(statement, 2, root + "0", -1, transientDestructor)
+            }
             let stamps = sqlite3_column_count(statement) - 3
             var rows: [String: AnalysisRow<Value>] = [:]
             while sqlite3_step(statement) == SQLITE_ROW {
