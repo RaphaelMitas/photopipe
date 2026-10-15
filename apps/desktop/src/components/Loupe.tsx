@@ -59,8 +59,7 @@ function useSettled<T>(value: T, delayMs: number): T {
   return settled;
 }
 
-/// With Stacks on, ←→ and ratings act on the stack you are at until you go
-/// inside it.
+/// ←→ steps between stacks until you go inside one.
 export type LoupeStacks = {
   list: Stack[];
   current: Stack;
@@ -528,8 +527,10 @@ function StackOverlay({ stacks, path }: { stacks: LoupeStacks; path: string }) {
           <span className="font-mono text-[11px] text-muted-foreground">
             {rating > 0 ? "keeps " : "gets "}
             <span className="text-amber-400">{`★${kept}`}</span>
-            {cleared > 0 &&
-              ` · clears ${cleared} other${cleared === 1 ? "" : "s"}`}
+            {cleared > 0
+              ? ` · clears ${cleared} other${cleared === 1 ? "" : "s"}`
+              : rating === 0 &&
+                ` · ${frames.length - 1} other${frames.length === 2 ? "" : "s"} stay unrated`}
           </span>
           <kbd className="rounded bg-muted px-1.5 font-mono text-xs">P</kbd>
         </button>

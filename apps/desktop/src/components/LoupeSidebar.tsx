@@ -35,9 +35,7 @@ export type SidebarStacks = {
 
 type Props = {
   image: ImageFile;
-  /// Among stacks with Stacks on, among frames inside one, else among photos.
-  position: number;
-  count: number;
+  position: string;
   stacks: SidebarStacks;
   betterThan: number | null;
   filter: RatingFilter;
@@ -49,7 +47,6 @@ type Props = {
 export function LoupeSidebar({
   image,
   position,
-  count,
   stacks,
   betterThan,
   filter,
@@ -99,10 +96,7 @@ export function LoupeSidebar({
               data-testid="loupe-position"
               className="font-mono text-xs text-muted-foreground"
             >
-              {stacks.on && stacks.ready && !stacks.current?.inside
-                ? "stack "
-                : ""}
-              {position}/{count}
+              {position}
             </span>
             <Stars
               value={image.rating}
@@ -176,10 +170,15 @@ export function LoupeSidebar({
           {!stacks.current
             ? "←→ navigate · 1–5 rate · 0 clear"
             : stacks.current.inside
-              ? "←→ frames · 1–5 rate this frame · p pick · esc up"
-              : "←→ stacks · 1–5 rate every frame · enter inside"}{" "}
+              ? "←→ frames · 1–5 rate this frame · 0 clear · p pick"
+              : "←→ stacks · 1–5 rate every frame · 0 clear · enter inside"}{" "}
           · ↑↓ exposure · pinch or double-click zoom · r reset · e edit · ⌘C/⌘V
-          settings · ⌘Z undo{stacks.current?.inside ? "" : " · esc"}
+          settings · ⌘Z undo · s stacks ·{" "}
+          {!stacks.current
+            ? "esc"
+            : stacks.current.inside
+              ? "esc up"
+              : "esc grid"}
         </p>
       </SidebarFooter>
     </Sidebar>

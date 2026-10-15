@@ -14,7 +14,7 @@ public struct Print: Equatable, Sendable {
     }
 }
 
-/// Vision feature prints of a ~1024 px preview.
+/// Vision feature prints of a downscaled preview.
 public typealias Printer = Analyzer<Print>
 
 extension Analyzer where Value == Print {

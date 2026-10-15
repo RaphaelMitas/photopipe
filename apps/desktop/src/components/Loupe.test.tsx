@@ -311,8 +311,7 @@ describe("LoupeSidebar", () => {
         <SidebarProvider>
           <LoupeSidebar
             image={makeImages()[1]}
-            position={2}
-            count={3}
+            position="2/3"
             stacks={noStacks}
             betterThan={null}
             ratingCounts={[3, 0, 0, 0, 0, 0]}
@@ -336,8 +335,7 @@ describe("LoupeSidebar", () => {
         <SidebarProvider>
           <LoupeSidebar
             image={image}
-            position={2}
-            count={3}
+            position="2/3"
             stacks={noStacks}
             betterThan={betterThan}
             ratingCounts={[3, 0, 0, 0, 0, 0]}

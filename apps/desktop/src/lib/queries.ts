@@ -1,4 +1,5 @@
 import {
+  hashKey,
   keepPreviousData,
   type QueryClient,
   queryOptions,
@@ -63,7 +64,8 @@ const PASSES = ["scoreShoot", "stackShoot"] as const;
 
 /// A pass's answers reach the grid through `listImages`, so images refetch when
 /// it ends, not every tick; every fetch asks the core to run, which is what
-/// picks up newly imported photos. `endedAt` is when a pass last ended here.
+/// picks up newly imported photos. `listed` turns true once a fetch of the
+/// photos, not an optimistic patch, has landed since the pass ended.
 function usePass(
   method: (typeof PASSES)[number],
   shoot: string | null,
@@ -72,7 +74,7 @@ function usePass(
   const client = useQueryClient();
   const wasRunning = useRef(false);
   const [endedAt, setEndedAt] = useState(0);
-  const [finishedPasses, setFinishedPasses] = useState(0);
+  const [listed, setListed] = useState(true);
 
   const query = useQuery({
     queryKey: [method, shoot],
@@ -89,49 +91,63 @@ function usePass(
     if (lastShoot.current !== shoot) {
       lastShoot.current = shoot;
       setEndedAt(0);
-      setFinishedPasses(0);
+      setListed(!running);
       return;
     }
+    if (running) setListed(false);
     if (!ended) return;
     setEndedAt(Date.now());
-    setFinishedPasses((count) => count + 1);
     // a refetch landing mid-write would put pre-write ratings back; the last write refetches
     if (xmpWritesInFlight(client) > 0) markStale(client, shoot);
     else void client.invalidateQueries({ queryKey: imagesKey(shoot) });
   }, [running, shoot, client]);
 
+  useEffect(() => {
+    if (listed || running) return;
+    const hash = hashKey(imagesKey(shoot));
+    return client.getQueryCache().subscribe((event) => {
+      if (
+        event.type === "updated" &&
+        event.action.type === "success" &&
+        !event.action.manual &&
+        event.query.queryHash === hash
+      ) {
+        setListed(true);
+      }
+    });
+  }, [listed, running, shoot, client]);
+
   // a stale `running` would freeze a progress line where it stopped
   return {
     progress: enabled ? (query.data ?? null) : null,
     endedAt,
-    finishedPasses,
+    listed,
   };
 }
 
 /// `justRated` is the window after a pass where the browser can hand the sort
 /// over to Instinct.
 export function useScoring(shoot: string | null, enabled: boolean) {
-  const { progress, finishedPasses } = usePass("scoreShoot", shoot, enabled);
+  const { progress, endedAt } = usePass("scoreShoot", shoot, enabled);
   const [justRated, setJustRated] = useState(false);
   useEffect(() => {
-    setJustRated(finishedPasses > 0);
-    if (finishedPasses === 0) return;
+    setJustRated(endedAt > 0);
+    if (endedAt === 0) return;
     const timer = setTimeout(() => setJustRated(false), RATED_OFFER_MS);
     return () => clearTimeout(timer);
-  }, [finishedPasses]);
+  }, [endedAt]);
   return { progress, justRated };
 }
 
 /// Stacks are trusted only once every photo has a print and the photos carrying
 /// those stacks have been listed since, or they would regroup under you.
 export function useStacking(shoot: string | null, enabled: boolean) {
-  const { progress, endedAt } = usePass("stackShoot", shoot, enabled);
-  const listedAt = useImages(shoot).dataUpdatedAt;
+  const { progress, listed } = usePass("stackShoot", shoot, enabled);
   const complete =
     progress !== null &&
     !progress.running &&
     progress.done >= progress.total &&
-    listedAt > endedAt;
+    listed;
   // a later pass for newly arrived photos must not take stacks away mid-visit
   const [readyShoot, setReadyShoot] = useState<string | null>(null);
   useEffect(() => {

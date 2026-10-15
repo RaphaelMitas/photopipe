@@ -119,7 +119,8 @@ export default function App() {
   // outlives the loupe, so closing it lands the browser on the same photo
   const [currentPath, setCurrentPath] = useState<string | null>(null);
   const [loupeOpen, setLoupeOpen] = useState(false);
-  // the frame you went inside on; you are inside whichever stack holds it
+  // The frame you went inside on, not a flag or the stack's id: landing in another stack
+  // (undo, a jump) leaves you outside, and a stack renamed by an imported earlier frame does not.
   const [insideAnchor, setInsideAnchor] = useState<string | null>(null);
   const filter = useRatingFilter();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -348,7 +349,7 @@ export default function App() {
       : browserOrder(allImages, filter.matches, activeSort, openImage);
     if (!openImage || reorder) return live;
     const order = heldOrder(held.current.paths, live, openImage);
-    // holding can leave a newcomer beside the wrong anchor; regrouping puts it back in its stack
+    // holding can slot a newcomer beside the wrong held photo; regrouping puts it back in its stack
     return stacksOn
       ? groupStacks(order).flatMap((stack) => stack.frames)
       : order;
@@ -367,8 +368,6 @@ export default function App() {
     loupeStacks && openImage ? stackOf(loupeStacks, openImage.path) : undefined;
   const multiFrame =
     currentStack !== undefined && currentStack.frames.length > 1;
-  // a frame, not a flag or the stack's id: landing in another stack (undo, a jump) leaves you
-  // outside it, and a stack renamed by a newly imported earlier frame keeps you inside
   const holdsAnchor = (stack: Stack | undefined) =>
     stack?.frames.some((frame) => frame.path === insideAnchor) ?? false;
   const insideStack = multiFrame && holdsAnchor(currentStack);
@@ -384,7 +383,7 @@ export default function App() {
     stack && opensInside(stack, path) ? path : null;
   // Stacks can arrive after you opened a photo, and undo or a jump can take you out of the
   // stack you were inside or onto a frame that is not its cover. Snapping to the cover only
-  // when you arrive keeps a rating or a score from swapping the photo under an edit.
+  // when you move onto a stack keeps a rating or a score from swapping the photo under an edit.
   const stacksWereOn = useRef(stacksOn);
   const lastPath = useRef(currentPath);
   useEffect(() => {
@@ -392,7 +391,8 @@ export default function App() {
     const moved = lastPath.current !== currentPath;
     stacksWereOn.current = stacksOn;
     lastPath.current = currentPath;
-    if (!currentStack || !currentPath) return;
+    // the grid keeps currentPath too; undo there must not move it to a cover
+    if (!loupeOpen || !currentStack || !currentPath) return;
     if (arrived) {
       setInsideAnchor(anchorFor(currentStack, currentPath));
       return;
@@ -441,7 +441,10 @@ export default function App() {
         cleared > 0 ? `${photos(cleared)} cleared · ⌘Z undoes` : undefined,
     });
   };
-  // outside a stack, a rating is the whole stack's
+  const closeLoupe = () => {
+    setLoupeOpen(false);
+    setInsideAnchor(null);
+  };
   const rateShown = (path: string, rating: number) =>
     currentStack && multiFrame && !insideStack
       ? rateWholeStack(currentStack, rating)
@@ -749,14 +752,14 @@ export default function App() {
       onEditChange={(edit) => changeEdit(loupePhoto, edit)}
       onNavigate={(next) => {
         const path = loupeImages[next]?.path ?? null;
-        // a click inside the stack you are in keeps you inside it
+        // visit would drop you out when the clicked frame is the cover
         if (insideStack && currentStack.frames.some((f) => f.path === path)) {
           setCurrentPath(path);
         } else {
           visit(path, loupeStacks);
         }
       }}
-      onClose={() => setLoupeOpen(false)}
+      onClose={closeLoupe}
       onRate={rateShown}
     />
   ) : (
@@ -808,17 +811,15 @@ export default function App() {
         {inLoupe && loupeImage ? (
           <LoupeSidebar
             image={loupeImage}
-            {...(loupeStacks && currentStack
-              ? insideStack
-                ? {
-                    position: currentStack.frames.indexOf(loupeImage) + 1,
-                    count: currentStack.frames.length,
-                  }
-                : {
-                    position: loupeStacks.indexOf(currentStack) + 1,
-                    count: loupeStacks.length,
-                  }
-              : { position: loupeIndex + 1, count: loupeImages.length })}
+            position={
+              loupeStacks && currentStack
+                ? `stack ${loupeStacks.indexOf(currentStack) + 1}/${loupeStacks.length}${
+                    insideStack
+                      ? ` · frame ${currentStack.frames.indexOf(loupeImage) + 1}/${currentStack.frames.length}`
+                      : ""
+                  }`
+                : `${loupeIndex + 1}/${loupeImages.length}`
+            }
             stacks={{
               on: stacksWanted,
               ready: stacking.ready,
@@ -836,9 +837,7 @@ export default function App() {
             filter={filter}
             ratingCounts={counts}
             onRate={rateShown}
-            onBackToGrid={() =>
-              cropping ? crop.cancel() : setLoupeOpen(false)
-            }
+            onBackToGrid={() => (cropping ? crop.cancel() : closeLoupe())}
           />
         ) : (
           <AppSidebar

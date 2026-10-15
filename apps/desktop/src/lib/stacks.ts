@@ -7,8 +7,10 @@ export const stacksPref = flagPref("photopipe.stacks", "on", "off", false);
 /// that stands alone is a stack of one.
 export type Stack = { id: string; frames: ImageFile[] };
 
+// ties by path, like the core, so a sort cannot reorder burst frames that share a timestamp
 function byCapture(a: ImageFile, b: ImageFile): number {
-  if (a.captured === b.captured) return 0;
+  if (a.captured === b.captured)
+    return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
   if (a.captured === null) return 1;
   if (b.captured === null) return -1;
   return a.captured - b.captured;
