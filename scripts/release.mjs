@@ -163,7 +163,7 @@ if (direct) {
     "",
     "Once this lands on main, the Release workflow will:",
     `1. tag the merge commit as v${next}`,
-    "2. build the app, sign it inside-out and notarize it with Apple",
+    "2. build the app, sign it and notarize it with Apple",
     "3. publish the stapled DMG and zip, plus the signed update feed",
     "4. bump `Casks/photopipe.rb` in RaphaelMitas/homebrew-tap",
     "",

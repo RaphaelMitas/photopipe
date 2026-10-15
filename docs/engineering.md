@@ -115,9 +115,10 @@ pnpm release 1.0.0
 pnpm release --dry-run  # print the plan
 ```
 
-The script bumps the version in `tauri.conf.json`, `package.json`,
-`Cargo.toml` and `Cargo.lock`, refreshes the README screenshots from the live
-UI, and opens an auto-merging PR. When it lands on main, the Release workflow
+The script bumps the version in `tauri.conf.json`, `Cargo.toml`, `Cargo.lock`
+and the iOS project (`gen/apple/desktop_iOS/Info.plist`,
+`gen/apple/project.yml`), refreshes the README screenshots from the live UI,
+and opens an auto-merging PR. When it lands on main, the Release workflow
 notices the version has no tag and:
 
 1. tags the merge commit
