@@ -211,6 +211,8 @@ already created, the retry checks out **that tag** and rebuilds it, rather
 than whatever main has become: shipping different code under a version
 someone may already have installed would be worse than the original failure.
 Tags are never forced, so a released version always means one commit.
+Tags cut while the core was a separate binary (v1.1.1 and earlier) need their
+own workflow to sign it: retry or resubmit those with `--ref <tag>`.
 
 ### iPad
 

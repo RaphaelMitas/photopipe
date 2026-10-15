@@ -5,7 +5,7 @@ public typealias Reply =
     @convention(c) (UnsafeMutableRawPointer?, Bool, UnsafePointer<CChar>?) ->
     Void
 
-/// Calls `reply` exactly once, from a background thread, with what `Dispatcher.dispatch` answers.
+/// Calls `reply` exactly once, from a background thread, with the result JSON or "code: message".
 @_cdecl("photopipe_core_request")
 public func request(
     _ method: UnsafePointer<CChar>, _ params: UnsafePointer<CChar>?,

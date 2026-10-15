@@ -41,7 +41,7 @@ public final class CoreHost: Sendable {
         }
     }
 
-    /// exiftool is left to its exit hook, which stops it once the queue is idle.
+    /// exiftool is stopped by its atexit hook, not here.
     public func shutdown() {
         work.waitUntilAllOperationsAreFinished()
         for lane in lanes.values { lane.waitUntilIdle() }
