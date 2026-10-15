@@ -378,10 +378,13 @@ export default function App() {
   const loupePhoto = loupeOpen ? loupeImage : null;
 
   const toggleStacks = useCallback(() => stacksPref.set(!stacksPref.get()), []);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only the moment stacks turn on, when the photo you came for may be inside one
+  // The stack you are on can change without you moving: stacks arrive, or an import regroups
+  // it. Standing on a frame that is no longer its cover then means you are inside it.
+  const membership = currentStack?.frames.map((frame) => frame.path).join("\n");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a change in who is in the stack re-decides
   useEffect(() => {
-    if (stacksOn) setInsideAnchor(anchorFor(currentStack, currentPath));
-  }, [stacksOn]);
+    if (!insideStack) setInsideAnchor(anchorFor(currentStack, currentPath));
+  }, [membership]);
   // Read at keypress, not render: a rating typed a moment ago may not have re-rendered yet.
   const readStack = (stack: Stack) => {
     const frames = stack.frames.map(
@@ -764,9 +767,16 @@ export default function App() {
       onOpen={(index) => {
         // A new visit walks the browser's order as it stands now.
         held.current = NO_HELD;
-        visit(
-          filteredImages[index]?.path ?? null,
-          stacksOn ? groupStacks(allImages) : null,
+        // decided fresh: whatever you were inside before the grid does not carry over
+        const path = filteredImages[index]?.path ?? null;
+        setCurrentPath(path);
+        setInsideAnchor(
+          anchorFor(
+            path && stacksOn
+              ? stackOf(groupStacks(allImages), path)
+              : undefined,
+            path,
+          ),
         );
         setLoupeOpen(true);
       }}

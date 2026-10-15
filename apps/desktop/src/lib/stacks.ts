@@ -69,12 +69,11 @@ export const rateStack = (stack: Stack, rating: number) =>
 
 export function pickInStack(stack: Stack, path: string) {
   const kept = stackRating(stack) > 0 ? stackRating(stack) : 5;
+  const writes = changes(stack, (frame) => (frame.path === path ? kept : 0));
   return {
-    writes: changes(stack, (frame) => (frame.path === path ? kept : 0)),
+    writes,
     kept,
-    cleared: stack.frames.filter(
-      (frame) => frame.path !== path && frame.rating !== 0,
-    ).length,
+    cleared: [...writes.keys()].filter((written) => written !== path).length,
   };
 }
 

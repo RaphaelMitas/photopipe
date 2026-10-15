@@ -10,7 +10,7 @@ public struct AnalysisProgress: Equatable, Sendable, Encodable {
 
 /// One answer per file, worked out in the background and cached in the library index.
 ///
-/// A pass runs for one shoot at a time and reports how far it has got, because the browser
+/// Each pass covers one shoot and reports how far it has got, because the browser
 /// keeps whatever depends on the answers disabled until every file in the shoot has one.
 public final class Analyzer<Value: Sendable>: @unchecked Sendable {
     public typealias Progress = AnalysisProgress
@@ -87,8 +87,8 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
         if let carried { write?([(after.path, carried)]) }
     }
 
-    /// Only a running pass reports stored progress. Once it ends the answer is recomputed from
-    /// the cache, so a file that changed since goes back to being unanswered.
+    /// Only a running pass reports stored progress. Once it ends, progress is recomputed from the
+    /// cache, so a file that changed since counts as unanswered again.
     func progress(shoot: String, files: [ImageFile]) -> Progress {
         lock.withLock {
             if let current = progressByShoot[shoot], current.running { return current }
@@ -102,7 +102,7 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
     public func start(shoot: String, files: [ImageFile]) -> Progress {
         lock.withLock {
             if passes[shoot] != nil { return progressByShoot[shoot] ?? .idle }
-            let pending = files.filter { cache[$0.path]?.matches($0, version: version) != true }
+            let pending = files.filter { !isAnswered($0) }
             guard !pending.isEmpty else {
                 return Progress(done: files.count, total: files.count, running: false)
             }
@@ -119,8 +119,14 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
     }
 
     private func run(shoot: String, pending: [ImageFile], total: Int, generation: Int) async {
-        var buffer: [(String, Row)] = []
+        var buffer: [String] = []
         let analyze = self.analyze
+        // Rows are read back from the cache when they are written, not kept from when they were
+        // answered: a restamp in between would otherwise be overwritten on disk by the old stamps.
+        func drain() -> [(String, Row)] {
+            defer { buffer.removeAll(keepingCapacity: true) }
+            return buffer.compactMap { path in cache[path].map { (path, $0) } }
+        }
         await forEachConcurrently(pending, width: concurrency) { file in
             (file, await analyze(file.path))
         } onResult: { answered, cancelled in
@@ -130,30 +136,26 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
             // good, so a cancelled pass leaves it untouched instead.
             if cancelled && value == nil { return }
 
-            let (write, full) = lock.withLock { () -> (Flush?, Bool) in
-                guard generation == self.generation else { return (nil, false) }
-                let row = Row(value: value, for: moved[file.path] ?? file, version: version)
-                cache[file.path] = row
-                buffer.append((file.path, row))
+            let (write, rows) = lock.withLock { () -> (Flush?, [(String, Row)]) in
+                guard generation == self.generation else { return (nil, []) }
+                cache[file.path] = Row(
+                    value: value, for: moved[file.path] ?? file, version: version)
+                buffer.append(file.path)
                 let done = answeredCount(pending) + (total - pending.count)
                 progressByShoot[shoot] = Progress(done: done, total: total, running: true)
-                return (self.flush, buffer.count >= flushEvery)
+                return (self.flush, buffer.count >= flushEvery ? drain() : [])
             }
-
-            if full {
-                write?(buffer)
-                buffer.removeAll(keepingCapacity: true)
-            }
+            if !rows.isEmpty { write?(rows) }
         }
 
-        let write = lock.withLock { () -> Flush? in
-            guard generation == self.generation else { return nil }
+        let (write, rows) = lock.withLock { () -> (Flush?, [(String, Row)]) in
+            guard generation == self.generation else { return (nil, []) }
             progressByShoot[shoot] = nil
             passes[shoot] = nil
             if passes.isEmpty { moved.removeAll() }
-            return self.flush
+            return (self.flush, drain())
         }
-        write?(buffer)
+        write?(rows)
     }
 
     /// Caller holds the lock.
