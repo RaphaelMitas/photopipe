@@ -90,6 +90,8 @@ function usePass(
     }
     if (!ended) return;
     setEndedAt(Date.now());
+    // photos that arrived while it ran were not part of it; asking again starts a pass for them
+    void client.invalidateQueries({ queryKey: [method, shoot] });
     // a refetch landing mid-write would put pre-write ratings back; the last write refetches
     if (xmpWritesInFlight(client) > 0) markStale(client, shoot);
     else void client.invalidateQueries({ queryKey: imagesKey(shoot) });

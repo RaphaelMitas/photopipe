@@ -767,7 +767,7 @@ export default function App() {
       onOpen={(index) => {
         // A new visit walks the browser's order as it stands now.
         held.current = NO_HELD;
-        // decided fresh: whatever you were inside before the grid does not carry over
+        // an undo in the grid or ⌘E can leave an anchor behind, so opening decides it fresh
         const path = filteredImages[index]?.path ?? null;
         setCurrentPath(path);
         setInsideAnchor(

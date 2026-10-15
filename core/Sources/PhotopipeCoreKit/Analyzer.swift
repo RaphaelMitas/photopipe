@@ -15,6 +15,7 @@ public struct AnalysisProgress: Equatable, Sendable, Encodable {
 public final class Analyzer<Value: Sendable>: @unchecked Sendable {
     public typealias Progress = AnalysisProgress
     public typealias Row = AnalysisRow<Value>
+    /// Called under the analyzer's lock, so it must queue the write rather than do it.
     public typealias Flush = @Sendable ([(String, Row)]) -> Void
 
     /// Rows cached under another version are ignored, so a bump replaces the cache without a migration.
@@ -75,16 +76,15 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
     /// Carry an answer across our own metadata write, which moves a file's mtime and size without
     /// touching a pixel: expiring it would spend another read arriving at the same answer.
     public func restamp(_ before: ImageFile, to after: ImageFile) {
-        let (write, carried) = lock.withLock { () -> (Flush?, Row?) in
+        lock.withLock {
             if !passes.isEmpty { moved[after.path] = after }
             guard let row = cache[before.path], row.matches(before, version: version),
                 !row.matches(after, version: version)
-            else { return (nil, nil) }
+            else { return }
             let carried = Row(value: row.value, for: after, version: version)
             cache[after.path] = carried
-            return (flush, carried)
+            flush?([(after.path, carried)])
         }
-        if let carried { write?([(after.path, carried)]) }
     }
 
     /// Only a running pass reports stored progress. Once it ends, progress is recomputed from the
@@ -121,8 +121,8 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
     private func run(shoot: String, pending: [ImageFile], total: Int, generation: Int) async {
         var buffer: [String] = []
         let analyze = self.analyze
-        // Rows are read back from the cache when they are written, not kept from when they were
-        // answered: a restamp in between would otherwise be overwritten on disk by the old stamps.
+        // Rows are read from the cache and handed to `flush` under the lock, as `restamp` does, so
+        // disk writes queue in the same order as the cache changed.
         func drain() -> [(String, Row)] {
             defer { buffer.removeAll(keepingCapacity: true) }
             return buffer.compactMap { path in cache[path].map { (path, $0) } }
@@ -136,26 +136,24 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
             // good, so a cancelled pass leaves it untouched instead.
             if cancelled && value == nil { return }
 
-            let (write, rows) = lock.withLock { () -> (Flush?, [(String, Row)]) in
-                guard generation == self.generation else { return (nil, []) }
+            lock.withLock {
+                guard generation == self.generation else { return }
                 cache[file.path] = Row(
                     value: value, for: moved[file.path] ?? file, version: version)
                 buffer.append(file.path)
                 let done = answeredCount(pending) + (total - pending.count)
                 progressByShoot[shoot] = Progress(done: done, total: total, running: true)
-                return (self.flush, buffer.count >= flushEvery ? drain() : [])
+                if buffer.count >= flushEvery { flush?(drain()) }
             }
-            if !rows.isEmpty { write?(rows) }
         }
 
-        let (write, rows) = lock.withLock { () -> (Flush?, [(String, Row)]) in
-            guard generation == self.generation else { return (nil, []) }
+        lock.withLock {
+            guard generation == self.generation else { return }
             progressByShoot[shoot] = nil
             passes[shoot] = nil
             if passes.isEmpty { moved.removeAll() }
-            return (self.flush, drain())
+            flush?(drain())
         }
-        write?(rows)
     }
 
     /// Caller holds the lock.
