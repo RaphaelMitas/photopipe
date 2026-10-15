@@ -246,6 +246,7 @@ const E2E_HANDLERS: CoreHandlers = {
   listImages: (params) => ({
     images: imagesFor(params.shoot).map((image) => ({
       ...image,
+      stack: image.stack ?? image.path,
       enriched: !indexing,
     })),
   }),

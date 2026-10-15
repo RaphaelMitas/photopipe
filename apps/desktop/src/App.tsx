@@ -381,32 +381,12 @@ export default function App() {
   const toggleStacks = useCallback(() => stacksPref.set(!stacksPref.get()), []);
   const anchorFor = (stack: Stack | undefined, path: string | null) =>
     path && opensInside(stack, path) ? path : null;
-  // Stacks can arrive after you opened a photo. Snapping to the cover only when you move onto
-  // a stack keeps a rating or a score from swapping the photo under an edit.
-  const stacksWereOn = useRef(stacksOn);
-  const lastPath = useRef(currentPath);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only the moment stacks turn on, when the photo you came for may be inside one
   useEffect(() => {
-    const arrived = stacksOn && !stacksWereOn.current;
-    const moved = lastPath.current !== currentPath;
-    stacksWereOn.current = stacksOn;
-    lastPath.current = currentPath;
-    // the grid keeps currentPath too; undo there must not move it to a cover
-    if (!loupeOpen || !currentStack || !currentPath) return;
-    if (arrived) {
-      setInsideAnchor(anchorFor(currentStack, currentPath));
-      return;
-    }
-    const left = insideAnchor !== null && !holdsAnchor(currentStack);
-    if (left) setInsideAnchor(null);
-    if (
-      (left || (moved && insideAnchor === null)) &&
-      opensInside(currentStack, currentPath)
-    ) {
-      setCurrentPath(coverOf(currentStack).path);
-    }
-  });
+    if (stacksOn) setInsideAnchor(anchorFor(currentStack, currentPath));
+  }, [stacksOn]);
   // Read at keypress, not render: a rating typed a moment ago may not have re-rendered yet.
-  const liveStack = (stack: Stack): Stack | null => {
+  const readStack = (stack: Stack) => {
     const frames = stack.frames.map(
       (frame) => cachedImage(queryClient, openShoot, frame.path) ?? frame,
     );
@@ -414,25 +394,24 @@ export default function App() {
       toast("Still reading this stack's ratings", { id: "not-indexed" });
       return null;
     }
-    return { ...stack, frames };
+    const before = new Map(frames.map((frame) => [frame.path, frame.rating]));
+    return { live: { ...stack, frames }, before };
   };
-  const ratingsOf = (stack: Stack) =>
-    new Map(stack.frames.map((frame) => [frame.path, frame.rating]));
   const rateWholeStack = (stack: Stack, rating: number) => {
-    const live = liveStack(stack);
-    if (!live) return;
+    const read = readStack(stack);
+    if (!read) return;
     writes.rateMany(
-      rateStack(live, rating),
-      ratingsOf(live),
+      rateStack(read.live, rating),
+      read.before,
       "Rating",
-      `${ratingDetail(rating)} · stack of ${live.frames.length}`,
+      `${ratingDetail(rating)} · stack of ${stack.frames.length}`,
     );
   };
   const pick = (stack: Stack, path: string) => {
-    const live = liveStack(stack);
-    if (!live) return;
-    const { writes: ratings, cleared } = pickInStack(live, path);
-    writes.rateMany(ratings, ratingsOf(live), "Pick", fileName(path));
+    const read = readStack(stack);
+    if (!read) return;
+    const { writes: ratings, cleared } = pickInStack(read.live, path);
+    writes.rateMany(ratings, read.before, "Pick", fileName(path));
     setInsideAnchor(null);
     toast(`Picked ${fileName(path)}`, {
       id: "pick",
@@ -448,9 +427,12 @@ export default function App() {
     currentStack && multiFrame && !insideStack
       ? rateWholeStack(currentStack, rating)
       : writes.rate(path, rating);
+  // Every way of landing on a photo says whether you are inside its stack.
   const visit = (path: string | null, stacks: Stack[] | null) => {
     setCurrentPath(path);
     const stack = path && stacks ? stackOf(stacks, path) : undefined;
+    // a frame of the stack you are in keeps you inside, even its cover
+    if (insideStack && stack === currentStack) return;
     setInsideAnchor(anchorFor(stack, path));
   };
   const crop = useCropSession(loupePhoto, loupeEdit, changeEdit);
@@ -555,15 +537,22 @@ export default function App() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [revealed, setRevealed] = useState(0);
   // Before the write, so you are on the photo when the step lands.
+  // an undo resolves after the keypress, so it reads where you are now, not then
+  const currentPathNow = useRef(currentPath);
+  currentPathNow.current = currentPath;
   const showPhoto = useCallback(
     (entry: HistoryEntry) => {
       const present = (path: string) =>
         cachedImage(queryClient, openShoot, path) !== undefined;
-      setCurrentPath((current) =>
-        current && entry.paths.includes(current)
-          ? current
-          : (entry.paths.find(present) ?? current),
-      );
+      const current = currentPathNow.current;
+      if (current && entry.paths.includes(current)) {
+        setRevealed((count) => count + 1);
+        return;
+      }
+      const next = entry.paths.find(present) ?? current;
+      setCurrentPath(next);
+      // you land on the frame the step changed, inside its stack if it has one
+      setInsideAnchor(next);
       setRevealed((count) => count + 1);
     },
     [queryClient, openShoot],
@@ -735,7 +724,10 @@ export default function App() {
               list: loupeStacks,
               current: currentStack,
               inside: insideStack,
-              onGo: setCurrentPath,
+              onGo: (path) => {
+                setCurrentPath(path);
+                if (!insideStack) setInsideAnchor(null);
+              },
               onEnter: () => {
                 setCurrentPath(loupePhoto.path);
                 setInsideAnchor(loupePhoto.path);
@@ -749,15 +741,7 @@ export default function App() {
           : null
       }
       onEditChange={(edit) => changeEdit(loupePhoto, edit)}
-      onNavigate={(next) => {
-        const path = loupeImages[next]?.path ?? null;
-        // visit would drop you out when the clicked frame is the cover
-        if (insideStack && currentStack.frames.some((f) => f.path === path)) {
-          setCurrentPath(path);
-        } else {
-          visit(path, loupeStacks);
-        }
-      }}
+      onNavigate={(next) => visit(loupeImages[next]?.path ?? null, loupeStacks)}
       onClose={closeLoupe}
       onRate={rateShown}
     />

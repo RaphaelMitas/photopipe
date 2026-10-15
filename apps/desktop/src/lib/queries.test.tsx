@@ -776,24 +776,22 @@ describe("useSetRating", () => {
 });
 
 describe("useStacking", () => {
-  it("waits for the photos to be listed after the pass, not for an optimistic patch", async () => {
+  it("turns on only once every listed photo has been given a stack", async () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
-    let pass = { done: 0, total: 1, running: true };
-    let listing: (images: ImageFile[]) => void = () => {};
-    let listings = 0;
-    invoke.mockImplementation(async (_command, { method }) => {
-      if (method === "stackShoot") return pass;
-      if (method === "listImages") {
-        listings += 1;
-        return { images: await new Promise((resolve) => (listing = resolve)) };
-      }
-    });
+    let listed: ImageFile[] = [
+      { ...image("a"), stack: "/r/shoot1/a.ARW" },
+      image("b"),
+    ];
+    invoke.mockImplementation(async (_command, { method }) =>
+      method === "listImages"
+        ? { images: listed }
+        : { done: 2, total: 2, running: false },
+    );
 
     let ready = false;
     function Harness() {
-      useImages("s");
       ready = useStacking("s", true).ready;
       return null;
     }
@@ -803,20 +801,12 @@ describe("useStacking", () => {
       </QueryClientProvider>,
     );
     await waitFor(() =>
-      expect(client.getQueryData(["stackShoot", "s"])).toEqual(pass),
+      expect(client.getQueryData(["images", "s"])).toBeDefined(),
     );
-    await act(async () => listing([image("a")]));
-
-    pass = { done: 1, total: 1, running: false };
-    await act(() => client.refetchQueries({ queryKey: ["stackShoot", "s"] }));
-    await waitFor(() => expect(listings).toBe(2));
-    // a rating patches the cached list while the post-pass refetch is still out
-    act(() => client.setQueryData(["images", "s"], [image("a")]));
     expect(ready).toBe(false);
 
-    await act(async () =>
-      listing([{ ...image("a"), stack: "/r/shoot1/a.ARW" }]),
-    );
+    listed = [listed[0], { ...image("b"), stack: "/r/shoot1/b.ARW" }];
+    await act(() => client.refetchQueries({ queryKey: ["images", "s"] }));
     await waitFor(() => expect(ready).toBe(true));
   });
 });

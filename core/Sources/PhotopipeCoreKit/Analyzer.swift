@@ -74,6 +74,11 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
         }
     }
 
+    /// Files with a current answer, including the ones that could not be read.
+    public func answered(_ files: [ImageFile]) -> Set<String> {
+        lock.withLock { Set(files.filter(isAnswered).map(\.path)) }
+    }
+
     /// Carry an answer across our own metadata write, which moves a file's mtime and size without
     /// touching a pixel: expiring it would spend another read arriving at the same answer. Only an
     /// answer that was current for `before` travels, so a file something else had already changed
@@ -162,7 +167,12 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
 
     /// Caller holds the lock.
     private func answeredCount(_ files: [ImageFile]) -> Int {
-        files.count { cache[$0.path]?.matches($0, version: version) == true }
+        files.count(where: isAnswered)
+    }
+
+    /// Caller holds the lock.
+    private func isAnswered(_ file: ImageFile) -> Bool {
+        cache[file.path]?.matches(file, version: version) == true
     }
 }
 

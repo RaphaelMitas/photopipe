@@ -114,7 +114,7 @@ private func writeJPEG(
     let stack = Dictionary(uniqueKeysWithValues: images.map { ($0.rel, $0.stack) })
     #expect(stack["1.jpg"] == images.first { $0.rel == "1.jpg" }?.path)
     #expect(stack["2.jpg"] == stack["1.jpg"])
-    #expect(stack["3.jpg"] == .some(nil))
+    #expect(stack["3.jpg"] == images.first { $0.rel == "3.jpg" }?.path)
     #expect(images.allSatisfy { $0.captured != nil })
 }
 

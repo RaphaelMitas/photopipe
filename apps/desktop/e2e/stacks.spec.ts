@@ -28,10 +28,12 @@ test("stacks: rate a whole stack, pick one inside it, undo the pick", async ({
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC01203.ARW");
   await expect(page.getByTestId("stack-chip")).toHaveCount(0);
 
+  // undo lands on a frame the pick cleared, inside its stack; Esc shows the restored stack
   await page.keyboard.press("Meta+z");
-  await expect(page.getByTestId("stack-chip")).toContainText("all ★4");
-  // back at stack level, the stage shows the stack's cover, not the frame undo landed on
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC01200.ARW");
+  await expect(page.getByTestId("stack-chip")).toContainText("Inside stack");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("stack-chip")).toContainText("all ★4");
 });
 
 test("opening a frame that is not its stack's cover starts inside the stack", async ({

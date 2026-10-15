@@ -1,5 +1,4 @@
 import {
-  hashKey,
   keepPreviousData,
   type QueryClient,
   queryOptions,
@@ -63,7 +62,6 @@ const RATED_OFFER_MS = 8000;
 const PASSES = ["scoreShoot", "stackShoot"] as const;
 
 /// Every fetch asks the core to run, which is what picks up new imports.
-/// `listed`: a real fetch, not an optimistic patch, has landed since the pass ended.
 function usePass(
   method: (typeof PASSES)[number],
   shoot: string | null,
@@ -72,7 +70,6 @@ function usePass(
   const client = useQueryClient();
   const wasRunning = useRef(false);
   const [endedAt, setEndedAt] = useState(0);
-  const [listed, setListed] = useState(true);
 
   const query = useQuery({
     queryKey: [method, shoot],
@@ -89,10 +86,8 @@ function usePass(
     if (lastShoot.current !== shoot) {
       lastShoot.current = shoot;
       setEndedAt(0);
-      setListed(!running);
       return;
     }
-    if (running) setListed(false);
     if (!ended) return;
     setEndedAt(Date.now());
     // a refetch landing mid-write would put pre-write ratings back; the last write refetches
@@ -100,27 +95,8 @@ function usePass(
     else void client.invalidateQueries({ queryKey: imagesKey(shoot) });
   }, [running, shoot, client]);
 
-  useEffect(() => {
-    if (listed || running) return;
-    const hash = hashKey(imagesKey(shoot));
-    return client.getQueryCache().subscribe((event) => {
-      if (
-        event.type === "updated" &&
-        event.action.type === "success" &&
-        !event.action.manual &&
-        event.query.queryHash === hash
-      ) {
-        setListed(true);
-      }
-    });
-  }, [listed, running, shoot, client]);
-
   // a stale `running` would freeze a progress line where it stopped
-  return {
-    progress: enabled ? (query.data ?? null) : null,
-    endedAt,
-    listed,
-  };
+  return { progress: enabled ? (query.data ?? null) : null, endedAt };
 }
 
 /// `justRated` is the window after a pass where the browser can hand the sort
@@ -137,16 +113,16 @@ export function useScoring(shoot: string | null, enabled: boolean) {
   return { progress, justRated };
 }
 
-/// Stacks are trusted only once every photo has a print and the photos carrying
-/// those stacks have been listed since, or they would regroup under you.
+/// Stacks are trusted once every listed photo carries one, which the core only
+/// gives a photo it has analyzed; until then they would regroup under you.
 export function useStacking(shoot: string | null, enabled: boolean) {
-  const { progress, listed } = usePass("stackShoot", shoot, enabled);
+  const { progress } = usePass("stackShoot", shoot, enabled);
+  const images = useImages(shoot).data;
   const complete =
-    progress !== null &&
-    !progress.running &&
-    progress.done >= progress.total &&
-    listed;
-  // a later pass for newly arrived photos must not take stacks away mid-visit
+    images !== undefined &&
+    images.length > 0 &&
+    images.every((image) => image.stack !== null);
+  // newly imported photos must not take stacks away mid-visit
   const [readyShoot, setReadyShoot] = useState<string | null>(null);
   useEffect(() => {
     if (complete) setReadyShoot(shoot);

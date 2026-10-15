@@ -26,7 +26,8 @@ public struct ImageFile: Codable, Equatable, Sendable {
     public let score: Double?
     /// Capture time in seconds, nil when unknown; filled in on the way out, like `score`.
     public let captured: Double?
-    /// Path of the first photo in its stack of near-identical photos, nil when it stands alone.
+    /// Path of the first photo in its stack of near-identical photos, its own path when it stands
+    /// alone, nil until the stacking pass has looked at it.
     public let stack: String?
     /// False while the walk's placeholder rating, edit and dimensions are still
     /// standing in for the real ones. Writing an edit against a placeholder

@@ -106,10 +106,11 @@ public final class LibraryService: @unchecked Sendable {
         let scores = scorer.values(for: images)
         let prints = printer.values(for: images)
         let stacks = Stacker.stacks(prints)
+        let printed = printer.answered(images)
         return images.map { image in
             image.with(
                 score: scores[image.path], captured: prints[image.path]?.captured,
-                stack: stacks[image.path])
+                stack: stacks[image.path] ?? (printed.contains(image.path) ? image.path : nil))
         }
     }
 
