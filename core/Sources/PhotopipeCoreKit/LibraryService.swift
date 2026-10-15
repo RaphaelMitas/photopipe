@@ -284,8 +284,7 @@ public final class LibraryService: @unchecked Sendable {
             .compactMap { try? recordUnderRoot(path: $0) }
             .filter(\.isRaw)
         guard !files.isEmpty else { return DecoderSupport(raw9: 0, rawTotal: 0) }
-        // a whole shoot serially outruns the caller's read timeout, and a
-        // timeout takes the sidecar down mid-export
+        // a whole shoot serially outruns the caller's request timeout
         DispatchQueue.concurrentPerform(iterations: files.count) { index in
             _ = renderer.supports(file: files[index], major: 9)
         }

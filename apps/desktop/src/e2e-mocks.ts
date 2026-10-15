@@ -187,6 +187,8 @@ let roots: RootEntry[] =
     ? [{ path: "/fake", status: scenario === "stored" ? "ok" : scenario }]
     : [];
 
+let picked: string | null = null;
+
 function argPath(args: unknown): string | undefined {
   return typeof args === "object" &&
     args !== null &&
@@ -198,13 +200,22 @@ function argPath(args: unknown): string | undefined {
 
 export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
   features: () => ({ updater: false, zipExport: true }),
-  pick_folder: () => "/fake/delivery",
+  pick_folder: (args) => {
+    const exporting =
+      typeof args === "object" &&
+      args !== null &&
+      "title" in args &&
+      args.title === "Export to folder";
+    picked = exporting ? "/fake/delivery" : "/fake";
+    return picked;
+  },
   list_roots: () => roots,
   open_root: (args) => {
-    const wanted = argPath(args);
-    const path = wanted ?? "/fake";
+    const path = argPath(args) ?? "/fake";
     const stored = roots.find((root) => root.path === path);
-    if (wanted && stored && stored.status !== "ok") {
+    // the panel grants what was just picked in it, which revives a broken bookmark
+    const granted = path === picked && stored?.status === "broken";
+    if (stored && stored.status !== "ok" && !granted) {
       throw { kind: stored.status, message: `${stored.status}: ${path}` };
     }
     if (path === "/nonexistent")

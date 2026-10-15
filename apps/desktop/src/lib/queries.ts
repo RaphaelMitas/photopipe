@@ -669,15 +669,10 @@ export function useExportJobs() {
     })),
   });
 
-  const jobs: ExportJob[] = rows.map((row, index) => {
-    const result = results[index];
-    const progress = result?.data ?? row.initial;
-    // Its status can no longer be read; this job is not coming back.
-    const lost = result?.error
-      ? { running: false, error: String(result.error) }
-      : null;
-    return { ...row, ...progress, ...lost };
-  });
+  const jobs: ExportJob[] = rows.map((row, index) => ({
+    ...row,
+    ...(results[index]?.data ?? row.initial),
+  }));
   const running = jobs.some((job) => job.running);
 
   const start = useCallback(

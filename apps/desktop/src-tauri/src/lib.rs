@@ -39,23 +39,12 @@ async fn list_roots(roots: State<'_, Arc<Roots>>) -> Result<Vec<Listing>, Failur
     Ok(blocking(move || roots.list()).await?)
 }
 
-/// No path shows the folder panel. Minting for a bare path only works under
-/// the sandbox if the panel just granted it.
+/// Minting for a bare path only works under the sandbox if the panel granted it
+/// this session.
 #[tauri::command]
-async fn open_root(
-    app: AppHandle,
-    roots: State<'_, Arc<Roots>>,
-    path: Option<String>,
-) -> Result<Option<OpenedRoot>, Failure> {
+async fn open_root(roots: State<'_, Arc<Roots>>, path: String) -> Result<OpenedRoot, Failure> {
     let roots = Arc::clone(&roots);
     blocking(move || -> Result<_, Failure> {
-        let path = match path {
-            Some(path) => path,
-            None => match choose_folder(&app, "Choose your photos folder")? {
-                Some(path) => path,
-                None => return Ok(None),
-            },
-        };
         let live = match roots.reopen(&path) {
             Some(Ok(live)) => live,
             // the drive is gone, not the grant; keep "connect the drive" over "no folder at"
@@ -66,12 +55,11 @@ async fn open_root(
         let path = live.path.clone();
         let result = swift_core::request("setRoot", Some(serde_json::json!({ "path": path })))?;
         roots.adopt(live);
-        Ok(Some(OpenedRoot { path, result }))
+        Ok(OpenedRoot { path, result })
     })
     .await?
 }
 
-/// The export destination comes through here too, so iOS can pick it in place.
 #[tauri::command]
 async fn pick_folder(app: AppHandle, title: String) -> Result<Option<String>, Failure> {
     blocking(move || choose_folder(&app, &title)).await?

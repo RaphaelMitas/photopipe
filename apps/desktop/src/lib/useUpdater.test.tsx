@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { Toaster, toast } from "sonner";
 import { afterEach, expect, it, vi } from "vitest";
 import { useUpdater } from "./useUpdater";
@@ -22,20 +23,11 @@ function Updater({ blockedReason }: { blockedReason: string | null }) {
   return <Toaster />;
 }
 
-const client = new QueryClient();
-
-function renderUpdater(blockedReason: string | null) {
-  const view = render(
-    <QueryClientProvider client={client}>
-      <Updater blockedReason={blockedReason} />
-    </QueryClientProvider>,
+function withQueries() {
+  const client = new QueryClient();
+  return ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );
-  return (next: string | null) =>
-    view.rerender(
-      <QueryClientProvider client={client}>
-        <Updater blockedReason={next} />
-      </QueryClientProvider>,
-    );
 }
 
 it("Install checks the block when clicked and keeps the reason on screen", async () => {
@@ -47,10 +39,12 @@ it("Install checks the block when clicked and keeps the reason on screen", async
     downloadAndInstall: vi.fn(),
   };
   findUpdate.mockResolvedValue(update);
-  const rerender = renderUpdater(null);
+  const { rerender } = render(<Updater blockedReason={null} />, {
+    wrapper: withQueries(),
+  });
   const installButton = await screen.findByRole("button", { name: "Install" });
 
-  rerender("Finish the running job first");
+  rerender(<Updater blockedReason="Finish the running job first" />);
   fireEvent.click(installButton);
   await screen.findByText("Finish the running job first");
   await new Promise((resolve) => setTimeout(resolve, 500));
@@ -74,7 +68,7 @@ it("Install drops the button once the download starts", async () => {
     ),
   };
   findUpdate.mockResolvedValue(update);
-  renderUpdater(null);
+  render(<Updater blockedReason={null} />, { wrapper: withQueries() });
 
   fireEvent.click(await screen.findByRole("button", { name: "Install" }));
   await screen.findByText("Downloading update… 40%");

@@ -52,7 +52,8 @@ callback and waits on a blocking thread until it fires, exactly once, or for
 10 s (120 s for `setRoot`) and fails the request. A timed-out request keeps
 running and its late answer is dropped; a walk that finishes after a newer
 `setRoot` does not install its root. Renders and thumbnails go through
-newest-first lanes, everything else runs on a bounded queue. Quitting waits up
+newest-first lanes, `setRoot` gets a thread of its own so a walk of a hung
+volume cannot hold a slot, and everything else runs on a bounded queue. Quitting waits up
 to three seconds for running work and then exits regardless; an exit hook
 signals exiftool, which would otherwise outlive the app.
 
@@ -79,8 +80,10 @@ Together they cover the whole app, cut at the protocol seam.
 
 The bundle smoke test is the one that catches shipping failures: every other
 suite runs from a checkout, where exiftool is findable through dev paths. It
-runs the exiftool *inside a built bundle* with `PATH=/usr/bin:/bin` and no
-overrides, and a written XMP sidecar proves it is self-contained.
+checks that the app binary links only what the OS ships, with the Swift
+runtime found through `/usr/lib/swift`, then runs the exiftool *inside a
+built bundle* with `PATH=/usr/bin:/bin` and no overrides; a written XMP
+sidecar proves it is self-contained.
 
 ## CI
 
@@ -215,8 +218,9 @@ iOS. The webview is pinned to the safe area, since the layout assumes nothing
 covers it. CI runs clippy for the simulator and builds the simulator app,
 which is the only step that links the core into it. Not there yet: watching the folder for
 changes, zip export (hidden through the `features` command), import, ratings
-on JPEG and HEIC (embedded, written only by exiftool) and in exported JPEGs,
-and aesthetic scoring, which fails in the simulator.
+and edits on anything but ARW (they are embedded, and only exiftool writes
+those), ratings in exported JPEGs, Reveal (the opener plugin has no iOS
+version), and aesthetic scoring, which fails in the simulator.
 
 ### Updates
 

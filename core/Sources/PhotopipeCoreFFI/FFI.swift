@@ -59,7 +59,9 @@ public func shutdown() {
     }
 
     @MainActor
-    private final class FolderPicker: NSObject, UIDocumentPickerDelegate {
+    private final class FolderPicker: NSObject, UIDocumentPickerDelegate,
+        UIAdaptivePresentationControllerDelegate
+    {
         private static var current: FolderPicker?
         private let done: (URL?) -> Void
 
@@ -71,10 +73,14 @@ public func shutdown() {
             let presenter = UIApplication.shared.connectedScenes
                 .compactMap { ($0 as? UIWindowScene)?.keyWindow?.rootViewController }
                 .first
-            guard let presenter else { return done(nil) }
+            // UIKit silently refuses to present over another sheet, and then nothing would reply
+            guard let presenter, current == nil, presenter.presentedViewController == nil else {
+                return done(nil)
+            }
             let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder])
             let delegate = FolderPicker(done: done)
             picker.delegate = delegate
+            picker.presentationController?.delegate = delegate
             current = delegate
             presenter.present(picker, animated: true)
         }
@@ -89,7 +95,14 @@ public func shutdown() {
             finish(nil)
         }
 
+        /// A swipe down dismisses the sheet without calling documentPickerWasCancelled.
+        func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+            finish(nil)
+        }
+
+        /// Replies once even if a dismissal reports itself twice.
         private func finish(_ url: URL?) {
+            guard Self.current === self else { return }
             Self.current = nil
             done(url)
         }

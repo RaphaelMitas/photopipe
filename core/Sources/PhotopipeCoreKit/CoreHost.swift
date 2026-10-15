@@ -1,6 +1,5 @@
 import Foundation
 
-/// Answers request lines off the caller's thread.
 public final class CoreHost: Sendable {
     public static let shared = CoreHost()
 
@@ -30,7 +29,10 @@ public final class CoreHost: Sendable {
         let dispatcher = dispatcher
         let respond: @Sendable (Response) -> Void = { reply(Self.encoded($0)) }
         let method = (try? JSONDecoder().decode(Peek.self, from: Data(line.utf8)))?.method
-        if let method, let lane = lanes[method] {
+        if method == "setRoot" {
+            // a walk of a hung volume never returns, and must not hold a slot everything else needs
+            DispatchQueue.global(qos: .userInitiated).async { respond(dispatcher.dispatch(line: line)) }
+        } else if let method, let lane = lanes[method] {
             lane.submit {
                 respond(dispatcher.dispatch(line: line))
             } superseded: {

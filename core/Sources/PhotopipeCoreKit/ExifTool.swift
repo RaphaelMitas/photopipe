@@ -43,8 +43,10 @@ import Synchronization
             return nil
         }
 
-        static func bundledBinary() -> String? {
-            guard let exe = Bundle.main.executableURL?.resolvingSymlinksInPath() else { return nil }
+        static func bundledBinary(
+            executable: URL? = Bundle.main.executableURL?.resolvingSymlinksInPath()
+        ) -> String? {
+            guard let exe = executable else { return nil }
             let candidate =
                 exe
                 .deletingLastPathComponent()
@@ -112,11 +114,7 @@ import Synchronization
             while process.isRunning && Date() < deadline {
                 usleep(10_000)
             }
-            if process.isRunning { process.terminate() }
-            self.process = nil
-            pid.store(0, ordering: .relaxed)
-            stdinPipe = nil
-            stdoutPipe = nil
+            terminate()
         }
 
         private func ensureRunning() throws {
@@ -138,11 +136,12 @@ import Synchronization
             self.stdoutPipe = stdoutPipe
         }
 
-        // exiftool outlives a closed stdin, and would hold the app's stderr open after it exits
+        // exiftool outlives a closed stdin, and would hold the app's stderr open after it exits;
+        // SIGINT, because only that one makes it delete a half-written temp file
         private static let exitHook: Void = {
             atexit {
                 let pid = ExifTool.shared.pid.load(ordering: .relaxed)
-                if pid > 0 { kill(pid, SIGTERM) }
+                if pid > 0 { kill(pid, SIGINT) }
             }
         }()
 

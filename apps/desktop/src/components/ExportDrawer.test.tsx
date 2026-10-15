@@ -21,8 +21,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   save: vi.fn(async () => "/fake/delivery.zip"),
 }));
 
-/// Commands the drawer sends besides the core requests a test is about.
-function shell(cmd: string) {
+function nonCoreAnswer(cmd: string) {
   if (cmd === "features") return { updater: false, zipExport: true };
   if (cmd === "pick_folder") return "/fake/delivery";
   return undefined;
@@ -66,7 +65,7 @@ function renderDrawer(rawPaths: string[] = RAWS) {
 
 function mockSupport(raw9: number, rawTotal: number) {
   invoke.mockImplementation(async (cmd: string, args?: { method?: string }) => {
-    const answer = shell(cmd);
+    const answer = nonCoreAnswer(cmd);
     if (answer !== undefined) return answer;
     if (args?.method === "decoderSupport") return { raw9, rawTotal };
     throw `unexpected ${cmd} ${String(args?.method)}`;
@@ -211,7 +210,7 @@ describe("export decoder row", () => {
         cmd: string,
         args?: { method?: string; params?: { paths?: string[] } },
       ) => {
-        const answer = shell(cmd);
+        const answer = nonCoreAnswer(cmd);
         if (answer !== undefined) return answer;
         if (args?.method !== "decoderSupport") throw "unexpected";
         const count = args.params?.paths?.length ?? 0;

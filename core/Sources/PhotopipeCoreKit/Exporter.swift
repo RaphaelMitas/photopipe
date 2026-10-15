@@ -47,8 +47,6 @@ public final class Exporter: @unchecked Sendable {
     public init() {}
 
     public func start(plan: Plan) -> Progress {
-        // A counter would restart at 1 with the process, and a client that
-        // outlives a sidecar respawn would poll and cancel a stranger's job.
         let id = UUID().uuidString
         let initial = Progress(
             id: id, total: plan.items.count, done: 0, failed: 0, running: true,

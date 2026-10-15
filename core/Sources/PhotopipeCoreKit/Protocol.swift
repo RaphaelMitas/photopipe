@@ -5,11 +5,6 @@ import Foundation
 public struct Request: Codable, Equatable, Sendable {
     public let method: String
     public let params: JSONValue?
-
-    public init(method: String, params: JSONValue? = nil) {
-        self.method = method
-        self.params = params
-    }
 }
 
 /// What the client sees of a thrown error; any other error reaches it as io_error.

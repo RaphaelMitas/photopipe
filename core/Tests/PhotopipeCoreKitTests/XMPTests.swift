@@ -773,3 +773,18 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> (rating:
     #expect(progress.running == false)
     #expect(progress.done == progress.total)
 }
+
+@Test func theAppFindsTheExiftoolBundledBesideIt() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("photopipe-bundle-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let app = root.appendingPathComponent("Photopipe.app/Contents")
+    let tool = app.appendingPathComponent("Resources/exiftool/exiftool")
+    try FileManager.default.createDirectory(
+        at: tool.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data("#!/usr/bin/perl\n".utf8).write(to: tool)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
+
+    let executable = app.appendingPathComponent("MacOS/Photopipe")
+    #expect(ExifTool.bundledBinary(executable: executable) == tool.path)
+}
