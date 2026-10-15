@@ -75,6 +75,14 @@ public final class SQLiteIndex: @unchecked Sendable {
                 size INTEGER NOT NULL,
                 version INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS prints (
+                path TEXT PRIMARY KEY,
+                feature BLOB,
+                captured REAL,
+                mtime REAL NOT NULL,
+                size INTEGER NOT NULL,
+                version INTEGER NOT NULL
+            );
             """)
         try exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema', '\(Self.schemaVersion)')")
         try exec("SELECT count(*) FROM files")
@@ -217,39 +225,99 @@ public final class SQLiteIndex: @unchecked Sendable {
         }
     }
 
-    public func loadScores() throws -> [String: ScoreRow] {
-        try withStatement("SELECT path, score, mtime, size, version FROM scores") { statement in
-            var rows: [String: ScoreRow] = [:]
+    public func loadScores() throws -> [String: Scorer.Row] {
+        try loadRows("SELECT path, score, mtime, size, version FROM scores") { statement in
+            sqlite3_column_type(statement, 1) == SQLITE_NULL
+                ? nil : sqlite3_column_double(statement, 1)
+        }
+    }
+
+    public func saveScores(_ rows: [(String, Scorer.Row)]) throws {
+        try saveRows(
+            "INSERT OR REPLACE INTO scores (path, score, mtime, size, version) VALUES (?,?,?,?,?)",
+            rows
+        ) { statement, score in
+            if let score {
+                sqlite3_bind_double(statement, 2, score)
+            } else {
+                sqlite3_bind_null(statement, 2)
+            }
+        }
+    }
+
+    public func loadPrints() throws -> [String: Printer.Row] {
+        try loadRows("SELECT path, feature, captured, mtime, size, version FROM prints") {
+            statement in
+            guard let blob = sqlite3_column_blob(statement, 1) else { return nil }
+            let count = Int(sqlite3_column_bytes(statement, 1)) / MemoryLayout<Float>.stride
+            let feature = Array(
+                UnsafeBufferPointer(start: blob.assumingMemoryBound(to: Float.self), count: count))
+            let captured =
+                sqlite3_column_type(statement, 2) == SQLITE_NULL
+                ? nil : sqlite3_column_double(statement, 2)
+            return Print(feature: feature, captured: captured)
+        }
+    }
+
+    public func savePrints(_ rows: [(String, Printer.Row)]) throws {
+        try saveRows(
+            "INSERT OR REPLACE INTO prints (path, feature, captured, mtime, size, version) VALUES (?,?,?,?,?,?)",
+            rows
+        ) { statement, print in
+            guard let print else {
+                sqlite3_bind_null(statement, 2)
+                sqlite3_bind_null(statement, 3)
+                return
+            }
+            _ = print.feature.withUnsafeBytes { bytes in
+                sqlite3_bind_blob(
+                    statement, 2, bytes.baseAddress, Int32(bytes.count), transientDestructor)
+            }
+            if let captured = print.captured {
+                sqlite3_bind_double(statement, 3, captured)
+            } else {
+                sqlite3_bind_null(statement, 3)
+            }
+        }
+    }
+
+    /// `sql` selects the path first and the row's mtime, size and version last; `value` reads
+    /// whatever sits between.
+    private func loadRows<Value>(
+        _ sql: String, value: (OpaquePointer?) -> Value?
+    ) throws -> [String: AnalysisRow<Value>] {
+        try withStatement(sql) { statement in
+            let stamps = sqlite3_column_count(statement) - 3
+            var rows: [String: AnalysisRow<Value>] = [:]
             while sqlite3_step(statement) == SQLITE_ROW {
                 guard let pathText = sqlite3_column_text(statement, 0) else { continue }
-                rows[String(cString: pathText)] = ScoreRow(
-                    score: sqlite3_column_type(statement, 1) == SQLITE_NULL
-                        ? nil : sqlite3_column_double(statement, 1),
-                    mtime: sqlite3_column_double(statement, 2),
-                    size: sqlite3_column_int64(statement, 3),
-                    version: Int(sqlite3_column_int64(statement, 4)))
+                rows[String(cString: pathText)] = AnalysisRow(
+                    value: value(statement),
+                    mtime: sqlite3_column_double(statement, stamps),
+                    size: sqlite3_column_int64(statement, stamps + 1),
+                    version: Int(sqlite3_column_int64(statement, stamps + 2)))
             }
             return rows
         }
     }
 
-    public func saveScores(_ rows: [(String, ScoreRow)]) throws {
+    /// `sql` binds the path first and the row's mtime, size and version last; `bind` fills in
+    /// whatever sits between.
+    private func saveRows<Value>(
+        _ sql: String, _ rows: [(String, AnalysisRow<Value>)],
+        bind: (OpaquePointer?, Value?) -> Void
+    ) throws {
         guard !rows.isEmpty else { return }
-        let sql =
-            "INSERT OR REPLACE INTO scores (path, score, mtime, size, version) VALUES (?,?,?,?,?)"
         try write {
             try withStatement(sql) { statement in
+                let last = sqlite3_bind_parameter_count(statement)
                 for (path, row) in rows {
                     sqlite3_reset(statement)
                     sqlite3_bind_text(statement, 1, path, -1, transientDestructor)
-                    if let score = row.score {
-                        sqlite3_bind_double(statement, 2, score)
-                    } else {
-                        sqlite3_bind_null(statement, 2)
-                    }
-                    sqlite3_bind_double(statement, 3, row.mtime)
-                    sqlite3_bind_int64(statement, 4, row.size)
-                    sqlite3_bind_int64(statement, 5, Int64(row.version))
+                    bind(statement, row.value)
+                    sqlite3_bind_double(statement, last - 2, row.mtime)
+                    sqlite3_bind_int64(statement, last - 1, row.size)
+                    sqlite3_bind_int64(statement, last, Int64(row.version))
                     guard sqlite3_step(statement) == SQLITE_DONE else {
                         throw IndexError.exec(errorMessage)
                     }

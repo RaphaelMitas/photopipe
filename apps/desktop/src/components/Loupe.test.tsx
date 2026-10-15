@@ -19,7 +19,7 @@ import { type CropDraft, draftFromEdit } from "@/lib/crop";
 import { makeImage } from "@/lib/test-image";
 import { EditSidebar } from "./EditPanel";
 import { filmstripPref } from "./Filmstrip";
-import { Loupe } from "./Loupe";
+import { Loupe, type LoupeStacks } from "./Loupe";
 import { LoupeSidebar } from "./LoupeSidebar";
 import type { RatingFilter } from "./RatingFilter";
 
@@ -55,6 +55,7 @@ function renderLoupe(
   index = 0,
   exposure = 0,
   cropDraft: CropDraft | null = null,
+  stacks: LoupeStacks | null = null,
 ) {
   const onNavigate = vi.fn();
   const onClose = vi.fn();
@@ -80,6 +81,7 @@ function renderLoupe(
           apply: onApplyCrop,
           cancel: onCancelCrop,
         }}
+        stacks={stacks}
         onEditChange={onEditChange}
         onNavigate={onNavigate}
         onClose={onClose}
@@ -97,6 +99,62 @@ function renderLoupe(
     onCancelCrop,
   };
 }
+
+function stackOf(images: ImageFile[], inside: boolean): LoupeStacks {
+  return {
+    list: [{ id: images[0].path, frames: images }],
+    current: { id: images[0].path, frames: images },
+    inside,
+    onStep: vi.fn(),
+    onEnter: vi.fn(),
+    onLeave: vi.fn(),
+    onRateStack: vi.fn(),
+    onPick: vi.fn(),
+  };
+}
+
+describe("Loupe with stacks", () => {
+  it("rates, steps and enters the whole stack from outside", () => {
+    const stacks = stackOf(makeImages(), false);
+    const { onRate, onClose } = renderLoupe(0, 0, null, stacks);
+    fireEvent.keyDown(window, { key: "4" });
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    fireEvent.keyDown(window, { key: "p" });
+    fireEvent.keyDown(window, { key: "Enter" });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(stacks.onRateStack).toHaveBeenCalledWith(4);
+    expect(onRate).not.toHaveBeenCalled();
+    expect(stacks.onStep).toHaveBeenCalledWith(1);
+    expect(stacks.onPick).not.toHaveBeenCalled();
+    expect(stacks.onEnter).toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+    expect(screen.getByTestId("stack-chip")).toHaveTextContent("3 frames");
+  });
+
+  it("rates one frame inside, picks with P or the button, and goes up on escape", () => {
+    const stacks = stackOf(makeImages(), true);
+    const { onRate, onClose } = renderLoupe(1, 0, null, stacks);
+    fireEvent.keyDown(window, { key: "3" });
+    expect(onRate).toHaveBeenCalledWith("/r/s/DSC00002.ARW", 3);
+    expect(stacks.onRateStack).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: "p" });
+    fireEvent.click(screen.getByTestId("stack-pick"));
+    expect(stacks.onPick).toHaveBeenCalledTimes(2);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(stacks.onLeave).toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("treats a photo that stands alone like the plain loupe", () => {
+    const stacks = stackOf(makeImages().slice(0, 1), false);
+    const { onRate } = renderLoupe(0, 0, null, stacks);
+    fireEvent.keyDown(window, { key: "2" });
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(onRate).toHaveBeenCalledWith("/r/s/DSC00001.ARW", 2);
+    expect(stacks.onEnter).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("stack-chip")).not.toBeInTheDocument();
+  });
+});
 
 describe("Loupe keyboard culling", () => {
   it("rates with digit keys and clears with 0", () => {
@@ -240,6 +298,13 @@ describe("LoupeSidebar", () => {
     active: false,
     reset: vi.fn(),
   };
+  const noStacks = {
+    on: false,
+    ready: false,
+    progress: null,
+    onToggle: vi.fn(),
+    current: null,
+  };
 
   it("shows name, position and stars; rates", () => {
     const onRate = vi.fn();
@@ -250,6 +315,7 @@ describe("LoupeSidebar", () => {
             image={makeImages()[1]}
             position={2}
             count={3}
+            stacks={noStacks}
             betterThan={null}
             ratingCounts={[3, 0, 0, 0, 0, 0]}
             filter={filter}
@@ -274,6 +340,7 @@ describe("LoupeSidebar", () => {
             image={image}
             position={2}
             count={3}
+            stacks={noStacks}
             betterThan={betterThan}
             ratingCounts={[3, 0, 0, 0, 0, 0]}
             filter={filter}

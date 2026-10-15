@@ -5,10 +5,10 @@ import Testing
 
 func waitForPass(
     sourceLocation: SourceLocation = #_sourceLocation,
-    _ progress: () throws -> Scorer.Progress
+    _ running: () throws -> Bool
 ) async throws {
     for _ in 0..<200 {
-        if !(try progress()).running { return }
+        if !(try running()) { return }
         try await Task.sleep(for: .milliseconds(50))
     }
     Issue.record("scoring pass never finished", sourceLocation: sourceLocation)
@@ -41,7 +41,7 @@ private func attach(_ scorer: Scorer, to index: SQLiteIndex) {
     attach(scorer, to: try SQLiteIndex(path: indexPath))
     let started = scorer.start(shoot: "s", files: [file])
     #expect(started.total == 1)
-    try await waitForPass { scorer.progress(shoot: "s", files: [file]) }
+    try await waitForPass { scorer.progress(shoot: "s", files: [file]).running }
 
     let score = try #require(scorer.scores(for: [file])[file.path])
     #expect(score >= -1 && score <= 1)
@@ -77,7 +77,7 @@ private func attach(_ scorer: Scorer, to index: SQLiteIndex) {
     try await Task.sleep(for: .milliseconds(300))
 
     let stored = try index.loadScores()
-    #expect(stored.values.allSatisfy { $0.score != nil })
+    #expect(stored.values.allSatisfy { $0.value != nil })
 }
 
 @Test func editingTheFileDropsItsCachedScore() async throws {
@@ -91,7 +91,7 @@ private func attach(_ scorer: Scorer, to index: SQLiteIndex) {
     let scorer = Scorer()
     attach(scorer, to: try SQLiteIndex(path: indexPath))
     scorer.start(shoot: "s", files: [file])
-    try await waitForPass { scorer.progress(shoot: "s", files: [file]) }
+    try await waitForPass { scorer.progress(shoot: "s", files: [file]).running }
     #expect(scorer.scores(for: [file]).count == 1)
 
     let (replacement, replacementURL) = try makePNG(width: 96, height: 72)
@@ -117,7 +117,7 @@ private func attach(_ scorer: Scorer, to index: SQLiteIndex) {
     let scorer = Scorer()
     attach(scorer, to: try SQLiteIndex(path: indexPath))
     scorer.start(shoot: "s", files: [file])
-    try await waitForPass { scorer.progress(shoot: "s", files: [file]) }
+    try await waitForPass { scorer.progress(shoot: "s", files: [file]).running }
     let score = try #require(scorer.scores(for: [file])[file.path])
 
     // A metadata write: same pixels, new stamps.
@@ -156,7 +156,7 @@ private func attach(_ scorer: Scorer, to index: SQLiteIndex) {
     let written = touched(files[files.count - 1])
     scorer.restamp(files[files.count - 1], to: written)
     let settled = files.dropLast() + [written]
-    try await waitForPass { scorer.progress(shoot: "s", files: Array(settled)) }
+    try await waitForPass { scorer.progress(shoot: "s", files: Array(settled)).running }
 
     #expect(scorer.scores(for: [written])[written.path] != nil)
     #expect(scorer.progress(shoot: "s", files: Array(settled)).done == files.count)
@@ -175,7 +175,7 @@ private func attach(_ scorer: Scorer, to index: SQLiteIndex) {
     let scorer = Scorer()
     attach(scorer, to: try SQLiteIndex(path: indexPath))
     scorer.start(shoot: "s", files: [broken])
-    try await waitForPass { scorer.progress(shoot: "s", files: [broken]) }
+    try await waitForPass { scorer.progress(shoot: "s", files: [broken]).running }
 
     let progress = scorer.progress(shoot: "s", files: [broken])
     #expect(progress.done == progress.total)

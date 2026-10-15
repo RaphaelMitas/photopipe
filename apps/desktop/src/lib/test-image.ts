@@ -16,6 +16,8 @@ export function makeImage(
     width: 3000,
     height: 2000,
     score: null,
+    captured: null,
+    stack: null,
     enriched: true,
     ...overrides,
   };

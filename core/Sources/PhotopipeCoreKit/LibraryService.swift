@@ -30,6 +30,7 @@ public final class LibraryService: @unchecked Sendable {
     private let thumbnailer: Thumbnailer
     private let renderer: Renderer
     private let scorer: Scorer
+    private let printer: Printer
     private let exporter = Exporter()
     private let rescanQueue = DispatchQueue(label: "photopipe.rescan")
     /// One connection, one writer: enrichment batches and full saves both land
@@ -41,11 +42,13 @@ public final class LibraryService: @unchecked Sendable {
     public init(
         thumbnailer: Thumbnailer = Thumbnailer(cacheDir: Thumbnailer.defaultCacheDir()),
         renderer: Renderer = Renderer(cacheDir: Renderer.defaultCacheDir()),
-        scorer: Scorer = Scorer()
+        scorer: Scorer = Scorer(),
+        printer: Printer = Printer()
     ) {
         self.thumbnailer = thumbnailer
         self.renderer = renderer
         self.scorer = scorer
+        self.printer = printer
     }
 
     public static func defaultIndexPath() -> String {
@@ -83,7 +86,7 @@ public final class LibraryService: @unchecked Sendable {
         }
 
         store(scanned, root: path, in: index)
-        useScorer(with: index)
+        useAnalyzers(with: index)
 
         let newWatcher = Watcher(path: path, queue: rescanQueue) { [weak self] in
             self?.scheduleRescan()
@@ -101,13 +104,22 @@ public final class LibraryService: @unchecked Sendable {
     public func listImages(shoot: String) throws -> [ImageFile] {
         let images = try images(inShoot: shoot)
         let scores = scorer.scores(for: images)
+        let prints = printer.prints(for: images)
+        let stacks = Stacker.stacks(prints)
         return images.map { image in
-            scores[image.path].map { image.with(score: $0) } ?? image
+            image.with(
+                score: scores[image.path], captured: prints[image.path]?.captured,
+                stack: stacks[image.path])
         }
     }
 
     public func scoreShoot(shoot: String) throws -> Scorer.Progress {
         scorer.start(shoot: shoot, files: try images(inShoot: shoot))
+    }
+
+    /// Separate from scoring, so turning Instinct off in Settings leaves stacks working.
+    public func stackShoot(shoot: String) throws -> Printer.Progress {
+        printer.start(shoot: shoot, files: try images(inShoot: shoot))
     }
 
     private func images(inShoot shoot: String) throws -> [ImageFile] {
@@ -340,6 +352,7 @@ public final class LibraryService: @unchecked Sendable {
         let settled = enrich(Self.restat(image))
         replace(settled, inShoot: shoot)
         scorer.restamp(image, to: settled)
+        printer.restamp(image, to: settled)
         let index = lock.withLock { self.index }
         indexQueue.async { try? index?.upsert(shoot: shoot, files: [settled]) }
         return settled
@@ -583,13 +596,18 @@ public final class LibraryService: @unchecked Sendable {
     /// Writes the file list out and hands whatever is still a placeholder to
     /// the enricher. Both happen on the index queue, in that order, so an
     /// interrupted session still starts warm next time.
-    /// The scorer keeps its own copy of the cache and hands results back here to
+    /// Each analyzer keeps its own copy of the cache and hands results back here to
     /// be written, so the sqlite handle stays on one queue with the enricher.
-    private func useScorer(with index: SQLiteIndex?) {
-        let cached = indexQueue.sync { (try? index?.loadScores()) ?? [:] }
+    private func useAnalyzers(with index: SQLiteIndex?) {
+        let (scores, prints) = indexQueue.sync {
+            ((try? index?.loadScores()) ?? [:], (try? index?.loadPrints()) ?? [:])
+        }
         let queue = indexQueue
-        scorer.use(cache: cached) { rows in
+        scorer.use(cache: scores) { rows in
             queue.async { try? index?.saveScores(rows) }
+        }
+        printer.use(cache: prints) { rows in
+            queue.async { try? index?.savePrints(rows) }
         }
     }
 

@@ -107,15 +107,23 @@ export type ImageFile = {
   height: number;
   // Vision's aesthetic score, -1..1, null for a photo it has not rated.
   score: number | null;
+  // Capture time in seconds, null until the stacking pass has read it.
+  captured: number | null;
+  // first photo of its stack of near-identical photos, null for one alone
+  stack: string | null;
   enriched: boolean;
 };
 
 /// The core omits nulls and defaulted fields when it encodes, so an unrated
 /// photo arrives with no `score` and an untouched one with no `whites`.
-type WireImage = Omit<ImageFile, "score" | "edit"> & {
+type WireImage = Omit<ImageFile, "score" | "captured" | "stack" | "edit"> & {
   score?: number | null;
+  captured?: number | null;
+  stack?: string | null;
   edit: Partial<Edit>;
 };
+
+export type PassProgress = { done: number; total: number; running: boolean };
 
 export function normalizeEdit(edit: Partial<Edit>): Edit {
   return { ...identityEdit, ...edit };
@@ -125,6 +133,8 @@ export function normalizeImage(image: WireImage): ImageFile {
   return {
     ...image,
     score: image.score ?? null,
+    captured: image.captured ?? null,
+    stack: image.stack ?? null,
     edit: normalizeEdit(image.edit),
   };
 }
@@ -195,10 +205,8 @@ type CachePath = { cachePath: string };
 export type CoreMethods = {
   listShoots: { params: undefined; result: { shoots: WireShoot[] } };
   listImages: { params: { shoot: string }; result: { images: WireImage[] } };
-  scoreShoot: {
-    params: { shoot: string };
-    result: { done: number; total: number; running: boolean };
-  };
+  scoreShoot: { params: { shoot: string }; result: PassProgress };
+  stackShoot: { params: { shoot: string }; result: PassProgress };
   thumbnail: { params: { path: string; maxPixel: number }; result: CachePath };
   render: {
     params: {

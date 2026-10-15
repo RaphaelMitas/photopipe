@@ -63,6 +63,26 @@ entries, not a "lineage group". Grouping was built for the stage model (the
 same shot moving through formats); flat, it only hid files. What you see in
 the grid is exactly what is on disk.
 
+## Stacks are a way through the loupe, not a grouping
+
+A dance event is mostly bursts: the same couple, the same second, several
+frames. With **Stacks** on, the loupe walks near-identical frames as one stop,
+so the first pass asks "is this moment worth it" once instead of six times.
+A rating there goes to every frame; inside the stack, **Pick** keeps one frame
+with the stack's rating (5★ if it had none) and clears the rest, so what
+Lightroom sees afterwards is one keeper per moment.
+
+This is not the grouping that was reversed above. That one hid files in the
+grid; this one never touches the grid, is off until you turn it on, and every
+frame stays one keypress away.
+
+"Near-identical" is a Vision feature-print distance under 0.40 to every frame
+already in the stack, within 60 s of its first. The number was set by eye on
+consecutive pairs from a real event; capture time alone grouped whole songs.
+Instinct does not choose inside a stack: on shoots culled without it, its pick
+matched the kept frame no better than chance, so it only breaks ties for the
+cover.
+
 ## The histogram is the filter
 
 The sidebar shows the rating spread as six bars (∅ then 1–5) with a count on

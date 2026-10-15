@@ -1,0 +1,118 @@
+import CoreGraphics
+import Foundation
+import ImageIO
+import Testing
+import UniformTypeIdentifiers
+
+@testable import PhotopipeCoreKit
+
+private func fakePrint(_ x: Float, at captured: Double?) -> Print {
+    Print(feature: [x, 0], captured: captured)
+}
+
+@Test func aPhotoJoinsOnlyWhenItLooksLikeEveryPhotoInTheStack() {
+    // a–b and b–c are each 0.3 apart, a–c 0.6: chaining neighbours would take c too
+    let stacks = Stacker.stacks([
+        "a": fakePrint(0, at: 0), "b": fakePrint(0.3, at: 1), "c": fakePrint(0.6, at: 2),
+    ])
+    #expect(stacks == ["a": "a", "b": "a"])
+}
+
+@Test func aStackIsNamedByItsFirstPhotoInCaptureOrder() {
+    let stacks = Stacker.stacks(["z": fakePrint(0, at: 10), "m": fakePrint(0.1, at: 11)])
+    #expect(stacks == ["z": "z", "m": "z"])
+}
+
+@Test func identicalPhotosOutsideTheWindowStayApart() {
+    let stacks = Stacker.stacks([
+        "a": fakePrint(0, at: 0), "b": fakePrint(0, at: 30), "c": fakePrint(0, at: 61),
+    ])
+    #expect(stacks == ["a": "a", "b": "a"])
+}
+
+@Test func photosWithoutACaptureTimeStandAlone() {
+    let stacks = Stacker.stacks(["a": fakePrint(0, at: 0), "b": fakePrint(0, at: nil)])
+    #expect(stacks.isEmpty)
+}
+
+private func exifDate(_ stamp: String, subsec: String) -> [CFString: Any] {
+    [
+        kCGImagePropertyExifDictionary: [
+            kCGImagePropertyExifDateTimeOriginal: stamp,
+            kCGImagePropertyExifSubsecTimeOriginal: subsec,
+        ]
+    ]
+}
+
+/// A JPEG with a capture time, filled with `pattern`'s squares so different patterns read as
+/// different pictures.
+private func writeJPEG(
+    _ url: URL, pattern: Int, stamp: String = "2026:08:08 19:24:28", subsec: String = "000"
+) throws {
+    let size = 256
+    let context = CGContext(
+        data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    context.setFillColor(CGColor(red: 0.9, green: 0.5, blue: 0.2, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: size, height: size))
+    context.setFillColor(CGColor(red: 0.1, green: 0.2, blue: 0.8, alpha: 1))
+    let cell = size / (pattern + 1)
+    for x in stride(from: 0, to: size, by: cell * 2) {
+        for y in stride(from: 0, to: size, by: cell * 2) {
+            context.fill(CGRect(x: x, y: y, width: cell, height: cell))
+        }
+    }
+    let destination = CGImageDestinationCreateWithURL(
+        url as CFURL, UTType.jpeg.identifier as CFString, 1, nil)!
+    CGImageDestinationAddImage(
+        destination, context.makeImage()!, exifDate(stamp, subsec: subsec) as CFDictionary)
+    #expect(CGImageDestinationFinalize(destination))
+}
+
+@Test func aPrintCarriesTheCaptureTimeToTheSubsecond() async throws {
+    let url = URL(fileURLWithPath: tempFile("captured.jpg"))
+    try writeJPEG(url, pattern: 3, subsec: "963")
+    defer { try? FileManager.default.removeItem(at: url) }
+
+    let print = try #require(await Printer.print(path: url.path))
+    #expect(!print.feature.isEmpty)
+    // 2026-08-08 19:24:28 read as UTC
+    #expect(try #require(print.captured) == 1_786_217_068.963)
+}
+
+@Test func printsSurviveTheIndexIncludingUnreadableFiles() throws {
+    let path = tempFile("index.sqlite")
+    defer { try? FileManager.default.removeItem(atPath: path) }
+    let index = try SQLiteIndex(path: path)
+    let rows: [(String, Printer.Row)] = [
+        ("/a", .init(value: Print(feature: [0.25, -1, 3], captured: 12.5), mtime: 1, size: 2, version: 1)),
+        ("/b", .init(value: Print(feature: [1], captured: nil), mtime: 3, size: 4, version: 1)),
+        ("/c", .init(value: nil, mtime: 5, size: 6, version: 1)),
+    ]
+    try index.savePrints(rows)
+    #expect(try index.loadPrints() == Dictionary(uniqueKeysWithValues: rows))
+}
+
+@Test func listImagesStacksNearIdenticalPhotos() async throws {
+    let root = URL(fileURLWithPath: tempFile("stacks-root"))
+    let shoot = root.appendingPathComponent("2026-08-08_dance")
+    try FileManager.default.createDirectory(at: shoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try writeJPEG(shoot.appendingPathComponent("1.jpg"), pattern: 3, stamp: "2026:08:08 19:24:28")
+    try writeJPEG(shoot.appendingPathComponent("2.jpg"), pattern: 3, stamp: "2026:08:08 19:24:29")
+    try writeJPEG(shoot.appendingPathComponent("3.jpg"), pattern: 0, stamp: "2026:08:08 19:24:30")
+
+    let service = LibraryService(
+        thumbnailer: Thumbnailer(cacheDir: URL(fileURLWithPath: tempFile("thumbs"))))
+    _ = try service.setRoot(path: root.path, indexPath: tempFile("index.sqlite"))
+    waitUntilIndexed(service)
+    try await waitForPass { try service.stackShoot(shoot: "2026-08-08_dance").running }
+
+    let images = try service.listImages(shoot: "2026-08-08_dance")
+    let stack = Dictionary(uniqueKeysWithValues: images.map { ($0.rel, $0.stack) })
+    #expect(stack["1.jpg"] == images.first { $0.rel == "1.jpg" }?.path)
+    #expect(stack["2.jpg"] == stack["1.jpg"])
+    #expect(stack["3.jpg"] == .some(nil))
+    #expect(images.allSatisfy { $0.captured != nil })
+}

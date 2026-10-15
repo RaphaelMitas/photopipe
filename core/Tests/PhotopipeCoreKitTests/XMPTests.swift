@@ -759,7 +759,7 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> (rating:
     waitUntilIndexed(service)
 
     _ = try service.scoreShoot(shoot: "2026-01-01_instinct")
-    try await waitForPass { try service.scoreShoot(shoot: "2026-01-01_instinct") }
+    try await waitForPass { try service.scoreShoot(shoot: "2026-01-01_instinct").running }
     let before = try service.listImages(shoot: "2026-01-01_instinct")
     let target = shoot.appendingPathComponent("b.JPG").path
     let score = try #require(before.first { $0.path == target }?.score)

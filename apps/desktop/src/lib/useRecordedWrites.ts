@@ -67,6 +67,30 @@ export function useRecordedWrites(shoot: string | null) {
     [queryClient, shoot, setRating, ratings],
   );
 
+  /// One undo step for a rating that lands on several photos at once.
+  const rateMany = useCallback(
+    (values: Map<string, number>, label: string, detail: string) => {
+      const images = [...values.keys()].map((path) =>
+        cachedImage(queryClient, shoot, path),
+      );
+      if (values.size === 0 || images.some((image) => !image)) return;
+      const written = landed(setRatings(values));
+      void written.catch(() => {});
+      // before the core has read a file, its old rating is a placeholder
+      if (images.some((image) => !image?.enriched)) return;
+      void ratings.record(
+        { icon: Star, label, detail, paths: [...values.keys()], written },
+        new Map(
+          images.flatMap((image) =>
+            image ? [[image.path, image.rating]] : [],
+          ),
+        ),
+        values,
+      );
+    },
+    [queryClient, shoot, setRatings, ratings],
+  );
+
   const writeEdit = useCallback(
     (path: string, edit: Edit) => {
       const image = cachedImage(queryClient, shoot, path);
@@ -107,5 +131,5 @@ export function useRecordedWrites(shoot: string | null) {
     [queryClient, shoot, pasteEdits, edits],
   );
 
-  return { rate, writeEdit, paste };
+  return { rate, rateMany, writeEdit, paste };
 }

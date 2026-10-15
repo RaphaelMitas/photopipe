@@ -1,0 +1,109 @@
+import type { ImageFile } from "./core";
+import { flagPref } from "./pref";
+
+export const stacksPref = flagPref("photopipe.stacks", "on", "off", false);
+
+/// Near-identical photos the core grouped, frames in capture order. A photo
+/// that stands alone is a stack of one.
+export type Stack = { id: string; frames: ImageFile[] };
+
+function byCapture(a: ImageFile, b: ImageFile): number {
+  if (a.captured === b.captured) return 0;
+  if (a.captured === null) return 1;
+  if (b.captured === null) return -1;
+  return a.captured - b.captured;
+}
+
+/// Stacks in the order their first photo appears in `images`.
+export function groupStacks(images: ImageFile[]): Stack[] {
+  const byId = new Map<string, Stack>();
+  for (const image of images) {
+    const id = image.stack ?? image.path;
+    const stack = byId.get(id);
+    if (stack) stack.frames.push(image);
+    else byId.set(id, { id, frames: [image] });
+  }
+  for (const stack of byId.values()) stack.frames.sort(byCapture);
+  return [...byId.values()];
+}
+
+export const stackRating = (stack: Stack) =>
+  Math.max(...stack.frames.map((frame) => frame.rating));
+
+/// The frame a stack shows from outside: the highest-rated one, then
+/// Instinct's pick among those, then the first taken.
+export function coverOf(stack: Stack): ImageFile {
+  const score = (frame: ImageFile) => frame.score ?? Number.NEGATIVE_INFINITY;
+  return stack.frames.reduce((best, frame) =>
+    frame.rating > best.rating ||
+    (frame.rating === best.rating && score(frame) > score(best))
+      ? frame
+      : best,
+  );
+}
+
+export const stackOf = (stacks: Stack[], path: string) =>
+  stacks.find((stack) => stack.frames.some((frame) => frame.path === path));
+
+/// Opening a photo that is in a stack but is not what the stack shows means
+/// you came for that photo, so the loupe starts inside the stack.
+export const opensInside = (stack: Stack | undefined, path: string) =>
+  stack !== undefined &&
+  stack.frames.length > 1 &&
+  coverOf(stack).path !== path;
+
+const changes = (stack: Stack, ratingOf: (frame: ImageFile) => number) =>
+  new Map(
+    stack.frames
+      .filter((frame) => frame.rating !== ratingOf(frame))
+      .map((frame) => [frame.path, ratingOf(frame)]),
+  );
+
+export const rateStack = (stack: Stack, rating: number) =>
+  changes(stack, () => rating);
+
+/// The writes that keep only `path`: it gets the stack's rating, or 5 when
+/// nothing in the stack is rated, and every other frame is cleared.
+export function pickInStack(stack: Stack, path: string) {
+  const kept = stackRating(stack) > 0 ? stackRating(stack) : 5;
+  return changes(stack, (frame) => (frame.path === path ? kept : 0));
+}
+
+/// The loupe's walk with stacks on. A stack sits where `sorted` puts its first
+/// photo and stays in the walk while its rating passes the filter or it holds
+/// `keep`, the photo you are on.
+export function stackedOrder(
+  sorted: ImageFile[],
+  matches: (image: { rating: number }) => boolean,
+  keep?: ImageFile,
+): ImageFile[] {
+  return groupStacks(sorted)
+    .filter(
+      (stack) =>
+        matches({ rating: stackRating(stack) }) ||
+        (keep !== undefined &&
+          stack.frames.some((frame) => frame.path === keep.path)),
+    )
+    .flatMap((stack) => stack.frames);
+}
+
+/// Where ← or → lands: the cover of the neighbouring stack, or inside a stack
+/// its neighbouring frame. Null at either end.
+export function stepPath(
+  stacks: Stack[],
+  path: string,
+  inside: boolean,
+  direction: 1 | -1,
+): string | null {
+  const at = stacks.findIndex((stack) =>
+    stack.frames.some((frame) => frame.path === path),
+  );
+  if (at === -1) return null;
+  if (inside) {
+    const frames = stacks[at].frames;
+    const index = frames.findIndex((frame) => frame.path === path);
+    return frames[index + direction]?.path ?? null;
+  }
+  const next = stacks[at + direction];
+  return next ? coverOf(next).path : null;
+}

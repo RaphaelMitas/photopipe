@@ -62,11 +62,23 @@ import {
   useReveal,
   useScoring,
   useShoots,
+  useStacking,
   useTrash,
 } from "@/lib/queries";
 import { openRoot, type RootError, rootsQuery, toRootError } from "@/lib/roots";
 import { useSelection } from "@/lib/selection";
-import { browserOrder, sortPref } from "@/lib/sort";
+import { browserOrder, sortImages, sortPref } from "@/lib/sort";
+import {
+  groupStacks,
+  opensInside,
+  pickInStack,
+  rateStack,
+  type Stack,
+  stackedOrder,
+  stackOf,
+  stacksPref,
+  stepPath,
+} from "@/lib/stacks";
 import { useCropSession } from "@/lib/useCropSession";
 import { useDebouncedEdit } from "@/lib/useDebouncedEdit";
 import { useRecordedWrites } from "@/lib/useRecordedWrites";
@@ -106,6 +118,7 @@ export default function App() {
   // outlives the loupe, so closing it lands the browser on the same photo
   const [currentPath, setCurrentPath] = useState<string | null>(null);
   const [loupeOpen, setLoupeOpen] = useState(false);
+  const [inside, setInside] = useState(false);
   const filter = useRatingFilter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const editOpen = editPanelPref.use();
@@ -171,6 +184,9 @@ export default function App() {
     openShoot,
     ready && autoScore,
   );
+  const stacksWanted = stacksPref.use();
+  const stacking = useStacking(openShoot, ready && stacksWanted);
+  const stacksOn = stacksWanted && stacking.ready;
   const writes = useRecordedWrites(openShoot);
   const reveal = useReveal();
   const trash = useTrash(openShoot);
@@ -310,7 +326,7 @@ export default function App() {
   // Keyed on the sort you chose, not the one in force: a scoring pass finishing
   // must not re-order the loupe under you mid-visit.
   const held = useRef<{ key: string; paths: string[] }>({ key: "", paths: [] });
-  const heldKey = `${openShoot}|${sort}|${filter.op}|${filter.stars}`;
+  const heldKey = `${openShoot}|${sort}|${filter.op}|${filter.stars}|${stacksOn}`;
   const openImage = currentPath
     ? allImages.find((image) => image.path === currentPath)
     : undefined;
@@ -321,11 +337,24 @@ export default function App() {
     (openImage !== undefined && !held.current.paths.includes(openImage.path));
 
   const loupeImages = useMemo(() => {
-    if (!openImage) return filteredImages;
-    if (!reorder)
-      return heldOrder(held.current.paths, filteredImages, openImage);
-    return browserOrder(allImages, filter.matches, activeSort, openImage);
+    if (!stacksOn) {
+      if (!openImage) return filteredImages;
+      if (!reorder)
+        return heldOrder(held.current.paths, filteredImages, openImage);
+      return browserOrder(allImages, filter.matches, activeSort, openImage);
+    }
+    const live = stackedOrder(
+      sortImages(allImages, activeSort),
+      filter.matches,
+      openImage,
+    );
+    if (!openImage || reorder) return live;
+    // holding can leave a newcomer beside the wrong anchor; regrouping puts it back in its stack
+    return groupStacks(heldOrder(held.current.paths, live, openImage)).flatMap(
+      (stack) => stack.frames,
+    );
   }, [
+    stacksOn,
     filteredImages,
     allImages,
     openImage,
@@ -345,6 +374,55 @@ export default function App() {
   // The browser keeps the current photo after the loupe closes, so anything
   // acting on "the photo you are looking at" has to ask whether it is open.
   const loupePhoto = loupeOpen ? loupeImage : null;
+  const loupeStacks = useMemo(
+    () => (stacksOn ? groupStacks(loupeImages) : null),
+    [stacksOn, loupeImages],
+  );
+  const currentStack =
+    loupeStacks && loupeImage
+      ? stackOf(loupeStacks, loupeImage.path)
+      : undefined;
+  const multiFrame =
+    currentStack !== undefined && currentStack.frames.length > 1;
+  const insideStack = inside && multiFrame;
+
+  const toggleStacks = useCallback(() => {
+    const on = !stacksPref.get();
+    stacksPref.set(on);
+    if (!on || !currentPath) return;
+    setInside(
+      opensInside(stackOf(groupStacks(allImages), currentPath), currentPath),
+    );
+  }, [allImages, currentPath]);
+  const rateWholeStack = (stack: Stack, rating: number) =>
+    writes.rateMany(
+      rateStack(stack, rating),
+      "Rating",
+      `${rating === 0 ? "cleared" : "★".repeat(rating)} · stack of ${stack.frames.length}`,
+    );
+  const pick = (stack: Stack, path: string) => {
+    const ratings = pickInStack(stack, path);
+    writes.rateMany(ratings, "Pick", fileName(path));
+    setInside(false);
+    const cleared = [...ratings.values()].filter(
+      (rating) => rating === 0,
+    ).length;
+    toast(`Picked ${fileName(path)}`, {
+      id: "pick",
+      description:
+        cleared > 0
+          ? `${cleared} other ${cleared === 1 ? "photo" : "photos"} cleared · ⌘Z undoes`
+          : undefined,
+    });
+  };
+  const visit = (path: string | null, stacks: Stack[] | null) => {
+    setCurrentPath(path);
+    setInside(
+      path !== null &&
+        stacks !== null &&
+        opensInside(stackOf(stacks, path), path),
+    );
+  };
   const crop = useCropSession(loupePhoto, loupeEdit, changeEdit);
   const cropping = crop.draft !== null;
 
@@ -539,6 +617,9 @@ export default function App() {
       if (event.key === "e" && !event.altKey && loupeOpen && !cropping) {
         toggleEditPanel();
       }
+      if (event.key === "s" && !event.altKey && loupeOpen && !cropping) {
+        toggleStacks();
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -553,6 +634,7 @@ export default function App() {
     pasteTargets,
     pasteSettings,
     travel,
+    toggleStacks,
   ]);
 
   const enterShoot = (shoot: string | null) => {
@@ -561,6 +643,7 @@ export default function App() {
     setOpenShoot(shoot);
     setCurrentPath(null);
     setLoupeOpen(false);
+    setInside(false);
     filter.reset();
     selection.clear();
   };
@@ -613,8 +696,30 @@ export default function App() {
       index={loupeIndex}
       edit={loupeEdit}
       crop={crop}
+      stacks={
+        loupeStacks && currentStack
+          ? {
+              list: loupeStacks,
+              current: currentStack,
+              inside: insideStack,
+              onStep: (direction) => {
+                const next = stepPath(
+                  loupeStacks,
+                  loupePhoto.path,
+                  insideStack,
+                  direction,
+                );
+                if (next) setCurrentPath(next);
+              },
+              onEnter: () => setInside(true),
+              onLeave: () => setInside(false),
+              onRateStack: (rating) => rateWholeStack(currentStack, rating),
+              onPick: () => pick(currentStack, loupePhoto.path),
+            }
+          : null
+      }
       onEditChange={(edit) => changeEdit(loupePhoto, edit)}
-      onNavigate={(next) => setCurrentPath(loupeImages[next]?.path ?? null)}
+      onNavigate={(next) => visit(loupeImages[next]?.path ?? null, loupeStacks)}
       onClose={() => setLoupeOpen(false)}
       onRate={writes.rate}
     />
@@ -633,7 +738,10 @@ export default function App() {
       onOpen={(index) => {
         // A new visit walks the browser's order as it stands now.
         held.current = NO_HELD;
-        setCurrentPath(filteredImages[index]?.path ?? null);
+        visit(
+          filteredImages[index]?.path ?? null,
+          stacksOn ? groupStacks(allImages) : null,
+        );
         setLoupeOpen(true);
       }}
       onImport={runImport}
@@ -664,15 +772,41 @@ export default function App() {
         {inLoupe && loupeImage ? (
           <LoupeSidebar
             image={loupeImage}
-            position={loupeIndex + 1}
-            count={loupeImages.length}
+            position={
+              loupeStacks && currentStack
+                ? insideStack
+                  ? currentStack.frames.indexOf(loupeImage) + 1
+                  : loupeStacks.indexOf(currentStack) + 1
+                : loupeIndex + 1
+            }
+            count={
+              loupeStacks && currentStack
+                ? insideStack
+                  ? currentStack.frames.length
+                  : loupeStacks.length
+                : loupeImages.length
+            }
+            stacks={{
+              on: stacksWanted,
+              ready: stacking.ready,
+              progress: stacking.progress,
+              onToggle: toggleStacks,
+              current:
+                currentStack && multiFrame
+                  ? { stack: currentStack, inside: insideStack }
+                  : null,
+            }}
             betterThan={betterThan(
               ranks.get(loupeImage.path) ?? null,
               ranks.size,
             )}
             filter={filter}
             ratingCounts={counts}
-            onRate={writes.rate}
+            onRate={(path, rating) =>
+              currentStack && multiFrame && !insideStack
+                ? rateWholeStack(currentStack, rating)
+                : writes.rate(path, rating)
+            }
             onBackToGrid={() =>
               cropping ? crop.cancel() : setLoupeOpen(false)
             }

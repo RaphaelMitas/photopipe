@@ -24,6 +24,7 @@ import {
   useThumbnail,
   useViewportRender,
 } from "@/lib/queries";
+import { pickInStack, type Stack, stackRating, stepPath } from "@/lib/stacks";
 import type { CropSession } from "@/lib/useCropSession";
 import {
   centerOn,
@@ -58,11 +59,25 @@ function useSettled<T>(value: T, delayMs: number): T {
   return settled;
 }
 
+/// With Stacks on, ←→ and ratings act on the stack you are at until you go
+/// inside it.
+export type LoupeStacks = {
+  list: Stack[];
+  current: Stack;
+  inside: boolean;
+  onStep: (direction: 1 | -1) => void;
+  onEnter: () => void;
+  onLeave: () => void;
+  onRateStack: (rating: number) => void;
+  onPick: () => void;
+};
+
 type Props = {
   images: ImageFile[];
   index: number;
   edit: Edit;
   crop: CropSession;
+  stacks: LoupeStacks | null;
   onEditChange: (edit: Edit) => void;
   onNavigate: (index: number) => void;
   onClose: () => void;
@@ -74,6 +89,7 @@ export function Loupe({
   index,
   edit,
   crop: session,
+  stacks,
   onEditChange,
   onNavigate,
   onClose,
@@ -97,8 +113,16 @@ export function Loupe({
   );
   const render = useRender(image, previewEdit);
   const thumb = useThumbnail(image);
-  usePrefetchRender(images[index + 1], images[index + 1]?.edit);
-  usePrefetchRender(images[index - 1], images[index - 1]?.edit);
+  const neighbour = (direction: 1 | -1) => {
+    if (!stacks || !image) return images[index + direction];
+    const path = stepPath(stacks.list, image.path, stacks.inside, direction);
+    return images.find((candidate) => candidate.path === path);
+  };
+  const next = neighbour(1);
+  const previous = neighbour(-1);
+  usePrefetchRender(next, next?.edit);
+  usePrefetchRender(previous, previous?.edit);
+  const multiFrame = stacks !== null && stacks.current.frames.length > 1;
 
   const stageRef = useRef<HTMLDivElement>(null);
   const [stage, setStage] = useState({ width: 0, height: 0 });
@@ -214,15 +238,24 @@ export function Loupe({
       }
       switch (event.key) {
         case "Escape":
-          onClose();
+          if (stacks?.inside) stacks.onLeave();
+          else onClose();
           break;
         case "ArrowRight":
           event.preventDefault();
-          onNavigate(Math.min(index + 1, images.length - 1));
+          if (stacks) stacks.onStep(1);
+          else onNavigate(Math.min(index + 1, images.length - 1));
           break;
         case "ArrowLeft":
           event.preventDefault();
-          onNavigate(Math.max(index - 1, 0));
+          if (stacks) stacks.onStep(-1);
+          else onNavigate(Math.max(index - 1, 0));
+          break;
+        case "Enter":
+          if (multiFrame && !stacks.inside) stacks.onEnter();
+          break;
+        case "p":
+          if (multiFrame && stacks.inside) stacks.onPick();
           break;
         case "0":
         case "1":
@@ -230,7 +263,11 @@ export function Loupe({
         case "3":
         case "4":
         case "5":
-          onRate(image.path, Number(event.key));
+          if (multiFrame && !stacks.inside) {
+            stacks.onRateStack(Number(event.key));
+          } else {
+            onRate(image.path, Number(event.key));
+          }
           break;
         case "ArrowUp":
           event.preventDefault();
@@ -261,6 +298,8 @@ export function Loupe({
     displayWidth,
     displayHeight,
     session,
+    stacks,
+    multiFrame,
     onClose,
     onEditChange,
     onNavigate,
@@ -416,6 +455,9 @@ export function Loupe({
             )}
           </>
         )}
+        {multiFrame && !cropping && (
+          <StackOverlay stacks={stacks} path={image.path} />
+        )}
         {(render.isFetching || !render.data) && (
           <div className="absolute top-3 right-3 h-2 w-2 animate-pulse rounded-full bg-primary" />
         )}
@@ -429,11 +471,68 @@ export function Loupe({
             images={images}
             index={index}
             mode={filmstrip}
+            stacks={stacks}
             onNavigate={onNavigate}
           />
         </div>
       )}
     </div>
+  );
+}
+
+function StackOverlay({ stacks, path }: { stacks: LoupeStacks; path: string }) {
+  const { frames } = stacks.current;
+  const rating = stackRating(stacks.current);
+  const rated = frames.filter((frame) => frame.rating === rating).length;
+  const picks = pickInStack(stacks.current, path);
+  const cleared = [...picks.values()].filter((value) => value === 0).length;
+  const kept = rating > 0 ? rating : 5;
+  return (
+    <>
+      <div
+        data-testid="stack-chip"
+        className="absolute top-3 left-3 flex items-center gap-2 rounded-md border border-border bg-background/85 px-2.5 py-1 font-mono text-[11px] backdrop-blur-sm"
+      >
+        {stacks.inside ? (
+          <>
+            <span className="font-semibold">Inside stack</span>
+            <span className="text-muted-foreground">
+              {frames.findIndex((frame) => frame.path === path) + 1} of{" "}
+              {frames.length} · esc to go up
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="font-semibold">{frames.length} frames</span>
+            {rating > 0 && (
+              <span className="text-amber-400">
+                {rated === frames.length
+                  ? `all ★${rating}`
+                  : `★${rating} picked`}
+              </span>
+            )}
+            <span className="text-muted-foreground">enter to look inside</span>
+          </>
+        )}
+      </div>
+      {stacks.inside && (
+        <button
+          type="button"
+          data-testid="stack-pick"
+          onClick={stacks.onPick}
+          className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2.5 rounded-lg border border-primary/60 bg-background/95 py-1.5 pr-1.5 pl-3 text-sm shadow-lg backdrop-blur-sm"
+        >
+          <span className="font-semibold">Pick this one</span>
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {`keeps `}
+            <span className="text-amber-400">{`★${kept}`}</span>
+            {cleared > 0 &&
+              ` · clears ${cleared} other${cleared === 1 ? "" : "s"}`}
+          </span>
+          <kbd className="rounded bg-muted px-1.5 font-mono text-xs">P</kbd>
+        </button>
+      )}
+    </>
   );
 }
 

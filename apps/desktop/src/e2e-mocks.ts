@@ -51,11 +51,26 @@ const miscImages: ImageFile[] = [
   }),
 ];
 
+const bigPath = (i: number) =>
+  `/fake/2026-08-01_dolomites/DSC0${String(1200 + i)}.ARW`;
+// near-identical runs the stacking pass would find: 1200–1202, 1204–1205, 1206–1210
+const bigStacks = [
+  [0, 3],
+  [4, 6],
+  [6, 11],
+];
+const bigStackOf = (i: number) => {
+  const run = bigStacks.find(([from, to]) => i >= from && i < to);
+  return run ? bigPath(run[0]) : null;
+};
+
 const bigImages: ImageFile[] = Array.from({ length: 200 }, (_, i) =>
   image("/fake/2026-08-01_dolomites", `DSC0${String(1200 + i)}.ARW`, {
     width: i % 3 === 0 ? 4672 : 7008,
     height: i % 3 === 0 ? 7008 : 4672,
     score: 0.5 - (i % 37) / 50,
+    captured: 1_786_000_000 + i,
+    stack: bigStackOf(i),
   }),
 );
 
@@ -235,6 +250,10 @@ const E2E_HANDLERS: CoreHandlers = {
     })),
   }),
   scoreShoot: (params) => scored(params.shoot),
+  stackShoot: (params) => {
+    const total = imagesFor(params.shoot).length;
+    return { done: total, total, running: false };
+  },
   thumbnail: (params) => ({
     cachePath: `/fake/thumbs/${params.path}.jpg`,
   }),
