@@ -71,33 +71,37 @@ public enum Stacker {
     static let previewSize = 1024
 
     /// The stack each photo belongs to, named by the path of its first photo. Photos that stand
-    /// alone, or that have no capture time to order them by, are left out. A photo must look like
-    /// every frame already in the stack, not just the last, so slow drift cannot chain a whole song into one stack.
+    /// alone, or that have no capture time to order them by, are left out. A photo joins the first
+    /// stack still open, its first frame within `window`, whose every frame it looks like: every
+    /// frame, so slow drift cannot chain a whole song into one stack, and any open stack, so a
+    /// misfire or a second shooter's frame mid-burst does not cut the burst in two.
     public static func stacks(_ prints: [String: Print]) -> [String: String] {
         let ordered = prints.compactMap { path, print in
             print.captured.map { (path: path, print: print, captured: $0) }
         }
         .sorted { ($0.captured, $0.path) < ($1.captured, $1.path) }
 
-        var result: [String: String] = [:]
-        var current: [(path: String, print: Print, captured: Double)] = []
-        func close() {
-            guard current.count > 1 else { return }
-            for member in current { result[member.path] = current[0].path }
-        }
+        var stacks: [[(path: String, print: Print, captured: Double)]] = []
+        var open: [Int] = []
         for photo in ordered {
-            if let first = current.first, photo.captured - first.captured <= window,
-                current.allSatisfy({
+            open.removeAll { photo.captured - stacks[$0][0].captured > window }
+            let match = open.first { index in
+                stacks[index].allSatisfy {
                     distance($0.print.feature, photo.print.feature) < threshold
-                })
-            {
-                current.append(photo)
+                }
+            }
+            if let match {
+                stacks[match].append(photo)
             } else {
-                close()
-                current = [photo]
+                open.append(stacks.count)
+                stacks.append([photo])
             }
         }
-        close()
+
+        var result: [String: String] = [:]
+        for stack in stacks where stack.count > 1 {
+            for member in stack { result[member.path] = stack[0].path }
+        }
         return result
     }
 

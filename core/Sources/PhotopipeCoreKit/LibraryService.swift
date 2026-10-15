@@ -104,13 +104,14 @@ public final class LibraryService: @unchecked Sendable {
     public func listImages(shoot: String) throws -> [ImageFile] {
         let images = try images(inShoot: shoot)
         let scores = scorer.values(for: images)
-        let prints = printer.values(for: images)
+        // one read, so a print landing mid-call cannot be counted without being stacked
+        let answers = printer.answers(for: images)
+        let prints = answers.compactMapValues { $0 }
         let stacks = Stacker.stacks(prints)
-        let printed = printer.answered(images)
         return images.map { image in
             image.with(
                 score: scores[image.path], captured: prints[image.path]?.captured,
-                stack: stacks[image.path] ?? (printed.contains(image.path) ? image.path : nil))
+                stack: stacks[image.path] ?? (answers.keys.contains(image.path) ? image.path : nil))
         }
     }
 

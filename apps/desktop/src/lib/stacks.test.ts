@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  anchorFor,
   coverOf,
   groupStacks,
-  opensInside,
   pickInStack,
   rateStack,
   stackedOrder,
@@ -129,15 +129,15 @@ describe("step", () => {
   });
 });
 
-describe("opensInside", () => {
+describe("anchorFor", () => {
   it("only for a frame that is not the stack's cover", () => {
     const stacks = groupStacks([
       frame("a1.arw", { score: 0.1 }),
       frame("a2.arw", { score: 0.9 }),
       makeImage("solo.arw"),
     ]);
-    expect(opensInside(stacks[0], "/r/s/a1.arw")).toBe(true);
-    expect(opensInside(stacks[0], "/r/s/a2.arw")).toBe(false);
-    expect(opensInside(stacks[1], "/r/s/solo.arw")).toBe(false);
+    expect(anchorFor(stacks[0], "/r/s/a1.arw")).toBe("/r/s/a1.arw");
+    expect(anchorFor(stacks[0], "/r/s/a2.arw")).toBeNull();
+    expect(anchorFor(stacks[1], "/r/s/solo.arw")).toBeNull();
   });
 });

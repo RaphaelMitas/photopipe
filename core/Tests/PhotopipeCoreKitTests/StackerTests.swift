@@ -18,6 +18,14 @@ private func fakePrint(_ x: Float, at captured: Double?) -> Print {
     #expect(stacks == ["a": "a", "b": "a"])
 }
 
+@Test func anOddFrameMidBurstDoesNotCutTheBurstInTwo() {
+    let stacks = Stacker.stacks([
+        "a": fakePrint(0, at: 0), "b": fakePrint(0.1, at: 1),
+        "x": fakePrint(5, at: 2), "c": fakePrint(0.2, at: 3),
+    ])
+    #expect(stacks == ["a": "a", "b": "a", "c": "a"])
+}
+
 @Test func aStackIsNamedByItsFirstPhotoInCaptureOrder() {
     let stacks = Stacker.stacks(["z": fakePrint(0, at: 10), "m": fakePrint(0.1, at: 11)])
     #expect(stacks == ["z": "z", "m": "z"])

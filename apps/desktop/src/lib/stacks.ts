@@ -48,11 +48,14 @@ export const stackOf = (stacks: Stack[], path: string) =>
   stacks.find((stack) => stack.frames.some((frame) => frame.path === path));
 
 /// Opening a photo that is in a stack but is not what the stack shows means
-/// you came for that photo, so the loupe starts inside the stack.
-export const opensInside = (stack: Stack | undefined, path: string) =>
+/// you came for that photo, so the loupe starts inside the stack, anchored on it.
+export const anchorFor = (stack: Stack | undefined, path: string | null) =>
+  path !== null &&
   stack !== undefined &&
   stack.frames.length > 1 &&
-  coverOf(stack).path !== path;
+  coverOf(stack).path !== path
+    ? path
+    : null;
 
 const changes = (stack: Stack, ratingOf: (frame: ImageFile) => number) =>
   new Map(

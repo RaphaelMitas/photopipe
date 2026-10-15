@@ -77,7 +77,8 @@ grid; this one never touches the grid, is off until you turn it on, and every
 frame stays one keypress away.
 
 "Near-identical" is a Vision feature-print distance under 0.40 to every frame
-already in the stack, within 60 s of its first. The number was set by eye on
+already in the stack, within 60 s of its first. A stack stays open for that
+minute, so a misfire or a second shooter's frame mid-burst does not cut it. The number was set by eye on
 consecutive pairs from a real event; capture time alone also grouped
 different pictures of the same moment. Instinct does not choose inside a stack:
 on shoots culled without it, its pick matched the kept frame no better than

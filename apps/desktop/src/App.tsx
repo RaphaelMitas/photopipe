@@ -70,9 +70,9 @@ import { openRoot, type RootError, rootsQuery, toRootError } from "@/lib/roots";
 import { useSelection } from "@/lib/selection";
 import { browserOrder, sortImages, sortPref } from "@/lib/sort";
 import {
+  anchorFor,
   coverOf,
   groupStacks,
-  opensInside,
   pickInStack,
   rateStack,
   type Stack,
@@ -119,8 +119,7 @@ export default function App() {
   // outlives the loupe, so closing it lands the browser on the same photo
   const [currentPath, setCurrentPath] = useState<string | null>(null);
   const [loupeOpen, setLoupeOpen] = useState(false);
-  // the frame you went inside on, not a flag or the stack's id: reaching another stack any other
-  // way leaves you outside, and an imported earlier frame renaming the stack does not
+  // a frame, not the stack id: an earlier frame arriving renames the stack and must not throw you out
   const [insideAnchor, setInsideAnchor] = useState<string | null>(null);
   const filter = useRatingFilter();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -379,8 +378,6 @@ export default function App() {
   const loupePhoto = loupeOpen ? loupeImage : null;
 
   const toggleStacks = useCallback(() => stacksPref.set(!stacksPref.get()), []);
-  const anchorFor = (stack: Stack | undefined, path: string | null) =>
-    path && opensInside(stack, path) ? path : null;
   // biome-ignore lint/correctness/useExhaustiveDependencies: only the moment stacks turn on, when the photo you came for may be inside one
   useEffect(() => {
     if (stacksOn) setInsideAnchor(anchorFor(currentStack, currentPath));
@@ -430,8 +427,11 @@ export default function App() {
   const visit = (path: string | null, stacks: Stack[] | null) => {
     setCurrentPath(path);
     const stack = path && stacks ? stackOf(stacks, path) : undefined;
-    // a frame of the stack you are in keeps you inside, even its cover
-    if (insideStack && stack === currentStack) return;
+    // inside, the anchor follows you, so a regroup can only err toward rating one frame
+    if (insideStack && stack === currentStack) {
+      setInsideAnchor(path);
+      return;
+    }
     setInsideAnchor(anchorFor(stack, path));
   };
   const crop = useCropSession(loupePhoto, loupeEdit, changeEdit);
@@ -539,7 +539,7 @@ export default function App() {
   const currentPathNow = useRef(currentPath);
   currentPathNow.current = currentPath;
   const stacksNow = useRef(loupeStacks);
-  // the browser has no stacks, so undo there lands on the photo it changed as before
+  // the browser has no stacks, so undo there lands on the photo it changed
   stacksNow.current = loupeOpen ? loupeStacks : null;
   // Before the write, so you are on the photo when the step lands.
   const showPhoto = useCallback(
@@ -549,7 +549,6 @@ export default function App() {
       const current = currentPathNow.current;
       const stacks = stacksNow.current;
       const here = current && stacks ? stackOf(stacks, current) : undefined;
-      // a step on the photo or stack you are at leaves you where you are
       const touchesHere = entry.paths.some((path) =>
         here
           ? here.frames.some((frame) => frame.path === path)

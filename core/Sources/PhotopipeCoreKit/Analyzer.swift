@@ -43,8 +43,6 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
     }
 
     /// Adopt a library's cached answers, dropping whatever the previous one had.
-    /// Results are handed to `flush` rather than written here, so the analyzer
-    /// never touches the database directly.
     public func use(cache: [String: Row], flush: @escaping Flush) {
         let cancelled = lock.withLock {
             let cancelled = passes.values
@@ -59,30 +57,23 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
         for pass in cancelled { pass.cancel() }
     }
 
-    /// Answers for the files that have a current one, keyed by path.
-    public func values(for files: [ImageFile]) -> [String: Value] {
+    /// Files with a current answer, keyed by path; nil for one that could not be read.
+    public func answers(for files: [ImageFile]) -> [String: Value?] {
         lock.withLock {
-            var result: [String: Value] = [:]
-            for file in files {
-                if let row = cache[file.path], row.matches(file, version: version),
-                    let value = row.value
-                {
-                    result[file.path] = value
-                }
+            var result: [String: Value?] = [:]
+            for file in files where isAnswered(file) {
+                result[file.path] = cache[file.path]?.value
             }
             return result
         }
     }
 
-    /// Files with a current answer, including the ones that could not be read.
-    public func answered(_ files: [ImageFile]) -> Set<String> {
-        lock.withLock { Set(files.filter(isAnswered).map(\.path)) }
+    public func values(for files: [ImageFile]) -> [String: Value] {
+        answers(for: files).compactMapValues { $0 }
     }
 
     /// Carry an answer across our own metadata write, which moves a file's mtime and size without
-    /// touching a pixel: expiring it would spend another read arriving at the same answer. Only an
-    /// answer that was current for `before` travels, so a file something else had already changed
-    /// stays unanswered.
+    /// touching a pixel: expiring it would spend another read arriving at the same answer.
     public func restamp(_ before: ImageFile, to after: ImageFile) {
         let (write, carried) = lock.withLock { () -> (Flush?, Row?) in
             if !passes.isEmpty { moved[after.path] = after }

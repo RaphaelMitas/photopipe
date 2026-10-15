@@ -125,11 +125,15 @@ export function useStacking(shoot: string | null, enabled: boolean) {
   // newly imported photos must not take stacks away mid-visit
   const [readyShoot, setReadyShoot] = useState<string | null>(null);
   useEffect(() => {
-    // switching it off, or another library, forgets the latch; a same-named shoot is another shoot
+    // off, or a library switch, drops the latch: shoot names repeat across libraries
     if (!enabled) setReadyShoot(null);
     else if (complete) setReadyShoot(shoot);
   }, [enabled, complete, shoot]);
-  return { progress, ready: enabled && (complete || readyShoot === shoot) };
+  return {
+    progress,
+    ready:
+      enabled && (complete || (readyShoot !== null && readyShoot === shoot)),
+  };
 }
 
 export function useThumbnail(
