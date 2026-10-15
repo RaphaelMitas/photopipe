@@ -131,10 +131,13 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
             (file, await analyze(file.path))
         } onResult: { answered, cancelled in
             let (file, value) = answered
-            // Vision reports a cancelled read the same way it reports an
-            // unreadable file. Recording that would write the photo off for
-            // good, so a cancelled pass leaves it untouched instead.
-            if cancelled && value == nil { return }
+            // A failed read is only recorded as unreadable when the file is still there: a
+            // cancelled read or a dropped drive looks the same, and would write it off for good.
+            if value == nil
+                && (cancelled || !FileManager.default.fileExists(atPath: file.path))
+            {
+                return
+            }
 
             lock.withLock {
                 guard generation == self.generation else { return }
@@ -182,7 +185,6 @@ public struct AnalysisRow<Value: Sendable>: Sendable {
         self.version = version
     }
 
-    /// What the file was when the answer was taken, which is what `matches` asks about later.
     init(value: Value?, for file: ImageFile, version: Int) {
         self.init(value: value, mtime: file.mtime, size: file.size, version: version)
     }
