@@ -1,5 +1,4 @@
-use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::time::Duration;
@@ -12,10 +11,16 @@ const TIMEOUT: Duration = Duration::from_secs(10);
 /// disk can take a while.
 const SET_ROOT_TIMEOUT: Duration = Duration::from_secs(120);
 
-type Reply = extern "C" fn(*mut c_void, *const c_char);
+type Reply = extern "C" fn(*mut c_void, bool, *const c_char);
+type Answer = (bool, Option<String>);
 
 extern "C" {
-    fn photopipe_core_request(line: *const c_char, context: *mut c_void, reply: Reply);
+    fn photopipe_core_request(
+        method: *const c_char,
+        params: *const c_char,
+        context: *mut c_void,
+        reply: Reply,
+    );
     fn photopipe_core_shutdown();
     #[cfg(target_os = "ios")]
     fn photopipe_pick_folder(context: *mut c_void, reply: Reply);
@@ -24,58 +29,44 @@ extern "C" {
 }
 
 /// Swift calls this exactly once per `context`, which owns the sender.
-extern "C" fn deliver(context: *mut c_void, text: *const c_char) {
-    let sender = unsafe { Box::from_raw(context.cast::<SyncSender<Option<String>>>()) };
+extern "C" fn deliver(context: *mut c_void, ok: bool, text: *const c_char) {
+    let sender = unsafe { Box::from_raw(context.cast::<SyncSender<Answer>>()) };
     let text = (!text.is_null()).then(|| {
         unsafe { CStr::from_ptr(text) }
             .to_string_lossy()
             .into_owned()
     });
-    let _ = sender.send(text);
+    let _ = sender.send((ok, text));
 }
 
-fn call(start: impl FnOnce(*mut c_void, Reply)) -> Receiver<Option<String>> {
+fn call(start: impl FnOnce(*mut c_void, Reply)) -> Receiver<Answer> {
     let (sender, receiver) = sync_channel(1);
     start(Box::into_raw(Box::new(sender)).cast(), deliver);
     receiver
 }
 
-#[derive(Deserialize)]
-struct WireError {
-    code: String,
-    message: String,
-}
-
-#[derive(Deserialize)]
-struct WireResponse {
-    ok: bool,
-    result: Option<Value>,
-    error: Option<WireError>,
-}
-
 /// A request that times out keeps running in the core; its late answer is dropped.
 pub fn request(method: &str, params: Option<Value>) -> Result<Value, String> {
-    let line = json!({ "method": method, "params": params });
-    let line = CString::new(line.to_string()).expect("JSON escapes NUL");
+    let method_c = CString::new(method).map_err(|_| format!("bad_request: {method:?}"))?;
+    let params = params.map(|params| CString::new(params.to_string()).expect("JSON escapes NUL"));
+    let params_ptr = params
+        .as_ref()
+        .map_or(std::ptr::null(), |params| params.as_ptr());
     let timeout = if method == "setRoot" {
         SET_ROOT_TIMEOUT
     } else {
         TIMEOUT
     };
-    let text =
-        call(|context, reply| unsafe { photopipe_core_request(line.as_ptr(), context, reply) })
-            .recv_timeout(timeout)
-            .map_err(|_| format!("the core did not answer within {timeout:?}"))?
-            .ok_or("the core sent no answer")?;
-    let response: WireResponse =
-        serde_json::from_str(&text).map_err(|e| format!("unparseable response: {e}"))?;
-    if response.ok {
-        Ok(response.result.unwrap_or(Value::Null))
+    let (ok, text) = call(|context, reply| unsafe {
+        photopipe_core_request(method_c.as_ptr(), params_ptr, context, reply)
+    })
+    .recv_timeout(timeout)
+    .map_err(|_| format!("the core did not answer within {timeout:?}"))?;
+    let text = text.unwrap_or_default();
+    if ok {
+        serde_json::from_str(&text).map_err(|e| format!("unparseable result: {e}"))
     } else {
-        Err(response.error.map_or_else(
-            || "unknown error".to_string(),
-            |e| format!("{}: {}", e.code, e.message),
-        ))
+        Err(text)
     }
 }
 
@@ -94,7 +85,7 @@ pub fn pick_folder() -> Option<String> {
     call(|context, reply| unsafe { photopipe_pick_folder(context, reply) })
         .recv()
         .ok()
-        .flatten()
+        .and_then(|(_, path)| path)
 }
 
 /// Must run on the main thread with the window's WKWebView.

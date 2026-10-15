@@ -105,18 +105,6 @@ import Synchronization
             }
         }
 
-        public func shutdown() {
-            lock.lock()
-            defer { lock.unlock() }
-            guard let process, process.isRunning else { return }
-            try? stdinPipe?.fileHandleForWriting.write(contentsOf: Data("-stay_open\nFalse\n".utf8))
-            let deadline = Date().addingTimeInterval(0.5)
-            while process.isRunning && Date() < deadline {
-                usleep(10_000)
-            }
-            terminate()
-        }
-
         private func ensureRunning() throws {
             if let process, process.isRunning { return }
             guard let binary = Self.findBinary() else { throw ExifToolError.notInstalled }

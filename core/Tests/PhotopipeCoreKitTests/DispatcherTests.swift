@@ -3,35 +3,31 @@ import Testing
 
 @testable import PhotopipeCoreKit
 
-func request(_ method: String) -> String {
-    "{\"method\":\"\(method)\"}"
-}
-
 @Test func pingRespondsPong() {
-    let response = Dispatcher().dispatch(line: request("ping"))
-    #expect(response == .success(result: .object(["pong": .bool(true)])))
+    let reply = Dispatcher().dispatch(method: "ping")
+    #expect(reply.ok)
+    #expect(reply.text == #"{"pong":true}"#)
 }
 
 @Test func statusTellsTheIndexingPollerWhetherItIsScanning() {
-    let response = Dispatcher().dispatch(line: request("status"))
-    #expect(response.result?["scanning"] == .bool(false))
+    let reply = Dispatcher().dispatch(method: "status")
+    #expect(reply.text.contains(#""scanning":false"#))
 }
 
 @Test func unknownMethodFails() {
-    let response = Dispatcher().dispatch(line: request("levitate"))
-    #expect(!response.ok)
-    #expect(response.error?.code == "unknown_method")
+    let reply = Dispatcher().dispatch(method: "levitate")
+    #expect(!reply.ok)
+    #expect(reply.text.hasPrefix("unknown_method:"))
 }
 
-@Test func malformedJSONFailsAsBadRequest() {
-    let response = Dispatcher().dispatch(line: "{not json")
-    #expect(!response.ok)
-    #expect(response.error?.code == "bad_request")
+@Test func malformedParamsFailAsBadRequest() {
+    let reply = Dispatcher().dispatch(method: "ping", params: "{not json")
+    #expect(!reply.ok)
+    #expect(reply.text.hasPrefix("bad_request:"))
 }
 
-@Test func requestParamsRoundTrip() throws {
-    let json = "{\"method\":\"ping\",\"params\":{\"depth\":2,\"tags\":[\"a\"]}}"
-    let request = try JSONDecoder().decode(Request.self, from: Data(json.utf8))
-    #expect(request.params?["depth"] == .number(2))
-    #expect(request.params?["tags"] == .array([.string("a")]))
+@Test func aMissingParamIsNamedInTheError() {
+    let reply = Dispatcher().dispatch(method: "listImages", params: #"{"other":1}"#)
+    #expect(!reply.ok)
+    #expect(reply.text == "invalid_params: shoot required")
 }

@@ -9,8 +9,9 @@ Stack, testing strategy, CI and releases.
 - **React + shadcn/ui + Tailwind** frontend.
 - **Swift core** (`core/`, SwiftPM, no Xcode IDE) — a static library the
   crate's build script compiles and links into the app, called over a small C
-  ABI with JSON lines. It owns everything that touches pixels or metadata:
-  scanning, `CIRAWFilter` rendering, thumbnails, XMP, FSEvents, file actions.
+  ABI with a method name and JSON params. It owns everything that touches
+  pixels or metadata: scanning, `CIRAWFilter` rendering, thumbnails, XMP,
+  FSEvents, file actions.
   The same code runs on macOS and iPadOS, except exiftool, FSEvents and zip,
   which are macOS-only.
 - **exiftool** for XMP writes on macOS, bundled into the app. iPadOS writes
@@ -47,15 +48,16 @@ the loupe shows the thumbnail immediately and prefetches neighbours.
 
 ### Protocol
 
-One JSON line in, one out, in-process. Rust hands Swift a request with a
-callback and waits on a blocking thread until it fires, exactly once, or for
-10 s (120 s for `setRoot`) and fails the request. A timed-out request keeps
-running and its late answer is dropped; a walk that finishes after a newer
-`setRoot` does not install its root. Renders and thumbnails go through
-newest-first lanes, `setRoot` gets a thread of its own so a walk of a hung
-volume cannot hold a slot, and everything else runs on a bounded queue. Quitting waits up
-to three seconds for running work and then exits regardless; an exit hook
-signals exiftool, which would otherwise outlive the app.
+A method name and JSON params in, the result as JSON or the error as
+`code: message` out, in-process. Rust hands Swift a request with a callback
+and waits on a blocking thread until it fires, exactly once, or for 10 s
+(120 s for `setRoot`) and fails the request. A timed-out request keeps running
+and its late answer is dropped; a walk that finishes after a newer `setRoot`
+does not install its root. Renders and thumbnails go through newest-first
+lanes, `setRoot` gets a thread of its own so a walk of a hung volume cannot
+hold a slot, and everything else runs on a bounded queue. Quitting waits up to
+three seconds for running work and then exits regardless; an exit hook stops
+exiftool, which would otherwise outlive the app.
 
 There is no process boundary, so a crash in the core is a crash of the app.
 A fuzz pass of 422 corrupt and adversarial files through every entry point

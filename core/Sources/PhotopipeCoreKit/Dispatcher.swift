@@ -7,21 +7,21 @@ public final class Dispatcher: Sendable {
         self.library = library
     }
 
-    public func dispatch(line: String) -> Response {
-        let request: Request
+    /// The result as JSON, or the error as "code: message".
+    public func dispatch(method: String, params: String? = nil) -> (ok: Bool, text: String) {
+        let decoded: JSONValue?
         do {
-            request = try JSONDecoder().decode(Request.self, from: Data(line.utf8))
+            decoded = try params.map { try JSONDecoder().decode(JSONValue.self, from: Data($0.utf8)) }
         } catch {
-            return .failure(
-                code: "bad_request", message: "malformed request: \(error.localizedDescription)")
+            return (false, "bad_request: malformed params: \(error.localizedDescription)")
         }
-
         do {
-            return .success(result: try result(for: request))
+            let result = try result(for: Request(method: method, params: decoded))
+            return (true, String(decoding: try JSONEncoder().encode(result), as: UTF8.self))
         } catch let error as WireError {
-            return .failure(error: error.wire)
+            return (false, "\(error.wire.code): \(error.wire.message)")
         } catch {
-            return .failure(code: "io_error", message: "\(error)")
+            return (false, "io_error: \(error)")
         }
     }
 

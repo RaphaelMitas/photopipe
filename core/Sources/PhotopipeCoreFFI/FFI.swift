@@ -1,16 +1,21 @@
 import Foundation
 import PhotopipeCoreKit
 
-public typealias Reply = @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?) -> Void
+public typealias Reply =
+    @convention(c) (UnsafeMutableRawPointer?, Bool, UnsafePointer<CChar>?) ->
+    Void
 
-/// Calls `reply` exactly once with the response line, from a background thread.
+/// Calls `reply` exactly once, from a background thread, with what `Dispatcher.dispatch` answers.
 @_cdecl("photopipe_core_request")
 public func request(
-    _ line: UnsafePointer<CChar>, _ context: UnsafeMutableRawPointer?, _ reply: Reply
+    _ method: UnsafePointer<CChar>, _ params: UnsafePointer<CChar>?,
+    _ context: UnsafeMutableRawPointer?, _ reply: Reply
 ) {
     nonisolated(unsafe) let context = context
-    CoreHost.shared.submit(String(cString: line)) { response in
-        response.withCString { reply(context, $0) }
+    CoreHost.shared.submit(
+        method: String(cString: method), params: params.map { String(cString: $0) }
+    ) { ok, text in
+        text.withCString { reply(context, ok, $0) }
     }
 }
 
@@ -51,9 +56,9 @@ public func shutdown() {
         DispatchQueue.main.async {
             FolderPicker.present { url in
                 guard let url, url.startAccessingSecurityScopedResource() else {
-                    return reply(context, nil)
+                    return reply(context, false, nil)
                 }
-                url.path.withCString { reply(context, $0) }
+                url.path.withCString { reply(context, true, $0) }
             }
         }
     }

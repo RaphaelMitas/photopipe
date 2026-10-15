@@ -82,52 +82,21 @@ print("\n".join(sorted(plistlib.loads(raw))) if raw else "")'
   exit 0
 fi
 
-BINARY="$BINARY" exec /usr/bin/python3 - <<'PY'
-import json, os, shutil, subprocess, sys, tempfile
+ROOT=$(mktemp -d -t photopipe-smoke)
+trap 'rm -rf "$ROOT"' EXIT
+SHOOT="2026-01-01_smoke"
+PHOTO="$ROOT/$SHOOT/original/SMOKE1.ARW"
+mkdir -p "$(dirname "$PHOTO")"
+echo "not really a raw" > "$PHOTO"
 
-root = tempfile.mkdtemp(prefix="photopipe-smoke-")
-shoot = "2026-01-01_smoke"
-photo = os.path.join(root, shoot, "original", "SMOKE1.ARW")
-os.makedirs(os.path.dirname(photo))
-open(photo, "w").write("not really a raw")
-
-# No Homebrew, no PHOTOPIPE_* overrides: whatever the core reaches for has to
-# come from inside the bundle.
-env = {"PATH": "/usr/bin:/bin", "HOME": root}
-proc = subprocess.Popen(
-    [os.environ["BINARY"], "--core"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=env
-)
-
-def call(method, params=None):
-    proc.stdin.write(json.dumps({"method": method, "params": params}) + "\n")
-    proc.stdin.flush()
-    line = proc.stdout.readline()
-    if not line:
-        sys.exit("::error::the app exited while handling %s" % method)
-    response = json.loads(line)
-    if not response["ok"]:
-        sys.exit("::error::%s failed: %s" % (method, response["error"]))
-    return response["result"]
-
-try:
-    scanned = call("setRoot", {"path": root, "indexPath": os.path.join(root, "index.sqlite")})
-    if scanned["shoots"] != 1:
-        sys.exit("::error::expected 1 shoot, saw %s" % scanned["shoots"])
-    print("  core:     the app binary scanned %s shoot, %s file" % (scanned["shoots"], scanned["files"]))
-
-    # The real proof: writing a rating means the core found the bundled exiftool.
-    call("setRating", {"shoot": shoot, "path": photo, "rating": 4})
-    sidecar = os.path.join(root, shoot, "original", "SMOKE1.xmp")
-    if not os.path.exists(sidecar) or "4" not in open(sidecar).read():
-        sys.exit("::error::no XMP sidecar with the rating; the bundled exiftool did not run")
-    print("  exiftool: XMP sidecar written with the rating")
-finally:
-    try:
-        proc.stdin.close()
-        proc.wait(timeout=10)
-    except Exception:
-        proc.kill()
-    shutil.rmtree(root, ignore_errors=True)
-
-print("Bundle is self-contained.")
-PY
+# No Homebrew, no PHOTOPIPE_* overrides: whatever the core reaches for has to come from inside the bundle.
+REPLIES=$(env -i PATH=/usr/bin:/bin HOME="$ROOT" "$BINARY" --core <<EOF
+{"method":"setRoot","params":{"path":"$ROOT","indexPath":"$ROOT/index.sqlite"}}
+{"method":"setRating","params":{"shoot":"$SHOOT","path":"$PHOTO","rating":4}}
+EOF
+) || fail "$EXECUTABLE --core exited with an error"
+[ "$(grep -c '"ok":true' <<<"$REPLIES")" = 2 ] || fail "the app's core refused a request: $REPLIES"
+grep -q "<xmp:Rating>4</xmp:Rating>" "${PHOTO%.ARW}.xmp" 2>/dev/null \
+  || fail "no XMP sidecar with the rating; the core did not run the bundled exiftool"
+echo "  core:     the app binary opened a library and rated a photo through the bundled exiftool"
+echo "Bundle is self-contained."
