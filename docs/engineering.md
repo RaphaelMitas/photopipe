@@ -81,9 +81,12 @@ Together they cover the whole app, cut at the protocol seam.
 The bundle smoke test is the one that catches shipping failures: every other
 suite runs from a checkout, where exiftool is findable through dev paths. It
 checks that the app binary links only what the OS ships, with the Swift
-runtime found through `/usr/lib/swift`, then runs the exiftool *inside a
-built bundle* with `PATH=/usr/bin:/bin` and no overrides; a written XMP
-sidecar proves it is self-contained.
+runtime found through `/usr/lib/swift`, then starts that binary with `--core`,
+which answers JSON request lines on stdin without starting the app, under
+`PATH=/usr/bin:/bin` and no overrides. Opening a library and writing a rating
+proves the release binary loads, its core answers, and it finds the bundled
+exiftool. The App Store flavour skips the drive: a store-signed binary only
+launches from the store.
 
 ## CI
 

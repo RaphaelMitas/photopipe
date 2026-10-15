@@ -190,6 +190,23 @@ fn install_menu(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+/// `--core`: one JSON request per stdin line, one reply per stdout line, so the
+/// bundle smoke test can drive the shipped binary without starting the app.
+pub fn serve_core_on_stdin() {
+    use std::io::BufRead;
+    for line in std::io::stdin().lock().lines().map_while(Result::ok) {
+        let request: serde_json::Value = serde_json::from_str(&line).unwrap_or_default();
+        let method = request["method"].as_str().unwrap_or_default();
+        let params = Some(request["params"].clone()).filter(|params| !params.is_null());
+        let reply = match swift_core::request(method, params) {
+            Ok(result) => serde_json::json!({ "ok": true, "result": result }),
+            Err(error) => serde_json::json!({ "ok": false, "error": error }),
+        };
+        println!("{reply}");
+    }
+    swift_core::shutdown();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()

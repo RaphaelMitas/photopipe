@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Prove a built .app is self-contained: it links only what the OS ships, and
-# its exiftool runs with a bare env, which a checkout's dev paths would mask.
+# its core opens a library and writes a rating through the bundled exiftool
+# with a bare env, which a checkout's dev paths would mask.
 #
 # --mas checks the signed App Store build: entitlements, no updater, and what the store's review rejects.
 set -euo pipefail
@@ -77,13 +78,56 @@ print("\n".join(sorted(plistlib.loads(raw))) if raw else "")'
   ENCRYPTION=$(/usr/libexec/PlistBuddy -c "Print :ITSAppUsesNonExemptEncryption" "$APP/Contents/Info.plist" 2>/dev/null || true)
   [ "$ENCRYPTION" = false ] || fail "Info.plist needs ITSAppUsesNonExemptEncryption=false, has '$ENCRYPTION'"
   echo "  layout:   world-readable, MacOS holds the one executable, encryption declared"
+  echo "  skipped:  driving the core; a store-signed binary only launches from the store"
+  exit 0
 fi
 
-ROOT=$(mktemp -d -t photopipe-smoke)
-trap 'rm -rf "$ROOT"' EXIT
-SIDECAR="$ROOT/SMOKE1.xmp"
-env -i PATH=/usr/bin:/bin HOME="$ROOT" "$EXIFTOOL" -q -XMP:Rating=4 -o "$SIDECAR" \
-  || fail "the bundled exiftool did not run"
-grep -q "<xmp:Rating>4</xmp:Rating>" "$SIDECAR" || fail "sidecar written but the rating is missing"
-echo "  exiftool: XMP sidecar written with the rating"
-echo "Bundle is self-contained."
+BINARY="$BINARY" exec /usr/bin/python3 - <<'PY'
+import json, os, shutil, subprocess, sys, tempfile
+
+root = tempfile.mkdtemp(prefix="photopipe-smoke-")
+shoot = "2026-01-01_smoke"
+photo = os.path.join(root, shoot, "original", "SMOKE1.ARW")
+os.makedirs(os.path.dirname(photo))
+open(photo, "w").write("not really a raw")
+
+# No Homebrew, no PHOTOPIPE_* overrides: whatever the core reaches for has to
+# come from inside the bundle.
+env = {"PATH": "/usr/bin:/bin", "HOME": root}
+proc = subprocess.Popen(
+    [os.environ["BINARY"], "--core"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=env
+)
+
+def call(method, params=None):
+    proc.stdin.write(json.dumps({"method": method, "params": params}) + "\n")
+    proc.stdin.flush()
+    line = proc.stdout.readline()
+    if not line:
+        sys.exit("::error::the app exited while handling %s" % method)
+    response = json.loads(line)
+    if not response["ok"]:
+        sys.exit("::error::%s failed: %s" % (method, response["error"]))
+    return response["result"]
+
+try:
+    scanned = call("setRoot", {"path": root, "indexPath": os.path.join(root, "index.sqlite")})
+    if scanned["shoots"] != 1:
+        sys.exit("::error::expected 1 shoot, saw %s" % scanned["shoots"])
+    print("  core:     the app binary scanned %s shoot, %s file" % (scanned["shoots"], scanned["files"]))
+
+    # The real proof: writing a rating means the core found the bundled exiftool.
+    call("setRating", {"shoot": shoot, "path": photo, "rating": 4})
+    sidecar = os.path.join(root, shoot, "original", "SMOKE1.xmp")
+    if not os.path.exists(sidecar) or "4" not in open(sidecar).read():
+        sys.exit("::error::no XMP sidecar with the rating; the bundled exiftool did not run")
+    print("  exiftool: XMP sidecar written with the rating")
+finally:
+    try:
+        proc.stdin.close()
+        proc.wait(timeout=10)
+    except Exception:
+        proc.kill()
+    shutil.rmtree(root, ignore_errors=True)
+
+print("Bundle is self-contained.")
+PY
