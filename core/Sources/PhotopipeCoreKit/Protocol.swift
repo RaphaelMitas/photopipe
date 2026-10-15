@@ -33,11 +33,4 @@ public struct Response: Codable, Equatable, Sendable {
     public static func failure(error: ResponseError) -> Response {
         Response(ok: false, result: nil, error: error)
     }
-
-    public func encodedLine() throws -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-        let data = try encoder.encode(self)
-        return String(decoding: data, as: UTF8.self)
-    }
 }

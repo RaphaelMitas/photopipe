@@ -182,7 +182,7 @@ contact. Set the contact before the first submission: deliver crashes with
 "No data" on a version that has none, and it stays out of the repo because
 the repo is public.
 
-Sandbox consent works in two halves. The Rust shell owns it: it shows the
+The Rust shell owns sandbox consent: it shows the
 folder panel, mints a security-scoped bookmark from the grant, keeps it in
 `NSUserDefaults` and starts access. Access is never stopped for the life of
 the process, because a scope stopped would vanish from under a running

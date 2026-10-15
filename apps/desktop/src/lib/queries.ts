@@ -234,9 +234,7 @@ export function useRawDefaults(
   });
 }
 
-/// The core reads one file header per photo before its per-camera cache can
-/// help. A whole shoot off an SD card would outrun the request timeout, so ask
-/// in batches it can always answer in time.
+/// one header read per photo off an SD card; a whole shoot outruns the request timeout
 const SUPPORT_BATCH = 400;
 
 async function decoderSupport(paths: string[]) {

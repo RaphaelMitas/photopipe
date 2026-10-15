@@ -55,7 +55,7 @@ public final class CoreHost: Sendable {
 
     private static func encoded(_ response: Response) -> String {
         do {
-            return try response.encodedLine()
+            return String(decoding: try JSONEncoder().encode(response), as: UTF8.self)
         } catch {
             return #"{"ok":false,"error":{"code":"io_error","message":"unencodable response"}}"#
         }

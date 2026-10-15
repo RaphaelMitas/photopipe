@@ -189,29 +189,25 @@ let roots: RootEntry[] =
 
 let picked: string | null = null;
 
-function argPath(args: unknown): string | undefined {
-  return typeof args === "object" &&
-    args !== null &&
-    "path" in args &&
-    typeof args.path === "string"
-    ? args.path
-    : undefined;
+function stringArg(args: unknown, key: string): string | undefined {
+  if (typeof args !== "object" || args === null || !(key in args)) return;
+  const value: unknown = Reflect.get(args, key);
+  return typeof value === "string" ? value : undefined;
 }
 
 export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
   features: () => ({ updater: false, zipExport: true }),
   pick_folder: (args) => {
-    const exporting =
-      typeof args === "object" &&
-      args !== null &&
-      "title" in args &&
-      args.title === "Export to folder";
-    picked = exporting ? "/fake/delivery" : "/fake";
+    picked =
+      stringArg(args, "title") === "Export to folder"
+        ? "/fake/delivery"
+        : "/fake";
     return picked;
   },
   list_roots: () => roots,
   open_root: (args) => {
-    const path = argPath(args) ?? "/fake";
+    const path = stringArg(args, "path");
+    if (path === undefined) throw new Error("open_root needs a path");
     const stored = roots.find((root) => root.path === path);
     // the panel grants what was just picked in it, which revives a broken bookmark
     const granted = path === picked && stored?.status === "broken";
@@ -227,7 +223,7 @@ export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
     return { path, shoots: shoots.length, files: 6, generation: 1 };
   },
   forget_root: (args) => {
-    roots = roots.filter((root) => root.path !== argPath(args));
+    roots = roots.filter((root) => root.path !== stringArg(args, "path"));
   },
 };
 

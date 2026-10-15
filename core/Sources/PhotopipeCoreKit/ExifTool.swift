@@ -16,7 +16,7 @@ import Synchronization
         private var stdinPipe: Pipe?
         private var stdoutPipe: Pipe?
         private var executeCount = 0
-        /// Readable without `lock`, which a stuck write may hold while the process exits.
+        /// Readable without `lock`, which a stuck write may hold while the app exits.
         private let pid = Atomic<Int32>(0)
 
         public static func findBinary() -> String? {
@@ -73,7 +73,7 @@ import Synchronization
             let marker = "{ready\(executeCount)}"
             var command = args.joined(separator: "\n")
             command += "\n-execute\(executeCount)\n"
-            // throws rather than raising: the app ignores SIGPIPE, so a dead exiftool is EPIPE here
+            // a dead exiftool is EPIPE (the app ignores SIGPIPE), which write(_:) would raise as an ObjC exception
             try stdin.write(contentsOf: Data(command.utf8))
 
             var buffer = Data()

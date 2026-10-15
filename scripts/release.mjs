@@ -19,6 +19,9 @@ import { fileURLToPath } from "node:url";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CONF = "apps/desktop/src-tauri/tauri.conf.json";
 const CARGO = "apps/desktop/src-tauri/Cargo.toml";
+// tauri ios build writes the version into the plist, so a stale one dirties the tree
+const IOS_PLIST = "apps/desktop/src-tauri/gen/apple/desktop_iOS/Info.plist";
+const IOS_PROJECT = "apps/desktop/src-tauri/gen/apple/project.yml";
 
 function run(cmd, args, opts = {}) {
   return execFileSync(cmd, args, {
@@ -93,7 +96,7 @@ console.log(`Releasing v${next} (current: v${current})`);
 if (dryRun) {
   console.log(`
 Dry run; nothing written or pushed. A real run would:
-  1. set ${next} in tauri.conf.json, Cargo.toml and Cargo.lock
+  1. set ${next} in tauri.conf.json, Cargo.toml, Cargo.lock and the iOS project
   2. ${noShots ? "skip screenshots" : "regenerate docs/screenshots from the live UI"}${
     direct
       ? `
@@ -116,6 +119,14 @@ function setVersion(path, pattern) {
 }
 setVersion(CONF, /("version":\s*")[^"]*(")/);
 setVersion(CARGO, /^(version\s*=\s*")[^"]*(")/m);
+setVersion(
+  IOS_PLIST,
+  /(<key>CFBundle(?:ShortVersionString|Version)<\/key>\s*<string>)[^<]*(<\/string>)/g,
+);
+setVersion(
+  IOS_PROJECT,
+  /^(\s*CFBundle(?:ShortVersionString|Version): "?)[^"\n]*("?)$/gm,
+);
 
 // Cargo.lock pins the local crate; let cargo rewrite it rather than editing
 // the lockfile by hand.
@@ -123,7 +134,9 @@ run("cargo", ["metadata", "--format-version", "1"], {
   cwd: join(repoRoot, "apps/desktop/src-tauri"),
   stdio: ["inherit", "ignore", "inherit"],
 });
-console.log("✓ Bumped tauri.conf.json, Cargo.toml, Cargo.lock");
+console.log(
+  "✓ Bumped tauri.conf.json, Cargo.toml, Cargo.lock, the iOS project",
+);
 
 if (!noShots) {
   // Captured from the running UI, so the README can never show a version of

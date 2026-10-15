@@ -77,8 +77,6 @@ print("\n".join(sorted(plistlib.loads(raw))) if raw else "")'
   ENCRYPTION=$(/usr/libexec/PlistBuddy -c "Print :ITSAppUsesNonExemptEncryption" "$APP/Contents/Info.plist" 2>/dev/null || true)
   [ "$ENCRYPTION" = false ] || fail "Info.plist needs ITSAppUsesNonExemptEncryption=false, has '$ENCRYPTION'"
   echo "  layout:   world-readable, MacOS holds the one executable, encryption declared"
-  echo "App Store flavour is in order."
-  exit 0
 fi
 
 ROOT=$(mktemp -d -t photopipe-smoke)

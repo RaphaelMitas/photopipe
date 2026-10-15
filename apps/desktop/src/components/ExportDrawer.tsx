@@ -8,7 +8,6 @@ import { Progress } from "@photopipe/ui/components/progress";
 import { Segmented } from "@photopipe/ui/components/segmented";
 import { Switch } from "@photopipe/ui/components/switch";
 import { cn } from "@photopipe/ui/lib/utils";
-import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import {
   AlertCircle,
@@ -33,6 +32,7 @@ import {
   rawDecoderVersion,
   useRawDecoderVersion,
 } from "@/lib/rawDecoder";
+import { pickFolder } from "@/lib/roots";
 import { DecoderSegmented } from "./DecoderSegmented";
 
 export type ExportOptions = {
@@ -236,9 +236,7 @@ export function ExportDrawer({
       }).catch(() => null);
       return typeof chosen === "string" ? chosen : null;
     }
-    return invoke<string | null>("pick_folder", {
-      title: "Export to folder",
-    }).catch(() => null);
+    return pickFolder("Export to folder").catch(() => null);
   };
 
   const runExport = async () => {

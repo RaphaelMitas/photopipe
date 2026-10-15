@@ -19,15 +19,14 @@ export const rootsQuery = queryOptions({
   queryFn: () => invoke<RootEntry[]>("list_roots"),
 });
 
-/// Without a path the folder panel asks for one; null means it was cancelled.
+export function pickFolder(title: string): Promise<string | null> {
+  return invoke("pick_folder", { title });
+}
+
 export async function openRoot(
   path?: string,
 ): Promise<(SetRootResult & { path: string }) | null> {
-  const chosen =
-    path ??
-    (await invoke<string | null>("pick_folder", {
-      title: "Choose your photos folder",
-    }));
+  const chosen = path ?? (await pickFolder("Choose your photos folder"));
   return chosen === null ? null : invoke("open_root", { path: chosen });
 }
 
