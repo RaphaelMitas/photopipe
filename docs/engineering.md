@@ -175,9 +175,10 @@ runner because it mostly waits for Apple to process the upload, sends the
 listing (text from `fastlane/metadata/en-US`, screenshots copied from
 `docs/screenshots`, whose 2560x1600 is one of the Mac sizes deliver accepts),
 attaches the build and submits it for review with automatic release.
-What's New is written per release by `scripts/whats-new.sh`: the `feat:` and
-`fix:` subjects since the previous tag that touch `apps/desktop` or `core`,
-so a commit subject is also a line in the store.
+What's New is written per release and platform by `scripts/whats-new.sh`:
+the `feat:` and `fix:` subjects since the previous tag that touch
+`apps/desktop` or `core`, minus those naming the other platform. A commit
+subject is a line in the store, and a change for one platform names it.
 
 The iPad shares the record. The `ipad` job builds and signs it with `tauri ios
 build --export-method app-store-connect`, handing the CLI `MAS_CERTIFICATE`'s
@@ -185,10 +186,12 @@ Apple Distribution identity and `IOS_PROVISIONING_PROFILE` (base64 iOS App
 Store profile), and uploads the ipa to TestFlight. Its build number goes in
 through `bundle.iOS.bundleVersion`, because `--build-number` appends a fourth
 component the store refuses. The job selects Xcode 26, because the store takes
-iPad uploads only from its SDK, and builds before it signs, so no third-party
-build code runs with the certificate in its environment. `ipad-review` runs
-after `mas-review`, since both submit to one record, with
-`fastlane/ipad/description.txt` over the Mac description and
+iPad uploads only from its SDK, and builds before it signs: the frontend
+first, then the app unsigned with no secrets, then the signing run with
+byte-identical `--config`, because the CLI hands that config to cargo and any
+difference recompiles the app with the certificate in its environment.
+`ipad-review` runs on its own, since deliver scopes a submission to one
+platform, with `fastlane/ipad/description.txt` over the Mac description and
 `docs/screenshots/ipad`, whose 2732x2048 is the 13-inch iPad's. deliver leaves
 What's New out on a platform's first version, which has none. Both review jobs
 share `.github/actions/store-review`. Each review step refuses to submit while

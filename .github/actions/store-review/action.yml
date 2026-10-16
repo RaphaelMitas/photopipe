@@ -14,6 +14,15 @@ inputs:
   build:
     description: The build number the upload job gave the binary
     required: true
+  key-id:
+    description: App Store Connect API key id
+    required: true
+  issuer-id:
+    description: App Store Connect API issuer id
+    required: true
+  key:
+    description: App Store Connect API key, the .p8 contents
+    required: true
 
 runs:
   using: composite
@@ -50,12 +59,15 @@ runs:
           cp docs/screenshots/*.png fastlane/screenshots/en-US/
         fi
         # deliver leaves it out on a platform's first version, which has no What's New.
-        ./scripts/whats-new.sh "$(git describe --tags --abbrev=0 "$TAG^")" "$TAG" \
+        ./scripts/whats-new.sh "$(git describe --tags --abbrev=0 "$TAG^")" "$TAG" "$PLATFORM" \
           > fastlane/metadata/en-US/release_notes.txt
 
     - name: Update the listing and submit for review
       shell: bash
       env:
+        APP_STORE_CONNECT_KEY_ID: ${{ inputs.key-id }}
+        APP_STORE_CONNECT_ISSUER_ID: ${{ inputs.issuer-id }}
+        APP_STORE_CONNECT_KEY: ${{ inputs.key }}
         APP_VERSION: ${{ inputs.version }}
         BUILD_NUMBER: ${{ inputs.build }}
         LANE: ${{ inputs.platform == 'ipad' && 'ios' || 'mac' }}

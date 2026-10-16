@@ -418,10 +418,6 @@ jobs:
     timeout-minutes: 90
     permissions:
       contents: read
-    env:
-      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-      APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
     steps:
       # Not the tag: the listing and the lanes are not part of the binary, so a
       # retry picks up a fix to them. Full history, for What's New.
@@ -434,6 +430,9 @@ jobs:
           version: ${{ needs.check.outputs.version }}
           tag: ${{ needs.check.outputs.tag }}
           build: ${{ needs.mas.outputs.build }}
+          key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          key: ${{ secrets.APP_STORE_CONNECT_KEY }}
 
   ipad:
     name: Build, sign, upload the iPad app
@@ -448,6 +447,9 @@ jobs:
       # The store takes iPad uploads only from Xcode 26 and its SDK; the image defaults to 16.
       DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
       BUILD: ${{ github.run_number }}.${{ github.run_attempt }}
+      # Identical for both builds: the CLI hands it to cargo, and any change
+      # makes the signing build recompile the app with the certificate around.
+      TAURI_IOS_CONFIG: '{"build":{"beforeBuildCommand":null},"bundle":{"iOS":{"bundleVersion":"${{ github.run_number }}.${{ github.run_attempt }}"}}}'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -457,12 +459,12 @@ jobs:
       # Everything that runs third-party build code happens here, with no secrets.
       - name: Build the iPad app
         run: |
+          pnpm --filter desktop build
           pnpm --filter desktop tauri ios build --export-method app-store-connect --no-sign \
-            --config "{\"bundle\":{\"iOS\":{\"bundleVersion\":\"$BUILD\"}}}"
+            --config "$TAURI_IOS_CONFIG"
 
       # The Tauri CLI imports the certificate into a keychain of its own and
-      # picks its codesigning identity, the Apple Distribution one. The frontend
-      # is already built, so its tooling never sees the certificate.
+      # picks its codesigning identity, the Apple Distribution one.
       - name: Sign the iPad app
         id: sign
         env:
@@ -477,9 +479,10 @@ jobs:
               exit 1
             fi
           done
+          # the unsigned ipa would otherwise be the one find picks up
           rm -rf apps/desktop/src-tauri/gen/apple/build/arm64
           pnpm --filter desktop tauri ios build --export-method app-store-connect \
-            --config "{\"build\":{\"beforeBuildCommand\":null},\"bundle\":{\"iOS\":{\"bundleVersion\":\"$BUILD\"}}}"
+            --config "$TAURI_IOS_CONFIG"
           IPA=$(find "$PWD/apps/desktop/src-tauri/gen/apple/build" -name "*.ipa" | head -1)
           [ -n "$IPA" ] || { echo "::error::The build produced no .ipa."; exit 1; }
           echo "IPA=$IPA" >> $GITHUB_ENV
@@ -502,19 +505,15 @@ jobs:
           APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
         run: bundle exec fastlane ios upload
 
-  # After the Mac review, not beside it: both submit to the same app record.
+  # deliver scopes the submission, the build and the pull of a waiting version
+  # to one platform, so the iPad neither waits on the Mac nor reruns with it.
   ipad-review:
     name: Update the iPad listing, submit for review
-    needs: [check, ipad, mas-review]
-    if: ${{ !cancelled() && needs.ipad.result == 'success' }}
+    needs: [check, ipad]
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
       contents: read
-    env:
-      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-      APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -525,3 +524,6 @@ jobs:
           version: ${{ needs.check.outputs.version }}
           tag: ${{ needs.check.outputs.tag }}
           build: ${{ needs.ipad.outputs.build }}
+          key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          key: ${{ secrets.APP_STORE_CONNECT_KEY }}
