@@ -1,0 +1,81 @@
+name: Submit to App Store review
+description: Update one platform's listing, attach its build and submit it for review with automatic release.
+
+inputs:
+  platform:
+    description: mac or ipad
+    required: true
+  version:
+    description: The app version, without the v
+    required: true
+  tag:
+    description: The release tag, for What's New
+    required: true
+  build:
+    description: The build number the upload job gave the binary
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Refuse to send a placeholder listing to review
+      shell: bash
+      run: |
+        if grep -rn "TODO" fastlane/metadata fastlane/ipad; then
+          echo "::error::The store listing still has placeholder text. The build is in TestFlight; fix the text and rerun with submit_to_app_store."
+          exit 1
+        fi
+        for url in privacy_url support_url marketing_url; do
+          curl -fsSL -o /dev/null "$(cat fastlane/metadata/en-US/$url.txt)" \
+            || { echo "::error::$url does not load, and review checks it."; exit 1; }
+        done
+
+    - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+      with:
+        ruby-version: "4.0.7"
+        bundler-cache: true
+
+    # deliver wants one folder per locale; the screenshots are the real UI at a store size.
+    - name: Stage the listing
+      shell: bash
+      env:
+        PLATFORM: ${{ inputs.platform }}
+        TAG: ${{ inputs.tag }}
+      run: |
+        mkdir -p fastlane/screenshots/en-US
+        if [ "$PLATFORM" = ipad ]; then
+          cp docs/screenshots/ipad/*.png fastlane/screenshots/en-US/
+          cp fastlane/ipad/description.txt fastlane/metadata/en-US/description.txt
+        else
+          cp docs/screenshots/*.png fastlane/screenshots/en-US/
+        fi
+        PREVIOUS=$(git describe --tags --abbrev=0 "$TAG^")
+        # A platform's first version has no What's New, and the iPad's first is the first tag with its project.
+        if [ "$PLATFORM" = mac ] || git cat-file -e "$PREVIOUS:apps/desktop/src-tauri/gen/apple" 2>/dev/null; then
+          ./scripts/whats-new.sh "$PREVIOUS" "$TAG" > fastlane/metadata/en-US/release_notes.txt
+        fi
+
+    - name: Update the listing and submit for review
+      shell: bash
+      env:
+        APP_VERSION: ${{ inputs.version }}
+        BUILD_NUMBER: ${{ inputs.build }}
+        LANE: ${{ inputs.platform == 'ipad' && 'ios' || 'mac' }}
+        # sync_screenshots sits behind this switch, and deliver only checks it once it reaches the screenshots.
+        FASTLANE_ENABLE_BETA_DELIVER_SYNC_SCREENSHOTS: "true"
+      run: |
+        set -o pipefail
+        for attempt in $(seq 1 12); do
+          if bundle exec fastlane "$LANE" review 2>&1 | tee deliver.log; then
+            exit 0
+          fi
+          # Only a build Apple is still processing is worth waiting out; anything else fails the same way again.
+          if ! grep -qiE "build number.*does not exist|couldn'?t find build|could not find build|no build|build.*not.*(found|ready)|timed? ?out.*(build|processing)" deliver.log; then
+            echo "::error::deliver failed for a reason other than build processing."
+            exit 1
+          fi
+          echo "Attempt $attempt: the build is still processing; retrying in 5 minutes."
+          sleep 300
+        done
+        echo "::error::The build was not ready after an hour."
+        exit 1

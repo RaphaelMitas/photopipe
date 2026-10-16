@@ -159,7 +159,7 @@ export function ExportDrawer({
   onClose,
 }: Props) {
   const options = optionsPref.use();
-  const { zipExport } = useFeatures();
+  const { zipExport, reveal } = useFeatures();
   const zip = options.zip && zipExport;
   const [decoderVersion, setDecoderVersion] =
     useState<RawDecoderVersion>(rawDecoderVersion);
@@ -481,7 +481,7 @@ export function ExportDrawer({
                     )}
                     {/* A cancelled zip deletes its staging, so there is no
                         archive at the path to reveal. */}
-                    {!job.running && job.done > 0 && (
+                    {reveal && !job.running && job.done > 0 && (
                       <Button
                         size="icon"
                         variant="ghost"

@@ -195,8 +195,16 @@ function stringArg(args: unknown, key: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+// The store screenshots render the iPad's feature set from /?ipad.
+const ipad = new URLSearchParams(window.location.search).has("ipad");
+
 export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
-  features: () => ({ updater: false, zipExport: true, photoLibrary: false }),
+  features: () => ({
+    updater: false,
+    zipExport: !ipad,
+    photoLibrary: ipad,
+    reveal: !ipad,
+  }),
   pick_folder: (args) => {
     picked =
       stringArg(args, "title") === "Export to folder"

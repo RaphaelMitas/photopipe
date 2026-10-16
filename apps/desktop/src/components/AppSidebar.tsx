@@ -30,7 +30,8 @@ type Props = {
   currentShoot: Shoot | undefined;
   onBack: () => void;
   onImport: (from: PhotoSource) => void;
-  onRevealShoot: (path: string) => void;
+  /** Absent where the platform cannot reveal a folder. */
+  onRevealShoot?: (path: string) => void;
   onShootSettings: () => void;
   filter: RatingFilter;
   ratingCounts: number[];
@@ -115,17 +116,19 @@ export function AppSidebar({
                     <Settings2 />
                     Settings
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    data-testid="reveal-shoot"
-                    title="Reveal project folder in Finder"
-                    onClick={() => onRevealShoot(currentShoot.path)}
-                    className="min-w-0 flex-1 text-xs"
-                  >
-                    <FolderOpen />
-                    Reveal
-                  </Button>
+                  {onRevealShoot && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      data-testid="reveal-shoot"
+                      title="Reveal project folder in Finder"
+                      onClick={() => onRevealShoot(currentShoot.path)}
+                      className="min-w-0 flex-1 text-xs"
+                    >
+                      <FolderOpen />
+                      Reveal
+                    </Button>
+                  )}
                 </div>
               </div>
             </SidebarGroupContent>

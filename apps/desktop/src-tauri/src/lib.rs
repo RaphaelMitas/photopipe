@@ -148,6 +148,7 @@ struct Features {
     updater: bool,
     zip_export: bool,
     photo_library: bool,
+    reveal: bool,
 }
 
 #[tauri::command]
@@ -157,6 +158,8 @@ fn features() -> Features {
         // zipping shells out to /usr/bin/zip, and the iOS save dialog only exports a copy
         zip_export: cfg!(desktop),
         photo_library: cfg!(mobile),
+        // the opener plugin's reveal-in-folder is desktop-only
+        reveal: cfg!(desktop),
     }
 }
 

@@ -5,12 +5,14 @@ export type Features = {
   updater: boolean;
   zipExport: boolean;
   photoLibrary: boolean;
+  reveal: boolean;
 };
 
 const NONE: Features = {
   updater: false,
   zipExport: false,
   photoLibrary: false,
+  reveal: false,
 };
 
 export function useFeatures(): Features {
