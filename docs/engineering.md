@@ -181,35 +181,27 @@ the `feat:` and `fix:` subjects since the previous tag that touch
 `apps/desktop` or `core`, minus those naming the other platform. A commit
 subject is a line in the store, and a change for one platform names it.
 
-The iPad shares the record. The `ipad` job builds and signs it with `tauri ios
-build --export-method app-store-connect`, handing the CLI `MAS_CERTIFICATE`'s
-Apple Distribution identity and `IOS_PROVISIONING_PROFILE`, and uploads the
-ipa to TestFlight. Its build number goes in through
-`bundle.iOS.bundleVersion`, because `--build-number` appends a fourth
-component the store refuses. The job selects Xcode 26, because the store takes
-iPad uploads only from its SDK, and builds before it signs: the frontend
-first, then the app unsigned with no secrets, then the signing run with
-byte-identical `--config`, because the CLI hands that config to cargo and any
-difference recompiles the app with the certificate in its environment.
-`ipad-review` runs on its own, since deliver scopes a submission to one
-platform, with `fastlane/ipad/description.txt` over the Mac description and
-`docs/screenshots/ipad`, whose 2732x2048 is the 13-inch iPad's. deliver leaves
-What's New out on a platform's first version, which has none. Both review jobs
-share `.github/actions/store-review`. Each review step refuses to submit while
-the listing still says TODO or one of its URLs does not load; the build is in
-TestFlight by then, so nothing is lost. A version already waiting for review
-is pulled first, because Apple freezes it. The store build number is the
-workflow run number, not the semver, because App Store Connect refuses a
-number it has seen and a retry ships the same version. `gh workflow run
-release.yml -f submit_to_app_store=true` redoes only the store half from the
-tagged commit and leaves the DMG release untouched; `-f platform=mac` or `-f
-platform=ipad` limits it to one store, because a resubmission pulls that
-platform's waiting version out of review. What the API cannot set stays a
-one-time job in App Store Connect: price, age rating, the privacy
-questionnaire and the review contact. Set the contact before the first
-submission, on each platform's version, the iPad's included: deliver crashes
-with "No data" on a version that has none, and it stays out of the repo
-because the repo is public.
+The iPad shares the record. The `ipad` job builds it on Xcode 26, the only SDK
+the store takes iPad uploads from: unsigned and with no secrets first, then
+signed with `MAS_CERTIFICATE`'s Apple Distribution identity and
+`IOS_PROVISIONING_PROFILE`. Its build number goes in through
+`bundle.iOS.bundleVersion`, since `--build-number` appends a fourth component
+the store refuses. `ipad-review` submits it with
+`fastlane/ipad/description.txt` and `docs/screenshots/ipad` (2732x2048, the
+13-inch iPad's). Both review jobs share `.github/actions/store-review`, which
+refuses to submit while the listing still says TODO or one of its URLs does
+not load; the build is in TestFlight by then, so nothing is lost. A version
+already waiting for review is pulled first, because Apple freezes it. The
+store build number is the workflow run number, not the semver, because App
+Store Connect refuses a number it has seen and a retry ships the same version.
+`gh workflow run release.yml -f submit_to_app_store=true` redoes only the
+store half from the tagged commit and leaves the DMG release untouched; `-f
+platform=mac` or `-f platform=ipad` keeps the other store's version in review.
+What the API cannot set stays a one-time job in App Store Connect: price, age
+rating, the privacy questionnaire and the review contact, which every
+platform's version needs before its first submission: deliver crashes with "No
+data" on a version without one, and it stays out of the repo because the repo
+is public.
 
 The Rust shell owns sandbox consent: it shows the
 folder panel, mints a security-scoped bookmark from the grant, keeps it in

@@ -403,12 +403,17 @@ jobs:
           name: photopipe-mas
           path: ${{ env.PKG }}
 
-      - uses: ./.ci/.github/actions/store-upload
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
         with:
-          platform: mac
-          key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          key: ${{ secrets.APP_STORE_CONNECT_KEY }}
+          ruby-version: "4.0.7"
+          bundler-cache: true
+
+      - name: Upload to App Store Connect
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+        run: bundle exec fastlane mac upload
 
   # Apple processes an upload for a while before it can be attached to a
   # version, and waiting is cheaper here than on a macOS runner.
@@ -443,11 +448,10 @@ jobs:
     permissions:
       contents: read
     outputs:
-      build: ${{ steps.sign.outputs.build }}
+      build: ${{ github.run_number }}.${{ github.run_attempt }}
     env:
       # The store takes iPad uploads only from Xcode 26 and its SDK; the image defaults to 16.
       DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
-      BUILD: ${{ github.run_number }}.${{ github.run_attempt }}
       # Identical for both builds: the CLI hands it to cargo, and any change
       # makes the signing build recompile the app with the certificate around.
       TAURI_IOS_CONFIG: '{"build":{"beforeBuildCommand":null},"bundle":{"iOS":{"bundleVersion":"${{ github.run_number }}.${{ github.run_attempt }}"}}}'
@@ -467,7 +471,6 @@ jobs:
       # The Tauri CLI imports the certificate into a keychain of its own and
       # picks its codesigning identity, the Apple Distribution one.
       - name: Sign the iPad app
-        id: sign
         env:
           IOS_CERTIFICATE: ${{ secrets.MAS_CERTIFICATE }}
           IOS_CERTIFICATE_PASSWORD: ${{ secrets.MAS_CERTIFICATE_PASSWORD }}
@@ -487,19 +490,23 @@ jobs:
           IPA=$(find "$PWD/apps/desktop/src-tauri/gen/apple/build" -name "*.ipa" | head -1)
           [ -n "$IPA" ] || { echo "::error::The build produced no .ipa."; exit 1; }
           echo "IPA=$IPA" >> $GITHUB_ENV
-          echo "build=$BUILD" >> $GITHUB_OUTPUT
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: photopipe-ipad
           path: ${{ env.IPA }}
 
-      - uses: ./.github/actions/store-upload
+      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
         with:
-          platform: ipad
-          key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          key: ${{ secrets.APP_STORE_CONNECT_KEY }}
+          ruby-version: "4.0.7"
+          bundler-cache: true
+
+      - name: Upload to App Store Connect
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+        run: bundle exec fastlane ios upload
 
   # deliver scopes the submission, the build and the pull of a waiting version
   # to one platform, so the iPad neither waits on the Mac nor reruns with it.
