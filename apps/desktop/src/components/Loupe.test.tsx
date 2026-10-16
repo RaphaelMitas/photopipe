@@ -133,13 +133,25 @@ describe("Loupe with stacks", () => {
     fireEvent.keyDown(window, { key: "3" });
     expect(onRate).toHaveBeenCalledWith("/r/s/DSC00002.ARW", 3);
     fireEvent.keyDown(window, { key: "ArrowRight" });
-    expect(onNavigate).toHaveBeenCalledWith(2);
+    expect(onNavigate).toHaveBeenCalledWith("/r/s/DSC00003.ARW");
     fireEvent.keyDown(window, { key: "p" });
     fireEvent.click(screen.getByTestId("stack-pick"));
     expect(stacks.onPick).toHaveBeenCalledTimes(2);
     fireEvent.keyDown(window, { key: "Escape" });
     expect(stacks.onLeave).toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("goes in and out of a stack by tapping its chip", () => {
+    const outside = stackOf(makeImages(), false);
+    renderLoupe(0, 0, null, outside);
+    fireEvent.click(screen.getByTestId("stack-chip"));
+    expect(outside.onEnter).toHaveBeenCalled();
+    cleanup();
+    const inside = stackOf(makeImages(), true);
+    renderLoupe(1, 0, null, inside);
+    fireEvent.click(screen.getByTestId("stack-chip"));
+    expect(inside.onLeave).toHaveBeenCalled();
   });
 
   it("treats a photo that stands alone like the plain loupe", () => {
@@ -165,7 +177,7 @@ describe("Loupe keyboard culling", () => {
   it("navigates with arrows and stays put at the first image", () => {
     const { onNavigate } = renderLoupe(0);
     fireEvent.keyDown(window, { key: "ArrowRight" });
-    expect(onNavigate).toHaveBeenCalledWith(1);
+    expect(onNavigate).toHaveBeenCalledWith("/r/s/DSC00002.ARW");
     fireEvent.keyDown(window, { key: "ArrowLeft" });
     expect(onNavigate).toHaveBeenCalledTimes(1);
   });

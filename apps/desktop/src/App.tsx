@@ -85,6 +85,7 @@ import {
   anchorFor,
   coverOf,
   groupStacks,
+  inStack,
   pickInStack,
   rateStack,
   type Stack,
@@ -368,9 +369,7 @@ export default function App() {
     loupeStacks && openImage ? stackOf(loupeStacks, openImage.path) : undefined;
   const multiFrame =
     currentStack !== undefined && currentStack.frames.length > 1;
-  const holdsAnchor = (stack: Stack | undefined) =>
-    stack?.frames.some((frame) => frame.path === insideAnchor) ?? false;
-  const insideStack = multiFrame && holdsAnchor(currentStack);
+  const insideStack = multiFrame && inStack(currentStack, insideAnchor);
   const loupeIndex = openImage ? loupeImages.indexOf(openImage) : -1;
   const loupeImage = loupeIndex >= 0 ? loupeImages[loupeIndex] : null;
   const loupeEdit = loupeImage === null ? identityEdit : editOf(loupeImage);
@@ -412,13 +411,23 @@ export default function App() {
     const read = readStack(stack);
     if (!read) return;
     const { writes: ratings, cleared } = pickInStack(read.live, path);
-    writes.rateMany(ratings, read.before, "Pick", fileName(path));
+    const written = writes.rateMany(
+      ratings,
+      read.before,
+      "Pick",
+      fileName(path),
+      path,
+    );
     setInsideAnchor(null);
-    toast(`Picked ${fileName(path)}`, {
-      id: "pick",
-      description:
-        cleared > 0 ? `${photos(cleared)} cleared · ⌘Z undoes` : undefined,
-    });
+    void (written ?? Promise.resolve()).then(
+      () =>
+        toast(`Picked ${fileName(path)}`, {
+          id: "pick",
+          description:
+            cleared > 0 ? `${photos(cleared)} cleared · ⌘Z undoes` : undefined,
+        }),
+      () => {},
+    );
   };
   const closeLoupe = () => {
     setLoupeOpen(false);
@@ -554,15 +563,9 @@ export default function App() {
       const stacks = stacksNow.current;
       const here = current && stacks ? stackOf(stacks, current) : undefined;
       const touchesHere = entry.paths.some((path) =>
-        here
-          ? here.frames.some((frame) => frame.path === path)
-          : path === current,
+        here ? inStack(here, path) : path === current,
       );
-      if (touchesHere) {
-        setRevealed((count) => count + 1);
-        return;
-      }
-      const next = entry.paths.find(present);
+      const next = touchesHere ? undefined : entry.paths.find(present);
       if (next) {
         setCurrentPath(next);
         // you land on the frame the step changed, inside its stack if it has one
@@ -750,7 +753,7 @@ export default function App() {
           : null
       }
       onEditChange={(edit) => changeEdit(loupePhoto, edit)}
-      onNavigate={(next) => visit(loupeImages[next]?.path ?? null, loupeStacks)}
+      onNavigate={(path) => visit(path, loupeStacks)}
       onClose={closeLoupe}
       onRate={rateShown}
     />

@@ -75,6 +75,34 @@ describe("useRecordedWrites", () => {
     expect(historyState().entries).toEqual([]);
   });
 
+  it("sends no clears when the frame a pick keeps fails to write", async () => {
+    const KEEP = "/r/shoot1/B.ARW";
+    invoke.mockImplementation(async (_command, { method, params }) => {
+      if (method === "setRating" && params.path === KEEP) throw new Error("no");
+      return {};
+    });
+    const { result } = setup();
+    let pick: Promise<void> | undefined;
+    act(() => {
+      pick = result.current.rateMany(
+        new Map([
+          [PATH, 0],
+          [KEEP, 5],
+        ]),
+        new Map([
+          [PATH, 2],
+          [KEEP, 0],
+        ]),
+        "Pick",
+        "B.ARW",
+        KEEP,
+      );
+    });
+    await expect(pick).rejects.toThrow();
+    expect(written("setRating").map((params) => params.path)).toEqual([KEEP]);
+    expect(historyState().entries).toEqual([]);
+  });
+
   it("names an edit after the setting that moved", async () => {
     const { result } = setup();
     act(() =>

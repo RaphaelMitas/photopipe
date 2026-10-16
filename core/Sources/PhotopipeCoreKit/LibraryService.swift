@@ -615,18 +615,15 @@ public final class LibraryService: @unchecked Sendable {
     /// Each analyzer keeps its own copy of the cache and hands results back here to
     /// be written, so the sqlite handle stays on one queue with the enricher.
     private func useAnalyzers(with index: SQLiteIndex?, root: String) {
-        let (scores, prints) = indexQueue.sync {
-            (
-                (try? index?.loadScores(under: root)) ?? [:],
-                (try? index?.loadPrints(under: root)) ?? [:]
-            )
-        }
         let queue = indexQueue
-        scorer.use(cache: scores) { rows in
-            queue.async { try? index?.saveScores(rows) }
-        }
-        printer.use(cache: prints) { rows in
-            queue.async { try? index?.savePrints(rows) }
+        // on the queue, so a superseded root's late load cannot land after the current one
+        queue.sync {
+            scorer.use(cache: (try? index?.loadScores(under: root)) ?? [:]) { rows in
+                queue.async { try? index?.saveScores(rows) }
+            }
+            printer.use(cache: (try? index?.loadPrints(under: root)) ?? [:]) { rows in
+                queue.async { try? index?.savePrints(rows) }
+            }
         }
     }
 

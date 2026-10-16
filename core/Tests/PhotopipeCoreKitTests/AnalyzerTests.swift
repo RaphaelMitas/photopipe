@@ -162,6 +162,29 @@ private func attach(_ scorer: Scorer, to index: SQLiteIndex) {
     #expect(scorer.progress(shoot: "s", files: Array(settled)).done == files.count)
 }
 
+@Test func aFileThatIsGoneEndsThePassWithoutBeingWrittenOff() async throws {
+    let indexPath = tempFile("index.sqlite")
+    let (file, url) = try makePNG()
+    let pixels = try Data(contentsOf: url)
+    try FileManager.default.removeItem(at: url)
+    defer {
+        try? FileManager.default.removeItem(atPath: indexPath)
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    let index = try SQLiteIndex(path: indexPath)
+    let scorer = Scorer()
+    attach(scorer, to: index)
+    scorer.start(shoot: "s", files: [file])
+    try await waitForPass { scorer.progress(shoot: "s", files: [file]).running }
+
+    #expect(scorer.start(shoot: "s", files: [file]).running == false)
+    #expect(try index.loadScores(under: tempRoot).isEmpty)
+
+    try pixels.write(to: url)
+    #expect(scorer.start(shoot: "s", files: [file]).running)
+}
+
 @Test func aFileVisionCannotReadStillCompletesThePass() async throws {
     let indexPath = tempFile("index.sqlite")
     let brokenPath = tempFile("broken.png")

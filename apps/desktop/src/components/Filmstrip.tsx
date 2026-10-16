@@ -30,7 +30,7 @@ type Props = {
   index: number;
   mode: Exclude<FilmstripMode, "off">;
   stacks: { list: Stack[]; current: Stack; inside: boolean } | null;
-  onNavigate: (index: number) => void;
+  onNavigate: (path: string) => void;
 };
 
 type Place = { stack: Stack; first: boolean; last: boolean };
@@ -125,7 +125,7 @@ export function Filmstrip({ images, index, mode, stacks, onNavigate }: Props) {
               <button
                 type="button"
                 data-path={image.rel}
-                onClick={() => onNavigate(item.index)}
+                onClick={() => onNavigate(image.path)}
                 className={`relative flex h-full w-full flex-col overflow-hidden rounded-sm transition-opacity ${
                   active
                     ? "ring-2 ring-primary opacity-100"

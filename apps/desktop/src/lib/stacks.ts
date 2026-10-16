@@ -16,7 +16,6 @@ function byCapture(a: ImageFile, b: ImageFile): number {
   return a.captured - b.captured;
 }
 
-/// Stacks in the order their first photo appears in `images`.
 export function groupStacks(images: ImageFile[]): Stack[] {
   const byId = new Map<string, Stack>();
   for (const image of images) {
@@ -32,8 +31,15 @@ export function groupStacks(images: ImageFile[]): Stack[] {
 export const stackRating = (stack: Stack) =>
   Math.max(...stack.frames.map((frame) => frame.rating));
 
-/// The frame a stack shows from outside: the highest-rated one, then
-/// Instinct's pick among those, then the first taken.
+export function stackRatingLabel(stack: Stack): string | null {
+  const rating = stackRating(stack);
+  if (rating === 0) return null;
+  const rated = stack.frames.filter((frame) => frame.rating === rating).length;
+  if (rated === stack.frames.length) return `all ★${rating}`;
+  if (rated === 1) return `★${rating} picked`;
+  return `★${rating} on ${rated} of ${stack.frames.length}`;
+}
+
 export function coverOf(stack: Stack): ImageFile {
   const score = (frame: ImageFile) => frame.score ?? Number.NEGATIVE_INFINITY;
   return stack.frames.reduce((best, frame) =>
@@ -44,8 +50,11 @@ export function coverOf(stack: Stack): ImageFile {
   );
 }
 
+export const inStack = (stack: Stack, path: string | null) =>
+  stack.frames.some((frame) => frame.path === path);
+
 export const stackOf = (stacks: Stack[], path: string) =>
-  stacks.find((stack) => stack.frames.some((frame) => frame.path === path));
+  stacks.find((stack) => inStack(stack, path));
 
 /// Opening a photo that is in a stack but is not what the stack shows means
 /// you came for that photo, so the loupe starts inside the stack, anchored on it.
@@ -86,8 +95,7 @@ export function stackedOrder(
     .filter(
       (stack) =>
         matches({ rating: stackRating(stack) }) ||
-        (current !== undefined &&
-          stack.frames.some((frame) => frame.path === current.path)),
+        (current !== undefined && inStack(stack, current.path)),
     )
     .flatMap((stack) => stack.frames);
 }

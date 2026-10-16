@@ -52,8 +52,7 @@ private func exifDate(_ stamp: String, subsec: String) -> [CFString: Any] {
     ]
 }
 
-/// A JPEG with a capture time, filled with `pattern`'s squares so different patterns read as
-/// different pictures.
+/// Different patterns read as different pictures.
 private func writeJPEG(
     _ url: URL, pattern: Int, stamp: String = "2026:08:08 19:24:28", subsec: String = "000",
     size: Int = 256, embedThumbnail: Bool = false

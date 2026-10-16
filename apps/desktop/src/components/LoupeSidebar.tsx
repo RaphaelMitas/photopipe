@@ -18,7 +18,7 @@ import type { ImageFile, PassProgress } from "@/lib/core";
 import { fileName } from "@/lib/fileName";
 import { instinctScore } from "@/lib/instinct";
 import { sortImages } from "@/lib/sort";
-import { type Stack, stackRating } from "@/lib/stacks";
+import { type Stack, stackRatingLabel } from "@/lib/stacks";
 import { filmstripPref } from "./Filmstrip";
 import { type RatingFilter, RatingFilterGroup } from "./RatingFilter";
 import { SidebarBrandHeader } from "./SidebarBrandHeader";
@@ -125,7 +125,7 @@ export function LoupeSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {stacks.current && <StackGroup {...stacks.current} />}
+        {stacks.current && <StackGroup stack={stacks.current.stack} />}
 
         <SidebarGroup>
           <SidebarGroupLabel>View</SidebarGroupLabel>
@@ -187,20 +187,11 @@ const finding = (progress: PassProgress | null) =>
     ? ` · ${Math.floor((progress.done / progress.total) * 100)}%`
     : "…";
 
-function StackGroup({ stack, inside }: { stack: Stack; inside: boolean }) {
-  const rating = stackRating(stack);
-  const rated = stack.frames.filter((frame) => frame.rating === rating).length;
+function StackGroup({ stack }: { stack: Stack }) {
   const [instinct] = sortImages(stack.frames, "score");
   const rows: [string, string][] = [
     ["frames", String(stack.frames.length)],
-    [
-      "rating",
-      rating === 0
-        ? "none yet"
-        : rated === stack.frames.length
-          ? `all ★${rating}`
-          : `★${rating} on ${rated} of ${stack.frames.length}`,
-    ],
+    ["rating", stackRatingLabel(stack) ?? "none yet"],
   ];
   if (instinct.score !== null)
     rows.push(["Instinct's pick", fileName(instinct.path)]);
@@ -214,11 +205,6 @@ function StackGroup({ stack, inside }: { stack: Stack; inside: boolean }) {
             <span className="truncate">{value}</span>
           </div>
         ))}
-        <span className="mt-1 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
-          {inside
-            ? "1–5 rates this frame · p picks it"
-            : `1–5 rates all ${stack.frames.length} frames`}
-        </span>
       </SidebarGroupContent>
     </SidebarGroup>
   );

@@ -8,10 +8,7 @@ public struct AnalysisProgress: Equatable, Sendable, Encodable {
     public static let idle = AnalysisProgress(done: 0, total: 0, running: false)
 }
 
-/// One answer per file, worked out in the background and cached in the library index.
-///
-/// Each pass covers one shoot and reports how far it has got, because the browser
-/// keeps whatever depends on the answers disabled until every file in the shoot has one.
+/// Progress is per shoot because the browser keeps what depends on the answers disabled until all have one.
 public final class Analyzer<Value: Sendable>: @unchecked Sendable {
     public typealias Progress = AnalysisProgress
     public typealias Row = AnalysisRow<Value>
@@ -31,9 +28,11 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
     private var passes: [String: Task<Void, Never>] = [:]
     /// Bumped by `use`, so a cancelled pass still finishing its reads can tell it is stale.
     private var generation = 0
-    /// Files one of our writes moved while a pass had them queued. The pass reads them as they
-    /// are now, so it records its answer under these stamps, not the ones it queued with.
+    /// Our own writes moved these mid-pass; answers are stamped with these, not the queued stamps.
     private var moved: [String: ImageFile] = [:]
+    /// Missing when read; answered for now so the pass can end, but kept off disk, since a dropped
+    /// drive looks the same and would write the whole shoot off for good.
+    private var gone: Set<String> = []
 
     public init(
         version: Int, concurrency: Int, analyze: @escaping @Sendable (String) async -> Value?
@@ -43,13 +42,13 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
         self.analyze = analyze
     }
 
-    /// Adopt a library's cached answers, dropping whatever the previous one had.
     public func use(cache: [String: Row], flush: @escaping Flush) {
         let cancelled = lock.withLock {
             let cancelled = passes.values
             passes.removeAll()
             progressByShoot.removeAll()
             moved.removeAll()
+            gone.removeAll()
             generation += 1
             self.flush = flush
             self.cache = cache
@@ -58,7 +57,6 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
         for pass in cancelled { pass.cancel() }
     }
 
-    /// Files with a current answer, keyed by path; nil for one that could not be read.
     public func answers(for files: [ImageFile]) -> [String: Value?] {
         lock.withLock {
             var result: [String: Value?] = [:]
@@ -73,11 +71,14 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
         answers(for: files).compactMapValues { $0 }
     }
 
-    /// Carry an answer across our own metadata write, which moves a file's mtime and size without
-    /// touching a pixel: expiring it would spend another read arriving at the same answer.
+    /// Our metadata writes move mtime and size without touching a pixel, so the answer still holds.
     public func restamp(_ before: ImageFile, to after: ImageFile) {
         lock.withLock {
             if !passes.isEmpty { moved[after.path] = after }
+            if gone.remove(after.path) != nil {
+                cache[after.path] = nil
+                return
+            }
             guard let row = cache[before.path], row.matches(before, version: version),
                 !row.matches(after, version: version)
             else { return }
@@ -87,8 +88,7 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
         }
     }
 
-    /// Only a running pass reports stored progress. Once it ends, progress is recomputed from the
-    /// cache, so a file that changed since counts as unanswered again.
+    /// Recomputed once a pass ends, so a file that changed since counts as unanswered again.
     func progress(shoot: String, files: [ImageFile]) -> Progress {
         lock.withLock {
             if let current = progressByShoot[shoot], current.running { return current }
@@ -96,12 +96,14 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
         }
     }
 
-    /// Analyze everything in the shoot that has no current answer. Calling this while a pass for
-    /// the same shoot runs just reports where it is.
     @discardableResult
     public func start(shoot: String, files: [ImageFile]) -> Progress {
         lock.withLock {
             if passes[shoot] != nil { return progressByShoot[shoot] ?? .idle }
+            for path in gone where FileManager.default.fileExists(atPath: path) {
+                gone.remove(path)
+                cache[path] = nil
+            }
             let pending = files.filter { !isAnswered($0) }
             guard !pending.isEmpty else {
                 return Progress(done: files.count, total: files.count, running: false)
@@ -131,19 +133,14 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
             (file, await analyze(file.path))
         } onResult: { answered, cancelled in
             let (file, value) = answered
-            // A failed read is only recorded as unreadable when the file is still there: a
-            // cancelled read or a dropped drive looks the same, and would write it off for good.
-            if value == nil
-                && (cancelled || !FileManager.default.fileExists(atPath: file.path))
-            {
-                return
-            }
+            if value == nil && cancelled { return }
+            let missing = value == nil && !FileManager.default.fileExists(atPath: file.path)
 
             lock.withLock {
                 guard generation == self.generation else { return }
                 cache[file.path] = Row(
                     value: value, for: moved[file.path] ?? file, version: version)
-                buffer.append(file.path)
+                if missing { gone.insert(file.path) } else { buffer.append(file.path) }
                 let done = answeredCount(pending) + (total - pending.count)
                 progressByShoot[shoot] = Progress(done: done, total: total, running: true)
                 if buffer.count >= flushEvery { flush?(drain()) }

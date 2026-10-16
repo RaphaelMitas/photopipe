@@ -24,7 +24,13 @@ import {
   useThumbnail,
   useViewportRender,
 } from "@/lib/queries";
-import { pickInStack, type Stack, stackRating, step } from "@/lib/stacks";
+import {
+  pickInStack,
+  type Stack,
+  stackRating,
+  stackRatingLabel,
+  step,
+} from "@/lib/stacks";
 import type { CropSession } from "@/lib/useCropSession";
 import {
   centerOn,
@@ -75,7 +81,7 @@ type Props = {
   crop: CropSession;
   stacks: LoupeStacks | null;
   onEditChange: (edit: Edit) => void;
-  onNavigate: (index: number) => void;
+  onNavigate: (path: string) => void;
   onClose: () => void;
   onRate: (path: string, rating: number) => void;
 };
@@ -113,8 +119,6 @@ export function Loupe({
     stacks && image
       ? step(stacks.list, image.path, stacks.inside, direction)
       : images[index + direction];
-  const indexOfPath = (path: string) =>
-    images.findIndex((candidate) => candidate.path === path);
   const next = neighbour(1);
   const previous = neighbour(-1);
   usePrefetchRender(next, next?.edit);
@@ -240,11 +244,11 @@ export function Loupe({
           break;
         case "ArrowRight":
           event.preventDefault();
-          if (next) onNavigate(indexOfPath(next.path));
+          if (next) onNavigate(next.path);
           break;
         case "ArrowLeft":
           event.preventDefault();
-          if (previous) onNavigate(indexOfPath(previous.path));
+          if (previous) onNavigate(previous.path);
           break;
         case "Enter":
           // a focused button acts on Enter itself
@@ -481,12 +485,14 @@ export function Loupe({
 function StackOverlay({ stacks, path }: { stacks: LoupeStacks; path: string }) {
   const { frames } = stacks.current;
   const rating = stackRating(stacks.current);
-  const rated = frames.filter((frame) => frame.rating === rating).length;
+  const label = stackRatingLabel(stacks.current);
   const { kept, cleared } = pickInStack(stacks.current, path);
   return (
     <>
-      <div
+      <button
+        type="button"
         data-testid="stack-chip"
+        onClick={stacks.inside ? stacks.onLeave : stacks.onEnter}
         className="absolute top-3 left-3 flex items-center gap-2 rounded-md border border-border bg-background/85 px-2.5 py-1 font-mono text-[11px] backdrop-blur-sm"
       >
         {stacks.inside ? (
@@ -500,19 +506,11 @@ function StackOverlay({ stacks, path }: { stacks: LoupeStacks; path: string }) {
         ) : (
           <>
             <span className="font-semibold">{frames.length} frames</span>
-            {rating > 0 && (
-              <span className="text-amber-400">
-                {rated === frames.length
-                  ? `all ★${rating}`
-                  : rated === 1
-                    ? `★${rating} picked`
-                    : `★${rating} on ${rated} of ${frames.length}`}
-              </span>
-            )}
+            {label && <span className="text-amber-400">{label}</span>}
             <span className="text-muted-foreground">enter to look inside</span>
           </>
         )}
-      </div>
+      </button>
       {stacks.inside && (
         <button
           type="button"

@@ -14,7 +14,6 @@ public struct Print: Equatable, Sendable {
     }
 }
 
-/// Vision feature prints of a downscaled preview.
 public typealias Printer = Analyzer<Print>
 
 extension Analyzer where Value == Print {
@@ -36,20 +35,10 @@ extension Analyzer where Value == Print {
     /// A raw's embedded preview is cheap and big enough; a JPEG's embedded thumbnail is often
     /// 160 px, too small for the threshold, so that one is decoded instead.
     static func preview(_ source: CGImageSource) -> CGImage? {
-        func thumbnail(always: Bool) -> CGImage? {
-            CGImageSourceCreateThumbnailAtIndex(
-                source, 0,
-                [
-                    always
-                        ? kCGImageSourceCreateThumbnailFromImageAlways
-                        : kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
-                    kCGImageSourceThumbnailMaxPixelSize: Stacker.previewSize,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                ] as CFDictionary)
-        }
-        guard let embedded = thumbnail(always: false) else { return nil }
-        if max(embedded.width, embedded.height) >= Stacker.previewSize { return embedded }
-        return thumbnail(always: true) ?? embedded
+        let size = Stacker.previewSize
+        guard let embedded = Thumbnailer.image(from: source, maxPixel: size) else { return nil }
+        if max(embedded.width, embedded.height) >= size { return embedded }
+        return Thumbnailer.image(from: source, maxPixel: size, always: true) ?? embedded
     }
 
     private static func floats(_ observation: FeaturePrintObservation) -> [Float] {
@@ -70,11 +59,8 @@ public enum Stacker {
     /// The threshold holds for prints of this size; a full-size preview moves distances by ~0.01.
     static let previewSize = 1024
 
-    /// The stack each photo belongs to, named by the path of its first photo. Photos that stand
-    /// alone, or that have no capture time to order them by, are left out. A photo joins the first
-    /// stack still open, its first frame within `window`, whose every frame it looks like: every
-    /// frame, so slow drift cannot chain a whole song into one stack, and any open stack, so a
-    /// misfire or a second shooter's frame mid-burst does not cut the burst in two.
+    /// Standalone photos and those with no capture time are left out. Matching every frame keeps
+    /// slow drift from chaining a whole song; trying every open stack keeps a misfire from cutting a burst.
     public static func stacks(_ prints: [String: Print]) -> [String: String] {
         let ordered = prints.compactMap { path, print in
             print.captured.map { (path: path, print: print, captured: $0) }

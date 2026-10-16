@@ -7,7 +7,6 @@ import UniformTypeIdentifiers
 
 @testable import PhotopipeCoreKit
 
-/// What `tempFile` paths sit under, for loads scoped to a library root.
 let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory()).path
 
 func tempFile(_ name: String) -> String {

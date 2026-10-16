@@ -70,23 +70,33 @@ export function useRecordedWrites(shoot: string | null) {
     [queryClient, shoot, setRating, ratings],
   );
 
-  /// One undo step for a rating that lands on several photos at once. `before`
-  /// has to be read, not placeholder, ratings: undo writes them back.
+  /// `before` has to be read, not placeholder, ratings: undo writes them back.
+  /// The rest wait for `keep` to land, so a failed keep cannot leave only the clears.
   const rateMany = useCallback(
     (
       values: Map<string, number>,
       before: Map<string, number>,
       label: string,
       detail: string,
+      keep?: string,
     ) => {
       if (values.size === 0) return;
-      const written = landed(setRatings(values));
+      const kept = keep === undefined ? undefined : values.get(keep);
+      const rest = new Map(values);
+      if (keep !== undefined) rest.delete(keep);
+      const written =
+        keep === undefined || kept === undefined
+          ? landed(setRatings(values))
+          : landed(setRatings(new Map([[keep, kept]]))).then(async () => {
+              if (rest.size > 0) await setRatings(rest);
+            });
       void written.catch(() => {});
       void ratings.record(
         { icon: Star, label, detail, paths: [...values.keys()], written },
         before,
         values,
       );
+      return written;
     },
     [setRatings, ratings],
   );

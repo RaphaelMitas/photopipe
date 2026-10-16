@@ -280,7 +280,6 @@ public final class SQLiteIndex: @unchecked Sendable {
         }
     }
 
-    /// Selects the path, `columns` for `value` to read from column 1 on, then the row's stamps.
     /// `root` limits the load to one library; the table holds every library ever opened.
     private func loadRows<Value>(
         _ columns: String, from table: String, under root: String,
