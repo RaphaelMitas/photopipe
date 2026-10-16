@@ -1,3 +1,4 @@
+import { Label } from "@photopipe/ui/components/label";
 import { Segmented } from "@photopipe/ui/components/segmented";
 import {
   Sidebar,
@@ -11,18 +12,31 @@ import {
   SidebarMenuItem,
   SidebarSeparator,
 } from "@photopipe/ui/components/sidebar";
+import { Switch } from "@photopipe/ui/components/switch";
 import { ChevronLeft } from "lucide-react";
-import type { ImageFile } from "@/lib/core";
+import type { ImageFile, PassProgress } from "@/lib/core";
+import { fileName } from "@/lib/fileName";
 import { instinctScore } from "@/lib/instinct";
+import { sortImages } from "@/lib/sort";
+import type { Stack } from "@/lib/stacks";
 import { filmstripPref } from "./Filmstrip";
 import { type RatingFilter, RatingFilterGroup } from "./RatingFilter";
 import { SidebarBrandHeader } from "./SidebarBrandHeader";
 import { Stars } from "./Stars";
 
+export type SidebarStacks = {
+  on: boolean;
+  progress: PassProgress | null;
+  ready: boolean;
+  onToggle: () => void;
+  /// Null until stacks are ready, and for a photo that stands alone.
+  current: { stack: Stack; inside: boolean } | null;
+};
+
 type Props = {
   image: ImageFile;
-  position: number;
-  count: number;
+  position: string;
+  stacks: SidebarStacks;
   betterThan: number | null;
   filter: RatingFilter;
   ratingCounts: number[];
@@ -33,7 +47,7 @@ type Props = {
 export function LoupeSidebar({
   image,
   position,
-  count,
+  stacks,
   betterThan,
   filter,
   ratingCounts,
@@ -82,7 +96,7 @@ export function LoupeSidebar({
               data-testid="loupe-position"
               className="font-mono text-xs text-muted-foreground"
             >
-              {position}/{count}
+              {position}
             </span>
             <Stars
               value={image.rating}
@@ -111,6 +125,8 @@ export function LoupeSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
 
+        {stacks.current && <InstinctPick stack={stacks.current.stack} />}
+
         <SidebarGroup>
           <SidebarGroupLabel>View</SidebarGroupLabel>
           <SidebarGroupContent className="px-2 py-1">
@@ -126,16 +142,61 @@ export function LoupeSidebar({
                 testid="filmstrip"
                 onChange={filmstripPref.set}
               />
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <Label
+                  htmlFor="stacks"
+                  className="flex flex-col items-start gap-0.5 font-normal text-xs"
+                >
+                  <span className="text-foreground">Stacks</span>
+                  <span data-testid="stacks-status">
+                    {stacks.on && !stacks.ready
+                      ? `finding stacks${finding(stacks.progress)}`
+                      : "near-identical photos · s"}
+                  </span>
+                </Label>
+                <Switch
+                  id="stacks"
+                  data-testid="stacks-toggle"
+                  checked={stacks.on}
+                  onCheckedChange={stacks.onToggle}
+                />
+              </div>
             </div>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
         <p className="px-2 py-1 text-[10px] text-muted-foreground">
-          ←→ navigate · 1–5 rate · 0 clear · ↑↓ exposure · pinch or double-click
-          zoom · r reset · e edit · ⌘C/⌘V settings · ⌘Z undo · esc
+          {`${
+            !stacks.current
+              ? "←→ navigate · 1–5 rate"
+              : stacks.current.inside
+                ? "←→ frames · 1–5 rate this frame · p pick"
+                : "←→ stacks · 1–5 rate every frame · enter inside"
+          } · 0 clear · ↑↓ exposure · pinch or double-click zoom · r reset · e edit · ⌘C/⌘V settings · ⌘Z undo · s stacks · ${
+            stacks.current?.inside ? "esc up" : "esc"
+          }`}
         </p>
       </SidebarFooter>
     </Sidebar>
+  );
+}
+
+const finding = (progress: PassProgress | null) =>
+  progress && progress.total > 0
+    ? ` · ${Math.floor((progress.done / progress.total) * 100)}%`
+    : "…";
+
+function InstinctPick({ stack }: { stack: Stack }) {
+  const [instinct] = sortImages(stack.frames, "score");
+  if (instinct.score === null) return null;
+  return (
+    <SidebarGroup data-testid="stack-group">
+      <SidebarGroupLabel>Stack</SidebarGroupLabel>
+      <SidebarGroupContent className="flex justify-between gap-2 px-2 py-1 font-mono text-xs">
+        <span className="text-muted-foreground">Instinct's pick</span>
+        <span className="truncate">{fileName(instinct.path)}</span>
+      </SidebarGroupContent>
+    </SidebarGroup>
   );
 }

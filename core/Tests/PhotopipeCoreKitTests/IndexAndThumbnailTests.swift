@@ -7,6 +7,8 @@ import UniformTypeIdentifiers
 
 @testable import PhotopipeCoreKit
 
+let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory()).path
+
 func tempFile(_ name: String) -> String {
     URL(fileURLWithPath: NSTemporaryDirectory())
         .appendingPathComponent("photopipe-\(UUID().uuidString)-\(name)").path
@@ -79,7 +81,7 @@ private let sampleFiles: [String: [ImageFile]] = [
 
     let index = try SQLiteIndex(path: path)
     try index.save(root: "/r", filesByShoot: sampleFiles)
-    let row = ScoreRow(score: 0.4, mtime: 1, size: 5, version: 1)
+    let row = Scorer.Row(value: 0.4, mtime: 1, size: 5, version: 1)
     try index.saveScores([("/r/misc/a.dng", row)])
 
     var db: OpaquePointer?
@@ -89,7 +91,7 @@ private let sampleFiles: [String: [ImageFile]] = [
 
     let reopened = try SQLiteIndex(path: path)
     #expect(try reopened.load() == nil, "rows parsed by an older reader are re-read")
-    #expect(try reopened.loadScores()["/r/misc/a.dng"] == row, "scores are still valid")
+    #expect(try reopened.loadScores(under: "/r")["/r/misc/a.dng"] == row, "scores are still valid")
 }
 
 @Test func schemaBumpReplacesAnOlderTableLayout() throws {

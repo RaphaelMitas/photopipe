@@ -8,8 +8,8 @@ import {
   DropdownMenuTrigger,
 } from "@photopipe/ui/components/dropdown-menu";
 import { ArrowUpDown, LayoutGrid, Rows3, Sparkles } from "lucide-react";
+import type { PassProgress } from "@/lib/core";
 import { pref } from "@/lib/pref";
-import type { ScoreProgress } from "@/lib/queries";
 import { isSortKey, type SortKey } from "@/lib/sort";
 
 export type ViewMode = "grid" | "list";
@@ -34,7 +34,7 @@ type Props = {
   sort: SortKey;
   onSort: (sort: SortKey) => void;
   scoreReady: boolean;
-  scoring: ScoreProgress | null;
+  scoring: PassProgress | null;
   justRated: boolean;
 };
 

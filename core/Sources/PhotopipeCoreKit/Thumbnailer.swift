@@ -24,21 +24,25 @@ public struct Thumbnailer: Sendable {
         cache.url(forKey: "\(file.path)|\(file.mtime)|\(file.size)|\(maxPixel)")
     }
 
+    static func image(from source: CGImageSource, maxPixel: Int, decodeFull: Bool = false) -> CGImage? {
+        CGImageSourceCreateThumbnailAtIndex(
+            source, 0,
+            [
+                decodeFull
+                    ? kCGImageSourceCreateThumbnailFromImageAlways
+                    : kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+            ] as CFDictionary)
+    }
+
     public func thumbnail(for file: ImageFile, maxPixel: Int) throws -> URL {
         try cache.cachedFile(at: cachePath(for: file, maxPixel: maxPixel)) { temp in
             let url = URL(fileURLWithPath: file.path)
             guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
                 throw ThumbnailError.unreadable(file.path)
             }
-            let options: [CFString: Any] = [
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
-                kCGImageSourceThumbnailMaxPixelSize: maxPixel,
-            ]
-            guard
-                let cgImage = CGImageSourceCreateThumbnailAtIndex(
-                    source, 0, options as CFDictionary)
-            else {
+            guard let cgImage = Self.image(from: source, maxPixel: maxPixel) else {
                 throw ThumbnailError.unreadable(file.path)
             }
             guard

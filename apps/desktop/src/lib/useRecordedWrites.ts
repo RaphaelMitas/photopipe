@@ -22,6 +22,9 @@ const landed = (batch: Promise<BatchResult>) =>
     }
   });
 
+export const ratingDetail = (rating: number) =>
+  rating === 0 ? "cleared" : "★".repeat(rating);
+
 export function useRecordedWrites(shoot: string | null) {
   const queryClient = useQueryClient();
   // stable across renders, so an entry can hold on to them
@@ -56,7 +59,7 @@ export function useRecordedWrites(shoot: string | null) {
         {
           icon: Star,
           label: "Rating",
-          detail: rating === 0 ? "cleared" : "★".repeat(rating),
+          detail: ratingDetail(rating),
           paths: [path],
           written,
         },
@@ -65,6 +68,27 @@ export function useRecordedWrites(shoot: string | null) {
       );
     },
     [queryClient, shoot, setRating, ratings],
+  );
+
+  /// `before` has to be read, not placeholder, ratings: undo writes them back.
+  const rateMany = useCallback(
+    (
+      values: Map<string, number>,
+      before: Map<string, number>,
+      label: string,
+      detail: string,
+    ) => {
+      if (values.size === 0) return Promise.resolve();
+      const written = landed(setRatings(values));
+      void written.catch(() => {});
+      void ratings.record(
+        { icon: Star, label, detail, paths: [...values.keys()], written },
+        before,
+        values,
+      );
+      return written;
+    },
+    [setRatings, ratings],
   );
 
   const writeEdit = useCallback(
@@ -107,5 +131,5 @@ export function useRecordedWrites(shoot: string | null) {
     [queryClient, shoot, pasteEdits, edits],
   );
 
-  return { rate, writeEdit, paste };
+  return { rate, rateMany, writeEdit, paste };
 }

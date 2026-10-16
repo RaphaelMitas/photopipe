@@ -24,6 +24,11 @@ public struct ImageFile: Codable, Equatable, Sendable {
     /// rated yet. Lives in its own table rather than the file record, so it is
     /// filled in on the way out rather than carried through the snapshot.
     public let score: Double?
+    /// Capture time in seconds, nil when unknown; filled in on the way out, like `score`.
+    public let captured: Double?
+    /// Path of the first photo in its stack of near-identical photos, its own path when it stands
+    /// alone, nil until the stacking pass has looked at it.
+    public let stack: String?
     /// False while the walk's placeholder rating, edit and dimensions are still
     /// standing in for the real ones. Writing an edit against a placeholder
     /// would erase whatever the file actually carries, so the UI must wait.
@@ -38,7 +43,8 @@ public struct ImageFile: Codable, Equatable, Sendable {
         path: String, rel: String, ext: String, size: Int64, mtime: Double,
         rating: Int = 0, edit: Edit = .identity,
         width: Int = Dimensions.fallback.width, height: Int = Dimensions.fallback.height,
-        score: Double? = nil, enriched: Bool = false, sidecarMtime: Double = 0
+        score: Double? = nil, captured: Double? = nil, stack: String? = nil,
+        enriched: Bool = false, sidecarMtime: Double = 0
     ) {
         self.path = path
         self.rel = rel
@@ -50,6 +56,8 @@ public struct ImageFile: Codable, Equatable, Sendable {
         self.width = width
         self.height = height
         self.score = score
+        self.captured = captured
+        self.stack = stack
         self.enriched = enriched
         self.sidecarMtime = sidecarMtime
     }
@@ -65,13 +73,15 @@ public struct ImageFile: Codable, Equatable, Sendable {
     public func with(
         rating: Int? = nil, edit: Edit? = nil,
         dimensions: (width: Int, height: Int)? = nil, enriched: Bool? = nil,
-        sidecarMtime: Double? = nil, score: Double? = nil
+        sidecarMtime: Double? = nil, score: Double? = nil, captured: Double? = nil,
+        stack: String? = nil
     ) -> ImageFile {
         ImageFile(
             path: path, rel: rel, ext: ext, size: size, mtime: mtime,
             rating: rating ?? self.rating, edit: edit ?? self.edit,
             width: dimensions?.width ?? self.width, height: dimensions?.height ?? self.height,
             score: score ?? self.score,
+            captured: captured ?? self.captured, stack: stack ?? self.stack,
             enriched: enriched ?? self.enriched,
             sidecarMtime: sidecarMtime ?? self.sidecarMtime)
     }

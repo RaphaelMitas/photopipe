@@ -24,6 +24,13 @@ import {
   useThumbnail,
   useViewportRender,
 } from "@/lib/queries";
+import {
+  pickInStack,
+  type Stack,
+  stackRating,
+  stackRatingLabel,
+  step,
+} from "@/lib/stacks";
 import type { CropSession } from "@/lib/useCropSession";
 import {
   centerOn,
@@ -58,13 +65,23 @@ function useSettled<T>(value: T, delayMs: number): T {
   return settled;
 }
 
+export type LoupeStacks = {
+  list: Stack[];
+  current: Stack;
+  inside: boolean;
+  onEnter: () => void;
+  onLeave: () => void;
+  onPick: () => void;
+};
+
 type Props = {
   images: ImageFile[];
   index: number;
   edit: Edit;
   crop: CropSession;
+  stacks: LoupeStacks | null;
   onEditChange: (edit: Edit) => void;
-  onNavigate: (index: number) => void;
+  onNavigate: (path: string) => void;
   onClose: () => void;
   onRate: (path: string, rating: number) => void;
 };
@@ -74,6 +91,7 @@ export function Loupe({
   index,
   edit,
   crop: session,
+  stacks,
   onEditChange,
   onNavigate,
   onClose,
@@ -97,8 +115,15 @@ export function Loupe({
   );
   const render = useRender(image, previewEdit);
   const thumb = useThumbnail(image);
-  usePrefetchRender(images[index + 1], images[index + 1]?.edit);
-  usePrefetchRender(images[index - 1], images[index - 1]?.edit);
+  const neighbour = (direction: 1 | -1) =>
+    stacks && image
+      ? step(stacks.list, image.path, stacks.inside, direction)
+      : images[index + direction];
+  const next = neighbour(1);
+  const previous = neighbour(-1);
+  usePrefetchRender(next, next?.edit);
+  usePrefetchRender(previous, previous?.edit);
+  const multiFrame = stacks !== null && stacks.current.frames.length > 1;
 
   const stageRef = useRef<HTMLDivElement>(null);
   const [stage, setStage] = useState({ width: 0, height: 0 });
@@ -214,15 +239,27 @@ export function Loupe({
       }
       switch (event.key) {
         case "Escape":
-          onClose();
+          if (stacks?.inside) stacks.onLeave();
+          else onClose();
           break;
         case "ArrowRight":
           event.preventDefault();
-          onNavigate(Math.min(index + 1, images.length - 1));
+          if (next) onNavigate(next.path);
           break;
         case "ArrowLeft":
           event.preventDefault();
-          onNavigate(Math.max(index - 1, 0));
+          if (previous) onNavigate(previous.path);
+          break;
+        case "Enter":
+          // a focused button acts on Enter itself
+          if (multiFrame && !stacks.inside && !target?.closest("button")) {
+            event.preventDefault();
+            stacks.onEnter();
+          }
+          break;
+        case "p":
+        case "P":
+          if (multiFrame && stacks.inside) stacks.onPick();
           break;
         case "0":
         case "1":
@@ -255,12 +292,16 @@ export function Loupe({
     return () => window.removeEventListener("keydown", handler);
   }, [
     image,
-    images.length,
+    images,
     index,
     edit,
     displayWidth,
     displayHeight,
     session,
+    stacks,
+    multiFrame,
+    next,
+    previous,
     onClose,
     onEditChange,
     onNavigate,
@@ -416,6 +457,9 @@ export function Loupe({
             )}
           </>
         )}
+        {multiFrame && !cropping && (
+          <StackOverlay stacks={stacks} path={image.path} />
+        )}
         {(render.isFetching || !render.data) && (
           <div className="absolute top-3 right-3 h-2 w-2 animate-pulse rounded-full bg-primary" />
         )}
@@ -429,11 +473,72 @@ export function Loupe({
             images={images}
             index={index}
             mode={filmstrip}
+            stacks={stacks}
             onNavigate={onNavigate}
           />
         </div>
       )}
     </div>
+  );
+}
+
+// a zoomed stage captures the pointer on press, which would swallow the click
+const ownTap = {
+  onPointerDown: (event: React.PointerEvent) => event.stopPropagation(),
+  onDoubleClick: (event: React.MouseEvent) => event.stopPropagation(),
+};
+
+function StackOverlay({ stacks, path }: { stacks: LoupeStacks; path: string }) {
+  const { frames } = stacks.current;
+  const rating = stackRating(stacks.current);
+  const label = stackRatingLabel(stacks.current);
+  const { kept, cleared } = pickInStack(stacks.current, path);
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="stack-chip"
+        {...ownTap}
+        onClick={stacks.inside ? stacks.onLeave : stacks.onEnter}
+        className="absolute top-3 left-3 flex items-center gap-2 rounded-md border border-border bg-background/85 px-2.5 py-1 font-mono text-[11px] backdrop-blur-sm"
+      >
+        {stacks.inside ? (
+          <>
+            <span className="font-semibold">Inside stack</span>
+            <span className="text-muted-foreground">
+              {frames.findIndex((frame) => frame.path === path) + 1} of{" "}
+              {frames.length} · esc to go up
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="font-semibold">{frames.length} frames</span>
+            {label && <span className="text-amber-400">{label}</span>}
+            <span className="text-muted-foreground">enter to look inside</span>
+          </>
+        )}
+      </button>
+      {stacks.inside && (
+        <button
+          type="button"
+          data-testid="stack-pick"
+          {...ownTap}
+          onClick={stacks.onPick}
+          className="absolute bottom-4 left-1/2 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2.5 rounded-lg border border-primary/60 bg-background/95 py-1.5 pr-1.5 pl-3 text-sm shadow-lg backdrop-blur-sm"
+        >
+          <span className="font-semibold">Pick this one</span>
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {rating > 0 ? "keeps " : "gets "}
+            <span className="text-amber-400">{`★${kept}`}</span>
+            {cleared > 0
+              ? ` · clears ${cleared} other${cleared === 1 ? "" : "s"}`
+              : rating === 0 &&
+                ` · ${frames.length - 1} other${frames.length === 2 ? "" : "s"} stay unrated`}
+          </span>
+          <kbd className="rounded bg-muted px-1.5 font-mono text-xs">P</kbd>
+        </button>
+      )}
+    </>
   );
 }
 

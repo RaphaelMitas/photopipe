@@ -1,5 +1,4 @@
-import type { ImageFile } from "@/lib/core";
-import type { ScoreProgress } from "@/lib/queries";
+import type { ImageFile, PassProgress } from "@/lib/core";
 import type { PhotoSource } from "@/lib/roots";
 import type { SelectModifiers } from "@/lib/selection";
 import { type SortKey, sortPref } from "@/lib/sort";
@@ -13,7 +12,7 @@ type Props = {
   images: ImageFile[];
   sort: SortKey;
   scoreReady: boolean;
-  scoring: ScoreProgress | null;
+  scoring: PassProgress | null;
   justRated: boolean;
   filterActive: boolean;
   selected: ReadonlySet<string>;

@@ -43,6 +43,30 @@ public enum Dimensions {
         return String(format: "%04d-%02d-%02d", y, m, d)
     }
 
+    /// Seconds since the epoch, read as if the camera clock were UTC: only the gaps between
+    /// photos matter, and a camera does not record which zone it was set to.
+    static func captureTime(_ props: [CFString: Any]) -> Double? {
+        guard let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any],
+            let stamp = exif[kCGImagePropertyExifDateTimeOriginal] as? String,
+            let date = exifDate.date(from: stamp)
+        else { return nil }
+        // digits only: "1e999" would parse to infinity and fail encoding the whole shoot
+        let fraction =
+            (exif[kCGImagePropertyExifSubsecTimeOriginal] as? String)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .flatMap { $0.isEmpty || !$0.allSatisfy { "0"..."9" ~= $0 } ? nil : Double("0." + $0) }
+            ?? 0
+        return date.timeIntervalSince1970 + fraction
+    }
+
+    private static let exifDate: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyy:MM:dd HH:mm:ss"
+        return formatter
+    }()
+
     private static let cacheLock = NSLock()
     nonisolated(unsafe) private static var cache:
         [String: (mtime: Double, dims: (width: Int, height: Int)?)] = [:]

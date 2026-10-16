@@ -11,6 +11,7 @@ import {
   useSetEdit,
   useSetRating,
   useSetRatings,
+  useStacking,
 } from "./queries";
 import { setRawDecoderVersion } from "./rawDecoder";
 import { makeImage } from "./test-image";
@@ -820,5 +821,41 @@ describe("useSetRating", () => {
     pending[1]();
     await second;
     expect(rating()).toBe(4);
+  });
+});
+
+describe("useStacking", () => {
+  it("turns on only once every listed photo has been given a stack", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    let listed: ImageFile[] = [
+      { ...image("a"), stack: "/r/shoot1/a.ARW" },
+      image("b"),
+    ];
+    invoke.mockImplementation(async (_command, { method }) =>
+      method === "listImages"
+        ? { images: listed }
+        : { done: 2, total: 2, running: false },
+    );
+
+    let ready = false;
+    function Harness() {
+      ready = useStacking("s", true).ready;
+      return null;
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>,
+    );
+    await waitFor(() =>
+      expect(client.getQueryData(["images", "s"])).toBeDefined(),
+    );
+    expect(ready).toBe(false);
+
+    listed = [listed[0], { ...image("b"), stack: "/r/shoot1/b.ARW" }];
+    await act(() => client.refetchQueries({ queryKey: ["images", "s"] }));
+    await waitFor(() => expect(ready).toBe(true));
   });
 });

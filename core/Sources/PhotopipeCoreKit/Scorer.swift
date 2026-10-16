@@ -1,152 +1,12 @@
 import Foundation
 import Vision
 
-/// Aesthetic scores from Vision, cached in the library index.
-///
-/// Vision reads the RAW file itself, so nothing here decodes an image. A pass runs in the
-/// background for one shoot at a time and reports how far it has got, because the browser
-/// keeps the sort by score disabled until every file in the shoot has an answer.
-public final class Scorer: @unchecked Sendable {
-    public struct Progress: Equatable, Sendable, Encodable {
-        public let done: Int
-        public let total: Int
-        public let running: Bool
+/// Aesthetic scores from Vision, -1 to 1.
+public typealias Scorer = Analyzer<Double>
 
-        public static let idle = Progress(done: 0, total: 0, running: false)
-    }
-
-    /// Every cached row carries this. Bump it when the model or its input changes and the
-    /// whole cache is ignored, no migration needed.
-    public static let version = 1
-
-    private static let concurrency = 6
-    private static let flushEvery = 32
-
-    public typealias Flush = @Sendable ([(String, ScoreRow)]) -> Void
-
-    private let lock = NSLock()
-    private var flush: Flush?
-    private var cache: [String: ScoreRow] = [:]
-    private var progressByShoot: [String: Progress] = [:]
-    private var passes: [String: Task<Void, Never>] = [:]
-    /// Files one of our writes moved while a pass had them queued. Vision reads them as they
-    /// are now, so the pass records its answer under these stamps, not the ones it queued with.
-    private var moved: [String: ImageFile] = [:]
-
-    public init() {}
-
-    /// Adopt a library's cached scores, dropping whatever the previous one had.
-    /// Results are handed to `flush` rather than written here, so the scorer
-    /// never touches the database directly.
-    public func use(cache: [String: ScoreRow], flush: @escaping Flush) {
-        let cancelled = lock.withLock {
-            let cancelled = passes.values
-            passes.removeAll()
-            progressByShoot.removeAll()
-            moved.removeAll()
-            self.flush = flush
-            self.cache = cache
-            return cancelled
-        }
-        for pass in cancelled { pass.cancel() }
-    }
-
-    /// Scores for the files that have a current one, keyed by path.
-    public func scores(for files: [ImageFile]) -> [String: Double] {
-        lock.withLock {
-            var result: [String: Double] = [:]
-            for file in files {
-                if let row = cache[file.path], row.matches(file), let score = row.score {
-                    result[file.path] = score
-                }
-            }
-            return result
-        }
-    }
-
-    /// Carry a score across our own metadata write, which moves a file's mtime and size without
-    /// touching a pixel: expiring it would drop the photo out of the sort by score and spend a
-    /// Vision read arriving at the same number. Only a score that was current for `before`
-    /// travels, so a file something else had already changed stays unscored.
-    public func restamp(_ before: ImageFile, to after: ImageFile) {
-        let (write, carried) = lock.withLock { () -> (Flush?, ScoreRow?) in
-            if !passes.isEmpty { moved[after.path] = after }
-            guard let row = cache[before.path], row.matches(before), !row.matches(after)
-            else { return (nil, nil) }
-            let carried = ScoreRow(score: row.score, for: after)
-            cache[after.path] = carried
-            return (flush, carried)
-        }
-        if let carried { write?([(after.path, carried)]) }
-    }
-
-    /// Only a running pass reports stored progress. Once it ends the answer is recomputed from
-    /// the cache, so a file that changed since goes back to being unscored.
-    func progress(shoot: String, files: [ImageFile]) -> Progress {
-        lock.withLock {
-            if let current = progressByShoot[shoot], current.running { return current }
-            return Progress(done: scoredCount(files), total: files.count, running: false)
-        }
-    }
-
-    /// Score everything in the shoot that has no current answer. Calling this while a pass for
-    /// the same shoot runs just reports where it is.
-    @discardableResult
-    public func start(shoot: String, files: [ImageFile]) -> Progress {
-        lock.withLock {
-            if passes[shoot] != nil { return progressByShoot[shoot] ?? .idle }
-            let pending = files.filter { cache[$0.path]?.matches($0) != true }
-            guard !pending.isEmpty else {
-                return Progress(done: files.count, total: files.count, running: false)
-            }
-            let start = Progress(
-                done: files.count - pending.count, total: files.count, running: true)
-            progressByShoot[shoot] = start
-            passes[shoot] = Task.detached(priority: .utility) { [weak self] in
-                await self?.run(shoot: shoot, pending: pending, total: files.count)
-            }
-            return start
-        }
-    }
-
-    private func run(shoot: String, pending: [ImageFile], total: Int) async {
-        var buffer: [(String, ScoreRow)] = []
-        await forEachConcurrently(pending, width: Self.concurrency) { file in
-            (file, await Self.score(path: file.path))
-        } onResult: { scored, cancelled in
-            let (file, score) = scored
-            // Vision reports a cancelled read the same way it reports an
-            // unreadable file. Recording that would write the photo off for
-            // good, so a cancelled pass leaves it untouched instead.
-            if cancelled && score == nil { return }
-
-            let (write, full) = lock.withLock { () -> (Flush?, Bool) in
-                let row = ScoreRow(score: score, for: moved[file.path] ?? file)
-                cache[file.path] = row
-                buffer.append((file.path, row))
-                let done = scoredCount(pending) + (total - pending.count)
-                progressByShoot[shoot] = Progress(done: done, total: total, running: true)
-                return (self.flush, buffer.count >= Self.flushEvery)
-            }
-
-            if full {
-                write?(buffer)
-                buffer.removeAll(keepingCapacity: true)
-            }
-        }
-
-        let write = lock.withLock { () -> Flush? in
-            progressByShoot[shoot] = nil
-            passes[shoot] = nil
-            if passes.isEmpty { moved.removeAll() }
-            return self.flush
-        }
-        write?(buffer)
-    }
-
-    /// Caller holds the lock.
-    private func scoredCount(_ files: [ImageFile]) -> Int {
-        files.count { cache[$0.path]?.matches($0) == true }
+extension Analyzer where Value == Double {
+    public convenience init() {
+        self.init(version: 1, concurrency: 6, analyze: Self.score)
     }
 
     static func score(path: String) async -> Double? {
@@ -155,30 +15,5 @@ public final class Scorer: @unchecked Sendable {
             let observation = try? await request.perform(on: URL(fileURLWithPath: path))
         else { return nil }
         return Double(observation.overallScore)
-    }
-}
-
-/// A cached score. `score` is nil for a file Vision could not read, which still counts as
-/// answered so one broken file cannot keep a pass running forever.
-public struct ScoreRow: Equatable, Sendable {
-    public let score: Double?
-    public let mtime: Double
-    public let size: Int64
-    public let version: Int
-
-    public init(score: Double?, mtime: Double, size: Int64, version: Int) {
-        self.score = score
-        self.mtime = mtime
-        self.size = size
-        self.version = version
-    }
-
-    /// What the file was when the score was taken, which is what `matches` asks about later.
-    init(score: Double?, for file: ImageFile) {
-        self.init(score: score, mtime: file.mtime, size: file.size, version: Scorer.version)
-    }
-
-    public func matches(_ file: ImageFile) -> Bool {
-        version == Scorer.version && size == file.size && mtime == file.mtime
     }
 }

@@ -50,6 +50,8 @@ public final class Dispatcher: Sendable {
             return .object(["images": try JSONValue(encoding: images)])
         case "scoreShoot":
             return try JSONValue(encoding: library.scoreShoot(shoot: request.string("shoot")))
+        case "stackShoot":
+            return try JSONValue(encoding: library.stackShoot(shoot: request.string("shoot")))
         case "thumbnail":
             let cachePath = try library.thumbnail(
                 path: request.string("path"), maxPixel: request.param("maxPixel")?.intValue ?? 256)
