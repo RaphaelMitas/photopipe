@@ -62,7 +62,7 @@ type Props = {
   onClearSelection: () => void;
   onExport: (options: ExportOptions, destination: string) => void;
   onCancel: (id: string) => void;
-  onReveal: (path: string) => void;
+  onReveal?: (path: string) => void;
   onClose: () => void;
 };
 
@@ -481,7 +481,7 @@ export function ExportDrawer({
                     )}
                     {/* A cancelled zip deletes its staging, so there is no
                         archive at the path to reveal. */}
-                    {!job.running && job.done > 0 && (
+                    {onReveal && !job.running && job.done > 0 && (
                       <Button
                         size="icon"
                         variant="ghost"

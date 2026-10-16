@@ -44,6 +44,7 @@ import {
   isRawFile,
 } from "@/lib/core";
 import { type EditClipboard, pasteEdit } from "@/lib/editClipboard";
+import { useFeatures } from "@/lib/features";
 import { fileName } from "@/lib/fileName";
 import {
   clearHistory,
@@ -185,6 +186,9 @@ export default function App() {
   );
   const writes = useRecordedWrites(openShoot);
   const reveal = useReveal();
+  const revealPaths = useFeatures().reveal
+    ? (paths: string[]) => reveal.mutate(paths)
+    : undefined;
   const trash = useTrash(openShoot);
   const exports = useExportJobs();
   const scan = useLibrarySync(ready, ready ? rootState.generation : null);
@@ -684,7 +688,7 @@ export default function App() {
             currentShoot={currentShoot}
             onBack={() => enterShoot(null)}
             onImport={runImport}
-            onRevealShoot={(path) => reveal.mutate([path])}
+            onRevealShoot={revealPaths && ((path) => revealPaths([path]))}
             onShootSettings={() => setShootSettings(openShoot)}
             filter={filter}
             ratingCounts={counts}
@@ -798,8 +802,9 @@ export default function App() {
             onCopySettings={() => copySource && copySettings(copySource)}
             onPasteSettings={() => pasteSettings(pasteTargets)}
             onExport={() => setDrawerOpen(true)}
-            onReveal={() =>
-              reveal.mutate(selectedImages.map((image) => image.path))
+            onReveal={
+              revealPaths &&
+              (() => revealPaths(selectedImages.map((image) => image.path)))
             }
             onDelete={() => {
               const paths = selectedImages.map((image) => image.path);
@@ -845,7 +850,7 @@ export default function App() {
                 onClearSelection={selection.clear}
                 onExport={runExport}
                 onCancel={exports.cancel}
-                onReveal={(path) => reveal.mutate([path])}
+                onReveal={revealPaths && ((path) => revealPaths([path]))}
                 onClose={() => setDrawerOpen(false)}
               />
             )}

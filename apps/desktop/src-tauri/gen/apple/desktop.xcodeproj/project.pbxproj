@@ -18,12 +18,14 @@
 		A803E492E789017EFD4D2590 /* assets in Resources */ = {isa = PBXBuildFile; fileRef = B62BC3012357D04BFD6A9DF7 /* assets */; };
 		AE054C7456CE7E64E7DB79EC /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = 94E8CA94E8B2A7BC7F1B7394 /* main.mm */; };
 		B9BD77EC7A1A6C96E5C23B5B /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B688B5D5355279C31E8EC1FF /* QuartzCore.framework */; };
+		D5A13BE2FAC2F5C09E8BE259 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 1EADFE2B5CA953B06AF7C066 /* PrivacyInfo.xcprivacy */; };
 		E3D28C613F45CDF4E9F23748 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3F38D13C8F6223C6A627F2F0 /* Security.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		008D178D81064449D53DCB06 /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
 		1DD84F45400B9897152220FB /* bookmark.rs */ = {isa = PBXFileReference; path = bookmark.rs; sourceTree = "<group>"; };
+		1EADFE2B5CA953B06AF7C066 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		23E1972A7910727CF7C54324 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 		3232A2624228243131761D2F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		336EE7ED45D57838D29AE3FE /* swift_core.rs */ = {isa = PBXFileReference; path = swift_core.rs; sourceTree = "<group>"; };
@@ -107,6 +109,7 @@
 			children = (
 				952D4EC409C47B42CE34C260 /* desktop_iOS.entitlements */,
 				3232A2624228243131761D2F /* Info.plist */,
+				1EADFE2B5CA953B06AF7C066 /* PrivacyInfo.xcprivacy */,
 			);
 			path = desktop_iOS;
 			sourceTree = "<group>";
@@ -216,6 +219,7 @@
 			files = (
 				4EB31719E5BA4F1D7D05E3F5 /* Assets.xcassets in Resources */,
 				453463D8A33F2C1835E8E179 /* LaunchScreen.storyboard in Resources */,
+				D5A13BE2FAC2F5C09E8BE259 /* PrivacyInfo.xcprivacy in Resources */,
 				A803E492E789017EFD4D2590 /* assets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

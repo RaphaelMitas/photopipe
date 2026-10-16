@@ -14,7 +14,7 @@ type Props = {
   onCopySettings: () => void;
   onPasteSettings: () => void;
   onExport: () => void;
-  onReveal: () => void;
+  onReveal?: () => void;
   onDelete: () => void;
   onClear: () => void;
   busy?: boolean;
@@ -82,16 +82,18 @@ export function SelectionBar({
             Paste settings
           </Button>
         )}
-        <Button
-          size="sm"
-          variant="ghost"
-          data-testid="action-reveal"
-          onClick={() => onReveal()}
-          className="h-7 text-xs text-muted-foreground"
-        >
-          <FolderOpen />
-          Reveal
-        </Button>
+        {onReveal && (
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="action-reveal"
+            onClick={() => onReveal()}
+            className="h-7 text-xs text-muted-foreground"
+          >
+            <FolderOpen />
+            Reveal
+          </Button>
+        )}
         <Button
           size="sm"
           variant="ghost"

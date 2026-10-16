@@ -1,0 +1,28 @@
+Cull, edit and deliver a photo shoot on your iPad without a catalogue. Photopipe works on the folders you already have in Files and writes every decision back as standard XMP.
+
+BRING IT IN
+• From a card reader or drive in Files, or from your Photos library
+• Raws stay raws; a project is just a folder
+
+CULL FAST
+• Full-bleed loupe with a filmstrip, rate 1 to 5 with a tap or the keyboard
+• Instinct score: every frame rated 0 to 100 on your iPad by Apple's aesthetics model
+• Rating histogram that doubles as the filter
+
+A REAL RAW EDIT
+• Exposure, highlights, shadows, whites and blacks
+• White balance in true Kelvin, tint, vibrance and saturation
+• Texture, clarity and dehaze
+• Tone curves for RGB and each channel
+• Crop, straighten and rotate, non-destructive
+• Copy a look from one photo and paste it onto the whole selection
+
+DELIVER
+• Originals byte for byte, or full-resolution JPEG with every edit baked in
+• Into any folder, flat or mirroring your subfolders, never a silent overwrite
+
+YOUR FILES STAY YOURS
+• No catalogue, no account, no telemetry
+• Ratings and edits travel as XMP sidecars that other photo apps read
+
+On iPad, ratings and edits are saved for Sony ARW raws. Free and open source. Requires iPadOS 18 or later.
