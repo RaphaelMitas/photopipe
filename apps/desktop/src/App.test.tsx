@@ -17,7 +17,6 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke,
   convertFileSrc: (path: string) => `asset://${path}`,
 }));
-vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 
 const menu = vi.hoisted(() => new Map<string, (event: unknown) => void>());
 vi.mock("@tauri-apps/api/event", () => ({

@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "../../scripts/prepare-bundle.sh && pnpm build",
+    "beforeBuildCommand": "../../scripts/fetch-exiftool.sh && pnpm build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -43,7 +43,6 @@
       "icons/128x128@2x.png",
       "icons/icon.icns"
     ],
-    "externalBin": ["binaries/photopipe-core"],
     "macOS": {
       "minimumSystemVersion": "15.0"
     },

@@ -282,6 +282,29 @@ private func writeEntry(_ name: String, in dir: URL, bytes: Int, hoursAgo: Doubl
     #expect(try meanLuminance(of: bright) > meanLuminance(of: neutral))
 }
 
+@Test func aJPEGClaimingAHugeFrameIsUnreadableNotACrash() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let jpegURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("photopipe-huge-\(UUID().uuidString).jpg")
+    defer { try? FileManager.default.removeItem(at: jpegURL) }
+    let gray = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5))
+        .cropped(to: CGRect(x: 0, y: 0, width: 64, height: 64))
+    try CIContext().writeJPEGRepresentation(
+        of: gray, to: jpegURL, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+
+    var bytes = [UInt8](try Data(contentsOf: jpegURL))
+    let sof = try #require(bytes.indices.dropLast().first { bytes[$0] == 0xFF && bytes[$0 + 1] == 0xC0 })
+    // 20000 x 20000 in the frame header; the scan data still holds 64 x 64
+    bytes.replaceSubrange((sof + 5)...(sof + 8), with: [0x4E, 0x20, 0x4E, 0x20])
+    try Data(bytes).write(to: jpegURL)
+
+    let renderer = Renderer(cacheDir: cacheDir)
+    #expect(throws: Renderer.RenderError.self) {
+        try renderer.render(file: try imageFile(for: jpegURL), edit: .identity, maxPixel: 64)
+    }
+}
+
 @Test func renderAppliesCropAndStraighten() throws {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }

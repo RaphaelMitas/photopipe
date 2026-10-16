@@ -63,11 +63,60 @@ describe("useLibrarySync", () => {
     // megabytes per tick on a big library that is still indexing.
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ["images"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["shoots"] });
-    expect(progress).toMatchObject({
+    expect(progress?.progress).toMatchObject({
       scanning: true,
       filesFound: 100,
       filesEnriched: 40,
     });
+  });
+});
+
+describe("useLibrarySync refresh", () => {
+  it("shows what a rescan found without waiting for the next idle poll", async () => {
+    const client = new QueryClient();
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+    let generation = 1;
+    invoke.mockImplementation(async (_command, { method }) => {
+      if (method === "rescan") {
+        generation = 2;
+        return {};
+      }
+      return {
+        generation,
+        root: "/r",
+        shoots: 1,
+        scanning: false,
+        filesFound: 1,
+        filesEnriched: 1,
+        changedShoots: generation > 1 ? ["shoot1"] : [],
+      };
+    });
+
+    let sync!: ReturnType<typeof useLibrarySync>;
+    function Harness() {
+      sync = useLibrarySync(true, 1);
+      return null;
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>,
+    );
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("core_request", {
+        method: "status",
+        params: { since: 1 },
+      }),
+    );
+
+    act(() => sync.refresh());
+    await waitFor(
+      () =>
+        expect(invalidateSpy).toHaveBeenCalledWith({
+          queryKey: ["images", "shoot1"],
+        }),
+      { timeout: 1000 },
+    );
   });
 });
 

@@ -196,8 +196,7 @@ private func tempIndexPath() -> String {
     // while Photopipe is not running.
     try XMP.writeRating(
         5,
-        file: ImageFile(path: target.path, rel: "DSC001.ARW", ext: "ARW", size: 1, mtime: 1),
-        tool: .shared)
+        file: ImageFile(path: target.path, rel: "DSC001.ARW", ext: "ARW", size: 1, mtime: 1))
 
     let second = makeService()
     _ = try second.setRoot(path: root.path, indexPath: indexPath)
@@ -268,7 +267,7 @@ private func tempIndexPath() -> String {
     let target = root.appendingPathComponent("2026-07-12_zell/DSC199.ARW")
     let onDisk = ImageFile(
         path: target.path, rel: "DSC199.ARW", ext: "ARW", size: 1, mtime: 1)
-    try XMP.writeRating(3, file: onDisk, tool: .shared)
+    try XMP.writeRating(3, file: onDisk)
 
     let service = makeService()
     _ = try service.setRoot(path: root.path, indexPath: tempIndexPath())
@@ -341,6 +340,10 @@ private func tempIndexPath() -> String {
 
 // MARK: - Dispatcher JSON layer
 
+private func result(_ reply: (ok: Bool, text: String)) -> JSONValue? {
+    reply.ok ? try? JSONDecoder().decode(JSONValue.self, from: Data(reply.text.utf8)) : nil
+}
+
 @Test func dispatcherServesLibraryMethodsOverProtocol() throws {
     let root = try makeTree(["2026-07-12_zell": ["DSC001.ARW", "DSC001.jpg"]])
     defer { try? FileManager.default.removeItem(at: root) }
@@ -349,17 +352,12 @@ private func tempIndexPath() -> String {
     let escapedRoot = root.path.replacingOccurrences(of: "\"", with: "\\\"")
 
     let setRoot = dispatcher.dispatch(
-        line:
-            "{\"v\":1,\"id\":\"1\",\"method\":\"setRoot\",\"params\":{\"path\":\"\(escapedRoot)\",\"indexPath\":\"\(tempIndexPath())\"}}"
-    )
-    #expect(setRoot.ok)
-    #expect(setRoot.result?["files"] == .number(2))
+        method: "setRoot",
+        params: "{\"path\":\"\(escapedRoot)\",\"indexPath\":\"\(tempIndexPath())\"}")
+    #expect(result(setRoot)?["files"] == .number(2))
 
-    let shoots = dispatcher.dispatch(
-        line: "{\"v\":1,\"id\":\"2\",\"method\":\"listShoots\"}"
-    )
-    #expect(shoots.ok)
-    guard case .array(let shootList)? = shoots.result?["shoots"] else {
+    let shoots = dispatcher.dispatch(method: "listShoots")
+    guard case .array(let shootList)? = result(shoots)?["shoots"] else {
         Issue.record("shoots missing")
         return
     }
@@ -368,10 +366,8 @@ private func tempIndexPath() -> String {
     #expect(shootList[0]["imageCount"] == .number(2))
 
     let images = dispatcher.dispatch(
-        line: "{\"v\":1,\"id\":\"3\",\"method\":\"listImages\",\"params\":{\"shoot\":\"2026-07-12_zell\"}}"
-    )
-    #expect(images.ok)
-    guard case .array(let imageList)? = images.result?["images"] else {
+        method: "listImages", params: #"{"shoot":"2026-07-12_zell"}"#)
+    guard case .array(let imageList)? = result(images)?["images"] else {
         Issue.record("images missing")
         return
     }
@@ -379,25 +375,19 @@ private func tempIndexPath() -> String {
     #expect(imageList[0]["rel"] == .string("DSC001.ARW"))
     #expect(imageList[1]["rel"] == .string("DSC001.jpg"))
 
-    let unknown = dispatcher.dispatch(
-        line: "{\"v\":1,\"id\":\"4\",\"method\":\"listImages\",\"params\":{\"shoot\":\"nope\"}}"
-    )
-    #expect(unknown.error?.code == "unknown_shoot")
+    let unknown = dispatcher.dispatch(method: "listImages", params: #"{"shoot":"nope"}"#)
+    #expect(unknown.text.hasPrefix("unknown_shoot:"))
 }
 
 @Test func libraryMethodsWithoutRootFailCleanly() {
     let dispatcher = Dispatcher(library: makeService())
-    let response = dispatcher.dispatch(
-        line: "{\"v\":1,\"id\":\"1\",\"method\":\"listImages\",\"params\":{\"shoot\":\"x\"}}"
-    )
-    #expect(response.error?.code == "no_root")
+    let reply = dispatcher.dispatch(method: "listImages", params: #"{"shoot":"x"}"#)
+    #expect(reply.text.hasPrefix("no_root:"))
 }
 
 @Test func setRootOnMissingDirectoryFailsCleanly() {
     let dispatcher = Dispatcher(library: makeService())
-    let response = dispatcher.dispatch(
-        line:
-            "{\"v\":1,\"id\":\"1\",\"method\":\"setRoot\",\"params\":{\"path\":\"/nope/\(UUID().uuidString)\"}}"
-    )
-    #expect(response.error?.code == "root_not_found")
+    let reply = dispatcher.dispatch(
+        method: "setRoot", params: #"{"path":"/nope/\#(UUID().uuidString)"}"#)
+    #expect(reply.text.hasPrefix("root_not_found:"))
 }

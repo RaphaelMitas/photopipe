@@ -6,8 +6,13 @@ import {
 import { TooltipProvider } from "@photopipe/ui/components/tooltip";
 import { useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { AlertCircle, Check, SlidersHorizontal, Upload } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  RefreshCw,
+  SlidersHorizontal,
+  Upload,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AppSidebar } from "@/components/AppSidebar";
@@ -64,7 +69,14 @@ import {
   useShoots,
   useTrash,
 } from "@/lib/queries";
-import { openRoot, type RootError, rootsQuery, toRootError } from "@/lib/roots";
+import {
+  openRoot,
+  type PhotoSource,
+  pickPhotos,
+  type RootError,
+  rootsQuery,
+  toRootError,
+} from "@/lib/roots";
 import { useSelection } from "@/lib/selection";
 import { browserOrder, sortPref } from "@/lib/sort";
 import { useCropSession } from "@/lib/useCropSession";
@@ -261,20 +273,9 @@ export default function App() {
 
   const currentShoot = shoots.data?.find((s) => s.name === openShoot);
 
-  const runImport = async () => {
+  const runImport = async (from: PhotoSource) => {
     if (!openShoot) return;
-    const chosen = await openDialog({
-      title: "Import photos",
-      multiple: true,
-      filters: [
-        { name: "Photos", extensions: ["arw", "dng", "jpg", "jpeg", "png"] },
-      ],
-    }).catch(() => null);
-    const paths = Array.isArray(chosen)
-      ? chosen
-      : typeof chosen === "string"
-        ? [chosen]
-        : [];
+    const paths = await pickPhotos("Import photos", from).catch(() => []);
     if (paths.length === 0) return;
     const job = await exports.start({
       method: "importFiles",
@@ -559,6 +560,7 @@ export default function App() {
     flushEdit();
     clearHistory();
     setOpenShoot(shoot);
+    if (shoot) scan.refresh();
     setCurrentPath(null);
     setLoupeOpen(false);
     filter.reset();
@@ -711,7 +713,17 @@ export default function App() {
               <span className="text-muted-foreground text-sm">Library</span>
             )}
             <span className="flex-1" />
-            <IndexingStatus progress={scan} />
+            <IndexingStatus progress={scan.progress} />
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              data-testid="refresh"
+              title="Look for new photos"
+              disabled={scan.refreshing}
+              onClick={scan.refresh}
+            >
+              <RefreshCw className={scan.refreshing ? "animate-spin" : ""} />
+            </Button>
             {exports.jobs.length > 0 && (
               <Button
                 size="sm"

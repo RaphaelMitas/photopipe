@@ -14,18 +14,22 @@ public final class LibraryService: @unchecked Sendable {
         case projectExists(String)
         case unreadableProjectFile(String)
         case unknownExport(String)
+        case rootSuperseded(String)
     }
 
     private let lock = NSLock()
     private var snapshot = LibrarySnapshot.empty
     private var root: String?
+    private var rootRequests = 0
     private var generation = 0
     /// Bumped whenever the file list itself is replaced. Enrichment batches
     /// carry the epoch they were queued under and are dropped if it moved on.
     private var epoch = 0
     private var shootGenerations: [String: Int] = [:]
     private var shootPublished: [String: Date] = [:]
-    private var watcher: Watcher?
+    #if os(macOS)
+        private var watcher: Watcher?
+    #endif
     private var index: SQLiteIndex?
     private let thumbnailer: Thumbnailer
     private let renderer: Renderer
@@ -64,6 +68,10 @@ public final class LibraryService: @unchecked Sendable {
     /// background enrichment, and are visible through `status`.
     public func setRoot(path: String, indexPath: String?) throws -> RootSummary {
         let path = Self.canonical(path)
+        let request = lock.withLock {
+            rootRequests += 1
+            return rootRequests
+        }
         // Opening the database is itself a write (pragmas, schema, and a delete
         // if it turns out corrupt), so it has to queue behind whatever the
         // previous root left in flight rather than race it on a second handle.
@@ -76,7 +84,9 @@ public final class LibraryService: @unchecked Sendable {
         }
         let scanned = carryEnrichment(into: try walkLibrary(root: path), from: warm)
 
-        let currentGeneration = lock.withLock {
+        let currentGeneration = try lock.withLock {
+            // the caller may have timed out and opened another folder while this one was walked
+            guard rootRequests == request else { throw ServiceError.rootSuperseded(path) }
             root = path
             self.index = index
             return publish(scanned)
@@ -85,10 +95,12 @@ public final class LibraryService: @unchecked Sendable {
         store(scanned, root: path, in: index)
         useScorer(with: index)
 
-        let newWatcher = Watcher(path: path, queue: rescanQueue) { [weak self] in
-            self?.scheduleRescan()
-        }
-        lock.withLock { watcher = newWatcher }
+        #if os(macOS)
+            let newWatcher = Watcher(path: path, queue: rescanQueue) { [weak self] in
+                self?.scheduleRescan()
+            }
+            lock.withLock { watcher = newWatcher }
+        #endif
 
         return RootSummary(
             shoots: scanned.shoots.count, files: scanned.fileCount, generation: currentGeneration)
@@ -272,8 +284,7 @@ public final class LibraryService: @unchecked Sendable {
             .compactMap { try? recordUnderRoot(path: $0) }
             .filter(\.isRaw)
         guard !files.isEmpty else { return DecoderSupport(raw9: 0, rawTotal: 0) }
-        // a whole shoot serially outruns the caller's read timeout, and a
-        // timeout takes the sidecar down mid-export
+        // a whole shoot serially outruns the caller's request timeout
         DispatchQueue.concurrentPerform(iterations: files.count) { index in
             _ = renderer.supports(file: files[index], major: 9)
         }
@@ -376,7 +387,7 @@ public final class LibraryService: @unchecked Sendable {
     {
         guard (0...5).contains(rating) else { throw ServiceError.invalidRating(rating) }
         let settled = try write(shoot: shootName, path: path) { image in
-            try XMP.writeRating(rating, file: image, tool: .shared)
+            try XMP.writeRating(rating, file: image)
         }
         return RatingChange(rating: settled.rating)
     }
@@ -387,7 +398,7 @@ public final class LibraryService: @unchecked Sendable {
 
     public func setEdit(shoot shootName: String, path: String, edit: Edit) throws -> EditChange {
         let settled = try write(shoot: shootName, path: path) { image in
-            try XMP.writeEdit(edit, file: image, tool: .shared)
+            try XMP.writeEdit(edit, file: image)
         }
         return EditChange(edit: settled.edit)
     }
@@ -475,7 +486,7 @@ public final class LibraryService: @unchecked Sendable {
         let shootPath = try shoot(named: shootName).path
         let images = paths.filter(isImagePath)
         guard !images.isEmpty else { throw FileActions.ActionError.noFiles }
-        return exporter.start(plan: .importing(images, into: shootPath))
+        return exporter.start(plan: .importing(images, into: shootPath), settled: rescanWhenSettled)
     }
 
     private func shoot(named shootName: String) throws -> Shoot {
@@ -515,7 +526,13 @@ public final class LibraryService: @unchecked Sendable {
         return try exporter.start(
             plan: .export(
                 images, to: destination, zip: zip, flatten: flatten, format: format,
-                quality: quality, decoderVersion: decoderVersion, renderer: renderer))
+                quality: quality, decoderVersion: decoderVersion, renderer: renderer),
+            settled: rescanWhenSettled)
+    }
+
+    /// The watcher would see the delivered files, but iPadOS has none.
+    private var rescanWhenSettled: @Sendable () -> Void {
+        { [weak self] in self?.rescanNow() }
     }
 
     public func stopExports() {
@@ -615,6 +632,8 @@ extension LibraryService.ServiceError: WireError {
         case .invalidProjectDay(let day):
             ResponseError(code: "invalid_project_day", message: "\(day) is not a YYYY-MM-DD date")
         case .unknownExport(let id): ResponseError(code: "unknown_export", message: id)
+        case .rootSuperseded(let path):
+            ResponseError(code: "superseded", message: "\(path) was replaced by a newer folder")
         case .projectExists(let folder):
             ResponseError(code: "project_exists", message: "\(folder) already exists")
         case .unreadableProjectFile(let shoot):

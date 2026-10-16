@@ -757,6 +757,7 @@ dependencies = [
  "objc2-foundation",
  "serde",
  "serde_json",
+ "swift-rs",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

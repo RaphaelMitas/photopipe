@@ -39,11 +39,24 @@ fn classify(error: &NSError) -> Failure {
     }
 }
 
+#[cfg(target_os = "macos")]
+const CREATION: NSURLBookmarkCreationOptions = NSURLBookmarkCreationOptions::WithSecurityScope;
+#[cfg(target_os = "macos")]
+const RESOLUTION: NSURLBookmarkResolutionOptions =
+    NSURLBookmarkResolutionOptions::WithSecurityScope
+        .union(NSURLBookmarkResolutionOptions::WithoutUI)
+        .union(NSURLBookmarkResolutionOptions::WithoutMounting);
+
+// iOS bookmarks carry their scope implicitly and have no WithSecurityScope flag
+#[cfg(target_os = "ios")]
+const CREATION: NSURLBookmarkCreationOptions = NSURLBookmarkCreationOptions::empty();
+#[cfg(target_os = "ios")]
+const RESOLUTION: NSURLBookmarkResolutionOptions = NSURLBookmarkResolutionOptions::WithoutUI
+    .union(NSURLBookmarkResolutionOptions::WithoutMounting);
+
 fn mint_url(url: &NSURL) -> Result<Vec<u8>, Failure> {
     url.bookmarkDataWithOptions_includingResourceValuesForKeys_relativeToURL_error(
-        NSURLBookmarkCreationOptions::WithSecurityScope,
-        None,
-        None,
+        CREATION, None, None,
     )
     .map(|data| data.to_vec())
     .map_err(|error| classify(&error))
@@ -70,9 +83,7 @@ pub fn activate(bookmark: &[u8]) -> Result<Live, Failure> {
         NSURL::initByResolvingBookmarkData_options_relativeToURL_bookmarkDataIsStale_error(
             NSURL::alloc(),
             &data,
-            NSURLBookmarkResolutionOptions::WithSecurityScope
-                | NSURLBookmarkResolutionOptions::WithoutUI
-                | NSURLBookmarkResolutionOptions::WithoutMounting,
+            RESOLUTION,
             None,
             &mut stale,
         )
@@ -82,9 +93,11 @@ pub fn activate(bookmark: &[u8]) -> Result<Live, Failure> {
         .path()
         .map(|path| path.to_string())
         .ok_or_else(|| Failure::Broken("bookmark resolved to no path".into()))?;
-    // never stopped: the core inherits the scope and would lose it too
+    // never stopped: the core reads the folder for as long as the app runs
     if !unsafe { url.startAccessingSecurityScopedResource() } {
-        return Err(Failure::Denied(format!("macOS refused access to {path}")));
+        return Err(Failure::Denied(format!(
+            "the system refused access to {path}"
+        )));
     }
     let bookmark = if stale.as_bool() {
         mint_url(&url).unwrap_or_else(|_| bookmark.to_vec())

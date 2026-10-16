@@ -75,10 +75,12 @@ extension Exporter.Plan {
                 file: image, edit: image.edit,
                 quality: Double(quality) / 100, to: target,
                 decoderVersion: decoderVersion)
-            if image.rating > 0 {
-                try? ExifTool.shared.write(
-                    ["-overwrite_original", "-XMP:Rating=\(image.rating)", target.path])
-            }
+            #if os(macOS)
+                if image.rating > 0 {
+                    try? ExifTool.shared.write(
+                        ["-overwrite_original", "-XMP:Rating=\(image.rating)", target.path])
+                }
+            #endif
         }
     }
 }

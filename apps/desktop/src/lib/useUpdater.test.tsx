@@ -1,4 +1,6 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { Toaster, toast } from "sonner";
 import { afterEach, expect, it, vi } from "vitest";
 import { useUpdater } from "./useUpdater";
@@ -21,16 +23,25 @@ function Updater({ blockedReason }: { blockedReason: string | null }) {
   return <Toaster />;
 }
 
+function withQueries() {
+  const client = new QueryClient();
+  return ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+}
+
 it("Install checks the block when clicked and keeps the reason on screen", async () => {
   vi.stubEnv("PROD", true);
-  invoke.mockResolvedValue(true);
+  invoke.mockResolvedValue({ updater: true, zipExport: true });
   const update = {
     version: "2.0.0",
     close: vi.fn(),
     downloadAndInstall: vi.fn(),
   };
   findUpdate.mockResolvedValue(update);
-  const { rerender } = render(<Updater blockedReason={null} />);
+  const { rerender } = render(<Updater blockedReason={null} />, {
+    wrapper: withQueries(),
+  });
   const installButton = await screen.findByRole("button", { name: "Install" });
 
   rerender(<Updater blockedReason="Finish the running job first" />);
@@ -44,7 +55,7 @@ it("Install checks the block when clicked and keeps the reason on screen", async
 
 it("Install drops the button once the download starts", async () => {
   vi.stubEnv("PROD", true);
-  invoke.mockResolvedValue(true);
+  invoke.mockResolvedValue({ updater: true, zipExport: true });
   const update = {
     version: "2.0.0",
     close: vi.fn(),
@@ -57,7 +68,7 @@ it("Install drops the button once the download starts", async () => {
     ),
   };
   findUpdate.mockResolvedValue(update);
-  render(<Updater blockedReason={null} />);
+  render(<Updater blockedReason={null} />, { wrapper: withQueries() });
 
   fireEvent.click(await screen.findByRole("button", { name: "Install" }));
   await screen.findByText("Downloading update… 40%");

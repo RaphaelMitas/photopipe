@@ -59,6 +59,14 @@ For the app icon, set `CFBundleIconFile` to `Photopipe`. If you want the icon to
 follow appearance on macOS 14+, ship both and swap `NSApp.applicationIconImage`
 when the appearance changes.
 
+## ios/
+
+    icon.svg                1024 full bleed, no corners: iOS applies its own mask
+    icon-1024.png           opaque raster; the App Store rejects an icon with alpha
+
+The iPad app's icon set in `apps/desktop/src-tauri/gen/apple` is rendered from
+`icon.svg` with `rsvg-convert`, one file per size in its `Contents.json`.
+
 ## web/
 
     favicon.svg, favicon.ico (16/32/48/64), apple-touch-icon.png,
