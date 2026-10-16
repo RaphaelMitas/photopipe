@@ -527,7 +527,6 @@ export const useSetRating = (shoot: string | null) =>
 export const useSetEdit = (shoot: string | null) =>
   useFieldWrite(shoot, EDIT_FIELD);
 
-/// `first` is written before the rest, which are only sent once it lands.
 export type Batch<V> = { values: Map<string, V>; first?: string };
 
 export type BatchResult = {
@@ -562,6 +561,11 @@ function useBatchWrite<V>(shoot: string | null, field: PhotoField<V>) {
 
       const failed: string[] = [];
       let overtaken = 0;
+      const revert = (path: string) => {
+        const before = previous.get(path);
+        if (before !== undefined)
+          patchImage(queryClient, target, path, field.patch(before));
+      };
       const write = async (path: string, value: V) => {
         // Changed by hand since the batch started: that value is newer. A
         // refetch putting the old value back is not a hand change.
@@ -579,26 +583,19 @@ function useBatchWrite<V>(shoot: string | null, field: PhotoField<V>) {
           await writeField(queryClient, target, path, field, value);
         } catch {
           failed.push(path);
-          if (before !== undefined) {
-            patchImage(queryClient, target, path, field.patch(before));
-          }
+          revert(path);
         }
       };
-      const head = first === undefined ? undefined : values.get(first);
-      if (first !== undefined && head !== undefined) await write(first, head);
-      const rest = [...values].filter(([path]) => path !== first);
+      const entries = [...values];
+      const head = entries.find(([path]) => path === first);
+      if (head) await write(...head);
+      const rest = entries.filter((entry) => entry !== head);
       let unsent = 0;
       if (failed.length > 0) {
         unsent = rest.length;
         for (const [path, value] of rest) {
           const now = live(path);
-          const before = previous.get(path);
-          if (
-            before !== undefined &&
-            now !== undefined &&
-            field.same(now, value)
-          )
-            patchImage(queryClient, target, path, field.patch(before));
+          if (now !== undefined && field.same(now, value)) revert(path);
         }
       } else {
         const queue = rest.values();
@@ -614,7 +611,7 @@ function useBatchWrite<V>(shoot: string | null, field: PhotoField<V>) {
       }
       if (failed.length > 0) {
         markStale(queryClient, target);
-        toast.error(field.failedMany(failed.length), {
+        toast.error(field.failedMany(failed.length + unsent), {
           description: "Saving failed",
         });
       }

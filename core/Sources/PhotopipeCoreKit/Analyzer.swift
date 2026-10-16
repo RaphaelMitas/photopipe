@@ -30,8 +30,7 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
     private var generation = 0
     /// Our own writes moved these mid-pass; answers are stamped with these, not the queued stamps.
     private var moved: [String: ImageFile] = [:]
-    /// Missing when read; answered for now so the pass can end, but kept off disk, since a dropped
-    /// drive looks the same and would write the whole shoot off for good.
+    /// Missing when read: answered so the pass ends, but never cached, since a dropped drive looks the same.
     private var gone: Set<String> = []
 
     public init(
@@ -75,10 +74,6 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
     public func restamp(_ before: ImageFile, to after: ImageFile) {
         lock.withLock {
             if !passes.isEmpty { moved[after.path] = after }
-            if gone.remove(after.path) != nil {
-                cache[after.path] = nil
-                return
-            }
             guard let row = cache[before.path], row.matches(before, version: version),
                 !row.matches(after, version: version)
             else { return }
@@ -103,9 +98,7 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
             .filter { FileManager.default.fileExists(atPath: $0.path) }
         return lock.withLock {
             if passes[shoot] != nil { return progressByShoot[shoot] ?? .idle }
-            for file in back where gone.remove(file.path) != nil {
-                cache[file.path] = nil
-            }
+            for file in back { gone.remove(file.path) }
             let pending = files.filter { !isAnswered($0) }
             guard !pending.isEmpty else {
                 return Progress(done: files.count, total: files.count, running: false)
@@ -141,9 +134,13 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
 
             lock.withLock {
                 guard generation == self.generation else { return }
-                cache[file.path] = Row(
-                    value: value, for: moved[file.path] ?? file, version: version)
-                if missing { gone.insert(file.path) } else { buffer.append(file.path) }
+                if missing {
+                    gone.insert(file.path)
+                } else {
+                    cache[file.path] = Row(
+                        value: value, for: moved[file.path] ?? file, version: version)
+                    buffer.append(file.path)
+                }
                 let done = answeredCount(pending) + (total - pending.count)
                 progressByShoot[shoot] = Progress(done: done, total: total, running: true)
                 if buffer.count >= flushEvery { flush?(drain()) }
@@ -166,7 +163,7 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
 
     /// Caller holds the lock.
     private func isAnswered(_ file: ImageFile) -> Bool {
-        cache[file.path]?.matches(file, version: version) == true
+        gone.contains(file.path) || cache[file.path]?.matches(file, version: version) == true
     }
 }
 

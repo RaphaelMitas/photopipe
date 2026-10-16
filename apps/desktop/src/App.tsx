@@ -377,7 +377,7 @@ export default function App() {
   const loupePhoto = loupeOpen ? loupeImage : null;
 
   const toggleStacks = useCallback(() => stacksPref.set(!stacksPref.get()), []);
-  // stacks arriving or an import can regroup you onto a frame that is not the cover, which is inside
+  // stacks arriving or an import can regroup you onto a non-cover frame, which means inside
   const membership = currentStack?.frames.map((frame) => frame.path).join("\n");
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a change in who is in the stack re-decides
   useEffect(() => {
@@ -417,7 +417,7 @@ export default function App() {
       path,
     );
     setInsideAnchor(null);
-    void (written ?? Promise.resolve()).then(
+    void written.then(
       () =>
         toast(`Picked ${fileName(path)}`, {
           id: "pick",

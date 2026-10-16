@@ -82,7 +82,7 @@ export function useRecordedWrites(shoot: string | null) {
       detail: string,
       keep?: string,
     ) => {
-      if (values.size === 0) return;
+      if (values.size === 0) return Promise.resolve();
       const written = landed(setRatings({ values, first: keep }));
       void written.catch(() => {});
       void ratings.record(
