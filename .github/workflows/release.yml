@@ -173,9 +173,8 @@ jobs:
 
           codesign --verify --strict --verbose=2 "$APP"
 
-      # stapler's HTTP/3 to CloudKit drops on hosted runners; blocking UDP 443
-      # makes it use TCP (actions/runner-images#14924).
-      - name: Work around the stapler network drop
+      # stapler's HTTP/3 to CloudKit drops on hosted runners (actions/runner-images#14924)
+      - name: Force stapler onto TCP by blocking UDP 443
         run: |
           echo "block return out quick proto udp from any to any port 443" | sudo pfctl -f -
           sudo pfctl -E
@@ -465,9 +464,9 @@ jobs:
         with:
           ref: ${{ needs.check.outputs.ref }}
       - uses: ./.github/actions/setup-desktop
-      # The store takes iPad uploads only from the Xcode 26 SDK, and the Tauri
-      # CLI runs xcodebuild without DEVELOPER_DIR, so it has to be the default.
-      - run: sudo xcode-select -s /Applications/Xcode_26.2.app
+      # The store's minimum iPad SDK; the Tauri CLI drops DEVELOPER_DIR, so only the default reaches xcodebuild.
+      - name: Make Xcode 26 the default
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app
 
       # Everything that runs third-party build code happens here, with no secrets.
       - name: Build the iPad app

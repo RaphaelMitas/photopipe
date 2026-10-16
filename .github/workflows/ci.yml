@@ -66,22 +66,6 @@ jobs:
       - name: Clippy, store flavour (deny warnings)
         working-directory: apps/desktop/src-tauri
         run: cargo clippy --all-targets --no-default-features -- -D warnings
-      # The SDK the release builds the iPad app with, so CI compiles against what ships.
-      - name: Clippy, iPad simulator (deny warnings)
-        working-directory: apps/desktop/src-tauri
-        env:
-          DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
-        run: |
-          rustup target add aarch64-apple-ios-sim
-          cargo clippy --target aarch64-apple-ios-sim -- -D warnings
-      # clippy compiles the Swift core for iOS; only the Xcode build links it into the app.
-      # Tauri runs xcodebuild without DEVELOPER_DIR, so switch, then back for the Mac bundle.
-      - name: Build the iPad app for the simulator
-        run: |
-          DEFAULT=$(xcode-select -p)
-          sudo xcode-select -s /Applications/Xcode_26.2.app
-          pnpm --filter desktop tauri ios build --debug --target aarch64-sim
-          sudo xcode-select -s "$DEFAULT"
       - name: Cargo tests (against the linked core)
         working-directory: apps/desktop/src-tauri
         run: cargo test
@@ -92,3 +76,14 @@ jobs:
         run: pnpm --filter desktop tauri build --bundles app
       - name: Smoke test the bundle
         run: ./scripts/smoke-bundle.sh
+      # The release's iPad SDK, switched last so the Mac steps above keep the image default like the release.
+      - name: Make Xcode 26 the default
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app
+      - name: Clippy, iPad simulator (deny warnings)
+        working-directory: apps/desktop/src-tauri
+        run: |
+          rustup target add aarch64-apple-ios-sim
+          cargo clippy --target aarch64-apple-ios-sim -- -D warnings
+      # clippy compiles the Swift core for iOS; only the Xcode build links it into the app
+      - name: Build the iPad app for the simulator
+        run: pnpm --filter desktop tauri ios build --debug --target aarch64-sim
