@@ -18,7 +18,7 @@ import type { ImageFile, PassProgress } from "@/lib/core";
 import { fileName } from "@/lib/fileName";
 import { instinctScore } from "@/lib/instinct";
 import { sortImages } from "@/lib/sort";
-import { type Stack, stackRatingLabel } from "@/lib/stacks";
+import type { Stack } from "@/lib/stacks";
 import { filmstripPref } from "./Filmstrip";
 import { type RatingFilter, RatingFilterGroup } from "./RatingFilter";
 import { SidebarBrandHeader } from "./SidebarBrandHeader";
@@ -125,7 +125,7 @@ export function LoupeSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {stacks.current && <StackGroup stack={stacks.current.stack} />}
+        {stacks.current && <InstinctPick stack={stacks.current.stack} />}
 
         <SidebarGroup>
           <SidebarGroupLabel>View</SidebarGroupLabel>
@@ -187,24 +187,15 @@ const finding = (progress: PassProgress | null) =>
     ? ` · ${Math.floor((progress.done / progress.total) * 100)}%`
     : "…";
 
-function StackGroup({ stack }: { stack: Stack }) {
+function InstinctPick({ stack }: { stack: Stack }) {
   const [instinct] = sortImages(stack.frames, "score");
-  const rows: [string, string][] = [
-    ["frames", String(stack.frames.length)],
-    ["rating", stackRatingLabel(stack) ?? "none yet"],
-  ];
-  if (instinct.score !== null)
-    rows.push(["Instinct's pick", fileName(instinct.path)]);
+  if (instinct.score === null) return null;
   return (
     <SidebarGroup data-testid="stack-group">
       <SidebarGroupLabel>Stack</SidebarGroupLabel>
-      <SidebarGroupContent className="flex flex-col gap-1 px-2 py-1 font-mono text-xs">
-        {rows.map(([label, value]) => (
-          <div key={label} className="flex justify-between gap-2">
-            <span className="text-muted-foreground">{label}</span>
-            <span className="truncate">{value}</span>
-          </div>
-        ))}
+      <SidebarGroupContent className="flex justify-between gap-2 px-2 py-1 font-mono text-xs">
+        <span className="text-muted-foreground">Instinct's pick</span>
+        <span className="truncate">{fileName(instinct.path)}</span>
       </SidebarGroupContent>
     </SidebarGroup>
   );

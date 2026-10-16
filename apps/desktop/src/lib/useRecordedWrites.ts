@@ -36,15 +36,13 @@ export function useRecordedWrites(shoot: string | null) {
   const ratings = useMemo(
     () =>
       historyChannel((values: Map<string, number>) =>
-        landed(setRatings({ values })),
+        landed(setRatings(values)),
       ),
     [setRatings],
   );
   const edits = useMemo(
     () =>
-      historyChannel((values: Map<string, Edit>) =>
-        landed(pasteEdits({ values })),
-      ),
+      historyChannel((values: Map<string, Edit>) => landed(pasteEdits(values))),
     [pasteEdits],
   );
 
@@ -73,17 +71,15 @@ export function useRecordedWrites(shoot: string | null) {
   );
 
   /// `before` has to be read, not placeholder, ratings: undo writes them back.
-  /// The rest wait for `keep` to land, so a failed keep cannot leave only the clears.
   const rateMany = useCallback(
     (
       values: Map<string, number>,
       before: Map<string, number>,
       label: string,
       detail: string,
-      keep?: string,
     ) => {
       if (values.size === 0) return Promise.resolve();
-      const written = landed(setRatings({ values, first: keep }));
+      const written = landed(setRatings(values));
       void written.catch(() => {});
       void ratings.record(
         { icon: Star, label, detail, paths: [...values.keys()], written },
@@ -116,7 +112,7 @@ export function useRecordedWrites(shoot: string | null) {
 
   const paste = useCallback(
     (pasted: Map<string, Edit>): Promise<BatchResult> => {
-      const batch = pasteEdits({ values: pasted });
+      const batch = pasteEdits(pasted);
       // Recorded up front: ⌘Z during a long paste has to mean this paste.
       void edits.record(
         {

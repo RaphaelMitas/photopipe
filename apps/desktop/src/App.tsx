@@ -414,7 +414,6 @@ export default function App() {
       read.before,
       "Pick",
       fileName(path),
-      path,
     );
     setInsideAnchor(null);
     void written.then(
@@ -426,10 +425,6 @@ export default function App() {
         }),
       () => {},
     );
-  };
-  const closeLoupe = () => {
-    setLoupeOpen(false);
-    setInsideAnchor(null);
   };
   const rateShown = (path: string, rating: number) =>
     currentStack && multiFrame && !insideStack
@@ -682,7 +677,6 @@ export default function App() {
     if (shoot) scan.refresh();
     setCurrentPath(null);
     setLoupeOpen(false);
-    setInsideAnchor(null);
     filter.reset();
     selection.clear();
   };
@@ -752,7 +746,7 @@ export default function App() {
       }
       onEditChange={(edit) => changeEdit(loupePhoto, edit)}
       onNavigate={(path) => visit(path, loupeStacks)}
-      onClose={closeLoupe}
+      onClose={() => setLoupeOpen(false)}
       onRate={rateShown}
     />
   ) : (
@@ -770,7 +764,7 @@ export default function App() {
       onOpen={(index) => {
         // A new visit walks the browser's order as it stands now.
         held.current = NO_HELD;
-        // an undo in the grid or ⌘E can leave an anchor behind, so opening decides it fresh
+        // closing, a grid undo or a shoot switch can leave an anchor behind, so opening decides it fresh
         const path = filteredImages[index]?.path ?? null;
         setCurrentPath(path);
         setInsideAnchor(
@@ -813,11 +807,7 @@ export default function App() {
             image={loupeImage}
             position={
               loupeStacks && currentStack
-                ? `stack ${loupeStacks.indexOf(currentStack) + 1}/${loupeStacks.length}${
-                    insideStack
-                      ? ` · frame ${currentStack.frames.indexOf(loupeImage) + 1}/${currentStack.frames.length}`
-                      : ""
-                  }`
+                ? `stack ${loupeStacks.indexOf(currentStack) + 1}/${loupeStacks.length}`
                 : `${loupeIndex + 1}/${loupeImages.length}`
             }
             stacks={{
@@ -837,7 +827,9 @@ export default function App() {
             filter={filter}
             ratingCounts={counts}
             onRate={rateShown}
-            onBackToGrid={() => (cropping ? crop.cancel() : closeLoupe())}
+            onBackToGrid={() =>
+              cropping ? crop.cancel() : setLoupeOpen(false)
+            }
           />
         ) : (
           <AppSidebar
