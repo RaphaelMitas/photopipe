@@ -29,7 +29,7 @@ export type SidebarStacks = {
   progress: PassProgress | null;
   ready: boolean;
   onToggle: () => void;
-  /// The stack you are at, once stacks are ready and it holds more than one photo.
+  /// Null until stacks are ready, and for a photo that stands alone.
   current: { stack: Stack; inside: boolean } | null;
 };
 

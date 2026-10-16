@@ -24,12 +24,11 @@ public struct Thumbnailer: Sendable {
         cache.url(forKey: "\(file.path)|\(file.mtime)|\(file.size)|\(maxPixel)")
     }
 
-    /// `always` decodes the full image instead of settling for an embedded thumbnail.
-    static func image(from source: CGImageSource, maxPixel: Int, always: Bool = false) -> CGImage? {
+    static func image(from source: CGImageSource, maxPixel: Int, decodeFull: Bool = false) -> CGImage? {
         CGImageSourceCreateThumbnailAtIndex(
             source, 0,
             [
-                always
+                decodeFull
                     ? kCGImageSourceCreateThumbnailFromImageAlways
                     : kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
                 kCGImageSourceThumbnailMaxPixelSize: maxPixel,

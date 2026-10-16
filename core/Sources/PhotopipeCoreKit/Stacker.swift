@@ -38,7 +38,7 @@ extension Analyzer where Value == Print {
         let size = Stacker.previewSize
         guard let embedded = Thumbnailer.image(from: source, maxPixel: size) else { return nil }
         if max(embedded.width, embedded.height) >= size { return embedded }
-        return Thumbnailer.image(from: source, maxPixel: size, always: true) ?? embedded
+        return Thumbnailer.image(from: source, maxPixel: size, decodeFull: true) ?? embedded
     }
 
     private static func floats(_ observation: FeaturePrintObservation) -> [Float] {

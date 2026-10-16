@@ -1,5 +1,6 @@
 import type { ImageFile } from "./core";
 import { flagPref } from "./pref";
+import { type SortKey, sortImages } from "./sort";
 
 export const stacksPref = flagPref("photopipe.stacks", "on", "off", false);
 
@@ -87,11 +88,12 @@ export function pickInStack(stack: Stack, path: string) {
 }
 
 export function stackedOrder(
-  sorted: ImageFile[],
+  images: ImageFile[],
   matches: (image: { rating: number }) => boolean,
+  sort: SortKey,
   current?: ImageFile,
 ): ImageFile[] {
-  return groupStacks(sorted)
+  return groupStacks(sortImages(images, sort))
     .filter(
       (stack) =>
         matches({ rating: stackRating(stack) }) ||

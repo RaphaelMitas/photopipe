@@ -98,11 +98,13 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
 
     @discardableResult
     public func start(shoot: String, files: [ImageFile]) -> Progress {
-        lock.withLock {
+        // off the lock, so a slow volume cannot stall listing and writes
+        let back = lock.withLock { files.filter { gone.contains($0.path) } }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+        return lock.withLock {
             if passes[shoot] != nil { return progressByShoot[shoot] ?? .idle }
-            for path in gone where FileManager.default.fileExists(atPath: path) {
-                gone.remove(path)
-                cache[path] = nil
+            for file in back where gone.remove(file.path) != nil {
+                cache[file.path] = nil
             }
             let pending = files.filter { !isAnswered($0) }
             guard !pending.isEmpty else {
@@ -133,6 +135,7 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
             (file, await analyze(file.path))
         } onResult: { answered, cancelled in
             let (file, value) = answered
+            // Vision reports a cancelled read like an unreadable file; recording it would write it off.
             if value == nil && cancelled { return }
             let missing = value == nil && !FileManager.default.fileExists(atPath: file.path)
 

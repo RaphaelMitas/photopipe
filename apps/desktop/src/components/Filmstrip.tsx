@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { ImageFile } from "@/lib/core";
 import { pref } from "@/lib/pref";
 import type { Stack } from "@/lib/stacks";
+import type { LoupeStacks } from "./Loupe";
 import { aspectRatio, Thumbnail } from "./Thumbnail";
 
 export type FilmstripMode = "off" | "thumbs" | "ratings";
@@ -29,7 +30,7 @@ type Props = {
   images: ImageFile[];
   index: number;
   mode: Exclude<FilmstripMode, "off">;
-  stacks: { list: Stack[]; current: Stack; inside: boolean } | null;
+  stacks: Pick<LoupeStacks, "list" | "current" | "inside"> | null;
   onNavigate: (path: string) => void;
 };
 

@@ -151,7 +151,7 @@ describe("useSetRatings", () => {
       { ...image("D"), rating: 1 },
       { ...image("E"), rating: 1 },
     ]);
-    ratings.mutate(new Map(paths.map((path) => [path, 5])));
+    ratings.mutate({ values: new Map(paths.map((path) => [path, 5])) });
     // Four workers hold A to D; E is still queued when it is rated by hand.
     await waitFor(() => expect(release.length).toBe(4));
     client.setQueryData<ImageFile[]>(["images", "shoot1"], (old) =>
@@ -195,12 +195,12 @@ describe("usePasteEdits", () => {
     );
 
     const look: Edit = { ...identityEdit, exposure: 1.5 };
-    mutation.mutate(
-      new Map([
+    mutation.mutate({
+      values: new Map([
         ["/r/shoot1/A.ARW", look],
         ["/r/shoot1/B.ARW", look],
       ]),
-    );
+    });
 
     await waitFor(() => expect(mutation.isSuccess).toBe(true));
     const images = client.getQueryData<ImageFile[]>(["images", "shoot1"]);
@@ -239,9 +239,9 @@ describe("usePasteEdits", () => {
     );
 
     const look: Edit = { ...identityEdit, exposure: 1.5 };
-    mutation.mutate(
-      new Map(names.map((name) => [`/r/shoot1/${name}.ARW`, look])),
-    );
+    mutation.mutate({
+      values: new Map(names.map((name) => [`/r/shoot1/${name}.ARW`, look])),
+    });
     // Four workers, six photos: F is still queued.
     await waitFor(() => expect(written.length).toBe(4));
 
@@ -303,9 +303,9 @@ describe("edit writes to one photo", () => {
       path: "/r/shoot1/A.ARW",
       value: { ...identityEdit, exposure: 1 },
     });
-    paste.mutate(
-      new Map([["/r/shoot1/A.ARW", { ...identityEdit, exposure: 2 }]]),
-    );
+    paste.mutate({
+      values: new Map([["/r/shoot1/A.ARW", { ...identityEdit, exposure: 2 }]]),
+    });
 
     await waitFor(() => expect(gate.length).toBe(1));
     gate[0]({ edit: identityEdit });
@@ -675,7 +675,7 @@ describe("useSetRating", () => {
     );
     await waitFor(() => expect(listed).toBe(1));
 
-    const batched = batch.mutateAsync(new Map([["/r/s/C.ARW", 4]]));
+    const batched = batch.mutateAsync({ values: new Map([["/r/s/C.ARW", 4]]) });
     await waitFor(() => expect(held.length).toBe(1));
     shoot1 = [shoot1[0], { ...shoot1[1], rating: 5 }];
     void client.invalidateQueries({ queryKey: ["images", "shoot1"] });
@@ -766,8 +766,12 @@ describe("useSetRating", () => {
       expect(client.getQueryData(["images", "shoot1"])).toBeDefined(),
     );
 
-    const first = batch.mutateAsync(new Map([["/r/shoot1/A.ARW", 3]]));
-    const second = batch.mutateAsync(new Map([["/r/shoot1/A.ARW", 4]]));
+    const first = batch.mutateAsync({
+      values: new Map([["/r/shoot1/A.ARW", 3]]),
+    });
+    const second = batch.mutateAsync({
+      values: new Map([["/r/shoot1/A.ARW", 4]]),
+    });
     let settled = false;
     void Promise.all([first, second]).then(() => {
       settled = true;

@@ -527,6 +527,9 @@ export const useSetRating = (shoot: string | null) =>
 export const useSetEdit = (shoot: string | null) =>
   useFieldWrite(shoot, EDIT_FIELD);
 
+/// `first` is written before the rest, which are only sent once it lands.
+export type Batch<V> = { values: Map<string, V>; first?: string };
+
 export type BatchResult = {
   written: number;
   failed: string[];
@@ -542,7 +545,7 @@ function useBatchWrite<V>(shoot: string | null, field: PhotoField<V>) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: field.mutationKey,
-    mutationFn: async (values: Map<string, V>): Promise<BatchResult> => {
+    mutationFn: async ({ values, first }: Batch<V>): Promise<BatchResult> => {
       // A long batch outlives its shoot, so it keeps the one it started with.
       const target = shoot;
       const live = (path: string) =>
@@ -557,39 +560,58 @@ function useBatchWrite<V>(shoot: string | null, field: PhotoField<V>) {
       }
       patchImages(queryClient, target, patches);
 
-      const queue = values.entries();
       const failed: string[] = [];
       let overtaken = 0;
-      const worker = async () => {
-        for (const [path, value] of queue) {
-          // Changed by hand since the batch started: that value is newer. A
-          // refetch putting the old value back is not a hand change.
-          const now = live(path);
-          const before = previous.get(path);
-          const untouched =
-            now === undefined ||
-            field.same(now, value) ||
-            (before !== undefined && field.same(now, before));
-          if (!untouched) {
-            overtaken += 1;
-            continue;
-          }
-          try {
-            await writeField(queryClient, target, path, field, value);
-          } catch {
-            failed.push(path);
-            if (before !== undefined) {
-              patchImage(queryClient, target, path, field.patch(before));
-            }
+      const write = async (path: string, value: V) => {
+        // Changed by hand since the batch started: that value is newer. A
+        // refetch putting the old value back is not a hand change.
+        const now = live(path);
+        const before = previous.get(path);
+        const untouched =
+          now === undefined ||
+          field.same(now, value) ||
+          (before !== undefined && field.same(now, before));
+        if (!untouched) {
+          overtaken += 1;
+          return;
+        }
+        try {
+          await writeField(queryClient, target, path, field, value);
+        } catch {
+          failed.push(path);
+          if (before !== undefined) {
+            patchImage(queryClient, target, path, field.patch(before));
           }
         }
       };
-      await Promise.all(
-        Array.from(
-          { length: Math.min(BATCH_CONCURRENCY, values.size) },
-          worker,
-        ),
-      );
+      const head = first === undefined ? undefined : values.get(first);
+      if (first !== undefined && head !== undefined) await write(first, head);
+      const rest = [...values].filter(([path]) => path !== first);
+      let unsent = 0;
+      if (failed.length > 0) {
+        unsent = rest.length;
+        for (const [path, value] of rest) {
+          const now = live(path);
+          const before = previous.get(path);
+          if (
+            before !== undefined &&
+            now !== undefined &&
+            field.same(now, value)
+          )
+            patchImage(queryClient, target, path, field.patch(before));
+        }
+      } else {
+        const queue = rest.values();
+        const worker = async () => {
+          for (const [path, value] of queue) await write(path, value);
+        };
+        await Promise.all(
+          Array.from(
+            { length: Math.min(BATCH_CONCURRENCY, rest.length) },
+            worker,
+          ),
+        );
+      }
       if (failed.length > 0) {
         markStale(queryClient, target);
         toast.error(field.failedMany(failed.length), {
@@ -598,7 +620,7 @@ function useBatchWrite<V>(shoot: string | null, field: PhotoField<V>) {
       }
       releaseImages(queryClient);
       return {
-        written: values.size - failed.length - overtaken,
+        written: values.size - failed.length - overtaken - unsent,
         failed,
         overtaken,
       };

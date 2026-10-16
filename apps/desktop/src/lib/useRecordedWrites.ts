@@ -36,13 +36,15 @@ export function useRecordedWrites(shoot: string | null) {
   const ratings = useMemo(
     () =>
       historyChannel((values: Map<string, number>) =>
-        landed(setRatings(values)),
+        landed(setRatings({ values })),
       ),
     [setRatings],
   );
   const edits = useMemo(
     () =>
-      historyChannel((values: Map<string, Edit>) => landed(pasteEdits(values))),
+      historyChannel((values: Map<string, Edit>) =>
+        landed(pasteEdits({ values })),
+      ),
     [pasteEdits],
   );
 
@@ -81,15 +83,7 @@ export function useRecordedWrites(shoot: string | null) {
       keep?: string,
     ) => {
       if (values.size === 0) return;
-      const kept = keep === undefined ? undefined : values.get(keep);
-      const rest = new Map(values);
-      if (keep !== undefined) rest.delete(keep);
-      const written =
-        keep === undefined || kept === undefined
-          ? landed(setRatings(values))
-          : landed(setRatings(new Map([[keep, kept]]))).then(async () => {
-              if (rest.size > 0) await setRatings(rest);
-            });
+      const written = landed(setRatings({ values, first: keep }));
       void written.catch(() => {});
       void ratings.record(
         { icon: Star, label, detail, paths: [...values.keys()], written },
@@ -122,7 +116,7 @@ export function useRecordedWrites(shoot: string | null) {
 
   const paste = useCallback(
     (pasted: Map<string, Edit>): Promise<BatchResult> => {
-      const batch = pasteEdits(pasted);
+      const batch = pasteEdits({ values: pasted });
       // Recorded up front: ⌘Z during a long paste has to mean this paste.
       void edits.record(
         {

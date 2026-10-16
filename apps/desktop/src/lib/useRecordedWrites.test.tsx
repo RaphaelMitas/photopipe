@@ -103,6 +103,44 @@ describe("useRecordedWrites", () => {
     expect(historyState().entries).toEqual([]);
   });
 
+  it("leaves a rating typed while the pick's keep writes alone", async () => {
+    const KEEP = "/r/shoot1/B.ARW";
+    let land = () => {};
+    invoke.mockImplementation(async (_command, { method, params }) => {
+      if (method === "setRating" && params.path === KEEP)
+        await new Promise<void>((resolve) => {
+          land = resolve;
+        });
+      return {};
+    });
+    const { result } = setup();
+    let pick: Promise<void> | undefined;
+    act(() => {
+      pick = result.current.rateMany(
+        new Map([
+          [PATH, 0],
+          [KEEP, 5],
+        ]),
+        new Map([
+          [PATH, 2],
+          [KEEP, 0],
+        ]),
+        "Pick",
+        "B.ARW",
+        KEEP,
+      );
+    });
+    await waitFor(() => expect(written("setRating")).toHaveLength(1));
+    act(() => result.current.rate(PATH, 4));
+    land();
+    await act(() => pick);
+    expect(
+      written("setRating")
+        .filter((params) => params.path === PATH)
+        .map((params) => params.rating),
+    ).toEqual([4]);
+  });
+
   it("names an edit after the setting that moved", async () => {
     const { result } = setup();
     act(() =>

@@ -80,7 +80,7 @@ import {
   toRootError,
 } from "@/lib/roots";
 import { useSelection } from "@/lib/selection";
-import { browserOrder, sortImages, sortPref } from "@/lib/sort";
+import { browserOrder, sortPref } from "@/lib/sort";
 import {
   anchorFor,
   coverOf,
@@ -341,13 +341,12 @@ export default function App() {
     (openImage !== undefined && !held.current.paths.includes(openImage.path));
 
   const loupeImages = useMemo(() => {
-    const live = stacksOn
-      ? stackedOrder(
-          sortImages(allImages, activeSort),
-          filter.matches,
-          openImage,
-        )
-      : browserOrder(allImages, filter.matches, activeSort, openImage);
+    const live = (stacksOn ? stackedOrder : browserOrder)(
+      allImages,
+      filter.matches,
+      activeSort,
+      openImage,
+    );
     if (!openImage || reorder) return live;
     const order = heldOrder(held.current.paths, live, openImage);
     // holding can slot a newcomer beside the wrong held photo; regrouping puts it back in its stack
@@ -378,8 +377,7 @@ export default function App() {
   const loupePhoto = loupeOpen ? loupeImage : null;
 
   const toggleStacks = useCallback(() => stacksPref.set(!stacksPref.get()), []);
-  // The stack you are on can change without you moving: stacks arrive, or an import regroups
-  // it. Standing on a frame that is no longer its cover then means you are inside it.
+  // stacks arriving or an import can regroup you onto a frame that is not the cover, which is inside
   const membership = currentStack?.frames.map((frame) => frame.path).join("\n");
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a change in who is in the stack re-decides
   useEffect(() => {

@@ -53,3 +53,19 @@ test("opening a frame that is not its stack's cover starts inside the stack", as
   await expect(page.getByTestId("stack-chip")).toContainText("5 frames");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC01206.ARW");
 });
+
+test("tapping the stack chip goes in and out, even zoomed in", async ({
+  page,
+}) => {
+  await openShoot(page, "2026-08-01_dolomites");
+  await page.locator("[data-path='DSC01200.ARW']").click();
+  await page.keyboard.press("s");
+  await expect(page.getByTestId("stack-chip")).toContainText("3 frames");
+  await page.getByTestId("loupe").dblclick({ position: { x: 400, y: 300 } });
+  await expect(page.getByTestId("zoom-navigator")).toBeVisible();
+
+  await page.getByTestId("stack-chip").click();
+  await expect(page.getByTestId("stack-chip")).toContainText("Inside stack");
+  await page.getByTestId("stack-chip").click();
+  await expect(page.getByTestId("stack-chip")).toContainText("3 frames");
+});

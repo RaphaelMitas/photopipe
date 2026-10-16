@@ -93,7 +93,7 @@ describe("stackedOrder", () => {
       frame("a2.arw"),
       makeImage("solo.arw", { rating: 1 }),
     ];
-    expect(rels(stackedOrder(images, atLeastFour))).toEqual([
+    expect(rels(stackedOrder(images, atLeastFour, "name"))).toEqual([
       "a1.arw",
       "a2.arw",
     ]);
@@ -101,7 +101,7 @@ describe("stackedOrder", () => {
 
   it("holds on to the stack you are in after it is rated out of the filter", () => {
     const images = [frame("a1.arw"), frame("a2.arw")];
-    expect(rels(stackedOrder(images, atLeastFour, images[1]))).toEqual([
+    expect(rels(stackedOrder(images, atLeastFour, "name", images[1]))).toEqual([
       "a1.arw",
       "a2.arw",
     ]);

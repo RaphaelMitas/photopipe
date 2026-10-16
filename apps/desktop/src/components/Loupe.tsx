@@ -482,6 +482,12 @@ export function Loupe({
   );
 }
 
+// a zoomed stage captures the pointer on press, which would swallow the click
+const ownTap = {
+  onPointerDown: (event: React.PointerEvent) => event.stopPropagation(),
+  onDoubleClick: (event: React.MouseEvent) => event.stopPropagation(),
+};
+
 function StackOverlay({ stacks, path }: { stacks: LoupeStacks; path: string }) {
   const { frames } = stacks.current;
   const rating = stackRating(stacks.current);
@@ -492,6 +498,7 @@ function StackOverlay({ stacks, path }: { stacks: LoupeStacks; path: string }) {
       <button
         type="button"
         data-testid="stack-chip"
+        {...ownTap}
         onClick={stacks.inside ? stacks.onLeave : stacks.onEnter}
         className="absolute top-3 left-3 flex items-center gap-2 rounded-md border border-border bg-background/85 px-2.5 py-1 font-mono text-[11px] backdrop-blur-sm"
       >
@@ -515,6 +522,7 @@ function StackOverlay({ stacks, path }: { stacks: LoupeStacks; path: string }) {
         <button
           type="button"
           data-testid="stack-pick"
+          {...ownTap}
           onClick={stacks.onPick}
           className="absolute bottom-4 left-1/2 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2.5 rounded-lg border border-primary/60 bg-background/95 py-1.5 pr-1.5 pl-3 text-sm shadow-lg backdrop-blur-sm"
         >
