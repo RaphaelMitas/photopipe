@@ -179,29 +179,31 @@ What's New is written per release by `scripts/whats-new.sh`: the `feat:` and
 `fix:` subjects since the previous tag that touch `apps/desktop` or `core`,
 so a commit subject is also a line in the store.
 
-The iPad shares the record. The `ipad` job builds and signs it with
-`tauri ios build --export-method app-store-connect`, handing the CLI
-`MAS_CERTIFICATE`'s Apple Distribution identity and `IOS_PROVISIONING_PROFILE`
-(base64 iOS App Store profile), and uploads the ipa to TestFlight. Its build
-number goes in through `bundle.iOS.bundleVersion`, because `--build-number`
-appends a fourth component the store refuses. `ipad-review` runs after
-`mas-review`, since both submit to one record, with
+The iPad shares the record. The `ipad` job builds and signs it with `tauri ios
+build --export-method app-store-connect`, handing the CLI `MAS_CERTIFICATE`'s
+Apple Distribution identity and `IOS_PROVISIONING_PROFILE` (base64 iOS App
+Store profile), and uploads the ipa to TestFlight. Its build number goes in
+through `bundle.iOS.bundleVersion`, because `--build-number` appends a fourth
+component the store refuses. The job selects Xcode 26, because the store takes
+iPad uploads only from its SDK, and builds before it signs, so no third-party
+build code runs with the certificate in its environment. `ipad-review` runs
+after `mas-review`, since both submit to one record, with
 `fastlane/ipad/description.txt` over the Mac description and
-`docs/screenshots/ipad`, whose 2732x2048 is the 13-inch iPad's. A platform's
-first version takes no What's New, so the iPad's first release goes without.
-Both review jobs share `.github/actions/store-review`. Each review step
-refuses to submit while the listing still says TODO or one of its URLs does
-not load; the build is in TestFlight by then, so nothing is lost. A version
-already waiting for review is pulled first, because Apple freezes it. The
-store build number is the workflow run number, not the semver, because App
-Store Connect refuses a number it has seen and a retry ships the same
-version. `gh workflow run release.yml -f submit_to_app_store=true` redoes
-only the store half from the tagged commit and leaves the DMG release
-untouched. What the API cannot set stays a one-time job in App Store
-Connect: price, age rating, the privacy questionnaire and the review
-contact. Set the contact before the first submission: deliver crashes with
-"No data" on a version that has none, and it stays out of the repo because
-the repo is public.
+`docs/screenshots/ipad`, whose 2732x2048 is the 13-inch iPad's. deliver leaves
+What's New out on a platform's first version, which has none. Both review jobs
+share `.github/actions/store-review`. Each review step refuses to submit while
+the listing still says TODO or one of its URLs does not load; the build is in
+TestFlight by then, so nothing is lost. A version already waiting for review
+is pulled first, because Apple freezes it. The store build number is the
+workflow run number, not the semver, because App Store Connect refuses a
+number it has seen and a retry ships the same version. `gh workflow run
+release.yml -f submit_to_app_store=true` redoes only the store half from the
+tagged commit and leaves the DMG release untouched. What the API cannot set
+stays a one-time job in App Store Connect: price, age rating, the privacy
+questionnaire and the review contact. Set the contact before the first
+submission, on each platform's version, the iPad's included: deliver crashes
+with "No data" on a version that has none, and it stays out of the repo
+because the repo is public.
 
 The Rust shell owns sandbox consent: it shows the
 folder panel, mints a security-scoped bookmark from the grant, keeps it in
@@ -252,9 +254,8 @@ which is the only step that links the core into it. Not there yet: watching
 the folder for changes, zip export (hidden through the `features` command),
 ratings and edits on anything but ARW (they are embedded, and only
 exiftool writes those), ratings in exported JPEGs, Reveal (hidden through
-`features`; the opener
-plugin's reveal-in-folder is desktop-only), and aesthetic scoring, which fails
-in the simulator.
+`features`; the opener plugin's reveal-in-folder is desktop-only), and
+aesthetic scoring, which fails in the simulator.
 
 ### Updates
 

@@ -49,11 +49,9 @@ runs:
         else
           cp docs/screenshots/*.png fastlane/screenshots/en-US/
         fi
-        PREVIOUS=$(git describe --tags --abbrev=0 "$TAG^")
-        # A platform's first version has no What's New, and the iPad's first is the first tag with its project.
-        if [ "$PLATFORM" = mac ] || git cat-file -e "$PREVIOUS:apps/desktop/src-tauri/gen/apple" 2>/dev/null; then
-          ./scripts/whats-new.sh "$PREVIOUS" "$TAG" > fastlane/metadata/en-US/release_notes.txt
-        fi
+        # deliver leaves it out on a platform's first version, which has no What's New.
+        ./scripts/whats-new.sh "$(git describe --tags --abbrev=0 "$TAG^")" "$TAG" \
+          > fastlane/metadata/en-US/release_notes.txt
 
     - name: Update the listing and submit for review
       shell: bash

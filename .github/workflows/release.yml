@@ -443,17 +443,28 @@ jobs:
     permissions:
       contents: read
     outputs:
-      build: ${{ steps.build.outputs.build }}
+      build: ${{ steps.sign.outputs.build }}
+    env:
+      # The store takes iPad uploads only from Xcode 26 and its SDK; the image defaults to 16.
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+      BUILD: ${{ github.run_number }}.${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.check.outputs.ref }}
       - uses: ./.github/actions/setup-desktop
 
-      # The Tauri CLI imports the certificate and installs the profile itself.
-      # MAS_CERTIFICATE's Apple Distribution identity signs iOS apps too.
-      - name: Build and sign the iPad app
-        id: build
+      # Everything that runs third-party build code happens here, with no secrets.
+      - name: Build the iPad app
+        run: |
+          pnpm --filter desktop tauri ios build --export-method app-store-connect --no-sign \
+            --config "{\"bundle\":{\"iOS\":{\"bundleVersion\":\"$BUILD\"}}}"
+
+      # The Tauri CLI imports the certificate into a keychain of its own and
+      # picks its codesigning identity, the Apple Distribution one. The frontend
+      # is already built, so its tooling never sees the certificate.
+      - name: Sign the iPad app
+        id: sign
         env:
           IOS_CERTIFICATE: ${{ secrets.MAS_CERTIFICATE }}
           IOS_CERTIFICATE_PASSWORD: ${{ secrets.MAS_CERTIFICATE_PASSWORD }}
@@ -466,10 +477,9 @@ jobs:
               exit 1
             fi
           done
-          # App Store Connect refuses a build number it has seen; same scheme as the Mac build.
-          BUILD="$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT"
+          rm -rf apps/desktop/src-tauri/gen/apple/build/arm64
           pnpm --filter desktop tauri ios build --export-method app-store-connect \
-            --config "{\"bundle\":{\"iOS\":{\"bundleVersion\":\"$BUILD\"}}}"
+            --config "{\"build\":{\"beforeBuildCommand\":null},\"bundle\":{\"iOS\":{\"bundleVersion\":\"$BUILD\"}}}"
           IPA=$(find "$PWD/apps/desktop/src-tauri/gen/apple/build" -name "*.ipa" | head -1)
           [ -n "$IPA" ] || { echo "::error::The build produced no .ipa."; exit 1; }
           echo "IPA=$IPA" >> $GITHUB_ENV

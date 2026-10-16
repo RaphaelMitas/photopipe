@@ -14,7 +14,6 @@ type Props = {
   onCopySettings: () => void;
   onPasteSettings: () => void;
   onExport: () => void;
-  /** Absent where the platform cannot reveal a file. */
   onReveal?: () => void;
   onDelete: () => void;
   onClear: () => void;

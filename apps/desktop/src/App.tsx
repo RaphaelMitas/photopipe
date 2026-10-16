@@ -186,7 +186,9 @@ export default function App() {
   );
   const writes = useRecordedWrites(openShoot);
   const reveal = useReveal();
-  const features = useFeatures();
+  const revealPaths = useFeatures().reveal
+    ? (paths: string[]) => reveal.mutate(paths)
+    : undefined;
   const trash = useTrash(openShoot);
   const exports = useExportJobs();
   const scan = useLibrarySync(ready, ready ? rootState.generation : null);
@@ -686,9 +688,7 @@ export default function App() {
             currentShoot={currentShoot}
             onBack={() => enterShoot(null)}
             onImport={runImport}
-            onRevealShoot={
-              features.reveal ? (path) => reveal.mutate([path]) : undefined
-            }
+            onRevealShoot={revealPaths && ((path) => revealPaths([path]))}
             onShootSettings={() => setShootSettings(openShoot)}
             filter={filter}
             ratingCounts={counts}
@@ -803,9 +803,8 @@ export default function App() {
             onPasteSettings={() => pasteSettings(pasteTargets)}
             onExport={() => setDrawerOpen(true)}
             onReveal={
-              features.reveal
-                ? () => reveal.mutate(selectedImages.map((image) => image.path))
-                : undefined
+              revealPaths &&
+              (() => revealPaths(selectedImages.map((image) => image.path)))
             }
             onDelete={() => {
               const paths = selectedImages.map((image) => image.path);
@@ -851,7 +850,7 @@ export default function App() {
                 onClearSelection={selection.clear}
                 onExport={runExport}
                 onCancel={exports.cancel}
-                onReveal={(path) => reveal.mutate([path])}
+                onReveal={revealPaths && ((path) => revealPaths([path]))}
                 onClose={() => setDrawerOpen(false)}
               />
             )}

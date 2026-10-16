@@ -1,27 +1,28 @@
 import { expect, test } from "@playwright/test";
 
-// README and App Store artwork, captured from the real UI against the e2e mock so the
-// pictures can never drift from the app. Tagged @screenshots: `pnpm e2e`
-// greps these out, `pnpm screenshots` runs only these.
+// README and App Store artwork, captured from the real UI against the e2e
+// mock so the pictures can never drift from the app. Tagged @screenshots:
+// `pnpm e2e` greps these out, `pnpm screenshots` runs only these.
 //
 // The photos are drawn landscapes (see placeholderFor in lib/placeholder.ts).
 // Nothing here is a real shoot, and nothing depends on the machine it runs
 // on, so the output is identical for anyone who regenerates it.
 
-// The Mac shots are a size deliver accepts for the Mac, the iPad ones the
-// 13-inch iPad's, landscape, with the iPad's feature set.
+// At 2x these are store sizes: 2560x1600 for the Mac, 2732x2048 for the 13-inch iPad.
 const DEVICES = [
   {
     name: "mac",
     shots: "../../docs/screenshots",
     viewport: { width: 1280, height: 800 },
     url: "/",
+    root: "/Users/you/Pictures/Camera",
   },
   {
     name: "ipad",
     shots: "../../docs/screenshots/ipad",
     viewport: { width: 1366, height: 1024 },
     url: "/?ipad",
+    root: "/private/var/mobile/Library/LiveFiles/com.apple.filesystems.userfsd/SD/Photos",
   },
 ];
 
@@ -35,7 +36,7 @@ for (const device of DEVICES) {
 
     async function openLibrary(page: import("@playwright/test").Page) {
       await page.goto(device.url);
-      await page.getByTestId("root-input").fill("/Users/you/Pictures/Camera");
+      await page.getByTestId("root-input").fill(device.root);
       await page.getByTestId("root-submit").click();
       await expect(page.getByTestId("shoot-2026-07-12_zell")).toBeVisible();
     }

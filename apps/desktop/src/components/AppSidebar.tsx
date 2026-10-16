@@ -30,7 +30,6 @@ type Props = {
   currentShoot: Shoot | undefined;
   onBack: () => void;
   onImport: (from: PhotoSource) => void;
-  /** Absent where the platform cannot reveal a folder. */
   onRevealShoot?: (path: string) => void;
   onShootSettings: () => void;
   filter: RatingFilter;
