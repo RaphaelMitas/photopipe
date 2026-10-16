@@ -44,7 +44,7 @@ runs:
         ruby-version: "4.0.7"
         bundler-cache: true
 
-    # deliver wants one folder per locale; the screenshots are the real UI at a store size.
+    # deliver wants one folder per locale
     - name: Stage the listing
       shell: bash
       env:

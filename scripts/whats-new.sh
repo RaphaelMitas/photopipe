@@ -13,8 +13,8 @@ case "$3" in
 esac
 
 NOTES=$(git log --no-merges --format=%s "$FROM..$TO" -- apps/desktop core \
-  | sed -nE 's/^(feat|fix)(\([^)]*\))?: (.*)$/\3/p' \
   | { grep -viE "$OTHER" || true; } \
+  | sed -nE 's/^(feat|fix)(\([^)]*\))?: (.*)$/\3/p' \
   | sed -E 's/ \(#[0-9]+\)$//' \
   | awk '{ print "• " toupper(substr($0, 1, 1)) substr($0, 2) }' \
   | awk -v limit="$LIMIT" '{ length_so_far += length($0) + 1; if (length_so_far > limit) exit; print }')
