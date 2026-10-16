@@ -46,7 +46,7 @@ public final class Exporter: @unchecked Sendable {
 
     public init() {}
 
-    public func start(plan: Plan) -> Progress {
+    public func start(plan: Plan, settled: @escaping @Sendable () -> Void = {}) -> Progress {
         let id = UUID().uuidString
         let initial = Progress(
             id: id, total: plan.items.count, done: 0, failed: 0, running: true,
@@ -59,6 +59,7 @@ public final class Exporter: @unchecked Sendable {
             jobs[id] = initial
             tasks[id] = Task.detached(priority: .utility) { [weak self] in
                 await self?.run(id: id, plan: plan)
+                settled()
             }
         }
         return initial

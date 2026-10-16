@@ -87,6 +87,37 @@ fn choose_folder(_app: &AppHandle, _title: &str) -> Result<Option<String>, Failu
 }
 
 #[tauri::command]
+async fn pick_photos(app: AppHandle, title: String) -> Result<Vec<String>, Failure> {
+    blocking(move || choose_photos(&app, &title)).await?
+}
+
+#[cfg(desktop)]
+fn choose_photos(app: &AppHandle, title: &str) -> Result<Vec<String>, Failure> {
+    use tauri_plugin_dialog::DialogExt;
+    let picked = app
+        .dialog()
+        .file()
+        .set_title(title)
+        .add_filter("Photos", &["arw", "dng", "jpg", "jpeg", "png"])
+        .blocking_pick_files()
+        .unwrap_or_default();
+    picked
+        .into_iter()
+        .map(|file| {
+            file.into_path()
+                .map(|path| path.to_string_lossy().into_owned())
+                .map_err(|e| Failure::Failed(e.to_string()))
+        })
+        .collect()
+}
+
+/// The dialog plugin opens the Photos library for image filters on iOS, which has no raws.
+#[cfg(mobile)]
+fn choose_photos(_app: &AppHandle, _title: &str) -> Result<Vec<String>, Failure> {
+    Ok(swift_core::pick_photos())
+}
+
+#[tauri::command]
 async fn forget_root(roots: State<'_, Arc<Roots>>, path: String) -> Result<(), Failure> {
     let roots = Arc::clone(&roots);
     Ok(blocking(move || roots.forget(&path)).await?)
@@ -241,6 +272,7 @@ pub fn run() {
             open_root,
             forget_root,
             pick_folder,
+            pick_photos,
             features
         ])
         .build(tauri::generate_context!())

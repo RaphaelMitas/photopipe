@@ -795,7 +795,8 @@ const NOT_SCANNING: ScanProgress = {
 };
 
 /// Polls faster while the core is still indexing, and refetches a shoot's
-/// photos only when the core names that shoot as changed.
+/// photos only when the core names that shoot as changed. `refresh` walks the
+/// library again, which on iPadOS is the only way to see files added from outside.
 export function useLibrarySync(
   enabled: boolean,
   initialGeneration: number | null,
@@ -803,6 +804,28 @@ export function useLibrarySync(
   const queryClient = useQueryClient();
   const [progress, setProgress] = useState<ScanProgress>(NOT_SCANNING);
   const seen = useRef<number | null>(null);
+  const pollNow = useRef(() => {});
+  const rescan = useMutation({
+    mutationFn: () => coreRequest("rescan"),
+    // one walk at a time, so tapping refresh on a hung drive cannot pile them up
+    scope: { id: "rescan" },
+    onSettled: () => pollNow.current(),
+    onError: (error) => {
+      toast.error("Could not refresh the library", {
+        description: String(error),
+      });
+    },
+  });
+  const { mutate } = rescan;
+
+  useEffect(() => {
+    if (!enabled) return;
+    const onVisible = () => {
+      if (document.visibilityState === "visible") mutate();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [enabled, mutate]);
 
   useEffect(() => {
     if (!enabled) {
@@ -812,8 +835,11 @@ export function useLibrarySync(
     seen.current = initialGeneration;
     let timer: ReturnType<typeof setTimeout>;
     let stopped = false;
+    let polling = false;
+    let again = false;
 
     const poll = async () => {
+      polling = true;
       let next = IDLE_POLL_MS;
       try {
         const status = await coreRequest("status", { since: seen.current });
@@ -834,7 +860,17 @@ export function useLibrarySync(
           seen.current = status.generation;
         }
       } catch {}
-      if (!stopped) timer = setTimeout(poll, next);
+      polling = false;
+      if (!stopped) timer = setTimeout(poll, again ? 0 : next);
+      again = false;
+    };
+    pollNow.current = () => {
+      if (polling) {
+        again = true;
+        return;
+      }
+      clearTimeout(timer);
+      timer = setTimeout(poll, 0);
     };
 
     // Straight away, so a library that opened mid-index says so on first paint.
@@ -842,8 +878,13 @@ export function useLibrarySync(
     return () => {
       stopped = true;
       clearTimeout(timer);
+      pollNow.current = () => {};
     };
   }, [enabled, initialGeneration, queryClient]);
 
-  return progress;
+  const refresh = useCallback(() => {
+    if (enabled) mutate();
+  }, [enabled, mutate]);
+
+  return { progress, refresh, refreshing: rescan.isPending };
 }

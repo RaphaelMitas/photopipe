@@ -23,6 +23,10 @@ export function pickFolder(title: string): Promise<string | null> {
   return invoke("pick_folder", { title });
 }
 
+export function pickPhotos(title: string): Promise<string[]> {
+  return invoke("pick_photos", { title });
+}
+
 export async function openRoot(
   path?: string,
 ): Promise<(SetRootResult & { path: string }) | null> {

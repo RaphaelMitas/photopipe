@@ -120,6 +120,9 @@ public final class Dispatcher: Sendable {
         case "captureDate":
             let day = try library.captureDate(path: request.string("path"))
             return .object(["day": day.map(JSONValue.string) ?? .null])
+        case "rescan":
+            library.rescanNow()
+            return .object([:])
         case "status":
             return try JSONValue(encoding: library.status(since: request.param("since")?.intValue))
         default:

@@ -486,7 +486,7 @@ public final class LibraryService: @unchecked Sendable {
         let shootPath = try shoot(named: shootName).path
         let images = paths.filter(isImagePath)
         guard !images.isEmpty else { throw FileActions.ActionError.noFiles }
-        return exporter.start(plan: .importing(images, into: shootPath))
+        return exporter.start(plan: .importing(images, into: shootPath), settled: rescanWhenSettled)
     }
 
     private func shoot(named shootName: String) throws -> Shoot {
@@ -526,7 +526,13 @@ public final class LibraryService: @unchecked Sendable {
         return try exporter.start(
             plan: .export(
                 images, to: destination, zip: zip, flatten: flatten, format: format,
-                quality: quality, decoderVersion: decoderVersion, renderer: renderer))
+                quality: quality, decoderVersion: decoderVersion, renderer: renderer),
+            settled: rescanWhenSettled)
+    }
+
+    /// The watcher would see the delivered files, but iPadOS has none.
+    private var rescanWhenSettled: @Sendable () -> Void {
+        { [weak self] in self?.rescanNow() }
     }
 
     public func stopExports() {

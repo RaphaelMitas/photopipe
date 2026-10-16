@@ -29,7 +29,7 @@ public final class CoreHost: Sendable {
             let (ok, text) = dispatcher.dispatch(method: method, params: params)
             reply(ok, text)
         }
-        if method == "setRoot" {
+        if method == "setRoot" || method == "rescan" {
             // a walk of a hung volume never returns, and must not hold a slot everything else needs
             DispatchQueue.global(qos: .userInitiated).async(execute: answer)
         } else if let lane = lanes[method] {

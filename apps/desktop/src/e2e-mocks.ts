@@ -204,6 +204,10 @@ export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
         : "/fake";
     return picked;
   },
+  pick_photos: () => [
+    ...Array.from({ length: 5 }, (_, i) => `/fake/card/DSC0900${i + 1}.ARW`),
+    "/fake/card/notes.txt",
+  ],
   list_roots: () => roots,
   open_root: (args) => {
     const path = stringArg(args, "path");
@@ -351,6 +355,7 @@ const E2E_HANDLERS: CoreHandlers = {
     return { shoot: shoot.name, generation: 1 };
   },
   captureDate: () => ({ day: "2026-07-12" }),
+  rescan: () => ({}),
   status: () => ({
     generation: 1,
     root: "/fake",

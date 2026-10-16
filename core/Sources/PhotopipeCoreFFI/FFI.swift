@@ -54,8 +54,8 @@ public func shutdown() {
         nonisolated(unsafe) let context = context
         nonisolated(unsafe) let reply = reply
         DispatchQueue.main.async {
-            FolderPicker.present { url in
-                guard let url, url.startAccessingSecurityScopedResource() else {
+            Picker.present(types: [.folder], multiple: false) { urls in
+                guard let url = urls.first, url.startAccessingSecurityScopedResource() else {
                     return reply(context, false, nil)
                 }
                 url.path.withCString { reply(context, true, $0) }
@@ -63,27 +63,46 @@ public func shutdown() {
         }
     }
 
+    /// Replies with the picked paths as a JSON array. Picked in place rather than
+    /// copied in, so a card's worth of raws is read once, by the import.
+    @_cdecl("photopipe_pick_photos")
+    public func pickPhotos(_ context: UnsafeMutableRawPointer?, _ reply: Reply) {
+        nonisolated(unsafe) let context = context
+        nonisolated(unsafe) let reply = reply
+        DispatchQueue.main.async {
+            let types = imageExtensions.compactMap { UTType(filenameExtension: $0) }
+            Picker.present(types: types, multiple: true) { urls in
+                let paths = urls.filter { $0.startAccessingSecurityScopedResource() }.map(\.path)
+                guard let json = try? JSONEncoder().encode(paths) else {
+                    return reply(context, false, nil)
+                }
+                String(decoding: json, as: UTF8.self).withCString { reply(context, true, $0) }
+            }
+        }
+    }
+
     @MainActor
-    private final class FolderPicker: NSObject, UIDocumentPickerDelegate,
+    private final class Picker: NSObject, UIDocumentPickerDelegate,
         UIAdaptivePresentationControllerDelegate
     {
-        private static var current: FolderPicker?
-        private let done: (URL?) -> Void
+        private static var current: Picker?
+        private let done: ([URL]) -> Void
 
-        private init(done: @escaping (URL?) -> Void) {
+        private init(done: @escaping ([URL]) -> Void) {
             self.done = done
         }
 
-        static func present(done: @escaping (URL?) -> Void) {
+        static func present(types: [UTType], multiple: Bool, done: @escaping ([URL]) -> Void) {
             let presenter = UIApplication.shared.connectedScenes
                 .compactMap { ($0 as? UIWindowScene)?.keyWindow?.rootViewController }
                 .first
             // UIKit silently refuses to present over another sheet, and then nothing would reply
             guard let presenter, current == nil, presenter.presentedViewController == nil else {
-                return done(nil)
+                return done([])
             }
-            let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder])
-            let delegate = FolderPicker(done: done)
+            let picker = UIDocumentPickerViewController(forOpeningContentTypes: types)
+            picker.allowsMultipleSelection = multiple
+            let delegate = Picker(done: done)
             picker.delegate = delegate
             picker.presentationController?.delegate = delegate
             current = delegate
@@ -93,23 +112,23 @@ public func shutdown() {
         func documentPicker(
             _ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]
         ) {
-            finish(urls.first)
+            finish(urls)
         }
 
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-            finish(nil)
+            finish([])
         }
 
         /// A swipe down dismisses the sheet without calling documentPickerWasCancelled.
         func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
-            finish(nil)
+            finish([])
         }
 
         /// Replies once even if a dismissal reports itself twice.
-        private func finish(_ url: URL?) {
+        private func finish(_ urls: [URL]) {
             guard Self.current === self else { return }
             Self.current = nil
-            done(url)
+            done(urls)
         }
     }
 #endif
