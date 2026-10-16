@@ -518,7 +518,7 @@ function StackOverlay({ stacks, path }: { stacks: LoupeStacks; path: string }) {
           type="button"
           data-testid="stack-pick"
           onClick={stacks.onPick}
-          className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2.5 rounded-lg border border-primary/60 bg-background/95 py-1.5 pr-1.5 pl-3 text-sm shadow-lg backdrop-blur-sm"
+          className="absolute bottom-4 left-1/2 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2.5 rounded-lg border border-primary/60 bg-background/95 py-1.5 pr-1.5 pl-3 text-sm shadow-lg backdrop-blur-sm"
         >
           <span className="font-semibold">Pick this one</span>
           <span className="font-mono text-[11px] text-muted-foreground">
