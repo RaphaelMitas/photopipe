@@ -174,11 +174,13 @@ private func attach(_ scorer: Scorer, to index: SQLiteIndex) {
 
     let index = try SQLiteIndex(path: indexPath)
     let scorer = Scorer()
-    attach(scorer, to: index)
+    let stale = AnalysisRow<Double>(value: 0.5, mtime: file.mtime - 60, size: file.size, version: 1)
+    scorer.use(cache: [file.path: stale]) { rows in try? index.saveScores(rows) }
     scorer.start(shoot: "s", files: [file])
     try await waitForPass { scorer.progress(shoot: "s", files: [file]).running }
 
     #expect(scorer.start(shoot: "s", files: [file]).running == false)
+    #expect(scorer.answers(for: [file]) == [file.path: nil])
     #expect(try index.loadScores(under: tempRoot).isEmpty)
 
     try pixels.write(to: url)

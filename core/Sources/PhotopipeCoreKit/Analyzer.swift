@@ -60,7 +60,8 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
         lock.withLock {
             var result: [String: Value?] = [:]
             for file in files where isAnswered(file) {
-                result[file.path] = cache[file.path]?.value
+                let value = gone.contains(file.path) ? nil : cache[file.path]?.value
+                result.updateValue(value, forKey: file.path)
             }
             return result
         }
