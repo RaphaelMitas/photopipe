@@ -4,7 +4,7 @@ mod swift_core;
 
 use bookmark::Failure;
 use roots::{Listing, Roots};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 
@@ -86,13 +86,25 @@ fn choose_folder(_app: &AppHandle, _title: &str) -> Result<Option<String>, Failu
     Ok(swift_core::pick_folder())
 }
 
-#[tauri::command]
-async fn pick_photos(app: AppHandle, title: String) -> Result<Vec<String>, Failure> {
-    blocking(move || choose_photos(&app, &title)).await?
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum PhotoSource {
+    Files,
+    Library,
 }
 
+#[tauri::command]
+async fn pick_photos(
+    app: AppHandle,
+    title: String,
+    from: PhotoSource,
+) -> Result<Vec<String>, Failure> {
+    blocking(move || choose_photos(&app, &title, from)).await?
+}
+
+/// The Mac picks from Files only; `features` keeps the library from being offered.
 #[cfg(desktop)]
-fn choose_photos(app: &AppHandle, title: &str) -> Result<Vec<String>, Failure> {
+fn choose_photos(app: &AppHandle, title: &str, _from: PhotoSource) -> Result<Vec<String>, Failure> {
     use tauri_plugin_dialog::DialogExt;
     let picked = app
         .dialog()
@@ -111,10 +123,17 @@ fn choose_photos(app: &AppHandle, title: &str) -> Result<Vec<String>, Failure> {
         .collect()
 }
 
-/// The dialog plugin opens the Photos library for image filters on iOS, which has no raws.
+/// On iOS the dialog plugin copies what it picks from Files, and asks Photos for a plain image, not the raw.
 #[cfg(mobile)]
-fn choose_photos(_app: &AppHandle, _title: &str) -> Result<Vec<String>, Failure> {
-    Ok(swift_core::pick_photos())
+fn choose_photos(
+    _app: &AppHandle,
+    _title: &str,
+    from: PhotoSource,
+) -> Result<Vec<String>, Failure> {
+    Ok(swift_core::pick_photos(matches!(
+        from,
+        PhotoSource::Library
+    )))
 }
 
 #[tauri::command]
@@ -128,6 +147,7 @@ async fn forget_root(roots: State<'_, Arc<Roots>>, path: String) -> Result<(), F
 struct Features {
     updater: bool,
     zip_export: bool,
+    photo_library: bool,
 }
 
 #[tauri::command]
@@ -136,6 +156,7 @@ fn features() -> Features {
         updater: cfg!(all(desktop, feature = "updater")),
         // zipping shells out to /usr/bin/zip, and the iOS save dialog only exports a copy
         zip_export: cfg!(desktop),
+        photo_library: cfg!(mobile),
     }
 }
 

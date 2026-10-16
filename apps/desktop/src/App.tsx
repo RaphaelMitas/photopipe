@@ -71,6 +71,7 @@ import {
 } from "@/lib/queries";
 import {
   openRoot,
+  type PhotoSource,
   pickPhotos,
   type RootError,
   rootsQuery,
@@ -272,9 +273,9 @@ export default function App() {
 
   const currentShoot = shoots.data?.find((s) => s.name === openShoot);
 
-  const runImport = async () => {
+  const runImport = async (from: PhotoSource) => {
     if (!openShoot) return;
-    const paths = await pickPhotos("Import photos").catch(() => []);
+    const paths = await pickPhotos("Import photos", from).catch(() => []);
     if (paths.length === 0) return;
     const job = await exports.start({
       method: "importFiles",

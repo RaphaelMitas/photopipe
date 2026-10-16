@@ -196,7 +196,7 @@ function stringArg(args: unknown, key: string): string | undefined {
 }
 
 export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
-  features: () => ({ updater: false, zipExport: true }),
+  features: () => ({ updater: false, zipExport: true, photoLibrary: false }),
   pick_folder: (args) => {
     picked =
       stringArg(args, "title") === "Export to folder"

@@ -25,7 +25,7 @@ extern "C" {
     #[cfg(target_os = "ios")]
     fn photopipe_pick_folder(context: *mut c_void, reply: Reply);
     #[cfg(target_os = "ios")]
-    fn photopipe_pick_photos(context: *mut c_void, reply: Reply);
+    fn photopipe_pick_photos(from_library: bool, context: *mut c_void, reply: Reply);
     #[cfg(target_os = "ios")]
     fn photopipe_fit_to_safe_area(webview: *mut c_void);
 }
@@ -91,8 +91,8 @@ pub fn pick_folder() -> Option<String> {
 }
 
 #[cfg(target_os = "ios")]
-pub fn pick_photos() -> Vec<String> {
-    call(|context, reply| unsafe { photopipe_pick_photos(context, reply) })
+pub fn pick_photos(from_library: bool) -> Vec<String> {
+    call(|context, reply| unsafe { photopipe_pick_photos(from_library, context, reply) })
         .recv()
         .ok()
         .and_then(|(_, json)| serde_json::from_str(&json?).ok())
