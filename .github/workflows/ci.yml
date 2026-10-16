@@ -74,11 +74,14 @@ jobs:
         run: |
           rustup target add aarch64-apple-ios-sim
           cargo clippy --target aarch64-apple-ios-sim -- -D warnings
-      # clippy compiles the Swift core for iOS; only the Xcode build links it into the app
+      # clippy compiles the Swift core for iOS; only the Xcode build links it into the app.
+      # Tauri runs xcodebuild without DEVELOPER_DIR, so switch, then back for the Mac bundle.
       - name: Build the iPad app for the simulator
-        env:
-          DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
-        run: pnpm --filter desktop tauri ios build --debug --target aarch64-sim
+        run: |
+          DEFAULT=$(xcode-select -p)
+          sudo xcode-select -s /Applications/Xcode_26.2.app
+          pnpm --filter desktop tauri ios build --debug --target aarch64-sim
+          sudo xcode-select -s "$DEFAULT"
       - name: Cargo tests (against the linked core)
         working-directory: apps/desktop/src-tauri
         run: cargo test
