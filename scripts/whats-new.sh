@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# What's New for one platform's store listing: the app's feat and fix commits
-# between two tags, minus those that name only the other platform.
+# What's New for one platform's store listing: fastlane/whats-new/<tag>-<platform>.txt
+# when a release has one, else the app's feat and fix commits between two tags,
+# minus those that name only the other platform.
 set -euo pipefail
 
 FROM="$1"
@@ -13,6 +14,12 @@ case "$3" in
   ipad) OWN="$IPAD" OTHER="$MAC" ;;
   *) echo "platform must be mac or ipad, got '$3'" >&2; exit 1 ;;
 esac
+
+OVERRIDE="$(dirname "$0")/../fastlane/whats-new/$TO-$3.txt"
+if [ -f "$OVERRIDE" ]; then
+  cat "$OVERRIDE"
+  exit 0
+fi
 
 NOTES=$(git log --no-merges --format=%s "$FROM..$TO" -- apps/desktop core \
   | awk -v own="(^|[^a-z])($OWN)([^a-z]|\$)" -v other="(^|[^a-z])($OTHER)([^a-z]|\$)" \

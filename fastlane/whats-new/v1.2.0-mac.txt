@@ -1,0 +1,2 @@
+• Photopipe's photo engine now runs inside the app instead of as a separate process.
+• Fixes and improvements.
