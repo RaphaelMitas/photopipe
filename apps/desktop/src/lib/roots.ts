@@ -19,12 +19,24 @@ export const rootsQuery = queryOptions({
   queryFn: () => invoke<RootEntry[]>("list_roots"),
 });
 
-/// Without a path the shell shows the folder panel; null means it was
-/// cancelled.
-export function openRoot(
+export function pickFolder(title: string): Promise<string | null> {
+  return invoke("pick_folder", { title });
+}
+
+export type PhotoSource = "files" | "library";
+
+export function pickPhotos(
+  title: string,
+  from: PhotoSource,
+): Promise<string[]> {
+  return invoke("pick_photos", { title, from });
+}
+
+export async function openRoot(
   path?: string,
 ): Promise<(SetRootResult & { path: string }) | null> {
-  return invoke("open_root", { path: path ?? null });
+  const chosen = path ?? (await pickFolder("Choose your photos folder"));
+  return chosen === null ? null : invoke("open_root", { path: chosen });
 }
 
 export function forgetRoot(path: string): Promise<void> {

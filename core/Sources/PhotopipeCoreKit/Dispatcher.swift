@@ -1,34 +1,27 @@
 import Foundation
 
-public final class Dispatcher {
+public final class Dispatcher: Sendable {
     private let library: LibraryService
 
     public init(library: LibraryService = LibraryService()) {
         self.library = library
     }
 
-    public func dispatch(line: String) -> Response {
-        let request: Request
+    /// The result as JSON, or the error as "code: message".
+    public func dispatch(method: String, params: String? = nil) -> (ok: Bool, text: String) {
+        let decoded: JSONValue?
         do {
-            request = try JSONDecoder().decode(Request.self, from: Data(line.utf8))
+            decoded = try params.map { try JSONDecoder().decode(JSONValue.self, from: Data($0.utf8)) }
         } catch {
-            return .failure(
-                id: "", code: "bad_request",
-                message: "malformed request: \(error.localizedDescription)")
+            return (false, "bad_request: malformed params: \(error.localizedDescription)")
         }
-
-        guard request.v == protocolVersion else {
-            return .failure(
-                id: request.id, code: "unsupported_protocol",
-                message: "protocol v\(request.v) not supported, this core speaks v\(protocolVersion)")
-        }
-
         do {
-            return .success(id: request.id, result: try result(for: request))
+            let result = try result(for: Request(method: method, params: decoded))
+            return (true, String(decoding: try JSONEncoder().encode(result), as: UTF8.self))
         } catch let error as WireError {
-            return .failure(id: request.id, error: error.wire)
+            return (false, "\(error.wire.code): \(error.wire.message)")
         } catch {
-            return .failure(id: request.id, code: "io_error", message: "\(error)")
+            return (false, "io_error: \(error)")
         }
     }
 
@@ -46,14 +39,6 @@ public final class Dispatcher {
         switch request.method {
         case "ping":
             return .object(["pong": .bool(true)])
-        case "version":
-            return .object([
-                "version": .string(coreVersion),
-                "protocol": .number(Double(protocolVersion)),
-            ])
-        case "shutdown":
-            library.stopExports()
-            return .object(["bye": .bool(true)])
         case "setRoot":
             return try JSONValue(
                 encoding: library.setRoot(
@@ -137,6 +122,9 @@ public final class Dispatcher {
         case "captureDate":
             let day = try library.captureDate(path: request.string("path"))
             return .object(["day": day.map(JSONValue.string) ?? .null])
+        case "rescan":
+            library.rescanNow()
+            return .object([:])
         case "status":
             return try JSONValue(encoding: library.status(since: request.param("since")?.intValue))
         default:

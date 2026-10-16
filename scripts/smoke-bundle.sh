@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
-# Prove a built .app is self-contained.
-#
-# The unit and e2e suites all run from a checkout, where the Swift core and
-# exiftool are findable through dev paths. None of them can tell you whether
-# the *bundle* works. This drives the core out of the built app with a
-# deliberately bare PATH and no env overrides, so anything it cannot find
-# inside itself is a failure.
+# Prove a built .app is self-contained: it links only what the OS ships, and
+# its core opens a library and writes a rating through the bundled exiftool
+# with a bare env, which a checkout's dev paths would mask.
 #
 # --mas checks the signed App Store build: entitlements, no updater, and what the store's review rejects.
 set -euo pipefail
@@ -28,10 +24,18 @@ APP="${APP:-apps/desktop/src-tauri/target/release/bundle/macos/Photopipe.app}"
 
 echo "Smoke testing $APP"
 
-for required in "Contents/MacOS/photopipe-core" "Contents/Resources/exiftool/exiftool"; do
-  [ -f "$APP/$required" ] || fail "Bundle is missing $required"
-done
-echo "  contents: core and exiftool present"
+EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP/Contents/Info.plist")
+BINARY="$APP/Contents/MacOS/$EXECUTABLE"
+otool -l "$BINARY" | grep -A2 LC_RPATH | grep -q "path /usr/lib/swift " \
+  || fail "$EXECUTABLE has no rpath to the Swift runtime in /usr/lib/swift"
+FOREIGN=$(otool -L "$BINARY" | tail -n +2 | awk '{print $1}' \
+  | grep -vE '^(/usr/lib/|/System/Library/|@rpath/libswift)' || true)
+[ -z "$FOREIGN" ] || fail "$EXECUTABLE links outside the OS: $FOREIGN"
+echo "  linkage:  OS libraries only, Swift runtime through /usr/lib/swift"
+
+EXIFTOOL="$APP/Contents/Resources/exiftool/exiftool"
+[ -x "$EXIFTOOL" ] || fail "Bundle is missing an executable Contents/Resources/exiftool/exiftool"
+echo "  contents: exiftool present"
 
 if [ "$MAS" = true ]; then
   entitlement_keys() {
@@ -54,96 +58,45 @@ print("\n".join(sorted(plistlib.loads(raw))) if raw else "")'
   BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP/Contents/Info.plist")
   codesign -d --entitlements - --xml "$APP" 2>/dev/null | grep -q ">[A-Z0-9]*\.$BUNDLE_ID<" \
     || fail "application-identifier does not match the bundle id $BUNDLE_ID"
-  CORE_KEYS=$(entitlement_keys "$APP/Contents/MacOS/photopipe-core")
-  # Exact match: inherit only takes effect when the child carries nothing else.
-  if [ "$CORE_KEYS" != $'com.apple.security.app-sandbox\ncom.apple.security.inherit' ]; then
-    fail "core must carry exactly app-sandbox and inherit, has: $(tr '\n' ' ' <<<"$CORE_KEYS")"
-  fi
-  echo "  entitlements: app sandboxed with bookmarks, core inherits"
+  echo "  entitlements: app sandboxed with bookmarks"
 
   /usr/libexec/PlistBuddy -c "Print :LSApplicationCategoryType" "$APP/Contents/Info.plist" >/dev/null 2>&1 \
     || fail "Info.plist has no LSApplicationCategoryType; App Store Connect refuses the upload without one"
   [ -f "$APP/Contents/embedded.provisionprofile" ] || fail "no embedded.provisionprofile; the identity entitlements need one"
 
-  EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP/Contents/Info.plist")
   if grep -qa -e tauri_plugin_updater -e releases/latest/download/latest.json "$APP/Contents/MacOS/$EXECUTABLE"; then
     fail "the updater or its feed URL is still compiled into $EXECUTABLE"
   fi
   echo "  updater:  absent from the binary"
 
   MACOS_DIR=$(ls "$APP/Contents/MacOS" | sort | tr '\n' ' ')
-  if [ "$MACOS_DIR" != "$EXECUTABLE photopipe-core " ]; then
-    fail "Contents/MacOS must hold only the two executables, has: $MACOS_DIR"
+  if [ "$MACOS_DIR" != "$EXECUTABLE " ]; then
+    fail "Contents/MacOS must hold only the app executable, has: $MACOS_DIR"
   fi
   UNREADABLE=$(find "$APP" ! -perm -o=r)
   [ -z "$UNREADABLE" ] || fail "not world-readable, the store rejects the pkg: $UNREADABLE"
   ENCRYPTION=$(/usr/libexec/PlistBuddy -c "Print :ITSAppUsesNonExemptEncryption" "$APP/Contents/Info.plist" 2>/dev/null || true)
   [ "$ENCRYPTION" = false ] || fail "Info.plist needs ITSAppUsesNonExemptEncryption=false, has '$ENCRYPTION'"
-  echo "  layout:   world-readable, MacOS holds the two executables, encryption declared"
-
-  echo "  skipped:  the live core drive; app-sandbox + inherit only launches under a sandboxed parent"
-  echo "App Store flavour is in order."
+  echo "  layout:   world-readable, MacOS holds the one executable, encryption declared"
+  echo "  skipped:  driving the core; a store-signed binary only launches from the store"
   exit 0
 fi
 
-APP="$APP" exec /usr/bin/python3 - <<'PY'
-import json, os, shutil, subprocess, sys, tempfile
+ROOT=$(mktemp -d -t photopipe-smoke)
+trap 'rm -rf "$ROOT"' EXIT
+SHOOT="2026-01-01_smoke"
+PHOTO="$ROOT/$SHOOT/original/SMOKE1.ARW"
+mkdir -p "$(dirname "$PHOTO")"
+echo "not really a raw" > "$PHOTO"
 
-app = os.path.abspath(os.environ["APP"])
-core = os.path.join(app, "Contents/MacOS/photopipe-core")
-root = tempfile.mkdtemp(prefix="photopipe-smoke-")
-shoot = "2026-01-01_smoke"
-os.makedirs(os.path.join(root, shoot, "original"))
-open(os.path.join(root, shoot, "original", "SMOKE1.ARW"), "w").write("not really a raw")
-
-# No Homebrew, no PHOTOPIPE_* overrides: whatever the core reaches for now
-# has to come from inside the bundle.
-env = {"PATH": "/usr/bin:/bin", "HOME": os.environ.get("HOME", root)}
-proc = subprocess.Popen(
-    [core], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=env
-)
-
-def call(method, params=None, request_id="1"):
-    proc.stdin.write(json.dumps({"v": 1, "id": request_id, "method": method, "params": params}) + "\n")
-    proc.stdin.flush()
-    line = proc.stdout.readline()
-    if not line:
-        sys.exit("::error::core exited while handling %s" % method)
-    return json.loads(line)
-
-def require(response, what):
-    if not response.get("ok"):
-        sys.exit("::error::%s failed: %s" % (what, response.get("error")))
-    return response["result"]
-
-try:
-    version = require(call("version"), "version")
-    print("  version:  core %s, protocol %s" % (version["version"], version["protocol"]))
-
-    scanned = require(
-        call("setRoot", {"path": root, "indexPath": os.path.join(root, "index.sqlite")}, "2"),
-        "setRoot",
-    )
-    if scanned["shoots"] != 1:
-        sys.exit("::error::expected 1 shoot, saw %s" % scanned["shoots"])
-    print("  scan:     %s shoot, %s file" % (scanned["shoots"], scanned["files"]))
-
-    # The real proof: writing a rating means the bundled exiftool ran.
-    photo = os.path.join(root, shoot, "original", "SMOKE1.ARW")
-    require(call("setRating", {"shoot": shoot, "path": photo, "rating": 4}, "3"), "setRating")
-    sidecar = os.path.join(root, shoot, "original", "SMOKE1.xmp")
-    if not os.path.exists(sidecar):
-        sys.exit("::error::no XMP sidecar written; bundled exiftool did not run")
-    if "4" not in open(sidecar).read():
-        sys.exit("::error::sidecar written but the rating is missing")
-    print("  exiftool: XMP sidecar written with the rating")
-finally:
-    try:
-        proc.stdin.close()
-        proc.wait(timeout=10)
-    except Exception:
-        proc.kill()
-    shutil.rmtree(root, ignore_errors=True)
-
-print("Bundle is self-contained.")
-PY
+# No Homebrew, no PHOTOPIPE_* overrides: whatever the core reaches for has to come from inside the bundle.
+REPLIES=$(env -i PATH=/usr/bin:/bin HOME="$ROOT" "$BINARY" --core <<EOF
+{"method":"setRoot","params":{"path":"$ROOT","indexPath":"$ROOT/index.sqlite"}}
+{"method":"setRating","params":{"shoot":"$SHOOT","path":"$PHOTO","rating":4}}
+EOF
+) || fail "$EXECUTABLE --core exited with an error"
+[ "$(grep -c '"ok":true' <<<"$REPLIES")" = 2 ] || fail "the app's core refused a request: $REPLIES"
+grep -q "<xmp:Rating>4</xmp:Rating>" "${PHOTO%.ARW}.xmp" 2>/dev/null \
+  || fail "no XMP sidecar with the rating; the core did not run the bundled exiftool"
+echo "  core:     the app binary opened a library and rated a photo through the bundled exiftool"
+echo "Bundle is self-contained."

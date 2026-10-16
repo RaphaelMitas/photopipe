@@ -37,12 +37,12 @@ private struct Writers {
     }
 
     func write(_ rating: Int) throws {
-        try XMP.writeRating(rating, file: try image(exiftool), tool: .shared)
+        try XMP.writeRating(rating, file: try image(exiftool))
         try XMP.writeText(XMP.ratingTags(rating), clearing: rating == 0, file: try image(text))
     }
 
     func write(_ edit: Edit) throws {
-        try XMP.writeEdit(edit, file: try image(exiftool), tool: .shared)
+        try XMP.writeEdit(edit, file: try image(exiftool))
         let file = try image(text)
         try XMP.writeText(XMP.editTags(edit, file: file).tags, clearing: edit.isIdentity, file: file)
     }
@@ -102,8 +102,8 @@ func textWriterMatchesExifTool(fixture: String?) throws {
     let writers = try Writers(in: dir, fixture: "lightroom-masks")
 
     try writers.write(fullEdit)
-    try XMP.writeEdit(changedEdit, file: image(writers.exiftool), tool: .shared)
-    try XMP.writeEdit(changedEdit, file: image(writers.text), tool: .shared)
+    try XMP.writeEdit(changedEdit, file: image(writers.exiftool))
+    try XMP.writeEdit(changedEdit, file: image(writers.text))
     try writers.write(3)
     try writers.expectEqual("text, exiftool, text")
     #expect(XMP.read(file: try image(writers.text)).rating == 3)

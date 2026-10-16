@@ -1,8 +1,8 @@
-import { invoke } from "@tauri-apps/api/core";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check as findUpdate, type Update } from "@tauri-apps/plugin-updater";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
+import { useFeatures } from "./features";
 
 /// One toast id for the whole update conversation, so a download replaces the
 /// offer rather than stacking under it.
@@ -40,18 +40,12 @@ function showProgress(percent: number | null) {
 }
 
 export function useUpdater(options: Options) {
-  const [enabled, setEnabled] = useState(false);
+  const enabled = useFeatures().updater;
   const pending = useRef<Update | null>(null);
   const startupOfferSuppressed = useRef(false);
   // read at call time: the offer toast's Install outlives its render, and check must stay stable for App's menu listener
   const live = useRef({ ...options, enabled });
   live.current = { ...options, enabled };
-
-  useEffect(() => {
-    invoke<boolean>("updater_available").then(setEnabled, () =>
-      setEnabled(false),
-    );
-  }, []);
 
   const install = useCallback(async () => {
     startupOfferSuppressed.current = true;

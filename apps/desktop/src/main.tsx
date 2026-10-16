@@ -12,24 +12,8 @@ async function prepare() {
       "./e2e-mocks"
     );
     mockIPC((cmd, args) => {
-      // The file pickers are OS windows with nothing to drive them from a
-      // browser, so e2e answers them and moves on. Only the import picker
-      // asks for many, and it wants photos rather than a destination.
-      if (cmd.startsWith("plugin:dialog|")) {
-        const options =
-          args && "options" in args && typeof args.options === "object"
-            ? args.options
-            : null;
-        return options && "multiple" in options && options.multiple
-          ? [
-              ...Array.from(
-                { length: 5 },
-                (_, i) => `/fake/card/DSC0900${i + 1}.ARW`,
-              ),
-              "/fake/card/notes.txt",
-            ]
-          : "/fake/delivery";
-      }
+      // The save panel is an OS window with nothing to drive it from a browser.
+      if (cmd === "plugin:dialog|save") return "/fake/delivery";
       if (cmd === "plugin:opener|reveal_item_in_dir") return null;
       if (cmd in E2E_COMMANDS) return E2E_COMMANDS[cmd](args);
       if (cmd === "core_request" && isCoreRequest(args)) {

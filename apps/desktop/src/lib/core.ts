@@ -277,6 +277,7 @@ export type CoreMethods = {
   exportStatus: { params: { id: string }; result: ExportProgress };
   cancelExport: { params: { id: string }; result: ExportProgress };
   status: { params: { since: number | null }; result: StatusResult };
+  rescan: { params: undefined; result: Record<string, never> };
 };
 
 export function coreRequest<K extends keyof CoreMethods>(

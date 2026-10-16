@@ -11,15 +11,11 @@ import {
   SidebarMenuItem,
 } from "@photopipe/ui/components/sidebar";
 import { Switch } from "@photopipe/ui/components/switch";
-import {
-  ChevronLeft,
-  Download,
-  FolderOpen,
-  Settings,
-  Settings2,
-} from "lucide-react";
+import { ChevronLeft, FolderOpen, Settings, Settings2 } from "lucide-react";
 import type { Shoot } from "@/lib/core";
 import { flagPref } from "@/lib/pref";
+import type { PhotoSource } from "@/lib/roots";
+import { ImportButton } from "./ImportButton";
 import { type RatingFilter, RatingFilterGroup } from "./RatingFilter";
 import { SidebarBrandHeader } from "./SidebarBrandHeader";
 
@@ -33,7 +29,7 @@ export const showInfoPref = flagPref(
 type Props = {
   currentShoot: Shoot | undefined;
   onBack: () => void;
-  onImport: () => void;
+  onImport: (from: PhotoSource) => void;
   onRevealShoot: (path: string) => void;
   onShootSettings: () => void;
   filter: RatingFilter;
@@ -101,16 +97,12 @@ export function AppSidebar({
                 </p>
               )}
               <div className="mt-2 flex flex-col gap-1.5">
-                <Button
-                  size="sm"
+                <ImportButton
                   variant="outline"
-                  data-testid="import-files"
-                  onClick={() => onImport()}
+                  testId="import-files"
+                  onImport={onImport}
                   className="w-full text-xs"
-                >
-                  <Download />
-                  Import photos
-                </Button>
+                />
                 <div className="flex gap-1.5">
                   <Button
                     size="sm"

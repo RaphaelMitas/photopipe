@@ -202,22 +202,35 @@ let roots: RootEntry[] =
     ? [{ path: "/fake", status: scenario === "stored" ? "ok" : scenario }]
     : [];
 
-function argPath(args: unknown): string | undefined {
-  return typeof args === "object" &&
-    args !== null &&
-    "path" in args &&
-    typeof args.path === "string"
-    ? args.path
-    : undefined;
+let picked: string | null = null;
+
+function stringArg(args: unknown, key: string): string | undefined {
+  if (typeof args !== "object" || args === null || !(key in args)) return;
+  const value: unknown = Reflect.get(args, key);
+  return typeof value === "string" ? value : undefined;
 }
 
 export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
+  features: () => ({ updater: false, zipExport: true, photoLibrary: false }),
+  pick_folder: (args) => {
+    picked =
+      stringArg(args, "title") === "Export to folder"
+        ? "/fake/delivery"
+        : "/fake";
+    return picked;
+  },
+  pick_photos: () => [
+    ...Array.from({ length: 5 }, (_, i) => `/fake/card/DSC0900${i + 1}.ARW`),
+    "/fake/card/notes.txt",
+  ],
   list_roots: () => roots,
   open_root: (args) => {
-    const wanted = argPath(args);
-    const path = wanted ?? "/fake";
+    const path = stringArg(args, "path");
+    if (path === undefined) throw new Error("open_root needs a path");
     const stored = roots.find((root) => root.path === path);
-    if (wanted && stored && stored.status !== "ok") {
+    // the panel grants what was just picked in it, which revives a broken bookmark
+    const granted = path === picked && stored?.status === "broken";
+    if (stored && stored.status !== "ok" && !granted) {
       throw { kind: stored.status, message: `${stored.status}: ${path}` };
     }
     if (path === "/nonexistent")
@@ -229,7 +242,7 @@ export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
     return { path, shoots: shoots.length, files: 6, generation: 1 };
   },
   forget_root: (args) => {
-    roots = roots.filter((root) => root.path !== argPath(args));
+    roots = roots.filter((root) => root.path !== stringArg(args, "path"));
   },
 };
 
@@ -362,6 +375,7 @@ const E2E_HANDLERS: CoreHandlers = {
     return { shoot: shoot.name, generation: 1 };
   },
   captureDate: () => ({ day: "2026-07-12" }),
+  rescan: () => ({}),
   status: () => ({
     generation: 1,
     root: "/fake",

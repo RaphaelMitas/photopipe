@@ -51,22 +51,26 @@ public enum FileActions {
     }
 
     public static func zipDirectory(at dir: URL, to destination: String) throws {
-        let fm = FileManager.default
-        let dest = URL(fileURLWithPath: destination)
-        // A save panel grants the chosen path, not the folder around it.
-        let scratch = try fm.url(
-            for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: dest,
-            create: true)
-        defer { try? fm.removeItem(at: scratch) }
-        let temp = scratch.appendingPathComponent("\(tempPrefix)\(UUID().uuidString).zip")
-        let result = try run(
-            "/usr/bin/zip", ["-q", "-r", temp.path, "."], currentDirectory: dir)
-        guard result.status == 0 else { throw ActionError.zipFailed(result.output) }
-        if fm.fileExists(atPath: dest.path) {
-            _ = try fm.replaceItemAt(dest, withItemAt: temp)
-        } else {
-            try fm.moveItem(at: temp, to: dest)
-        }
+        #if !os(macOS)
+            throw ActionError.zipFailed("zip export is not available on this device yet")
+        #else
+            let fm = FileManager.default
+            let dest = URL(fileURLWithPath: destination)
+            // A save panel grants the chosen path, not the folder around it.
+            let scratch = try fm.url(
+                for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: dest,
+                create: true)
+            defer { try? fm.removeItem(at: scratch) }
+            let temp = scratch.appendingPathComponent("\(tempPrefix)\(UUID().uuidString).zip")
+            let result = try run(
+                "/usr/bin/zip", ["-q", "-r", temp.path, "."], currentDirectory: dir)
+            guard result.status == 0 else { throw ActionError.zipFailed(result.output) }
+            if fm.fileExists(atPath: dest.path) {
+                _ = try fm.replaceItemAt(dest, withItemAt: temp)
+            } else {
+                try fm.moveItem(at: temp, to: dest)
+            }
+        #endif
     }
 
     static func uniqueName(_ name: String, isTaken: (String) -> Bool) -> String {
@@ -90,23 +94,25 @@ public enum FileActions {
         return dir.appendingPathComponent(name)
     }
 
-    static func run(
-        _ tool: String, _ args: [String], currentDirectory: URL? = nil
-    ) throws -> (
-        status: Int32, output: String
-    ) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: tool)
-        process.arguments = args
-        if let currentDirectory { process.currentDirectoryURL = currentDirectory }
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        try process.run()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return (process.terminationStatus, String(decoding: data, as: UTF8.self))
-    }
+    #if os(macOS)
+        static func run(
+            _ tool: String, _ args: [String], currentDirectory: URL? = nil
+        ) throws -> (
+            status: Int32, output: String
+        ) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: tool)
+            process.arguments = args
+            if let currentDirectory { process.currentDirectoryURL = currentDirectory }
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
+            try process.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            return (process.terminationStatus, String(decoding: data, as: UTF8.self))
+        }
+    #endif
 }
 
 extension FileActions.ActionError: WireError {

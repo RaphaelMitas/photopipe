@@ -1,12 +1,12 @@
-import { Button } from "@photopipe/ui/components/button";
-import { Download } from "lucide-react";
 import type { ImageFile, PassProgress } from "@/lib/core";
+import type { PhotoSource } from "@/lib/roots";
 import type { SelectModifiers } from "@/lib/selection";
 import { type SortKey, sortPref } from "@/lib/sort";
 import { showInfoPref } from "./AppSidebar";
 import { BrowserToolbar, viewPref } from "./BrowserToolbar";
 import { ImageGrid } from "./ImageGrid";
 import { ImageList } from "./ImageList";
+import { ImportButton } from "./ImportButton";
 
 type Props = {
   images: ImageFile[];
@@ -20,7 +20,7 @@ type Props = {
   focusPath: string | null;
   revealed: number;
   onOpen: (index: number) => void;
-  onImport: () => void;
+  onImport: (from: PhotoSource) => void;
 };
 
 export function BrowserPane({
@@ -62,10 +62,7 @@ export function BrowserPane({
               : "No photos in this project yet. Import them, or drop files into the folder — subfolders are fine."}
           </p>
           {!filterActive && (
-            <Button size="sm" data-testid="empty-import" onClick={onImport}>
-              <Download />
-              Import photos
-            </Button>
+            <ImportButton testId="empty-import" onImport={onImport} />
           )}
         </div>
       ) : (

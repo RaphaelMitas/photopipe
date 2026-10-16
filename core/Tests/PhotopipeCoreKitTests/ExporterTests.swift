@@ -104,26 +104,6 @@ private func waitUntilIdle(
         ])
 }
 
-@Test func twoJobsNeverShareAnID() throws {
-    let dir = scratchDir("exporter")
-    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: dir) }
-
-    let first = Exporter()
-    let second = Exporter()
-    let a = first.start(
-        plan: plan(1, in: dir) { _, target in try Data("photo".utf8).write(to: target) })
-    let b = second.start(
-        plan: plan(1, in: dir) { _, target in try Data("photo".utf8).write(to: target) })
-
-    // A fresh process must not hand a new job the id a client is still polling
-    // for one it started before the sidecar was replaced.
-    #expect(a.id != b.id)
-    #expect(first.progress(id: b.id) == nil)
-    _ = waitUntilIdle(first, a.id)
-    _ = waitUntilIdle(second, b.id)
-}
-
 @Test func aFailedDeliveryReportsWhyRatherThanClaimingSuccess() throws {
     let dir = scratchDir("exporter")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

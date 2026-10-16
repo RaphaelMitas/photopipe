@@ -3,65 +3,31 @@ import Testing
 
 @testable import PhotopipeCoreKit
 
-func request(_ method: String, id: String = "1", v: Int = protocolVersion) -> String {
-    "{\"v\":\(v),\"id\":\"\(id)\",\"method\":\"\(method)\"}"
-}
-
 @Test func pingRespondsPong() {
-    let response = Dispatcher().dispatch(line: request("ping"))
-    #expect(response == .success(id: "1", result: .object(["pong": .bool(true)])))
-}
-
-@Test func versionReportsAVersionAndTheProtocol() throws {
-    let response = Dispatcher().dispatch(line: request("version", id: "42"))
-    #expect(response.ok)
-    #expect(response.id == "42")
-    #expect(response.result?["protocol"] == .number(1))
-    guard case .string(let version)? = response.result?["version"] else {
-        Issue.record("missing version string")
-        return
-    }
-    #expect(!version.isEmpty)
-}
-
-@Test func shutdownSaysBye() {
-    let response = Dispatcher().dispatch(line: request("shutdown"))
-    #expect(response == .success(id: "1", result: .object(["bye": .bool(true)])))
+    let reply = Dispatcher().dispatch(method: "ping")
+    #expect(reply.ok)
+    #expect(reply.text == #"{"pong":true}"#)
 }
 
 @Test func statusTellsTheIndexingPollerWhetherItIsScanning() {
-    let response = Dispatcher().dispatch(line: request("status"))
-    #expect(response.result?["scanning"] == .bool(false))
+    let reply = Dispatcher().dispatch(method: "status")
+    #expect(reply.text.contains(#""scanning":false"#))
 }
 
 @Test func unknownMethodFails() {
-    let response = Dispatcher().dispatch(line: request("levitate"))
-    #expect(!response.ok)
-    #expect(response.error?.code == "unknown_method")
-    #expect(response.id == "1")
+    let reply = Dispatcher().dispatch(method: "levitate")
+    #expect(!reply.ok)
+    #expect(reply.text.hasPrefix("unknown_method:"))
 }
 
-@Test func malformedJSONFailsAsBadRequest() {
-    let response = Dispatcher().dispatch(line: "{not json")
-    #expect(!response.ok)
-    #expect(response.error?.code == "bad_request")
+@Test func malformedParamsFailAsBadRequest() {
+    let reply = Dispatcher().dispatch(method: "ping", params: "{not json")
+    #expect(!reply.ok)
+    #expect(reply.text.hasPrefix("bad_request:"))
 }
 
-@Test func futureProtocolVersionIsRejected() {
-    let response = Dispatcher().dispatch(line: request("ping", v: 99))
-    #expect(!response.ok)
-    #expect(response.error?.code == "unsupported_protocol")
-}
-
-@Test func encodedResponseIsSingleLine() throws {
-    let line = try Dispatcher().dispatch(line: request("version")).encodedLine()
-    #expect(!line.contains("\n"))
-    #expect(line.hasPrefix("{"))
-}
-
-@Test func requestParamsRoundTrip() throws {
-    let json = "{\"v\":1,\"id\":\"7\",\"method\":\"ping\",\"params\":{\"depth\":2,\"tags\":[\"a\"]}}"
-    let request = try JSONDecoder().decode(Request.self, from: Data(json.utf8))
-    #expect(request.params?["depth"] == .number(2))
-    #expect(request.params?["tags"] == .array([.string("a")]))
+@Test func aMissingParamIsNamedInTheError() {
+    let reply = Dispatcher().dispatch(method: "listImages", params: #"{"other":1}"#)
+    #expect(!reply.ok)
+    #expect(reply.text == "invalid_params: shoot required")
 }

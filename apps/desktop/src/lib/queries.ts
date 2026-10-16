@@ -273,9 +273,7 @@ export function useRawDefaults(
   });
 }
 
-/// The core reads one file header per photo before its per-camera cache can
-/// help. A whole shoot off an SD card would outrun the sidecar's read timeout
-/// and take the process down, so ask in batches it can always answer in time.
+/// one header read per photo off an SD card; a whole shoot outruns the request timeout
 const SUPPORT_BATCH = 400;
 
 async function decoderSupport(paths: string[]) {
@@ -682,7 +680,7 @@ export function jobStatus(job: ExportJob): JobStatus {
 const EXPORT_POLL_MS = 400;
 let nextJobKey = 1;
 
-/// Addressed by `key`, so a row outlives the core process that issued its `id`.
+/// Addressed by `key`: every start that failed shares the empty `id`.
 type JobRow = {
   key: string;
   id: string;
@@ -708,15 +706,10 @@ export function useExportJobs() {
     })),
   });
 
-  const jobs: ExportJob[] = rows.map((row, index) => {
-    const result = results[index];
-    const progress = result?.data ?? row.initial;
-    // The core went away mid-export; this job is not coming back.
-    const lost = result?.error
-      ? { running: false, error: String(result.error) }
-      : null;
-    return { ...row, ...progress, ...lost };
-  });
+  const jobs: ExportJob[] = rows.map((row, index) => ({
+    ...row,
+    ...(results[index]?.data ?? row.initial),
+  }));
   const running = jobs.some((job) => job.running);
 
   const start = useCallback(
@@ -841,7 +834,8 @@ const NOT_SCANNING: ScanProgress = {
 };
 
 /// Polls faster while the core is still indexing, and refetches a shoot's
-/// photos only when the core names that shoot as changed.
+/// photos only when the core names that shoot as changed. `refresh` walks the
+/// library again, which on iPadOS is the only way to see files added from outside.
 export function useLibrarySync(
   enabled: boolean,
   initialGeneration: number | null,
@@ -849,6 +843,28 @@ export function useLibrarySync(
   const queryClient = useQueryClient();
   const [progress, setProgress] = useState<ScanProgress>(NOT_SCANNING);
   const seen = useRef<number | null>(null);
+  const pollNow = useRef(() => {});
+  const rescan = useMutation({
+    mutationFn: () => coreRequest("rescan"),
+    // one walk at a time, so tapping refresh on a hung drive cannot pile them up
+    scope: { id: "rescan" },
+    onSettled: () => pollNow.current(),
+    onError: (error) => {
+      toast.error("Could not refresh the library", {
+        description: String(error),
+      });
+    },
+  });
+  const { mutate } = rescan;
+
+  useEffect(() => {
+    if (!enabled) return;
+    const onVisible = () => {
+      if (document.visibilityState === "visible") mutate();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [enabled, mutate]);
 
   useEffect(() => {
     if (!enabled) {
@@ -858,8 +874,11 @@ export function useLibrarySync(
     seen.current = initialGeneration;
     let timer: ReturnType<typeof setTimeout>;
     let stopped = false;
+    let polling = false;
+    let again = false;
 
     const poll = async () => {
+      polling = true;
       let next = IDLE_POLL_MS;
       try {
         const status = await coreRequest("status", { since: seen.current });
@@ -882,7 +901,17 @@ export function useLibrarySync(
           seen.current = status.generation;
         }
       } catch {}
-      if (!stopped) timer = setTimeout(poll, next);
+      polling = false;
+      if (!stopped) timer = setTimeout(poll, again ? 0 : next);
+      again = false;
+    };
+    pollNow.current = () => {
+      if (polling) {
+        again = true;
+        return;
+      }
+      clearTimeout(timer);
+      timer = setTimeout(poll, 0);
     };
 
     // Straight away, so a library that opened mid-index says so on first paint.
@@ -890,8 +919,13 @@ export function useLibrarySync(
     return () => {
       stopped = true;
       clearTimeout(timer);
+      pollNow.current = () => {};
     };
   }, [enabled, initialGeneration, queryClient]);
 
-  return progress;
+  const refresh = useCallback(() => {
+    if (enabled) mutate();
+  }, [enabled, mutate]);
+
+  return { progress, refresh, refreshing: rescan.isPending };
 }
