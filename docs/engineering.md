@@ -178,7 +178,7 @@ listing (text from `fastlane/metadata/en-US`, screenshots copied from
 attaches the build and submits it for review with automatic release.
 What's New is written per release and platform by `scripts/whats-new.sh`:
 the `feat:` and `fix:` subjects since the previous tag that touch
-`apps/desktop` or `core`, minus those naming the other platform. A commit
+`apps/desktop` or `core`, minus those naming only the other platform. A commit
 subject is a line in the store, and a change for one platform names it.
 
 The iPad shares the record. The `ipad` job builds it on Xcode 26, the only SDK
