@@ -31,7 +31,7 @@ runs:
       shell: bash
       run: |
         if grep -rn "TODO" fastlane/metadata fastlane/ipad; then
-          echo "::error::The store listing still has placeholder text. The build is in TestFlight; fix the text and rerun with submit_to_app_store."
+          echo "::error::The store listing still has placeholder text. The build is in TestFlight; fix the text and rerun with submit_to_app_store for this platform."
           exit 1
         fi
         for url in privacy_url support_url marketing_url; do

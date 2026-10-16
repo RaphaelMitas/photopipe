@@ -1,0 +1,33 @@
+name: Upload to App Store Connect
+description: Hand a signed build to App Store Connect, which processes it into TestFlight.
+
+inputs:
+  platform:
+    description: mac (uploads $PKG) or ipad (uploads $IPA)
+    required: true
+  key-id:
+    description: App Store Connect API key id
+    required: true
+  issuer-id:
+    description: App Store Connect API issuer id
+    required: true
+  key:
+    description: App Store Connect API key, the .p8 contents
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+      with:
+        ruby-version: "4.0.7"
+        bundler-cache: true
+
+    - name: Upload
+      shell: bash
+      env:
+        APP_STORE_CONNECT_KEY_ID: ${{ inputs.key-id }}
+        APP_STORE_CONNECT_ISSUER_ID: ${{ inputs.issuer-id }}
+        APP_STORE_CONNECT_KEY: ${{ inputs.key }}
+        LANE: ${{ inputs.platform == 'ipad' && 'ios' || 'mac' }}
+      run: bundle exec fastlane "$LANE" upload

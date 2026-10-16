@@ -16,6 +16,12 @@ on:
         description: Upload the Mac and iPad App Store builds to App Store Connect and TestFlight
         type: boolean
         default: false
+      # Redoing one store's submission must not pull the other's out of review.
+      platform:
+        description: Which store submit_to_app_store redoes
+        type: choice
+        options: [both, mac, ipad]
+        default: both
 
 concurrency:
   group: release
@@ -303,7 +309,7 @@ jobs:
   mas:
     name: Build, sign, upload to the App Store
     needs: [check]
-    if: (needs.check.outputs.is-release == 'true' || needs.check.outputs.submit == 'true') && needs.check.outputs.mas == 'true'
+    if: (needs.check.outputs.is-release == 'true' || (needs.check.outputs.submit == 'true' && inputs.platform != 'ipad')) && needs.check.outputs.mas == 'true'
     runs-on: macos-15
     # Pinned so a repo-setting change cannot hand the fastlane gems a write token.
     permissions:
@@ -397,17 +403,12 @@ jobs:
           name: photopipe-mas
           path: ${{ env.PKG }}
 
-      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+      - uses: ./.ci/.github/actions/store-upload
         with:
-          ruby-version: "4.0.7"
-          bundler-cache: true
-
-      - name: Upload to App Store Connect
-        env:
-          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
-        run: bundle exec fastlane mac upload
+          platform: mac
+          key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          key: ${{ secrets.APP_STORE_CONNECT_KEY }}
 
   # Apple processes an upload for a while before it can be attached to a
   # version, and waiting is cheaper here than on a macOS runner.
@@ -437,7 +438,7 @@ jobs:
   ipad:
     name: Build, sign, upload the iPad app
     needs: [check]
-    if: (needs.check.outputs.is-release == 'true' || needs.check.outputs.submit == 'true') && needs.check.outputs.mas == 'true'
+    if: (needs.check.outputs.is-release == 'true' || (needs.check.outputs.submit == 'true' && inputs.platform != 'mac')) && needs.check.outputs.mas == 'true'
     runs-on: macos-15
     permissions:
       contents: read
@@ -493,17 +494,12 @@ jobs:
           name: photopipe-ipad
           path: ${{ env.IPA }}
 
-      - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
+      - uses: ./.github/actions/store-upload
         with:
-          ruby-version: "4.0.7"
-          bundler-cache: true
-
-      - name: Upload to App Store Connect
-        env:
-          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
-        run: bundle exec fastlane ios upload
+          platform: ipad
+          key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          key: ${{ secrets.APP_STORE_CONNECT_KEY }}
 
   # deliver scopes the submission, the build and the pull of a waiting version
   # to one platform, so the iPad neither waits on the Mac nor reruns with it.

@@ -146,11 +146,12 @@ the last one.
 The App Store build ships as `net.photopipe.app`, a platform-neutral id an iOS
 app can share one store record with; the DMG stays `net.photopipe.desktop`, so
 the two keep separate preferences and a switcher picks their folder once more.
-It is a second job, `mas`, that runs alongside the DMG release
-and needs six more secrets: `MAS_CERTIFICATE` (base64 .p12 holding both an
-Apple Distribution and a Mac Installer Distribution identity),
+It is a second job, `mas`, that runs alongside the DMG release and needs six
+more secrets, seven with the iPad: `MAS_CERTIFICATE` (base64 .p12 holding
+both an Apple Distribution and a Mac Installer Distribution identity),
 `MAS_CERTIFICATE_PASSWORD`, `MAS_PROVISIONING_PROFILE` (base64 Mac App Store
-profile), `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID` and
+profile), `IOS_PROVISIONING_PROFILE` (base64 iOS App Store profile, for the
+`ipad` job), `APP_STORE_CONNECT_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID` and
 `APP_STORE_CONNECT_KEY` (the .p8 contents). Make the two certificates from
 separate signing requests: when they share a private key, Keychain Access
 says "Export 2 items" and writes one, and the pair has to be merged with
@@ -201,8 +202,10 @@ is pulled first, because Apple freezes it. The store build number is the
 workflow run number, not the semver, because App Store Connect refuses a
 number it has seen and a retry ships the same version. `gh workflow run
 release.yml -f submit_to_app_store=true` redoes only the store half from the
-tagged commit and leaves the DMG release untouched. What the API cannot set
-stays a one-time job in App Store Connect: price, age rating, the privacy
+tagged commit and leaves the DMG release untouched; `-f platform=mac` or `-f
+platform=ipad` limits it to one store, because a resubmission pulls that
+platform's waiting version out of review. What the API cannot set stays a
+one-time job in App Store Connect: price, age rating, the privacy
 questionnaire and the review contact. Set the contact before the first
 submission, on each platform's version, the iPad's included: deliver crashes
 with "No data" on a version that has none, and it stays out of the repo
