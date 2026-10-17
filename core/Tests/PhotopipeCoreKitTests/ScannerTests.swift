@@ -78,6 +78,19 @@ func makeTree(_ layout: [String: [String]]) throws -> URL {
     #expect(!isImagePath("/s/notes.txt"))
 }
 
+@Test func everyPhotoFormatImageIOReadsIsAnImageButNotItsTextures() {
+    for ext in ["cr2", "cr3", "nef", "raf", "orf", "rw2", "pef", "heic", "hif", "avif", "jxl", "webp", "tif"]
+    {
+        #expect(isImagePath("/s/x.\(ext)"), "\(ext)")
+    }
+    for ext in ["icns", "dds", "dcm", "ktx", "gif", "psd"] {
+        #expect(!isImagePath("/s/x.\(ext)"), "\(ext)")
+    }
+    #expect(rawExtensions.isSuperset(of: ["arw", "cr3", "nef", "raf", "dng"]))
+    #expect(rawExtensions.isDisjoint(with: ["tif", "heic", "jpg"]))
+    #expect(sidecarOnlyExtensions.contains("cr3") && !sidecarOnlyExtensions.contains("dng"))
+}
+
 // MARK: - Day format
 
 @Test func isDayAcceptsOnlyIsoDates() {

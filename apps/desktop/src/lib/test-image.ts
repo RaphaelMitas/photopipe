@@ -5,10 +5,11 @@ export function makeImage(
   rel: string,
   overrides: Partial<ImageFile> = {},
 ): ImageFile {
+  const ext = rel.split(".").pop() ?? "";
   return {
     path: `/r/s/${rel}`,
     rel,
-    ext: rel.split(".").pop() ?? "",
+    ext,
     size: 1,
     mtime: 1,
     rating: 0,
@@ -19,6 +20,7 @@ export function makeImage(
     captured: null,
     stack: null,
     enriched: true,
+    isRaw: ["arw", "dng"].includes(ext.toLowerCase()),
     ...overrides,
   };
 }

@@ -41,7 +41,6 @@ import {
   type ImageFile,
   identityEdit,
   isIdentityEdit,
-  isRawFile,
 } from "@/lib/core";
 import { type EditClipboard, pasteEdit } from "@/lib/editClipboard";
 import { useFeatures } from "@/lib/features";
@@ -244,7 +243,8 @@ export default function App() {
     [selectedImages],
   );
   const selectedRawPaths = useMemo(
-    () => selectedImages.filter(isRawFile).map((image) => image.path),
+    () =>
+      selectedImages.filter((image) => image.isRaw).map((image) => image.path),
     [selectedImages],
   );
 
@@ -470,7 +470,7 @@ export default function App() {
       setClipboard({
         path: image.path,
         edit: editOf(image),
-        raw: isRawFile(image),
+        raw: image.isRaw,
       });
       toast(`Copied settings from ${fileName(image.path)}`, {
         id: "clipboard",
@@ -494,7 +494,7 @@ export default function App() {
       let keptWhiteBalance = 0;
       for (const image of ready) {
         const current = editOf(image);
-        const raw = isRawFile(image);
+        const raw = image.isRaw;
         const next = pasteEdit(current, clipboard, raw);
         if (editKey(next) === editKey(current)) continue;
         if (

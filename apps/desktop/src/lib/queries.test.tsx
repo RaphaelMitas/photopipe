@@ -325,10 +325,7 @@ describe("useRender and the RAW decoder", () => {
   afterEach(() => localStorage.clear());
 
   function RenderOne({ path }: { path: string }) {
-    useRender(
-      { path, mtime: 1, ext: path.split(".").pop() ?? "" },
-      identityEdit,
-    );
+    useRender({ path, mtime: 1, isRaw: path.endsWith(".ARW") }, identityEdit);
     return null;
   }
 
@@ -376,7 +373,7 @@ describe("useRender and the RAW decoder", () => {
 });
 
 describe("usePrefetchRender", () => {
-  const next = { path: "/r/shoot1/B.ARW", mtime: 1, ext: "ARW" };
+  const next = { path: "/r/shoot1/B.ARW", mtime: 1, isRaw: true };
 
   function Loupe({ landed }: { landed: boolean }) {
     usePrefetchRender(next, identityEdit);
@@ -431,7 +428,7 @@ describe("usePrefetchRender", () => {
     const photos = ["A", "B", "C", "D"].map((name) => ({
       path: `/r/shoot1/${name}.ARW`,
       mtime: 1,
-      ext: "ARW",
+      isRaw: true,
     }));
     function Walk({ index }: { index: number }) {
       useRender(photos[index], identityEdit);

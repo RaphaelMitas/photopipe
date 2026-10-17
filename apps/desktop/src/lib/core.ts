@@ -111,6 +111,7 @@ export type ImageFile = {
   // path of the first photo in its stack, its own when alone, null until analyzed
   stack: string | null;
   enriched: boolean;
+  isRaw: boolean;
 };
 
 /// The core omits nulls and defaulted fields when it encodes, so an unrated
@@ -136,12 +137,6 @@ export function normalizeImage(image: WireImage): ImageFile {
     stack: image.stack ?? null,
     edit: normalizeEdit(image.edit),
   };
-}
-
-export function isRawFile(file: { ext: string }): boolean {
-  return ["arw", "dng", "cr2", "cr3", "nef", "raf", "orf", "rw2"].includes(
-    file.ext.toLowerCase(),
-  );
 }
 
 export type Shoot = {

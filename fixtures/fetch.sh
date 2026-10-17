@@ -46,3 +46,12 @@ fetch_model() {
 # Sony bodies: A7 IV to match the real shoots, A7 III as a second variant.
 fetch_model "ILCE-7M4" "sony-a7iv.arw"
 fetch_model "ILCE-7M3" "sony-a7iii.arw"
+
+# One current body per other raw family ImageIO decodes, for the per-brand round trips.
+fetch_model "EOS 5D Mark IV" "canon-5d4.cr2"
+fetch_model "EOS R6" "canon-r6.cr3"
+fetch_model "Z 6_2" "nikon-z6ii.nef"
+fetch_model "X-T3" "fujifilm-xt3.raf"
+fetch_model "E-M1MarkIII" "olympus-em1iii.orf"
+fetch_model "DC-S5" "panasonic-s5.rw2"
+fetch_model "K-1" "pentax-k1.pef"

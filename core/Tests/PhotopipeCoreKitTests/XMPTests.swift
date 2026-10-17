@@ -870,6 +870,30 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> (rating:
         try exiftoolTag("-XMP:Rating", of: XMP.sidecarURL(forImagePath: jpg.path)) == "2")
 }
 
+@Test func theMacNeverWritesIntoAHEICButKeepsWhatItCarried() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let heic = dir.appendingPathComponent("IMG_0025.HEIC")
+    let gray = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5))
+        .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 32))
+    try CIContext().writeHEIFRepresentation(
+        of: gray, to: heic, format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+    try ExifTool.shared.write(["-overwrite_original", "-XMP:Rating=2", heic.path])
+    let original = try Data(contentsOf: heic)
+    #expect(XMP.read(file: try image(heic)).rating == 2)
+
+    try XMP.writeEdit(Edit(exposure: 0.5), file: try image(heic))
+    #expect(XMP.read(file: try image(heic)).rating == 2)
+    try XMP.writeRating(5, file: try image(heic))
+
+    #expect(try Data(contentsOf: heic) == original)
+    #expect(
+        XMP.sidecarURL(forImagePath: heic.path).lastPathComponent == "IMG_0025.HEIC.photopipe.xmp")
+    let read = XMP.read(file: try image(heic))
+    #expect(read.rating == 5 && read.edit.exposure == 0.5)
+}
+
 @Test func anotherToolsJPEGSidecarAndASymlinkAreNotOurs() throws {
     guard requireExifTool() else { return }
     let dir = try tempDir()

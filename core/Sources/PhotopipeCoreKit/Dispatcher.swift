@@ -39,6 +39,8 @@ public final class Dispatcher: Sendable {
         switch request.method {
         case "ping":
             return .object(["pong": .bool(true)])
+        case "imageExtensions":
+            return .object(["extensions": .array(imageExtensions.sorted().map(JSONValue.string))])
         case "setRoot":
             return try JSONValue(
                 encoding: library.setRoot(

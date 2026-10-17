@@ -22,7 +22,6 @@ import {
   type ImageFile,
   identityEdit,
   isIdentityEdit,
-  isRawFile,
 } from "@/lib/core";
 import { CURVE_CHANNELS, isIdentityCurve } from "@/lib/curve";
 import {
@@ -223,7 +222,7 @@ function Group({
 }
 
 export function EditPanel({ image, edit, onChange, crop }: Props) {
-  const raw = isRawFile(image);
+  const raw = image.isRaw;
   const rawDefaults = useRawDefaults(raw ? image : undefined);
   // deferred like the Loupe's request, so both resolve to the same query
   const render = useRender(image, useDeferredValue(edit));
@@ -536,7 +535,7 @@ export function EditSidebar({
           </p>
         )}
       </div>
-      {quickSwitch && isRawFile(image) && <DecoderStrip />}
+      {quickSwitch && image.isRaw && <DecoderStrip />}
     </div>
   );
 }

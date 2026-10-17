@@ -471,15 +471,17 @@ public enum XMP {
         _ tags: [TagWrite], exifOrientationPin: Int? = nil, clearing: Bool, file: ImageFile
     ) throws {
         #if os(macOS)
-            try writeWithExifTool(
-                exiftoolArgs(tags, exifOrientationPin: exifOrientationPin),
-                clearing: clearing, file: file)
-        #else
-            try writeText(tags, clearing: clearing, file: file)
+            if try file.embedsXMP || recordsInSidecar(file) {
+                return try writeWithExifTool(
+                    exiftoolArgs(tags, exifOrientationPin: exifOrientationPin),
+                    clearing: clearing, file: file)
+            }
         #endif
+        try writeText(tags, clearing: clearing, file: file)
     }
 
-    /// With no exiftool to write into the file, every format gets a sidecar.
+    /// Starts a sidecar for a file nothing writes into: every format on iPad, and on the Mac
+    /// the ones exiftool is not trusted with.
     static func writeText(_ tags: [TagWrite], clearing: Bool, file: ImageFile) throws {
         try XMPTextWriter.write(
             tags, to: sidecarURL(forImagePath: file.path), clearing: clearing,
