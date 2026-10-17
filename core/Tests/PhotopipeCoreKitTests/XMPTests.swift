@@ -887,4 +887,14 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> (rating:
     try XMP.writeRating(4, file: try image(jpg))
     #expect(XMP.read(file: try image(jpg)).rating == 4)
     #expect(!FileManager.default.fileExists(atPath: outside.path))
+
+    let foreign = Data(
+        "<x:xmpmeta xmlns:x='adobe:ns:meta/'><rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'><rdf:Description xmlns:crs='http://ns.adobe.com/camera-raw-settings/1.0/' crs:Exposure2012='2'/></rdf:RDF></x:xmpmeta>"
+            .utf8)
+    try foreign.write(to: outside)
+    try writeTextRating(5, at: jpg)
+    let read = XMP.read(file: try image(jpg))
+    #expect(read.rating == 5)
+    #expect(read.edit.exposure == 0)
+    #expect(try Data(contentsOf: outside) == foreign)
 }

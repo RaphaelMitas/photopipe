@@ -15,10 +15,10 @@ Stack, testing strategy, CI and releases.
   The same code runs on macOS and iPadOS, except exiftool, FSEvents and zip,
   which are macOS-only.
 - **exiftool** for XMP writes on macOS, bundled into the app. iPadOS writes
-  sidecars with the native text writer instead, for every format: a JPEG, PNG
-  or DNG gets `DSC0001.JPG.photopipe.xmp`, seeded with the rating and edit the
-  file carried, and the Mac reads and writes that sidecar from then on rather
-  than the file.
+  sidecars with the native text writer instead, for every format. A JPEG, PNG
+  or DNG keeps its extension (`DSC0001.JPG.photopipe.xmp`), the sidecar starts
+  with the rating and edit the file carried, and from then on the Mac uses it
+  too.
 
 ```
 photopipe/
