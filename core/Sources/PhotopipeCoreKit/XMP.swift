@@ -16,9 +16,7 @@ public enum XMP {
         (try? sidecar.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
     }
 
-    /// Empty counts as absent, as it does for exiftool, and a symlink would lend a
-    /// read another file's rating. Throws when a file is there but cannot be looked
-    /// at, so the writer never mistakes it for absent and seeds over it.
+    /// Empty is absent, as for exiftool, and a symlink would lend a read another file's rating.
     static func isOwnSidecar(_ sidecar: URL) throws -> Bool {
         do {
             let values = try sidecar.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
@@ -29,8 +27,8 @@ public enum XMP {
     }
 
     /// Once started, a sidecar owns the rating and edit for good, on the Mac too.
-    static func recordsInSidecar(_ file: ImageFile) -> Bool {
-        file.sidecarOnly || (try? isOwnSidecar(sidecarURL(forImagePath: file.path))) == true
+    static func recordsInSidecar(_ file: ImageFile) throws -> Bool {
+        try file.sidecarOnly || isOwnSidecar(sidecarURL(forImagePath: file.path))
     }
 
     /// 0 when there is no sidecar, which is also what the walk records — the
@@ -298,7 +296,7 @@ public enum XMP {
     public static func read(file: ImageFile) -> (rating: Int, edit: Edit) {
         let fileURL = URL(fileURLWithPath: file.path)
         let read: (rating: Int?, edit: Edit)
-        if recordsInSidecar(file) {
+        if (try? recordsInSidecar(file)) == true {
             read =
                 sidecarData(forImagePath: file.path).map {
                     parse($0, isRaw: file.isRaw, baseOrientation: baseOrientation(at: fileURL) ?? 1)
@@ -431,7 +429,7 @@ public enum XMP {
         // An unreadable base can default to 1 only for sidecars: guessing one
         // for an embedded file would burn it into the photo's real EXIF.
         let fileURL = URL(fileURLWithPath: file.path)
-        let inSidecar = recordsInSidecar(file)
+        let inSidecar = try recordsInSidecar(file)
         let base =
             baseOrientation(at: fileURL) ?? (inSidecar ? 1 : nil)
         let currentXMP =
@@ -499,7 +497,7 @@ public enum XMP {
             _ tagArgs: [String], clearing: Bool, file: ImageFile
         ) throws {
             let tool = ExifTool.shared
-            if recordsInSidecar(file) {
+            if try recordsInSidecar(file) {
                 let sidecar = sidecarURL(forImagePath: file.path)
                 guard !isLink(sidecar) else { throw XMPError.linkedSidecar(sidecar.path) }
                 if FileManager.default.fileExists(atPath: sidecar.path) {
