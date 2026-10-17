@@ -28,17 +28,7 @@ enum XMPTextWriter {
     ) throws {
         writeLock.lock()
         defer { writeLock.unlock() }
-        var existing: Data?
-        // a link is replaced, never read through: the atomic write swaps in a file
-        if !XMP.isLink(sidecar) {
-            do {
-                existing = try Data(contentsOf: sidecar)
-            } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
-                existing = nil
-            }
-        }
-        // exiftool treats a zero-byte sidecar as absent too
-        if existing?.isEmpty == true { existing = nil }
+        let existing = XMP.isOwnSidecar(sidecar) ? try Data(contentsOf: sidecar) : nil
         var tags = tags
         if existing == nil {
             let seeded = try seed()

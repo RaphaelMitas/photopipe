@@ -11,18 +11,21 @@ public enum XMP {
             : url.appendingPathExtension("photopipe.xmp")
     }
 
-    /// A symlinked sidecar is never followed: a read would take another file's rating,
-    /// and exiftool's -o would create the link's target wherever it points.
+    /// exiftool's -o would create a linked sidecar's target wherever it points.
     static func isLink(_ sidecar: URL) -> Bool {
         (try? sidecar.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
     }
 
+    /// Empty counts as absent, as it does for exiftool, and a symlink would lend a
+    /// read another file's rating.
+    static func isOwnSidecar(_ sidecar: URL) -> Bool {
+        let values = try? sidecar.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        return values?.isRegularFile == true && (values?.fileSize ?? 0) > 0
+    }
+
     /// Once started, a sidecar owns the rating and edit for good, on the Mac too.
     static func recordsInSidecar(_ file: ImageFile) -> Bool {
-        guard !file.sidecarOnly else { return true }
-        let values = try? sidecarURL(forImagePath: file.path)
-            .resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-        return values?.isRegularFile == true && (values?.fileSize ?? 0) > 0
+        file.sidecarOnly || isOwnSidecar(sidecarURL(forImagePath: file.path))
     }
 
     /// 0 when there is no sidecar, which is also what the walk records — the
@@ -41,9 +44,9 @@ public enum XMP {
 
     static func sidecarData(forImagePath path: String) -> Data? {
         let sidecar = sidecarURL(forImagePath: path)
-        guard !isLink(sidecar), let handle = try? FileHandle(forReadingFrom: sidecar),
+        guard isOwnSidecar(sidecar), let handle = try? FileHandle(forReadingFrom: sidecar),
             let data = try? handle.read(upToCount: sidecarSizeLimit + 1),
-            !data.isEmpty, data.count <= sidecarSizeLimit
+            data.count <= sidecarSizeLimit
         else { return nil }
         return data
     }
