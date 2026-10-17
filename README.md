@@ -84,10 +84,11 @@ navigate with `←`/`→`, adjust exposure with `↑`/`↓`. The exposure is sav
 with the photo and baked into JPEG exports.
 
 Ratings and edits are written as XMP: a sidecar next to a raw, embedded in a
-DNG or JPEG (on iPad, which cannot write into files, a `DSC0001.JPG.xmp`
-sidecar), the exposure as Lightroom's own `crs:Exposure2012`. Lightroom,
+DNG or JPEG, the exposure as Lightroom's own `crs:Exposure2012`. Lightroom,
 Capture One and Photo Mechanic read the same stars, so nothing you decide
-here is locked inside this app.
+here is locked inside this app. On iPad, with no exiftool to write into a
+DNG or JPEG, those go to a `DSC0001.JPG.photopipe.xmp` sidecar instead, which
+the Mac then uses too; other apps do not read that one.
 
 Hold, or ⌘-click, to start selecting. Then **Export…**, **Reveal in
 Finder**, or **Delete** — which means the Trash, sidecar included, never an

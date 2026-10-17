@@ -4,7 +4,7 @@ public let imageExtensions: Set<String> = ["arw", "dng", "jpg", "jpeg", "png"]
 
 public let rawExtensions: Set<String> = ["arw", "dng", "cr2", "cr3", "nef", "raf", "orf", "rw2"]
 
-public let sidecarExtensions: Set<String> = ["arw"]
+public let sidecarOnlyExtensions: Set<String> = ["arw"]
 
 public func isImagePath(_ path: String) -> Bool {
     imageExtensions.contains((path as NSString).pathExtension.lowercased())
@@ -33,10 +33,8 @@ public struct ImageFile: Codable, Equatable, Sendable {
     /// standing in for the real ones. Writing an edit against a placeholder
     /// would erase whatever the file actually carries, so the UI must wait.
     public let enriched: Bool
-    /// Modification time of the photo's `.xmp`, or 0 when there is none.
-    /// A file's own bytes never change when its sidecar does, so this is the only
-    /// thing that tells a cached record it has gone stale — including when
-    /// Lightroom is what wrote the sidecar.
+    /// 0 without a sidecar. Writing one leaves the photo's own mtime alone, so only
+    /// this marks a cached record stale, including when Lightroom wrote it.
     public let sidecarMtime: Double
 
     public init(
@@ -62,8 +60,8 @@ public struct ImageFile: Codable, Equatable, Sendable {
         self.sidecarMtime = sidecarMtime
     }
 
-    public var usesSidecar: Bool {
-        sidecarExtensions.contains(ext.lowercased())
+    public var sidecarOnly: Bool {
+        sidecarOnlyExtensions.contains(ext.lowercased())
     }
 
     public var isRaw: Bool {

@@ -2,22 +2,23 @@ import Foundation
 import ImageIO
 
 public enum XMP {
-    /// A raw's is Lightroom's DSC0001.xmp; anything else keeps its extension, so the
-    /// JPEG of a RAW+JPEG pair cannot take the raw's.
+    /// An ARW's is Lightroom's DSC0001.xmp. Anything else's keeps its extension, so the
+    /// JPEG of a RAW+JPEG pair cannot take it, and is ours alone: darktable and digiKam
+    /// already own DSC0001.JPG.xmp.
     public static func sidecarURL(forImagePath path: String) -> URL {
         let url = URL(fileURLWithPath: path)
-        return sidecarExtensions.contains(url.pathExtension.lowercased())
+        return sidecarOnlyExtensions.contains(url.pathExtension.lowercased())
             ? url.deletingPathExtension().appendingPathExtension("xmp")
-            : url.appendingPathExtension("xmp")
+            : url.appendingPathExtension("photopipe.xmp")
     }
 
-    /// A raw's rating and edit always live in its sidecar; any other file's once
-    /// a sidecar has been started for it, and inside the file until then.
+    /// Once started, a sidecar owns the rating and edit for good, on the Mac too. A
+    /// symlink never counts, so exiftool cannot be sent writing outside the library.
     static func recordsInSidecar(_ file: ImageFile) -> Bool {
-        guard !file.usesSidecar else { return true }
-        let size = try? sidecarURL(forImagePath: file.path)
-            .resourceValues(forKeys: [.fileSizeKey]).fileSize
-        return (size ?? 0) > 0
+        guard !file.sidecarOnly else { return true }
+        let values = try? sidecarURL(forImagePath: file.path)
+            .resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        return values?.isRegularFile == true && (values?.fileSize ?? 0) > 0
     }
 
     /// 0 when there is no sidecar, which is also what the walk records — the
@@ -37,7 +38,7 @@ public enum XMP {
     static func sidecarData(forImagePath path: String) -> Data? {
         guard let handle = try? FileHandle(forReadingFrom: sidecarURL(forImagePath: path)),
             let data = try? handle.read(upToCount: sidecarSizeLimit + 1),
-            data.count <= sidecarSizeLimit
+            !data.isEmpty, data.count <= sidecarSizeLimit
         else { return nil }
         return data
     }
@@ -283,11 +284,11 @@ public enum XMP {
     public static func read(file: ImageFile) -> (rating: Int, edit: Edit) {
         let fileURL = URL(fileURLWithPath: file.path)
         let read: (rating: Int?, edit: Edit)
-        if let sidecar = sidecarData(forImagePath: file.path), !sidecar.isEmpty {
-            read = parse(
-                sidecar, isRaw: file.isRaw, baseOrientation: baseOrientation(at: fileURL) ?? 1)
-        } else if file.usesSidecar {
-            read = (nil, .identity)
+        if recordsInSidecar(file) {
+            read =
+                sidecarData(forImagePath: file.path).map {
+                    parse($0, isRaw: file.isRaw, baseOrientation: baseOrientation(at: fileURL) ?? 1)
+                } ?? (nil, .identity)
         } else {
             read = readEmbedded(at: fileURL, isRaw: file.isRaw)
         }
@@ -467,10 +468,11 @@ public enum XMP {
     static func writeText(_ tags: [TagWrite], clearing: Bool, file: ImageFile) throws {
         try XMPTextWriter.write(
             tags, to: sidecarURL(forImagePath: file.path), clearing: clearing,
-            seed: { file.usesSidecar ? [] : try embeddedTags(file) })
+            seed: { file.sidecarOnly ? [] : try embeddedTags(file) })
     }
 
-    /// What a file carries inside itself, so the sidecar that takes over from it loses none of it.
+    /// `read` stops looking inside the file once a sidecar exists, so the sidecar starts
+    /// with the rating and edit the file carried.
     static func embeddedTags(_ file: ImageFile) throws -> [TagWrite] {
         let (rating, edit) = readEmbedded(at: URL(fileURLWithPath: file.path), isRaw: file.isRaw)
         guard (rating ?? 0) != 0 || !edit.isIdentity else { return [] }

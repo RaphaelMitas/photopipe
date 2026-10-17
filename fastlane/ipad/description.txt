@@ -23,6 +23,6 @@ DELIVER
 
 YOUR FILES STAY YOURS
 • No catalogue, no account, no telemetry
-• Ratings and edits travel as XMP sidecars that other photo apps read
+• Ratings and edits are saved as standard XMP sidecars beside your photos
 
 Free and open source. Requires iPadOS 18 or later.

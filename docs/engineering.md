@@ -16,8 +16,9 @@ Stack, testing strategy, CI and releases.
   which are macOS-only.
 - **exiftool** for XMP writes on macOS, bundled into the app. iPadOS writes
   sidecars with the native text writer instead, for every format: a JPEG, PNG
-  or DNG gets `DSC0001.JPG.xmp`, started from what the file carried, and the
-  Mac reads and writes that sidecar from then on rather than the file.
+  or DNG gets `DSC0001.JPG.photopipe.xmp`, seeded with the rating and edit the
+  file carried, and the Mac reads and writes that sidecar from then on rather
+  than the file.
 
 ```
 photopipe/
@@ -255,9 +256,9 @@ required-reason APIs the binary touches (user defaults, file timestamps, boot
 time), without which App Store Connect refuses an iOS upload. CI runs clippy
 for the simulator and builds the simulator app, which is the only step that
 links the core into it. Not there yet: watching the folder for changes, zip
-export (hidden through the `features` command), ratings in exported JPEGs, Reveal (hidden through `features`; the opener plugin's
-reveal-in-folder is desktop-only), and aesthetic scoring, which fails in the
-simulator.
+export (hidden through the `features` command), ratings in exported JPEGs,
+Reveal (hidden through `features`; the opener plugin's reveal-in-folder is
+desktop-only), and aesthetic scoring, which fails in the simulator.
 
 ### Updates
 

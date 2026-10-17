@@ -21,8 +21,7 @@ enum XMPTextWriter {
     // exiftool serialized writes through its one process; here nothing else does
     private static let writeLock = NSLock()
 
-    /// `seed` is what a new sidecar starts from, asked under the lock so two
-    /// writes racing to start one cannot seed over each other.
+    /// `seed` runs under the lock, so two writes racing to start a sidecar cannot seed over each other.
     static func write(
         _ tags: [XMP.TagWrite], to sidecar: URL, clearing: Bool,
         seed: () throws -> [XMP.TagWrite] = { [] }
