@@ -38,13 +38,12 @@ private struct Writers {
 
     func write(_ rating: Int) throws {
         try XMP.writeRating(rating, file: try image(exiftool))
-        try XMP.writeText(XMP.ratingTags(rating), clearing: rating == 0, file: try image(text))
+        try writeTextRating(rating, at: text)
     }
 
     func write(_ edit: Edit) throws {
         try XMP.writeEdit(edit, file: try image(exiftool))
-        let file = try image(text)
-        try XMP.writeText(XMP.editTags(edit, file: file).tags, clearing: edit.isIdentity, file: file)
+        try writeTextEdit(edit, at: text)
     }
 
     func expectEqual(_ step: String) throws {
@@ -140,9 +139,8 @@ func textWriterMatchesExifTool(fixture: String?) throws {
         exposure: 0.5,
         curveRGB: [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.4, y: 0.6), CurvePoint(x: 1, y: 1)],
         curveBlue: [CurvePoint(x: 0, y: 0.2), CurvePoint(x: 1, y: 0.8)])
-    let file = try image(raw)
-    try XMP.writeText(XMP.editTags(edit, file: file).tags, clearing: false, file: file)
-    let read = XMP.read(file: file).edit
+    try writeTextEdit(edit, at: raw)
+    let read = XMP.read(file: try image(raw)).edit
     #expect(read.curveRGB == edit.curveRGB)
     #expect(read.curveBlue == edit.curveBlue)
 }

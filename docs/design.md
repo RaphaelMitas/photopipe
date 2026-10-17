@@ -14,8 +14,9 @@ can disagree with reality. Move files around in Finder and the app follows.
 for: import, export, reveal, delete.
 
 **Judgment travels with the files.** Ratings and edits are XMP — a sidecar
-beside a raw, embedded in a DNG or JPEG — so Lightroom and Capture One read
-the same stars. The develop exposure uses `crs:Exposure2012`, the tag
+beside an ARW, embedded in a DNG, JPEG or PNG — so Lightroom and Capture One
+read the same stars. The iPad, which has no exiftool to write into a file,
+gives those a sidecar of their own instead. The develop exposure uses `crs:Exposure2012`, the tag
 Lightroom itself writes. Nothing you decide is trapped in a database only
 this app can open.
 

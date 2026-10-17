@@ -378,7 +378,7 @@ public final class LibraryService: @unchecked Sendable {
             path: file.path, rel: file.rel, ext: file.ext,
             size: (values?.fileSize).map(Int64.init) ?? file.size,
             mtime: values?.contentModificationDate?.timeIntervalSince1970 ?? file.mtime,
-            sidecarMtime: file.usesSidecar ? XMP.sidecarMtime(forImagePath: file.path) : 0)
+            sidecarMtime: XMP.sidecarMtime(forImagePath: file.path))
     }
 
     /// Not announced through `status`: the writer gets the new value in its
@@ -518,7 +518,7 @@ public final class LibraryService: @unchecked Sendable {
     public func trashImages(shoot shootName: String, paths: [String]) throws -> TrashResult {
         let targets = try images(inShoot: shootName, paths: paths).flatMap { image in
             let sidecar = XMP.sidecarURL(forImagePath: image.path).path
-            return image.usesSidecar && FileManager.default.fileExists(atPath: sidecar)
+            return FileManager.default.fileExists(atPath: sidecar)
                 ? [image.path, sidecar] : [image.path]
         }
         guard !targets.isEmpty else { throw ServiceError.unknownImage(paths.first ?? "") }

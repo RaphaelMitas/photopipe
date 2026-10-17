@@ -45,6 +45,16 @@ func image(_ url: URL) throws -> ImageFile {
         mtime: ((attrs[.modificationDate] as? Date) ?? .distantPast).timeIntervalSince1970)
 }
 
+/// The iPad's write path, which writeRating and writeEdit never take on a Mac.
+func writeTextRating(_ rating: Int, at url: URL) throws {
+    try XMP.writeText(XMP.ratingTags(rating), clearing: rating == 0, file: try image(url))
+}
+
+func writeTextEdit(_ edit: Edit, at url: URL) throws {
+    let file = try image(url)
+    try XMP.writeText(XMP.editTags(edit, file: file).tags, clearing: edit.isIdentity, file: file)
+}
+
 private func parsed(_ description: String, baseOrientation: Int = 1) -> (rating: Int?, edit: Edit) {
     let packet = """
         <x:xmpmeta xmlns:x="adobe:ns:meta/">
@@ -787,4 +797,104 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> (rating:
 
     let executable = app.appendingPathComponent("MacOS/Photopipe")
     #expect(ExifTool.bundledBinary(executable: executable) == tool.path)
+}
+
+@Test func textWriterSavesAJPEGInItsOwnSidecarApartFromItsRaw() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00020.ARW")
+    let jpg = dir.appendingPathComponent("DSC00020.JPG")
+    try Data("fake".utf8).write(to: arw)
+    try writeGrayJPEG(to: jpg)
+    let original = try Data(contentsOf: jpg)
+
+    try writeTextRating(1, at: arw)
+    try writeTextRating(4, at: jpg)
+    try writeTextEdit(Edit(exposure: 0.5), at: jpg)
+
+    #expect(
+        FileManager.default.fileExists(
+            atPath: dir.appendingPathComponent("DSC00020.JPG.photopipe.xmp").path))
+    #expect(try Data(contentsOf: jpg) == original)
+    let read = XMP.read(file: try image(jpg))
+    #expect(read.rating == 4)
+    #expect(read.edit.exposure == 0.5)
+    #expect(XMP.read(file: try image(arw)).rating == 1)
+}
+
+@Test func aStartedSidecarKeepsWhatTheJPEGCarried() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let jpg = dir.appendingPathComponent("DSC00021.JPG")
+    try writeGrayJPEG(to: jpg)
+    try XMP.writeRating(3, file: try image(jpg))
+    try XMP.writeEdit(Edit(exposure: 0.5, rotation: 90), file: try image(jpg))
+
+    try writeTextRating(5, at: jpg)
+    var read = XMP.read(file: try image(jpg))
+    #expect(read.rating == 5)
+    #expect(read.edit.exposure == 0.5)
+    #expect(read.edit.rotation == 90)
+
+    try writeTextEdit(.identity, at: jpg)
+    read = XMP.read(file: try image(jpg))
+    #expect(read.edit.isIdentity)
+    #expect(read.rating == 5)
+}
+
+@Test func clearingAJPEGsRatingFirstStillHidesTheEmbeddedOne() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let jpg = dir.appendingPathComponent("DSC00022.JPG")
+    try writeGrayJPEG(to: jpg)
+    try XMP.writeRating(3, file: try image(jpg))
+
+    try writeTextRating(0, at: jpg)
+    #expect(XMP.read(file: try image(jpg)).rating == 0)
+}
+
+@Test func theMacWritesIntoAJPEGSidecarTheIPadStarted() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let jpg = dir.appendingPathComponent("DSC00023.JPG")
+    try writeGrayJPEG(to: jpg)
+    try writeTextRating(4, at: jpg)
+
+    try XMP.writeRating(2, file: try image(jpg))
+    #expect(XMP.read(file: try image(jpg)).rating == 2)
+    #expect(try exiftoolTag("-XMP:Rating", of: jpg) == "")
+    #expect(
+        try exiftoolTag("-XMP:Rating", of: XMP.sidecarURL(forImagePath: jpg.path)) == "2")
+}
+
+@Test func anotherToolsJPEGSidecarAndASymlinkAreNotOurs() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let jpg = dir.appendingPathComponent("DSC00024.JPG")
+    try writeGrayJPEG(to: jpg)
+    try XMP.writeRating(3, file: try image(jpg))
+    try Data("<x:xmpmeta xmlns:x='adobe:ns:meta/'/>".utf8)
+        .write(to: dir.appendingPathComponent("DSC00024.JPG.xmp"))
+    let outside = dir.appendingPathComponent("outside.xmp")
+    try FileManager.default.createSymbolicLink(
+        at: XMP.sidecarURL(forImagePath: jpg.path), withDestinationURL: outside)
+
+    #expect(XMP.read(file: try image(jpg)).rating == 3)
+    try XMP.writeRating(4, file: try image(jpg))
+    #expect(XMP.read(file: try image(jpg)).rating == 4)
+    #expect(!FileManager.default.fileExists(atPath: outside.path))
+
+    let foreign = Data(
+        "<x:xmpmeta xmlns:x='adobe:ns:meta/'><rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'><rdf:Description xmlns:crs='http://ns.adobe.com/camera-raw-settings/1.0/' crs:Exposure2012='2'/></rdf:RDF></x:xmpmeta>"
+            .utf8)
+    try foreign.write(to: outside)
+    try writeTextRating(5, at: jpg)
+    let read = XMP.read(file: try image(jpg))
+    #expect(read.rating == 5)
+    #expect(read.edit.exposure == 0)
+    #expect(try Data(contentsOf: outside) == foreign)
 }
