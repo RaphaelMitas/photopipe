@@ -84,7 +84,8 @@ navigate with `←`/`→`, adjust exposure with `↑`/`↓`. The exposure is sav
 with the photo and baked into JPEG exports.
 
 Ratings and edits are written as XMP: a sidecar next to a raw, embedded in a
-DNG or JPEG, the exposure as Lightroom's own `crs:Exposure2012`. Lightroom,
+DNG or JPEG (on iPad, which cannot write into files, a `DSC0001.JPG.xmp`
+sidecar), the exposure as Lightroom's own `crs:Exposure2012`. Lightroom,
 Capture One and Photo Mechanic read the same stars, so nothing you decide
 here is locked inside this app.
 

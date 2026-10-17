@@ -21,7 +21,12 @@ enum XMPTextWriter {
     // exiftool serialized writes through its one process; here nothing else does
     private static let writeLock = NSLock()
 
-    static func write(_ tags: [XMP.TagWrite], to sidecar: URL, clearing: Bool) throws {
+    /// `seed` is what a new sidecar starts from, asked under the lock so two
+    /// writes racing to start one cannot seed over each other.
+    static func write(
+        _ tags: [XMP.TagWrite], to sidecar: URL, clearing: Bool,
+        seed: () throws -> [XMP.TagWrite] = { [] }
+    ) throws {
         writeLock.lock()
         defer { writeLock.unlock() }
         var existing: Data?
@@ -32,7 +37,12 @@ enum XMPTextWriter {
         }
         // exiftool treats a zero-byte sidecar as absent too
         if existing?.isEmpty == true { existing = nil }
-        if existing == nil && clearing { return }
+        var tags = tags
+        if existing == nil {
+            let seeded = try seed()
+            if seeded.isEmpty && clearing { return }
+            tags = seeded + tags
+        }
         let bytes = try apply(tags, to: existing.map(Array.init) ?? Array(freshSidecar.utf8))
         try Data(bytes).write(to: sidecar, options: .atomic)
     }

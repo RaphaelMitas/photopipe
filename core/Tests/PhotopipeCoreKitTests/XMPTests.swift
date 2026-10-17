@@ -788,3 +788,87 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> (rating:
     let executable = app.appendingPathComponent("MacOS/Photopipe")
     #expect(ExifTool.bundledBinary(executable: executable) == tool.path)
 }
+
+@Test func textWriterSavesAJPEGInItsOwnSidecar() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let jpg = dir.appendingPathComponent("DSC00020.JPG")
+    try writeGrayJPEG(to: jpg)
+    let original = try Data(contentsOf: jpg)
+
+    try XMP.writeText(XMP.ratingTags(4), clearing: false, file: try image(jpg))
+    let file = try image(jpg)
+    try XMP.writeText(
+        XMP.editTags(Edit(exposure: 0.5), file: file).tags, clearing: false, file: file)
+
+    #expect(
+        FileManager.default.fileExists(
+            atPath: dir.appendingPathComponent("DSC00020.JPG.xmp").path))
+    #expect(try Data(contentsOf: jpg) == original)
+    let read = XMP.read(file: try image(jpg))
+    #expect(read.rating == 4)
+    #expect(read.edit.exposure == 0.5)
+}
+
+@Test func aStartedSidecarKeepsWhatTheJPEGCarried() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let jpg = dir.appendingPathComponent("DSC00021.JPG")
+    try writeGrayJPEG(to: jpg)
+    try XMP.writeRating(3, file: try image(jpg))
+    try XMP.writeEdit(Edit(exposure: 0.5, rotation: 90), file: try image(jpg))
+
+    try XMP.writeText(XMP.ratingTags(5), clearing: false, file: try image(jpg))
+    var read = XMP.read(file: try image(jpg))
+    #expect(read.rating == 5)
+    #expect(read.edit.exposure == 0.5)
+    #expect(read.edit.rotation == 90)
+
+    let file = try image(jpg)
+    try XMP.writeText(XMP.editTags(.identity, file: file).tags, clearing: true, file: file)
+    read = XMP.read(file: try image(jpg))
+    #expect(read.edit.isIdentity)
+    #expect(read.rating == 5)
+}
+
+@Test func clearingAJPEGsRatingFirstStillHidesTheEmbeddedOne() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let jpg = dir.appendingPathComponent("DSC00022.JPG")
+    try writeGrayJPEG(to: jpg)
+    try XMP.writeRating(3, file: try image(jpg))
+
+    try XMP.writeText(XMP.ratingTags(0), clearing: true, file: try image(jpg))
+    #expect(XMP.read(file: try image(jpg)).rating == 0)
+}
+
+@Test func theMacWritesIntoAJPEGSidecarTheIPadStarted() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let jpg = dir.appendingPathComponent("DSC00023.JPG")
+    try writeGrayJPEG(to: jpg)
+    try XMP.writeText(XMP.ratingTags(4), clearing: false, file: try image(jpg))
+
+    try XMP.writeRating(2, file: try image(jpg))
+    #expect(XMP.read(file: try image(jpg)).rating == 2)
+    #expect(try exiftoolTag("-XMP:Rating", of: jpg) == "")
+    #expect(
+        try exiftoolTag("-XMP:Rating", of: XMP.sidecarURL(forImagePath: jpg.path)) == "2")
+}
+
+@Test func aRawAndItsJPEGKeepSeparateSidecars() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00024.ARW")
+    let jpg = dir.appendingPathComponent("DSC00024.JPG")
+    try Data("fake".utf8).write(to: arw)
+    try writeGrayJPEG(to: jpg)
+
+    try XMP.writeText(XMP.ratingTags(1), clearing: false, file: try image(arw))
+    try XMP.writeText(XMP.ratingTags(5), clearing: false, file: try image(jpg))
+    #expect(XMP.read(file: try image(arw)).rating == 1)
+    #expect(XMP.read(file: try image(jpg)).rating == 5)
+}

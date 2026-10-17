@@ -25,4 +25,4 @@ YOUR FILES STAY YOURS
 • No catalogue, no account, no telemetry
 • Ratings and edits travel as XMP sidecars that other photo apps read
 
-On iPad, ratings and edits are saved for Sony ARW raws. Free and open source. Requires iPadOS 18 or later.
+Free and open source. Requires iPadOS 18 or later.

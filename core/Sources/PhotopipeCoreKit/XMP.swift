@@ -2,8 +2,22 @@ import Foundation
 import ImageIO
 
 public enum XMP {
+    /// A raw's is Lightroom's DSC0001.xmp; anything else keeps its extension, so the
+    /// JPEG of a RAW+JPEG pair cannot take the raw's.
     public static func sidecarURL(forImagePath path: String) -> URL {
-        URL(fileURLWithPath: path).deletingPathExtension().appendingPathExtension("xmp")
+        let url = URL(fileURLWithPath: path)
+        return sidecarExtensions.contains(url.pathExtension.lowercased())
+            ? url.deletingPathExtension().appendingPathExtension("xmp")
+            : url.appendingPathExtension("xmp")
+    }
+
+    /// A raw's rating and edit always live in its sidecar; any other file's once
+    /// a sidecar has been started for it, and inside the file until then.
+    static func recordsInSidecar(_ file: ImageFile) -> Bool {
+        guard !file.usesSidecar else { return true }
+        let size = try? sidecarURL(forImagePath: file.path)
+            .resourceValues(forKeys: [.fileSizeKey]).fileSize
+        return (size ?? 0) > 0
     }
 
     /// 0 when there is no sidecar, which is also what the walk records — the
@@ -150,7 +164,6 @@ public enum XMP {
 
     public enum XMPError: Error {
         case unreadableOrientation(String)
-        case embeddedWriteUnsupported(String)
     }
 
     /// The baseline the absolute tiff:Orientation is compared against.
@@ -270,13 +283,13 @@ public enum XMP {
     public static func read(file: ImageFile) -> (rating: Int, edit: Edit) {
         let fileURL = URL(fileURLWithPath: file.path)
         let read: (rating: Int?, edit: Edit)
-        if !file.usesSidecar {
-            read = readEmbedded(at: fileURL, isRaw: file.isRaw)
-        } else if let sidecar = sidecarData(forImagePath: file.path) {
+        if let sidecar = sidecarData(forImagePath: file.path), !sidecar.isEmpty {
             read = parse(
                 sidecar, isRaw: file.isRaw, baseOrientation: baseOrientation(at: fileURL) ?? 1)
-        } else {
+        } else if file.usesSidecar {
             read = (nil, .identity)
+        } else {
+            read = readEmbedded(at: fileURL, isRaw: file.isRaw)
         }
         return (read.rating ?? 0, read.edit)
     }
@@ -403,10 +416,11 @@ public enum XMP {
         // An unreadable base can default to 1 only for sidecars: guessing one
         // for an embedded file would burn it into the photo's real EXIF.
         let fileURL = URL(fileURLWithPath: file.path)
+        let inSidecar = recordsInSidecar(file)
         let base =
-            baseOrientation(at: fileURL) ?? (file.usesSidecar ? 1 : nil)
+            baseOrientation(at: fileURL) ?? (inSidecar ? 1 : nil)
         let currentXMP =
-            file.usesSidecar
+            inSidecar
             ? sidecarData(forImagePath: file.path).flatMap { orientation(in: XMPProperties($0)) }
             : embeddedXMPOrientation(at: fileURL)
         var exifOrientationPin: Int?
@@ -423,7 +437,7 @@ public enum XMP {
             let absolute = absoluteOrientation(
                 rotation: edit.normalizedRotation, base: base)
             tags.append(TagWrite(.tiff, "Orientation", .scalar("\(absolute)")))
-            if !file.usesSidecar {
+            if !inSidecar {
                 // ImageIO folds this XMP value into the next read's merged
                 // orientation, reading the rotation back as zero. EXIF wins
                 // that merge, so pin the base there.
@@ -449,9 +463,18 @@ public enum XMP {
         #endif
     }
 
+    /// With no exiftool to write into the file, every format gets a sidecar.
     static func writeText(_ tags: [TagWrite], clearing: Bool, file: ImageFile) throws {
-        guard file.usesSidecar else { throw XMPError.embeddedWriteUnsupported(file.path) }
-        try XMPTextWriter.write(tags, to: sidecarURL(forImagePath: file.path), clearing: clearing)
+        try XMPTextWriter.write(
+            tags, to: sidecarURL(forImagePath: file.path), clearing: clearing,
+            seed: { file.usesSidecar ? [] : try embeddedTags(file) })
+    }
+
+    /// What a file carries inside itself, so the sidecar that takes over from it loses none of it.
+    static func embeddedTags(_ file: ImageFile) throws -> [TagWrite] {
+        let (rating, edit) = readEmbedded(at: URL(fileURLWithPath: file.path), isRaw: file.isRaw)
+        guard (rating ?? 0) != 0 || !edit.isIdentity else { return [] }
+        return try ratingTags(rating ?? 0) + editTags(edit, file: file).tags
     }
 
     #if os(macOS)
@@ -459,7 +482,7 @@ public enum XMP {
             _ tagArgs: [String], clearing: Bool, file: ImageFile
         ) throws {
             let tool = ExifTool.shared
-            if file.usesSidecar {
+            if recordsInSidecar(file) {
                 let sidecar = sidecarURL(forImagePath: file.path)
                 if FileManager.default.fileExists(atPath: sidecar.path) {
                     try tool.write(["-overwrite_original"] + tagArgs + [sidecar.path])

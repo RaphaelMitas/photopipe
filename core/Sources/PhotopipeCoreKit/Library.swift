@@ -33,8 +33,8 @@ public struct ImageFile: Codable, Equatable, Sendable {
     /// standing in for the real ones. Writing an edit against a placeholder
     /// would erase whatever the file actually carries, so the UI must wait.
     public let enriched: Bool
-    /// Modification time of the `.xmp` beside a raw, or 0 when there is none.
-    /// A raw's own bytes never change when its rating does, so this is the only
+    /// Modification time of the photo's `.xmp`, or 0 when there is none.
+    /// A file's own bytes never change when its sidecar does, so this is the only
     /// thing that tells a cached record it has gone stale — including when
     /// Lightroom is what wrote the sidecar.
     public let sidecarMtime: Double
