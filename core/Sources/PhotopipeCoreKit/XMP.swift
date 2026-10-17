@@ -21,7 +21,10 @@ public enum XMP {
         do {
             let values = try sidecar.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
             return values.isRegularFile == true && (values.fileSize ?? 0) > 0
-        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+        } catch let error as CocoaError
+            where [.fileReadNoSuchFile, .fileReadInvalidFileName].contains(error.code)
+        {
+            // a name at the length limit has no room for .photopipe.xmp, so it never has one
             return false
         }
     }
