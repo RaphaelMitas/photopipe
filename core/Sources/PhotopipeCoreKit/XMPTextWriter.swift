@@ -28,7 +28,7 @@ enum XMPTextWriter {
     ) throws {
         writeLock.lock()
         defer { writeLock.unlock() }
-        let existing = XMP.isOwnSidecar(sidecar) ? try Data(contentsOf: sidecar) : nil
+        let existing = try XMP.isOwnSidecar(sidecar) ? try Data(contentsOf: sidecar) : nil
         var tags = tags
         if existing == nil {
             let seeded = try seed()

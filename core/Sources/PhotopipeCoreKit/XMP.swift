@@ -17,15 +17,20 @@ public enum XMP {
     }
 
     /// Empty counts as absent, as it does for exiftool, and a symlink would lend a
-    /// read another file's rating.
-    static func isOwnSidecar(_ sidecar: URL) -> Bool {
-        let values = try? sidecar.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-        return values?.isRegularFile == true && (values?.fileSize ?? 0) > 0
+    /// read another file's rating. Throws when a file is there but cannot be looked
+    /// at, so the writer never mistakes it for absent and seeds over it.
+    static func isOwnSidecar(_ sidecar: URL) throws -> Bool {
+        do {
+            let values = try sidecar.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            return values.isRegularFile == true && (values.fileSize ?? 0) > 0
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return false
+        }
     }
 
     /// Once started, a sidecar owns the rating and edit for good, on the Mac too.
     static func recordsInSidecar(_ file: ImageFile) -> Bool {
-        file.sidecarOnly || isOwnSidecar(sidecarURL(forImagePath: file.path))
+        file.sidecarOnly || (try? isOwnSidecar(sidecarURL(forImagePath: file.path))) == true
     }
 
     /// 0 when there is no sidecar, which is also what the walk records — the
@@ -44,7 +49,7 @@ public enum XMP {
 
     static func sidecarData(forImagePath path: String) -> Data? {
         let sidecar = sidecarURL(forImagePath: path)
-        guard isOwnSidecar(sidecar), let handle = try? FileHandle(forReadingFrom: sidecar),
+        guard (try? isOwnSidecar(sidecar)) == true, let handle = try? FileHandle(forReadingFrom: sidecar),
             let data = try? handle.read(upToCount: sidecarSizeLimit + 1),
             data.count <= sidecarSizeLimit
         else { return nil }
