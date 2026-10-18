@@ -13,7 +13,7 @@ public final class SQLiteIndex: @unchecked Sendable {
     private var db: OpaquePointer?
     private let path: String
 
-    // bump when the sidecar parser learns a tag, or stale rows get written back over it
+    // bump when a read learns something a cached row lacks, or stale rows get written back over it
     private static let schemaVersion = 7
 
     public init(path: String) throws {

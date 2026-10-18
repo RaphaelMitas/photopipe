@@ -192,7 +192,7 @@ public enum XMP {
         if head.starts(with: [0xFF, 0xD8]) {
             return jpegXMPPacket(in: head).flatMap { orientation(in: XMPProperties($0)) }
         }
-        // HEIC, PNG, TIFF: a crafted delimiter pair must not become a giant String
+        // anything else: a crafted delimiter pair must not become a giant String
         guard let start = head.range(of: Data("<x:xmpmeta".utf8)),
             let end = head.range(
                 of: Data("</x:xmpmeta>".utf8), in: start.upperBound..<head.endIndex),
@@ -422,7 +422,7 @@ public enum XMP {
         // An unreadable base can default to 1 only for sidecars: guessing one
         // for an embedded file would burn it into the photo's real EXIF.
         let fileURL = URL(fileURLWithPath: file.path)
-        // once started, a sidecar owns the rating and edit for good, on the Mac too
+        // a raw's record is its sidecar even before one exists; anything else shows its own XMP until then
         let inSidecar = try file.sidecarOnly || isOwnSidecar(sidecarURL(forImagePath: file.path))
         let base =
             baseOrientation(at: fileURL) ?? (inSidecar ? 1 : nil)

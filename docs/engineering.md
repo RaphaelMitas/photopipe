@@ -106,9 +106,9 @@ iPad simulator, a simulator build of the iPad app, `cargo test`, then builds a
 real `.app` and smoke tests it. Caches: pnpm, cargo, SwiftPM,
 raw fixtures, vendored exiftool.
 
-Real raw fixtures, two Sony bodies and one per other brand, are fetched by
-`fixtures/fetch.sh` (CC0, from raw.pixls.us) rather than committed — they are
-5–75 MB each.
+Real raw fixtures, two Sony bodies and one per other major raw format, are
+fetched by `fixtures/fetch.sh` (CC0, from raw.pixls.us) rather than committed
+— they are 5–75 MB each.
 
 ## Releasing
 
@@ -255,9 +255,8 @@ for image filters and copies whatever it picks into the app's caches. Photos
 lends a file only for a callback, so each pick is copied into the temporary
 folder, the raw when there is one, and anything the library cannot open is
 written as a JPEG. Nothing watches the folder, so the library is walked
-again when a shoot opens, when
-the app comes back to the front, after an export or import, and from the
-refresh button. The webview is pinned to the safe area, since the layout
+again when a shoot opens, when the app comes back to the front, after an
+export or import, and from the refresh button. The webview is pinned to the safe area, since the layout
 assumes nothing covers it. `desktop_iOS/PrivacyInfo.xcprivacy` declares the
 required-reason APIs the binary touches (user defaults, file timestamps, boot
 time), without which App Store Connect refuses an iOS upload. CI runs clippy

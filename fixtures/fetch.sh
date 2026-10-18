@@ -47,7 +47,7 @@ fetch_model() {
 fetch_model "ILCE-7M4" "sony-a7iv.arw"
 fetch_model "ILCE-7M3" "sony-a7iii.arw"
 
-# One body per other raw family ImageIO decodes, for the per-brand round trips.
+# One body per other major raw format, for the per-brand round trips.
 fetch_model "EOS 5D Mark IV" "canon-5d4.cr2"
 fetch_model "EOS R6" "canon-r6.cr3"
 fetch_model "Z 6_2" "nikon-z6ii.nef"
