@@ -28,7 +28,7 @@ export const FAQ = [
   {
     question: "Does Photopipe work with Lightroom?",
     answer:
-      "Yes, side by side. Star ratings and edits are written as XMP: a sidecar next to a raw file, embedded in DNG, JPEG and PNG files. TIFF, HEIC, AVIF, JPEG XL and WebP files keep theirs in a Photopipe sidecar that other apps do not read. Edits use Lightroom's own crs tags, such as crs:Exposure2012. Lightroom Classic, Capture One and Photo Mechanic read the same star ratings, so you can cull in Photopipe and finish in Lightroom.",
+      "Yes, side by side. Star ratings and edits are written as XMP: a sidecar next to a raw file, embedded in DNG, JPEG and PNG files. TIFF, HEIC, AVIF, JPEG XL and WebP files, and on iPad DNG, JPEG and PNG too, keep theirs in a Photopipe sidecar that other apps do not read. Edits use Lightroom's own crs tags, such as crs:Exposure2012. Lightroom Classic, Capture One and Photo Mechanic read the same star ratings, so you can cull in Photopipe and finish in Lightroom.",
   },
   {
     question: "Is Photopipe a free Lightroom alternative?",

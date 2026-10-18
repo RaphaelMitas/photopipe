@@ -17,10 +17,10 @@ Stack, testing strategy, CI and releases.
 - **exiftool** for XMP writes on macOS, bundled into the app: into a DNG,
   JPEG or PNG, and into a sidecar that already exists. The native text writer
   starts every other sidecar, and does every write on iPadOS. It seeds the
-  sidecar with the rating and edit the file carried, an in-camera star
-  included. A raw's is Lightroom's `DSC0001.xmp`; anything else keeps its
-  extension (`DSC0001.HEIC.photopipe.xmp`), and from then on the Mac uses it
-  too.
+  sidecar with the rating and edit the file carried, including an in-camera
+  star the camera wrote as XMP, which Fujifilm does not. A raw other than a
+  DNG gets Lightroom's `DSC0001.xmp`; anything else keeps its extension
+  (`DSC0001.HEIC.photopipe.xmp`), and from then on the Mac uses it too.
 - **Formats** come from ImageIO at runtime: every extension whose type it
   reads and calls a camera raw, plus JPEG, PNG, TIFF, HEIC/HEIF, AVIF, JPEG XL
   and WebP. A camera a new OS learns needs no release.

@@ -17,7 +17,6 @@ enum XMPTextWriter {
 
         """
 
-    /// `seed` only runs when there is no sidecar yet.
     static func write(
         _ tags: [XMP.TagWrite], to sidecar: URL, clearing: Bool,
         seed: () throws -> [XMP.TagWrite] = { [] }

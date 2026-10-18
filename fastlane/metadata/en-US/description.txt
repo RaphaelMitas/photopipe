@@ -21,7 +21,7 @@ DELIVER
 
 YOUR FILES STAY YOURS
 • No catalogue, no import, no account, no telemetry
-• Ratings and edits travel as XMP sidecars that other photo apps read
+• Ratings and edits travel as XMP that Lightroom reads, beside a raw or inside a JPEG, PNG or DNG
 • Delete means the Trash, never an unlink
 
 Free and open source. Requires macOS 15 or later on Apple Silicon.

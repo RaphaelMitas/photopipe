@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fetch CC0-licensed sample raw files from raw.pixls.us into fixtures/raw/.
-# Real raws are 25-80 MB and stay out of git; CI caches this directory.
+# Real raws are 5-75 MB and stay out of git; CI caches this directory.
 set -euo pipefail
 cd "$(dirname "$0")"
 mkdir -p raw

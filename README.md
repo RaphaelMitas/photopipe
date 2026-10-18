@@ -89,8 +89,8 @@ embedded in a DNG, JPEG or PNG, the exposure as Lightroom's own
 `crs:Exposure2012`. Lightroom, Capture One and Photo Mechanic read the same
 stars, so nothing you decide here is locked inside this app. A TIFF, HEIC,
 AVIF, JPEG XL or WebP gets a `DSC0001.HEIC.photopipe.xmp` sidecar instead, and
-so does every photo that is not a raw on iPad, which has no exiftool to write
-into a file. The Mac then uses that sidecar too; other apps do not read it.
+on iPad, which has no exiftool to write into a file, so does a DNG, JPEG or
+PNG. The Mac then uses that sidecar too; other apps do not read it.
 
 Hold, or ⌘-click, to start selecting. Then **Export…**, **Reveal in
 Finder**, or **Delete** — which means the Trash, sidecar included, never an

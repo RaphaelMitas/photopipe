@@ -23,13 +23,12 @@ private let readableExtensions: [(ext: String, raw: Bool)] = {
 
 public let imageExtensions = Set(readableExtensions.map(\.ext))
 
-public let rawExtensions = Set(readableExtensions.filter(\.raw).map(\.ext))
+let rawExtensions = Set(readableExtensions.filter(\.raw).map(\.ext))
 
-/// What exiftool writes into on the Mac, the formats that write was tested on; the rest keep a
-/// sidecar on both platforms.
+// exiftool embeds only into the formats it was tested on; everything else gets a sidecar
 let xmpEmbeddingExtensions: Set<String> = ["dng", "jpe", "jpg", "jpeg", "png"]
 
-public let sidecarOnlyExtensions = rawExtensions.subtracting(xmpEmbeddingExtensions)
+let sidecarOnlyExtensions = rawExtensions.subtracting(xmpEmbeddingExtensions)
 
 public func isImagePath(_ path: String) -> Bool {
     imageExtensions.contains((path as NSString).pathExtension.lowercased())
@@ -88,7 +87,7 @@ public struct ImageFile: Encodable, Equatable, Sendable {
         self.isRaw = rawExtensions.contains(ext.lowercased())
     }
 
-    public var sidecarOnly: Bool {
+    var sidecarOnly: Bool {
         sidecarOnlyExtensions.contains(ext.lowercased())
     }
 

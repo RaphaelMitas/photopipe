@@ -342,7 +342,7 @@ describe("useRender and the RAW decoder", () => {
     );
   }
 
-  it("sends the decoder version for raws and never for embedded formats", async () => {
+  it("sends the decoder version for raws and never for other formats", async () => {
     localStorage.setItem("photopipe.rawDecoder", "8");
     renderHarness(["/r/shoot1/A.ARW", "/r/shoot1/B.JPG"]);
     await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));

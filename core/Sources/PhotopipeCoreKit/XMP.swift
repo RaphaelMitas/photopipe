@@ -24,11 +24,6 @@ public enum XMP {
         }
     }
 
-    /// Once started, a sidecar owns the rating and edit for good, on the Mac too.
-    static func recordsInSidecar(_ file: ImageFile) throws -> Bool {
-        try file.sidecarOnly || isOwnSidecar(sidecarURL(forImagePath: file.path))
-    }
-
     /// 0 when there is no sidecar, which is also what the walk records — the
     /// two have to agree for a cached record to be recognised as still current.
     public static func sidecarMtime(forImagePath path: String) -> Double {
@@ -236,19 +231,16 @@ public enum XMP {
         return nil
     }
 
-    private static func embeddedMetadata(at url: URL) -> CGImageMetadata? {
-        CGImageSourceCreateWithURL(url as CFURL, nil).flatMap {
-            CGImageSourceCopyMetadataAtIndex($0, 0, nil)
-        }
-    }
-
-    private static func rating(in metadata: CGImageMetadata) -> Int? {
-        (CGImageMetadataCopyStringValueWithPath(metadata, nil, "xmp:Rating" as CFString) as String?)
-            .flatMap { Int($0) }
-    }
-
-    static func readEmbedded(at url: URL, isRaw: Bool) -> (rating: Int?, edit: Edit) {
-        guard let metadata = embeddedMetadata(at: url) else { return (nil, .identity) }
+    static func embedded(_ file: ImageFile) -> (rating: Int?, edit: Edit) {
+        let url = URL(fileURLWithPath: file.path)
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+            let metadata = CGImageSourceCopyMetadataAtIndex(source, 0, nil)
+        else { return (nil, .identity) }
+        let rating =
+            (CGImageMetadataCopyStringValueWithPath(metadata, nil, "xmp:Rating" as CFString)
+            as String?).flatMap { Int($0) }
+        // a sidecar-only raw is never written into, so its XMP holds just what the camera put there
+        guard !file.sidecarOnly else { return (rating, .identity) }
         var scalars: [String: Double] = [:]
         var curves: [String: [CurvePoint]] = [:]
         var hasCrop: Bool?
@@ -274,19 +266,11 @@ public enum XMP {
                 scalar: { scalars[$0] },
                 curve: { curves[$0] ?? [] },
                 hasCrop: hasCrop),
-            isRaw: isRaw,
+            isRaw: file.isRaw,
             rotation: rotation(
                 fromXMP: embeddedXMPOrientation(at: url),
                 base: baseOrientation(at: url) ?? 1))
-        return (rating(in: metadata), edit)
-    }
-
-    /// A raw is never written into, so its own XMP holds only what the camera put there, such as
-    /// an in-camera star, and nothing of ours to read back.
-    static func embedded(_ file: ImageFile) -> (rating: Int?, edit: Edit) {
-        let url = URL(fileURLWithPath: file.path)
-        guard file.sidecarOnly else { return readEmbedded(at: url, isRaw: file.isRaw) }
-        return (embeddedMetadata(at: url).flatMap(rating), .identity)
+        return (rating, edit)
     }
 
     private static func curvePoints(fromMetadataValue value: Any?) -> [CurvePoint] {
@@ -438,7 +422,8 @@ public enum XMP {
         // An unreadable base can default to 1 only for sidecars: guessing one
         // for an embedded file would burn it into the photo's real EXIF.
         let fileURL = URL(fileURLWithPath: file.path)
-        let inSidecar = try recordsInSidecar(file)
+        // once started, a sidecar owns the rating and edit for good, on the Mac too
+        let inSidecar = try file.sidecarOnly || isOwnSidecar(sidecarURL(forImagePath: file.path))
         let base =
             baseOrientation(at: fileURL) ?? (inSidecar ? 1 : nil)
         let currentXMP =
@@ -473,7 +458,7 @@ public enum XMP {
         return (tags, exifOrientationPin)
     }
 
-    // one at a time, so two writes can neither both start a sidecar nor undo each other's
+    // serialized, so two writes can neither both seed a new sidecar nor lose each other's tags
     private static let writeLock = NSLock()
 
     private static func write(
@@ -496,7 +481,6 @@ public enum XMP {
         }
     }
 
-    /// The Mac's way to start a sidecar too, before exiftool takes it over.
     static func writeText(_ tags: [TagWrite], clearing: Bool, file: ImageFile) throws {
         try XMPTextWriter.write(
             tags, to: sidecarURL(forImagePath: file.path), clearing: clearing,

@@ -258,9 +258,7 @@ export function usePrefetchRender(file: RenderFile, edit: Edit | undefined) {
   }, [queryClient, file, edit, decoder]);
 }
 
-export function useRawDefaults(
-  file: Pick<ImageFile, "path" | "mtime" | "isRaw"> | undefined,
-) {
+export function useRawDefaults(file: RenderFile) {
   const decoderVersion = useRawDecoderVersion();
   return useQuery({
     queryKey: ["rawDefaults", file?.path, file?.mtime, decoderVersion],
