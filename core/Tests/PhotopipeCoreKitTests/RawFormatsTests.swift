@@ -11,14 +11,7 @@ private let otherBrands = [
 
 /// A copy, so a write that lands in the raw cannot touch the cached fixture.
 private func copyOfFixture(_ name: String, into dir: URL) throws -> URL? {
-    let fixture = fixturesRoot().appendingPathComponent("raw/\(name)")
-    guard FileManager.default.fileExists(atPath: fixture.path) else {
-        #expect(
-            ProcessInfo.processInfo.environment["CI"] == nil,
-            "\(name) missing on CI — run fixtures/fetch.sh before swift test")
-        print("SKIP: run fixtures/fetch.sh for the \(name) round trip")
-        return nil
-    }
+    guard let fixture = rawFixture(name) else { return nil }
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     let copy = dir.appendingPathComponent("IMG_0001.\(fixture.pathExtension.uppercased())")
     try FileManager.default.copyItem(at: fixture, to: copy)
@@ -42,6 +35,7 @@ func aRawFromAnyBrandRendersAndSavesBesideItself(_ name: String) throws {
 
     let size = try #require(Dimensions.read(at: raw))
     #expect(size.width > size.height && size.height > 1000, "got \(size)")
+    #expect(Dimensions.properties(at: raw).flatMap(Dimensions.captureTime) != nil)
     let renderer = Renderer(cacheDir: dir.appendingPathComponent("cache"))
     #expect(try renderer.rawDefaults(for: file) != nil)
     let upright = try renderedSize(file, .identity, with: renderer)
@@ -51,7 +45,7 @@ func aRawFromAnyBrandRendersAndSavesBesideItself(_ name: String) throws {
     try XMP.writeRating(4, file: file)
     try XMP.writeEdit(Edit(exposure: 0.5, rotation: 90), file: try image(raw))
     let sidecar = dir.appendingPathComponent("IMG_0001.xmp")
-    #expect(try ExifTool.shared.execute(["-XMP:Rating", "-s3", sidecar.path]).hasPrefix("4"))
+    #expect(try exiftoolTag("-XMP:Rating", of: sidecar) == "4")
     var read = XMP.read(file: try image(raw))
     #expect(read.rating == 4 && read.edit.exposure == 0.5 && read.edit.rotation == 90)
 
@@ -67,7 +61,7 @@ func aPortraitRawFromAnyBrandStandsUpright(_ name: String) throws {
     let dir = scratchDir("portrait-\(name)")
     defer { try? FileManager.default.removeItem(at: dir) }
     guard let raw = try copyOfFixture(name, into: dir) else { return }
-    // where a camera held sideways puts it; a real portrait X-H2 RAF has it in IFD1 too, and ImageIO reads that one
+    // a real portrait X-H2 RAF has it in IFD1 too, and ImageIO reads that one
     try ExifTool.shared.write(
         ["-overwrite_original", "-Orientation#=6", "-IFD1:Orientation#=6", raw.path])
     let file = try image(raw)
@@ -82,4 +76,20 @@ func aPortraitRawFromAnyBrandStandsUpright(_ name: String) throws {
     #expect(XMP.read(file: try image(raw)).edit.rotation == 90)
     let turned = try renderedSize(try image(raw), Edit(rotation: 90), with: renderer)
     #expect(turned.width > turned.height, "got \(turned)")
+}
+
+@Test(arguments: ["canon-r6.cr3", "nikon-z6ii.nef"])
+func aStarRatedInCameraShowsAndStaysOnceTheRawHasASidecar(_ name: String) throws {
+    guard requireExifTool() else { return }
+    let dir = scratchDir("in-camera-\(name)")
+    defer { try? FileManager.default.removeItem(at: dir) }
+    guard let raw = try copyOfFixture(name, into: dir) else { return }
+    try ExifTool.shared.write(["-overwrite_original", "-XMP:Rating=3", raw.path])
+    let original = try Data(contentsOf: raw)
+    #expect(XMP.read(file: try image(raw)).rating == 3)
+
+    try XMP.writeEdit(Edit(exposure: 0.5), file: try image(raw))
+    let read = XMP.read(file: try image(raw))
+    #expect(read.rating == 3 && read.edit.exposure == 0.5)
+    #expect(try Data(contentsOf: raw) == original)
 }

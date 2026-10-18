@@ -516,11 +516,15 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     public func trashImages(shoot shootName: String, paths: [String]) throws -> TrashResult {
-        let targets = try images(inShoot: shootName, paths: paths).flatMap { image in
-            let sidecar = XMP.sidecarURL(forImagePath: image.path).path
-            return FileManager.default.fileExists(atPath: sidecar)
-                ? [image.path, sidecar] : [image.path]
-        }
+        let doomed = try images(inShoot: shootName, paths: paths)
+        let doomedPaths = Set(doomed.map(\.path))
+        // raws sharing a stem, like an ORF and its ORI, share Lightroom's DSC0001.xmp
+        let stillUsed = Set(
+            try snapshotImages(inShoot: shootName).filter { !doomedPaths.contains($0.path) }
+                .map { XMP.sidecarURL(forImagePath: $0.path).path })
+        let sidecars = Set(doomed.map { XMP.sidecarURL(forImagePath: $0.path).path })
+            .subtracting(stillUsed).filter { FileManager.default.fileExists(atPath: $0) }
+        let targets = doomed.map(\.path) + sidecars.sorted()
         guard !targets.isEmpty else { throw ServiceError.unknownImage(paths.first ?? "") }
 
         let trashed = try FileActions.trash(paths: try pathsUnderRoot(targets))

@@ -98,7 +98,6 @@ export function editKey(edit: Edit): string {
 export type ImageFile = {
   path: string;
   rel: string;
-  ext: string;
   size: number;
   mtime: number;
   rating: number;

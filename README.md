@@ -85,11 +85,11 @@ navigate with `←`/`→`, adjust exposure with `↑`/`↓`. The exposure is sav
 with the photo and baked into JPEG exports.
 
 Ratings and edits are written as XMP: a `DSC0001.xmp` sidecar next to a raw,
-embedded in a DNG, JPEG, PNG or TIFF, the exposure as Lightroom's own
+embedded in a DNG, JPEG or PNG, the exposure as Lightroom's own
 `crs:Exposure2012`. Lightroom, Capture One and Photo Mechanic read the same
-stars, so nothing you decide here is locked inside this app. A HEIC, AVIF,
-JPEG XL or WebP gets a `DSC0001.HEIC.photopipe.xmp` sidecar instead, and so
-does every photo that is not a raw on iPad, which has no exiftool to write
+stars, so nothing you decide here is locked inside this app. A TIFF, HEIC,
+AVIF, JPEG XL or WebP gets a `DSC0001.HEIC.photopipe.xmp` sidecar instead, and
+so does every photo that is not a raw on iPad, which has no exiftool to write
 into a file. The Mac then uses that sidecar too; other apps do not read it.
 
 Hold, or ⌘-click, to start selecting. Then **Export…**, **Reveal in

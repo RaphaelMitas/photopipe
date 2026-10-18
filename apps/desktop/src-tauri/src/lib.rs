@@ -106,7 +106,7 @@ async fn pick_photos(
 #[cfg(desktop)]
 fn choose_photos(app: &AppHandle, title: &str, _from: PhotoSource) -> Result<Vec<String>, Failure> {
     use tauri_plugin_dialog::DialogExt;
-    let listed = swift_core::request("imageExtensions", None).map_err(Failure::Failed)?;
+    let listed = swift_core::request("imageExtensions", None)?;
     let extensions: Vec<&str> = listed["extensions"]
         .as_array()
         .into_iter()

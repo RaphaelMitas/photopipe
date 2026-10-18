@@ -1,7 +1,6 @@
 import Foundation
 
-/// Sidecar writer for platforms that cannot spawn exiftool. Edits only the
-/// properties it owns, byte-wise, so everything else in the file survives.
+/// Edits only the properties it owns, byte-wise, so everything else in the sidecar survives.
 enum XMPTextWriter {
     enum WriteError: Error {
         case foreignPrefix(String)
@@ -18,16 +17,11 @@ enum XMPTextWriter {
 
         """
 
-    // exiftool serialized writes through its one process; here nothing else does
-    private static let writeLock = NSLock()
-
-    /// `seed` runs under the lock, so two writes racing to start a sidecar cannot seed over each other.
+    /// `seed` only runs when there is no sidecar yet.
     static func write(
         _ tags: [XMP.TagWrite], to sidecar: URL, clearing: Bool,
         seed: () throws -> [XMP.TagWrite] = { [] }
     ) throws {
-        writeLock.lock()
-        defer { writeLock.unlock() }
         let existing = try XMP.isOwnSidecar(sidecar) ? Data(contentsOf: sidecar) : nil
         var tags = tags
         if existing == nil {

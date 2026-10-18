@@ -25,14 +25,15 @@ private func tempDir() throws -> URL {
 
 /// Independent verification path: what would Lightroom see? Ask exiftool
 /// directly rather than trusting our own reader.
-private func exiftoolTag(_ tag: String, of url: URL) throws -> String {
+func exiftoolTag(_ tag: String, of url: URL) throws -> String {
     try ExifTool.shared.execute([tag, "-s3", url.path])
         .trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
+private let gray = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5))
+    .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 32))
+
 private func writeGrayJPEG(to url: URL) throws {
-    let gray = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5))
-        .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 32))
     try CIContext().writeJPEGRepresentation(
         of: gray, to: url, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
 }
@@ -45,7 +46,7 @@ func image(_ url: URL) throws -> ImageFile {
         mtime: ((attrs[.modificationDate] as? Date) ?? .distantPast).timeIntervalSince1970)
 }
 
-/// The iPad's write path, which writeRating and writeEdit never take on a Mac.
+/// The iPad's write path, which the Mac takes only to start a sidecar.
 func writeTextRating(_ rating: Int, at url: URL) throws {
     try XMP.writeText(XMP.ratingTags(rating), clearing: rating == 0, file: try image(url))
 }
@@ -870,27 +871,31 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> (rating:
         try exiftoolTag("-XMP:Rating", of: XMP.sidecarURL(forImagePath: jpg.path)) == "2")
 }
 
-@Test func theMacNeverWritesIntoAHEICButKeepsWhatItCarried() throws {
+@Test(arguments: ["HEIC", "TIF"])
+func theMacNeverWritesIntoAnUntestedFormatButKeepsWhatItCarried(_ ext: String) throws {
     guard requireExifTool() else { return }
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
-    let heic = dir.appendingPathComponent("IMG_0025.HEIC")
-    let gray = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5))
-        .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 32))
-    try CIContext().writeHEIFRepresentation(
-        of: gray, to: heic, format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
-    try ExifTool.shared.write(["-overwrite_original", "-XMP:Rating=2", heic.path])
-    let original = try Data(contentsOf: heic)
-    #expect(XMP.read(file: try image(heic)).rating == 2)
+    let photo = dir.appendingPathComponent("IMG_0025.\(ext)")
+    let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
+    if ext == "HEIC" {
+        try CIContext().writeHEIFRepresentation(of: gray, to: photo, format: .RGBA8, colorSpace: srgb)
+    } else {
+        try CIContext().writeTIFFRepresentation(of: gray, to: photo, format: .RGBA8, colorSpace: srgb)
+    }
+    try ExifTool.shared.write(["-overwrite_original", "-XMP:Rating=2", photo.path])
+    let original = try Data(contentsOf: photo)
+    #expect(XMP.read(file: try image(photo)).rating == 2)
 
-    try XMP.writeEdit(Edit(exposure: 0.5), file: try image(heic))
-    #expect(XMP.read(file: try image(heic)).rating == 2)
-    try XMP.writeRating(5, file: try image(heic))
+    try XMP.writeEdit(Edit(exposure: 0.5), file: try image(photo))
+    #expect(XMP.read(file: try image(photo)).rating == 2)
+    try XMP.writeRating(5, file: try image(photo))
 
-    #expect(try Data(contentsOf: heic) == original)
+    #expect(try Data(contentsOf: photo) == original)
     #expect(
-        XMP.sidecarURL(forImagePath: heic.path).lastPathComponent == "IMG_0025.HEIC.photopipe.xmp")
-    let read = XMP.read(file: try image(heic))
+        XMP.sidecarURL(forImagePath: photo.path).lastPathComponent
+            == "IMG_0025.\(ext).photopipe.xmp")
+    let read = XMP.read(file: try image(photo))
     #expect(read.rating == 5 && read.edit.exposure == 0.5)
 }
 

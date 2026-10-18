@@ -8,7 +8,7 @@ private let photoTypes = [
     "public.jpeg-xl", "org.webmproject.webp",
 ].compactMap(UTType.init)
 
-/// Every extension whose preferred type ImageIO reads, so a camera a new OS learns needs no release.
+/// Asked of ImageIO at runtime, so a camera a new OS learns needs no release.
 private let readableExtensions: [(ext: String, raw: Bool)] = {
     let readable = Set(CGImageSourceCopyTypeIdentifiers() as? [String] ?? [])
     return readable.compactMap(UTType.init).flatMap { $0.tags[.filenameExtension] ?? [] }
@@ -25,11 +25,11 @@ public let imageExtensions = Set(readableExtensions.map(\.ext))
 
 public let rawExtensions = Set(readableExtensions.filter(\.raw).map(\.ext))
 
-/// What exiftool writes into on the Mac; the rest keep a sidecar on both platforms.
-let embeddedExtensions: Set<String> = ["dng", "jpg", "jpeg", "png", "tif", "tiff"]
+/// What exiftool writes into on the Mac, the formats that write was tested on; the rest keep a
+/// sidecar on both platforms.
+let xmpEmbeddingExtensions: Set<String> = ["dng", "jpe", "jpg", "jpeg", "png"]
 
-/// Raws take Lightroom's DSC0001.xmp and are never written into.
-public let sidecarOnlyExtensions = rawExtensions.subtracting(embeddedExtensions)
+public let sidecarOnlyExtensions = rawExtensions.subtracting(xmpEmbeddingExtensions)
 
 public func isImagePath(_ path: String) -> Bool {
     imageExtensions.contains((path as NSString).pathExtension.lowercased())
@@ -93,7 +93,7 @@ public struct ImageFile: Encodable, Equatable, Sendable {
     }
 
     var embedsXMP: Bool {
-        embeddedExtensions.contains(ext.lowercased())
+        xmpEmbeddingExtensions.contains(ext.lowercased())
     }
 
     public func with(

@@ -23,6 +23,19 @@ func fixturesRoot() -> URL {
         .appendingPathComponent("fixtures")
 }
 
+/// A real camera raw from fixtures/fetch.sh: a soft skip locally, a loud failure on CI.
+func rawFixture(_ name: String) -> URL? {
+    let fixture = fixturesRoot().appendingPathComponent("raw/\(name)")
+    guard FileManager.default.fileExists(atPath: fixture.path) else {
+        #expect(
+            ProcessInfo.processInfo.environment["CI"] == nil,
+            "\(name) missing on CI — run fixtures/fetch.sh before swift test")
+        print("SKIP: run fixtures/fetch.sh for the tests on \(name)")
+        return nil
+    }
+    return fixture
+}
+
 /// `setRoot` returns as soon as the tree is walked, so anything that asserts on
 /// ratings, edits, dimensions or a settled generation has to wait for the
 /// background enrichment to land first.

@@ -107,6 +107,29 @@ private func exportNow(
     #expect(fm.fileExists(atPath: shoot.appendingPathComponent("DSC00001.xmp").path))
 }
 
+@Test func aSidecarTwoRawsShareGoesOnlyWithTheLast() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let shoot = dir.appendingPathComponent("2026-06-06_hires")
+    try FileManager.default.createDirectory(at: shoot, withIntermediateDirectories: true)
+    for file in ["P1010001.ORF", "P1010001.ORI", "P1010001.xmp"] {
+        try Data("x".utf8).write(to: shoot.appendingPathComponent(file))
+    }
+    let service = makeService(in: dir)
+    _ = try service.setRoot(path: dir.path, indexPath: nil)
+    let sidecar = shoot.appendingPathComponent("P1010001.xmp").path
+
+    var result = try service.trashImages(
+        shoot: shoot.lastPathComponent, paths: [shoot.appendingPathComponent("P1010001.ORI").path])
+    #expect(result.files == 1)
+    #expect(FileManager.default.fileExists(atPath: sidecar))
+
+    result = try service.trashImages(
+        shoot: shoot.lastPathComponent, paths: [shoot.appendingPathComponent("P1010001.ORF").path])
+    #expect(result.files == 2)
+    #expect(!FileManager.default.fileExists(atPath: sidecar))
+}
+
 @Test func actionsRefusePathsOutsideTheLibrary() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
