@@ -422,7 +422,7 @@ public enum XMP {
         // An unreadable base can default to 1 only for sidecars: guessing one
         // for an embedded file would burn it into the photo's real EXIF.
         let fileURL = URL(fileURLWithPath: file.path)
-        // a raw's record is its sidecar even before one exists; anything else shows its own XMP until then
+        // a sidecar-only raw records there even before one exists; anything else shows its own XMP till then
         let inSidecar = try file.sidecarOnly || isOwnSidecar(sidecarURL(forImagePath: file.path))
         let base =
             baseOrientation(at: fileURL) ?? (inSidecar ? 1 : nil)

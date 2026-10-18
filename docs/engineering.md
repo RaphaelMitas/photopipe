@@ -256,10 +256,11 @@ lends a file only for a callback, so each pick is copied into the temporary
 folder, the raw when there is one, and anything the library cannot open is
 written as a JPEG. Nothing watches the folder, so the library is walked
 again when a shoot opens, when the app comes back to the front, after an
-export or import, and from the refresh button. The webview is pinned to the safe area, since the layout
-assumes nothing covers it. `desktop_iOS/PrivacyInfo.xcprivacy` declares the
-required-reason APIs the binary touches (user defaults, file timestamps, boot
-time), without which App Store Connect refuses an iOS upload. CI runs clippy
+export or import, and from the refresh button. The webview is pinned to the
+safe area, since the layout assumes nothing covers it.
+`desktop_iOS/PrivacyInfo.xcprivacy` declares the required-reason APIs the
+binary touches (user defaults, file timestamps, boot time), without which App
+Store Connect refuses an iOS upload. CI runs clippy
 for the simulator and builds the simulator app, which is the only step that
 links the core into it. Not there yet: watching the folder for changes, zip
 export (hidden through the `features` command), ratings in exported JPEGs,
