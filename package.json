@@ -2,7 +2,7 @@
   "name": "photopipe",
   "private": true,
   "license": "MIT",
-  "packageManager": "pnpm@12.10.1",
+  "packageManager": "pnpm@12.14.0",
   "scripts": {
     "dev": "./scripts/fetch-exiftool.sh && pnpm --filter desktop tauri dev",
     "check": "biome check .",
