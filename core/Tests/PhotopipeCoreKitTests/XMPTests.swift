@@ -880,11 +880,13 @@ func theMacNeverWritesIntoAnUntestedFormatButKeepsWhatItCarried(_ ext: String) t
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
     let photo = dir.appendingPathComponent("IMG_0025.\(ext)")
-    let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
     if ext == "HEIC" {
-        try CIContext().writeHEIFRepresentation(of: gray, to: photo, format: .RGBA8, colorSpace: srgb)
+        // encoded once, ahead of time: a CI virtual machine has no HEVC encoder
+        try FileManager.default.copyItem(
+            at: fixturesRoot().appendingPathComponent("images/gray.heic"), to: photo)
     } else {
-        try CIContext().writeTIFFRepresentation(of: gray, to: photo, format: .RGBA8, colorSpace: srgb)
+        try CIContext().writeTIFFRepresentation(
+            of: gray, to: photo, format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
     }
     try ExifTool.shared.write(["-overwrite_original", "-XMP:Rating=2", photo.path])
     let original = try Data(contentsOf: photo)
