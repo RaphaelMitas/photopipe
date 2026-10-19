@@ -18,8 +18,9 @@ Stack, testing strategy, CI and releases.
   JPEG or PNG, and into a sidecar that already exists. The native text writer
   starts every other sidecar, and does every write on iPadOS. It seeds the
   sidecar with the rating and edit the file carried, including an in-camera
-  star the camera wrote as XMP, which Fujifilm does not. A raw other than a
-  DNG gets Lightroom's `DSC0001.xmp`; anything else keeps its extension
+  star the camera wrote as XMP. Fujifilm does not, and macOS 15 does not read
+  the one inside a CR3. A raw other than a DNG gets Lightroom's
+  `DSC0001.xmp`; anything else keeps its extension
   (`DSC0001.HEIC.photopipe.xmp`), and from then on the Mac uses it too.
 - **Formats** come from ImageIO at runtime: every extension whose type it
   reads and calls a camera raw, plus JPEG, PNG, TIFF, HEIC/HEIF, AVIF, JPEG XL

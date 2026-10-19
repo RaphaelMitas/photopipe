@@ -5,7 +5,7 @@ import Testing
 @testable import PhotopipeCoreKit
 
 private let otherBrands = [
-    "canon-5d4.cr2", "canon-r6.cr3", "nikon-z6ii.nef", "fujifilm-xt3.raf",
+    "canon-5d4.cr2", "canon-r6.cr3", "nikon-z6ii.nef", "fujifilm-xt4.raf",
     "olympus-em1iii.orf", "panasonic-s5.rw2", "pentax-k1.pef",
 ]
 
@@ -23,7 +23,7 @@ private func renderedSize(_ file: ImageFile, _ edit: Edit, with renderer: Render
     return try #require(CIImage(contentsOf: url)).extent.size
 }
 
-// one camera at a time, so a decoder that wedges rendering on the CI virtual machine is named in the log
+// one camera at a time: in parallel with the rest, they stalled the CI virtual machine for hours
 @Suite(.serialized)
 struct RawFormatsTests {
     @Test(arguments: otherBrands)
@@ -81,8 +81,9 @@ struct RawFormatsTests {
         #expect(turned.width > turned.height, "got \(turned)")
     }
 
-    @Test(arguments: ["canon-r6.cr3", "nikon-z6ii.nef"])
-    func aStarRatedInCameraShowsAndStaysOnceTheRawHasASidecar(_ name: String) throws {
+    // a NEF: the macOS 15 CI runs on does not surface the XMP inside a CR3
+    @Test func aStarRatedInCameraShowsAndStaysOnceTheRawHasASidecar() throws {
+        let name = "nikon-z6ii.nef"
         guard requireExifTool() else { return }
         let dir = scratchDir("in-camera-\(name)")
         defer { try? FileManager.default.removeItem(at: dir) }
