@@ -90,13 +90,16 @@ mkdir -p "$(dirname "$PHOTO")"
 echo "not really a raw" > "$PHOTO"
 
 # No Homebrew, no PHOTOPIPE_* overrides: whatever the core reaches for has to come from inside the bundle.
+# The first rating starts the sidecar natively; only exiftool writes into one that exists.
 REPLIES=$(env -i PATH=/usr/bin:/bin HOME="$ROOT" "$BINARY" --core <<EOF
 {"method":"setRoot","params":{"path":"$ROOT","indexPath":"$ROOT/index.sqlite"}}
 {"method":"setRating","params":{"shoot":"$SHOOT","path":"$PHOTO","rating":4}}
+{"method":"setRating","params":{"shoot":"$SHOOT","path":"$PHOTO","rating":5}}
 EOF
 ) || fail "$EXECUTABLE --core exited with an error"
-[ "$(grep -c '"ok":true' <<<"$REPLIES")" = 2 ] || fail "the app's core refused a request: $REPLIES"
-grep -q "<xmp:Rating>4</xmp:Rating>" "${PHOTO%.ARW}.xmp" 2>/dev/null \
+[ "$(grep -c '"ok":true' <<<"$REPLIES")" = 3 ] || fail "the app's core refused a request: $REPLIES"
+SIDECAR="${PHOTO%.ARW}.xmp"
+grep -q "<xmp:Rating>5</xmp:Rating>" "$SIDECAR" 2>/dev/null && grep -q "Image::ExifTool" "$SIDECAR" \
   || fail "no XMP sidecar with the rating; the core did not run the bundled exiftool"
 echo "  core:     the app binary opened a library and rated a photo through the bundled exiftool"
 echo "Bundle is self-contained."
