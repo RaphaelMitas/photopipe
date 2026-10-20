@@ -11,6 +11,9 @@ inputs:
   tag:
     description: The release tag, for What's New
     required: true
+  ref:
+    description: The commit being released, for What's New
+    required: true
   build:
     description: The build number the upload job gave the binary
     required: true
@@ -49,6 +52,7 @@ runs:
       env:
         PLATFORM: ${{ inputs.platform }}
         TAG: ${{ inputs.tag }}
+        REF: ${{ inputs.ref }}
       run: |
         # deliver wants one folder per locale
         mkdir -p fastlane/screenshots/en-US
@@ -59,8 +63,7 @@ runs:
           cp docs/screenshots/*.png fastlane/screenshots/en-US/
         fi
         # deliver leaves it out on a platform's first version, which has no What's New.
-        ./scripts/whats-new.sh "$(git describe --tags --abbrev=0 "$TAG^")" "$TAG" "$PLATFORM" \
-          > fastlane/metadata/en-US/release_notes.txt
+        ./scripts/whats-new.sh "$TAG" "$REF" "$PLATFORM" > fastlane/metadata/en-US/release_notes.txt
 
     - name: Update the listing and submit for review
       shell: bash
