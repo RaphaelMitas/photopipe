@@ -404,7 +404,8 @@ public final class Renderer: @unchecked Sendable {
             supported.first { $0.rawValue == "\(requested)" }
                 ?? supported.first { isVersion($0, requested) }
         }
-        return ([match].compactMap { $0 } + supported.reversed()).first(where: renders)
+        let newestFirst = supported.reversed().filter { $0 != match }
+        return ([match].compactMap { $0 } + newestFirst).first(where: renders)
     }
 
     private static func renders(_ filter: CIRAWFilter, with version: CIRAWDecoderVersion) -> Bool {
