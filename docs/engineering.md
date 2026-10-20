@@ -14,11 +14,17 @@ Stack, testing strategy, CI and releases.
   FSEvents, file actions.
   The same code runs on macOS and iPadOS, except exiftool, FSEvents and zip,
   which are macOS-only.
-- **exiftool** for XMP writes on macOS, bundled into the app. iPadOS writes
-  sidecars with the native text writer instead, for every format. A JPEG, PNG
-  or DNG keeps its extension (`DSC0001.JPG.photopipe.xmp`), the sidecar starts
-  with the rating and edit the file carried, and from then on the Mac uses it
-  too.
+- **exiftool** for XMP writes on macOS, bundled into the app: into a DNG,
+  JPEG or PNG, and into a sidecar that already exists. The native text writer
+  starts every other sidecar, and does every write on iPadOS. It seeds the
+  sidecar with the rating and edit the file carried, including an in-camera
+  star the camera wrote as XMP. Fujifilm does not, and macOS 15 does not read
+  the one inside a CR3. A raw other than a DNG gets Lightroom's
+  `DSC0001.xmp`; anything else keeps its extension
+  (`DSC0001.HEIC.photopipe.xmp`), and from then on the Mac uses it too.
+- **Formats** come from ImageIO at runtime: every extension whose type it
+  reads and calls a camera raw, plus JPEG, PNG, TIFF, HEIC/HEIF, AVIF, JPEG XL
+  and WebP. A camera a new OS learns needs no release.
 
 ```
 photopipe/
@@ -101,8 +107,9 @@ iPad simulator, a simulator build of the iPad app, `cargo test`, then builds a
 real `.app` and smoke tests it. Caches: pnpm, cargo, SwiftPM,
 raw fixtures, vendored exiftool.
 
-Real ARW fixtures are fetched by `fixtures/fetch.sh` (CC0, from raw.pixls.us)
-rather than committed — they are 25–50 MB each.
+Real raw fixtures, two Sony bodies and one per other major raw format, are
+fetched by `fixtures/fetch.sh` (CC0, from raw.pixls.us) rather than committed
+— they are 5–75 MB each.
 
 ## Releasing
 
@@ -247,13 +254,14 @@ and an iPad import from the camera lands only in Photos. Files are picked in
 place by the same picker, because the dialog plugin offers the Photos library
 for image filters and copies whatever it picks into the app's caches. Photos
 lends a file only for a callback, so each pick is copied into the temporary
-folder, the raw when there is one, and a HEIC is written as a JPEG. Nothing
-watches the folder, so the library is walked again when a shoot opens, when
-the app comes back to the front, after an export or import, and from the
-refresh button. The webview is pinned to the safe area, since the layout
-assumes nothing covers it. `desktop_iOS/PrivacyInfo.xcprivacy` declares the
-required-reason APIs the binary touches (user defaults, file timestamps, boot
-time), without which App Store Connect refuses an iOS upload. CI runs clippy
+folder, the raw when there is one, and anything the library cannot open is
+written as a JPEG. Nothing watches the folder, so the library is walked
+again when a shoot opens, when the app comes back to the front, after an
+export or import, and from the refresh button. The webview is pinned to the
+safe area, since the layout assumes nothing covers it.
+`desktop_iOS/PrivacyInfo.xcprivacy` declares the required-reason APIs the
+binary touches (user defaults, file timestamps, boot time), without which App
+Store Connect refuses an iOS upload. CI runs clippy
 for the simulator and builds the simulator app, which is the only step that
 links the core into it. Not there yet: watching the folder for changes, zip
 export (hidden through the `features` command), ratings in exported JPEGs,

@@ -23,6 +23,19 @@ func fixturesRoot() -> URL {
         .appendingPathComponent("fixtures")
 }
 
+/// A real camera raw from fixtures/fetch.sh: a soft skip locally, a loud failure on CI.
+func rawFixture(_ name: String) -> URL? {
+    let fixture = fixturesRoot().appendingPathComponent("raw/\(name)")
+    guard FileManager.default.fileExists(atPath: fixture.path) else {
+        #expect(
+            ProcessInfo.processInfo.environment["CI"] == nil,
+            "\(name) missing on CI — run fixtures/fetch.sh before swift test")
+        print("SKIP: run fixtures/fetch.sh for the tests on \(name)")
+        return nil
+    }
+    return fixture
+}
+
 /// `setRoot` returns as soon as the tree is walked, so anything that asserts on
 /// ratings, edits, dimensions or a settled generation has to wait for the
 /// background enrichment to land first.
@@ -76,6 +89,19 @@ func makeTree(_ layout: [String: [String]]) throws -> URL {
     #expect(!isImagePath("/s/DSC001.xmp"))
     #expect(!isImagePath("/s/clip.mov"))
     #expect(!isImagePath("/s/notes.txt"))
+}
+
+@Test func everyPhotoFormatImageIOReadsIsAnImageButNotItsTextures() {
+    for ext in ["cr2", "cr3", "nef", "raf", "orf", "rw2", "pef", "heic", "hif", "avif", "jxl", "webp", "tif"]
+    {
+        #expect(isImagePath("/s/x.\(ext)"), "\(ext)")
+    }
+    for ext in ["icns", "dds", "dcm", "ktx", "gif", "psd"] {
+        #expect(!isImagePath("/s/x.\(ext)"), "\(ext)")
+    }
+    #expect(rawExtensions.isSuperset(of: ["arw", "cr3", "nef", "raf", "dng"]))
+    #expect(rawExtensions.isDisjoint(with: ["tif", "heic", "jpg"]))
+    #expect(sidecarOnlyExtensions.contains("cr3") && !sidecarOnlyExtensions.contains("dng"))
 }
 
 // MARK: - Day format

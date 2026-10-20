@@ -23,7 +23,7 @@ export const FEATURES = [
   {
     icon: Star,
     title: "Ratings that travel",
-    body: "Stars, tone, colour, curves and crop go out as XMP: a sidecar beside a raw, embedded in a DNG or JPEG. Lightroom, Capture One and Photo Mechanic read the same stars.",
+    body: "Stars, tone, colour, curves and crop go out as XMP: a sidecar beside a raw, embedded in a DNG, JPEG or PNG. Lightroom, Capture One and Photo Mechanic read the same stars.",
   },
   {
     icon: BarChart3,

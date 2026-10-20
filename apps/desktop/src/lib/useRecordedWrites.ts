@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { ClipboardPaste, Star } from "lucide-react";
 import { useCallback, useMemo } from "react";
-import { type Edit, editKey, isRawFile } from "./core";
+import { type Edit, editKey } from "./core";
 import { describeEdit } from "./describeEdit";
 import { historyChannel } from "./history";
 import {
@@ -99,7 +99,7 @@ export function useRecordedWrites(shoot: string | null) {
       void written.catch(() => {});
       void edits.record(
         {
-          ...describeEdit(image.edit, edit, isRawFile(image)),
+          ...describeEdit(image.edit, edit, image.isRaw),
           paths: [path],
           written,
         },

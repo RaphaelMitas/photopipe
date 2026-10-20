@@ -5,14 +5,7 @@ import Testing
 @testable import PhotopipeCoreKit
 
 @Test func dimensionsFromRealARWHeader() throws {
-    let fixture = fixturesRoot().appendingPathComponent("raw/sony-a7iv.arw")
-    guard FileManager.default.fileExists(atPath: fixture.path) else {
-        #expect(
-            ProcessInfo.processInfo.environment["CI"] == nil,
-            "real-ARW fixture missing on CI — run fixtures/fetch.sh before swift test")
-        print("SKIP: run fixtures/fetch.sh for dimension tests")
-        return
-    }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let dims = Dimensions.read(at: fixture)
     let unwrapped = try #require(dims)
     #expect(unwrapped.width > 1000 && unwrapped.height > 1000, "got \(unwrapped)")

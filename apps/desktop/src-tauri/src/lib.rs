@@ -106,11 +106,18 @@ async fn pick_photos(
 #[cfg(desktop)]
 fn choose_photos(app: &AppHandle, title: &str, _from: PhotoSource) -> Result<Vec<String>, Failure> {
     use tauri_plugin_dialog::DialogExt;
+    let listed = swift_core::request("imageExtensions", None)?;
+    let extensions: Vec<&str> = listed["extensions"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .collect();
     let picked = app
         .dialog()
         .file()
         .set_title(title)
-        .add_filter("Photos", &["arw", "dng", "jpg", "jpeg", "png"])
+        .add_filter("Photos", &extensions)
         .blocking_pick_files()
         .unwrap_or_default();
     picked

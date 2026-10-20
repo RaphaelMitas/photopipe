@@ -18,7 +18,6 @@ import {
   type ExportProgress,
   editKey,
   type ImageFile,
-  isRawFile,
   normalizeEdit,
   normalizeImage,
   normalizeShoot,
@@ -152,12 +151,12 @@ export function useThumbnail(
   });
 }
 
-type RenderFile = Pick<ImageFile, "path" | "mtime" | "ext"> | undefined;
+type RenderFile = Pick<ImageFile, "path" | "mtime" | "isRaw"> | undefined;
 
 const PREVIEW_MAX_PIXEL = 2560;
 
 function renderDecoderVersion(file: RenderFile, version: number) {
-  return file && isRawFile(file) ? version : undefined;
+  return file?.isRaw ? version : undefined;
 }
 
 function renderQueryOptions(
@@ -259,16 +258,13 @@ export function usePrefetchRender(file: RenderFile, edit: Edit | undefined) {
   }, [queryClient, file, edit, decoder]);
 }
 
-export function useRawDefaults(
-  file: { path: string; mtime: number; ext: string } | undefined,
-) {
+export function useRawDefaults(file: RenderFile) {
   const decoderVersion = useRawDecoderVersion();
   return useQuery({
     queryKey: ["rawDefaults", file?.path, file?.mtime, decoderVersion],
-    queryFn:
-      file && isRawFile(file)
-        ? () => coreRequest("rawDefaults", { path: file.path, decoderVersion })
-        : skipToken,
+    queryFn: file?.isRaw
+      ? () => coreRequest("rawDefaults", { path: file.path, decoderVersion })
+      : skipToken,
     staleTime: Number.POSITIVE_INFINITY,
   });
 }

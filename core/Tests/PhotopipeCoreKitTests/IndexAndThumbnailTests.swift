@@ -212,16 +212,7 @@ func makePNG(width: Int = 64, height: Int = 48) throws -> (ImageFile, URL) {
 }
 
 @Test func thumbnailExtractsEmbeddedPreviewFromRealARW() throws {
-    let fixture = fixturesRoot().appendingPathComponent("raw/sony-a7iv.arw")
-    guard FileManager.default.fileExists(atPath: fixture.path) else {
-        // Locally a missing fixture is a soft skip; CI fetches fixtures first,
-        // so there it must fail loudly instead of going silently green.
-        #expect(
-            ProcessInfo.processInfo.environment["CI"] == nil,
-            "real-ARW fixture missing on CI — run fixtures/fetch.sh before swift test")
-        print("SKIP: run fixtures/fetch.sh for the real-ARW thumbnail test")
-        return
-    }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let attrs = try FileManager.default.attributesOfItem(atPath: fixture.path)
     let file = ImageFile(
         path: fixture.path, rel: fixture.lastPathComponent, ext: "arw",

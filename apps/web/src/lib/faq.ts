@@ -19,7 +19,7 @@ export const FAQ = [
   {
     question: "Which file formats does Photopipe open?",
     answer:
-      "Sony ARW and DNG raw files, plus JPEG and PNG. Other raw formats, such as Canon CR3 or Nikon NEF, are not supported yet.",
+      "Raw files from every camera your Mac or iPad can decode, including Sony ARW, Canon CR2 and CR3, Nikon NEF, Fujifilm RAF, OM System and Olympus ORF, Panasonic RW2, Pentax PEF and DNG, plus JPEG, PNG, TIFF, HEIC, AVIF, JPEG XL and WebP. A camera newer than your system opens once an Apple update adds it.",
   },
   {
     question: "How do I install Photopipe?",
@@ -28,7 +28,7 @@ export const FAQ = [
   {
     question: "Does Photopipe work with Lightroom?",
     answer:
-      "Yes, side by side. Star ratings and edits are written as XMP: a sidecar next to a raw file, embedded in DNG and JPEG files. Edits use Lightroom's own crs tags, such as crs:Exposure2012. Lightroom Classic, Capture One and Photo Mechanic read the same star ratings, so you can cull in Photopipe and finish in Lightroom.",
+      "Yes, side by side. Star ratings and edits are written as XMP: a sidecar next to a raw file, embedded in DNG, JPEG and PNG files. TIFF, HEIC, AVIF, JPEG XL and WebP files, and on iPad DNG, JPEG and PNG too, keep theirs in a Photopipe sidecar that other apps do not read. Edits use Lightroom's own crs tags, such as crs:Exposure2012. Lightroom Classic, Capture One and Photo Mechanic read the same star ratings, so you can cull in Photopipe and finish in Lightroom.",
   },
   {
     question: "Is Photopipe a free Lightroom alternative?",

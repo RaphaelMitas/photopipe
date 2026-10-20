@@ -8,7 +8,6 @@ export function makeImage(
   return {
     path: `/r/s/${rel}`,
     rel,
-    ext: rel.split(".").pop() ?? "",
     size: 1,
     mtime: 1,
     rating: 0,
@@ -19,6 +18,7 @@ export function makeImage(
     captured: null,
     stack: null,
     enriched: true,
+    isRaw: /\.(arw|dng)$/i.test(rel),
     ...overrides,
   };
 }
