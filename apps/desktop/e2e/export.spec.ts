@@ -213,7 +213,7 @@ test("a camera without RAW 9 disables the option instead of promising it", async
   await page.getByTestId("select-all").click();
   await expect(page.getByTestId("export-decoder-9")).toBeDisabled();
   await expect(page.getByTestId("export-decoder-help")).toContainText(
-    "isn't available for these photos on this Mac",
+    "isn't available for these photos.",
   );
   await expect(page.getByTestId("decoder-banner")).toHaveCount(0);
 });

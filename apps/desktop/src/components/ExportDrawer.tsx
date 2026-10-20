@@ -188,7 +188,7 @@ export function ExportDrawer({
   const dismissKey = `${selectionKey}|${options.format}|${effectiveDecoder}`;
 
   const decoderHelp = (): string => {
-    if (noRaw9) return "RAW 9 isn't available for these photos on this Mac.";
+    if (noRaw9) return "RAW 9 isn't available for these photos.";
     if (effectiveDecoder === 8)
       return partial
         ? `RAW 9 resolves more detail, and applies to ${partial.raw9} of ${partial.rawTotal} photos.`

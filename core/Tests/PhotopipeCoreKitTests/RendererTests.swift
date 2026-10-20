@@ -703,6 +703,14 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
     #expect(Renderer.resolveDecoder(requested: 8, supported: []) == nil)
 }
 
+@Test func aDecoderThatRendersNothingFallsBackToTheNewestThatDoes() {
+    let supported = [decoder("7"), decoder("9")]
+    let renders = { (version: CIRAWDecoderVersion) in version != decoder("9") }
+    #expect(Renderer.resolveDecoder(requested: 9, supported: supported, renders: renders) == decoder("7"))
+    #expect(Renderer.resolveDecoder(requested: nil, supported: supported, renders: renders) == decoder("7"))
+    #expect(Renderer.resolveDecoder(requested: 9, supported: supported, renders: { _ in false }) == nil)
+}
+
 @Test func decoderVersionSeparatesTheRenderCache() throws {
     guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
