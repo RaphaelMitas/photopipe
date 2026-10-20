@@ -441,6 +441,7 @@ jobs:
           platform: mac
           version: ${{ needs.check.outputs.version }}
           tag: ${{ needs.check.outputs.tag }}
+          ref: ${{ needs.check.outputs.ref }}
           build: ${{ needs.mas.outputs.build }}
           key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -533,6 +534,7 @@ jobs:
           platform: ipad
           version: ${{ needs.check.outputs.version }}
           tag: ${{ needs.check.outputs.tag }}
+          ref: ${{ needs.check.outputs.ref }}
           build: ${{ needs.ipad.outputs.build }}
           key-id: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           issuer-id: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
