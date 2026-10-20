@@ -340,8 +340,8 @@ public final class Renderer: @unchecked Sendable {
     /// nil when the file cannot be read yet, which is not the same answer as no.
     public func known(file: ImageFile, major: Int) -> Bool? {
         guard file.isRaw else { return false }
-        // reading the header costs more than the probe it saves, so a path
-        // answered once never reads again
+        // even the camera cache costs a header read, so a path answered once
+        // never reads again
         let pathKey = "\(file.path)|v\(major)"
         if let known = lock.withLock({ supportsByPath[pathKey] }), known.mtime == file.mtime {
             return known.supported
