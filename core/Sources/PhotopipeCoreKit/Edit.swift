@@ -46,7 +46,7 @@ public struct CropRect: Codable, Equatable, Sendable {
 /// Every per-photo adjustment. Curve points live in the unit square, empty
 /// meaning the identity ramp.
 /// `temperature`/`tint`: Kelvin and green–magenta for raws (nil = as shot),
-/// incremental -100..100 for embedded formats, whose neutral is unknowable.
+/// incremental -100..100 for non-raws, whose neutral is unknowable.
 /// `denoise`: luminance NR 0...100, raws only. nil is the decoder's own
 /// amount, which is not zero, so nil and 0 have to stay distinct.
 /// `cropAngle`: degrees, positive clockwise on screen about the center while

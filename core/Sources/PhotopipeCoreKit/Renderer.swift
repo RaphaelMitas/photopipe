@@ -77,7 +77,7 @@ public final class Renderer: @unchecked Sendable {
             var image = try sourceImage(
                 for: file, edit: edit, maxPixel: maxPixel, viewport: viewport,
                 decoderVersion: decoderVersion)
-            // raws already decoded close to this; embedded formats did not
+            // raws already decoded close to this; other formats did not
             let longEdge = max(image.extent.width, image.extent.height)
             let scale = CGFloat(maxPixel) / longEdge
             if scale < 1 {
@@ -125,7 +125,7 @@ public final class Renderer: @unchecked Sendable {
         }
     }
 
-    /// nil for embedded formats, which have no neutral to offset against.
+    /// nil for non-raws, which have no neutral to offset against.
     public func rawDefaults(for file: ImageFile, decoderVersion: Int? = nil) throws -> RawDefaults? {
         guard file.isRaw else { return nil }
         let key = Self.defaultsKey(path: file.path, decoderVersion: decoderVersion)

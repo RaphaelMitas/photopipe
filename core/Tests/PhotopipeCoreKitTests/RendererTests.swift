@@ -5,19 +5,6 @@ import UniformTypeIdentifiers
 
 @testable import PhotopipeCoreKit
 
-private func fixtureARW() -> URL? {
-    let fixture = fixturesRoot().appendingPathComponent("raw/sony-a7iv.arw")
-    guard FileManager.default.fileExists(atPath: fixture.path) else {
-        // Locally a missing fixture is a soft skip; CI must fail loudly.
-        #expect(
-            ProcessInfo.processInfo.environment["CI"] == nil,
-            "real-ARW fixture missing on CI — run fixtures/fetch.sh before swift test")
-        print("SKIP: run fixtures/fetch.sh for renderer tests")
-        return nil
-    }
-    return fixture
-}
-
 /// Built from the raw value so the tests compile on SDKs without `.version9`.
 private func decoder(_ raw: String) -> CIRAWDecoderVersion {
     CIRAWDecoderVersion(rawValue: raw)
@@ -58,7 +45,7 @@ private func tempCacheDir() -> URL {
 }
 
 @Test func renderAppliesExposureInRawPipeline() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
@@ -76,7 +63,7 @@ private func tempCacheDir() -> URL {
 }
 
 @Test func renderCachesByExposureAndFreshness() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
@@ -114,7 +101,7 @@ private func tempCacheDir() -> URL {
 /// runner. The decode count is the invariant under the budget, and it holds
 /// on every machine: warm renders reuse the cached CIRAWFilter.
 @Test func warmRenderLatencyBudget() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
@@ -635,7 +622,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
 }
 
 @Test func rawWhiteBalanceIsAsShotAndAdjustable() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
@@ -667,7 +654,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
 /// the opt-in is only observable where a newer version exists. Asserting the
 /// resolved version holds everywhere; asserting it *changed* does not.
 @Test func newestDecoderVersionIsUsed() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
@@ -683,7 +670,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
 }
 
 @Test func requestedDecoderVersionIsApplied() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
@@ -717,7 +704,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
 }
 
 @Test func decoderVersionSeparatesTheRenderCache() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
@@ -741,7 +728,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
 }
 
 @Test func denoiseOverridesTheDecoderDefault() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
@@ -763,7 +750,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
 /// maxPixel crosses IPC unvalidated, and 0 must not read as "full sensor":
 /// that would decode every pixel of a 33MP raw on request, eight at a time.
 @Test func nonPositiveMaxPixelIsRefused() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
@@ -780,7 +767,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
 /// CIRAWFilter whose scaleFactor was left alone because it already matched
 /// handed back a quarter-size decode on the second read.
 @Test func aReusedFilterKeepsItsDecodeSize() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
@@ -807,7 +794,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
 /// the whole sensor. It must cost a fraction of the full-frame render and come
 /// back at the size it asked for.
 @Test func viewportRendersOnlyTheVisibleRegion() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
@@ -834,7 +821,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
 }
 
 @Test func viewportComposesOnTopOfTheCrop() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
@@ -855,7 +842,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
 }
 
 @Test func viewportIsNotAnEdit() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
@@ -875,7 +862,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
 }
 
 @Test func scaleFactorSurvivesACrop() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
@@ -890,7 +877,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
 }
 
 @Test func exportJPEGBakesTheExposureIn() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
     let out = tempCacheDir()
     defer {
@@ -918,7 +905,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
 }
 
 @Test func exportLeavesTheLoupeFilterCacheWarm() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
     let out = tempCacheDir()
     defer {
@@ -940,7 +927,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
 }
 
 @Test func raw9SupportMatchesWhatTheFilterReports() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
@@ -965,13 +952,13 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
 }
 
 @Test func fixtureCarriesACameraModelForTheProbeCache() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let model = Renderer.cameraModel(of: fixture)
     #expect(model?.isEmpty == false, "header model read broke: every file would probe alone")
 }
 
 @Test func repeatedSupportChecksStopReadingTheFile() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
@@ -995,7 +982,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
 }
 
 @Test func aHalfCopiedFileCannotAnswerForItsWholeCamera() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let dir = FileManager.default.temporaryDirectory
@@ -1026,7 +1013,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
 }
 
 @Test func aDecoderTheFileCannotHonourSharesTheDefaultCacheKey() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
@@ -1046,7 +1033,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
 }
 
 @Test func aFileStillCopyingAnswersNothingNotNo() throws {
-    guard let fixture = fixtureARW() else { return }
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let dir = FileManager.default.temporaryDirectory
         .appendingPathComponent("half-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

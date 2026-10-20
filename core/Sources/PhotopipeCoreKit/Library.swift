@@ -1,16 +1,40 @@
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 
-public let imageExtensions: Set<String> = ["arw", "dng", "jpg", "jpeg", "png"]
+// ImageIO also reads textures, icons and medical scans, which are not photos
+private let photoTypes = [
+    "public.jpeg", "public.png", "public.tiff", "public.heic", "public.heif", "public.avif",
+    "public.jpeg-xl", "org.webmproject.webp",
+].compactMap(UTType.init)
 
-public let rawExtensions: Set<String> = ["arw", "dng", "cr2", "cr3", "nef", "raf", "orf", "rw2"]
+/// Asked of ImageIO at runtime, so a camera a new OS learns needs no release.
+private let readableExtensions: [(ext: String, raw: Bool)] = {
+    let readable = Set(CGImageSourceCopyTypeIdentifiers() as? [String] ?? [])
+    return readable.compactMap(UTType.init).flatMap { $0.tags[.filenameExtension] ?? [] }
+        .compactMap { ext in
+            // .tif also names an old Canon raw, but a TIFF is what it nearly always is
+            guard let type = UTType(filenameExtension: ext), readable.contains(type.identifier)
+            else { return nil }
+            let raw = type.conforms(to: .rawImage)
+            return raw || photoTypes.contains(where: type.conforms) ? (ext, raw) : nil
+        }
+}()
 
-public let sidecarExtensions: Set<String> = ["arw"]
+public let imageExtensions = Set(readableExtensions.map(\.ext))
+
+let rawExtensions = Set(readableExtensions.filter(\.raw).map(\.ext))
+
+// exiftool embeds only into the formats it was tested on; everything else gets a sidecar
+let xmpEmbeddingExtensions: Set<String> = ["dng", "jpe", "jpg", "jpeg", "png"]
+
+let sidecarOnlyExtensions = rawExtensions.subtracting(xmpEmbeddingExtensions)
 
 public func isImagePath(_ path: String) -> Bool {
     imageExtensions.contains((path as NSString).pathExtension.lowercased())
 }
 
-public struct ImageFile: Codable, Equatable, Sendable {
+public struct ImageFile: Encodable, Equatable, Sendable {
     public let path: String
     public let rel: String
     public let ext: String
@@ -33,11 +57,11 @@ public struct ImageFile: Codable, Equatable, Sendable {
     /// standing in for the real ones. Writing an edit against a placeholder
     /// would erase whatever the file actually carries, so the UI must wait.
     public let enriched: Bool
-    /// Modification time of the `.xmp` beside a raw, or 0 when there is none.
-    /// A raw's own bytes never change when its rating does, so this is the only
-    /// thing that tells a cached record it has gone stale — including when
-    /// Lightroom is what wrote the sidecar.
+    /// 0 without a sidecar. Writing one leaves the photo's own mtime alone, so only
+    /// this marks a cached record stale, including when Lightroom wrote it.
     public let sidecarMtime: Double
+    /// Encoded so the UI never keeps a list of its own.
+    public let isRaw: Bool
 
     public init(
         path: String, rel: String, ext: String, size: Int64, mtime: Double,
@@ -60,14 +84,15 @@ public struct ImageFile: Codable, Equatable, Sendable {
         self.stack = stack
         self.enriched = enriched
         self.sidecarMtime = sidecarMtime
+        self.isRaw = rawExtensions.contains(ext.lowercased())
     }
 
-    public var usesSidecar: Bool {
-        sidecarExtensions.contains(ext.lowercased())
+    var sidecarOnly: Bool {
+        sidecarOnlyExtensions.contains(ext.lowercased())
     }
 
-    public var isRaw: Bool {
-        rawExtensions.contains(ext.lowercased())
+    var embedsXMP: Bool {
+        xmpEmbeddingExtensions.contains(ext.lowercased())
     }
 
     public func with(

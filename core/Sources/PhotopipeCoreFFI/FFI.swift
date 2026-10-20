@@ -167,7 +167,7 @@ public func shutdown() {
     }
 
     /// Photos lends a file only for the length of a callback, so each pick is
-    /// copied out; one the core cannot read, like a HEIC, is written as a JPEG.
+    /// copied out; one the core cannot read is written as a JPEG.
     private enum LibraryCopies {
         static func save(
             _ providers: [NSItemProvider], done: @escaping @MainActor ([URL]) -> Void

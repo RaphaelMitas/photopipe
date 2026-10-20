@@ -55,11 +55,13 @@ jobs:
       # exiftool fails every cargo command, not just the bundle.
       - name: Vendor exiftool
         run: ./scripts/fetch-exiftool.sh
+      # a pty, so the log streams test by test and a hang shows which one never finished
       - name: Swift test
         working-directory: core
+        timeout-minutes: 15
         env:
           PHOTOPIPE_EXIFTOOL: ${{ github.workspace }}/apps/desktop/src-tauri/resources/exiftool/exiftool
-        run: swift test
+        run: script -q /dev/null swift test
       - name: Clippy (deny warnings)
         working-directory: apps/desktop/src-tauri
         run: cargo clippy --all-targets -- -D warnings

@@ -92,7 +92,7 @@ public func walkLibrary(root: String) throws -> LibrarySnapshot {
     return LibrarySnapshot(shoots: shoots, imagesByShoot: imagesByShoot, fileCount: fileCount)
 }
 
-/// Each call opens the file, and its sidecar for a raw, which is why this runs
+/// Each call opens the file and its sidecar, which is why this runs
 /// off the request path. Already-settled files are returned untouched.
 public func enrich(_ file: ImageFile) -> ImageFile {
     guard !file.enriched else { return file }
@@ -167,8 +167,7 @@ private func walkShootDirectory(_ dir: URL) -> [ImageFile] {
     return
         images
         .map { image in
-            guard image.usesSidecar,
-                let stamp = sidecarMtimes[XMP.sidecarURL(forImagePath: image.path).path]
+            guard let stamp = sidecarMtimes[XMP.sidecarURL(forImagePath: image.path).path]
             else { return image }
             return image.with(sidecarMtime: stamp)
         }

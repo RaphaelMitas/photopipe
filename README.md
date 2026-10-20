@@ -47,8 +47,9 @@ The Mac App Store version gets its updates from the App Store.
 A project is a folder in your library with photos in it. Its date, notes and
 cover live in a `photopipe.json` inside it; the folder name is just a name. In
 a project's settings the date field suggests the first photo's date, which you
-can change or clear. Whatever image files sit inside the folder, in subfolders
-or not, are its photos, shown as one flat set:
+can change or clear. Whatever photos sit inside the folder, in subfolders or
+not, are its photos, shown as one flat set. A photo is any raw macOS or iPadOS
+can decode, from every brand, or a JPEG, PNG, TIFF, HEIC, AVIF, JPEG XL or WebP:
 
 ```
 zell/
@@ -83,10 +84,13 @@ Click a photo to open it full-bleed. Rate with `1`–`5`, clear with `0`,
 navigate with `←`/`→`, adjust exposure with `↑`/`↓`. The exposure is saved
 with the photo and baked into JPEG exports.
 
-Ratings and edits are written as XMP: a sidecar next to a raw, embedded in a
-DNG or JPEG, the exposure as Lightroom's own `crs:Exposure2012`. Lightroom,
-Capture One and Photo Mechanic read the same stars, so nothing you decide
-here is locked inside this app.
+Ratings and edits are written as XMP: a `DSC0001.xmp` sidecar next to a raw,
+embedded in a DNG, JPEG or PNG, the exposure as Lightroom's own
+`crs:Exposure2012`. Lightroom, Capture One and Photo Mechanic read the same
+stars, so nothing you decide here is locked inside this app. A TIFF, HEIC,
+AVIF, JPEG XL or WebP gets a `DSC0001.HEIC.photopipe.xmp` sidecar instead, and
+on iPad, which has no exiftool to write into a file, so does a DNG, JPEG or
+PNG. The Mac then uses that sidecar too; other apps do not read it.
 
 Hold, or ⌘-click, to start selecting. Then **Export…**, **Reveal in
 Finder**, or **Delete** — which means the Trash, sidecar included, never an
