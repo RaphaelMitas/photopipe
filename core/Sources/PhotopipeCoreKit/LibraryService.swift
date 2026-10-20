@@ -278,14 +278,18 @@ public final class LibraryService: @unchecked Sendable {
     public func raw9Availability() -> Bool? {
         let shoots = lock.withLock { snapshot.imagesByShoot }
         // one raw per shoot: cameras rarely differ within a shoot, and the
-        // probe caches per camera, so this stays a handful of header reads
+        // probe caches per camera
         let samples = shoots.values.compactMap { $0.first(where: \.isRaw) }
-        guard !samples.isEmpty else { return nil }
         // A file still copying answers nothing, not no. Condemning the library
         // on it would stick, because the client caches this for the session.
-        let verdicts = samples.compactMap { renderer.known(file: $0, major: 9) }
-        guard !verdicts.isEmpty else { return nil }
-        return verdicts.contains(true)
+        var answered = false
+        for sample in samples {
+            guard let verdict = renderer.known(file: sample, major: 9) else { continue }
+            // a probe loads RAW 9 on its first yes, which takes seconds; one is enough
+            if verdict { return true }
+            answered = true
+        }
+        return answered ? false : nil
     }
 
     public struct DecoderSupport: Sendable, Encodable {

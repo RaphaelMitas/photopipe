@@ -157,7 +157,7 @@ export function SettingsDialog({ open, onOpenChange, onCheckUpdates }: Props) {
           <DecoderCards raw9Missing={raw9Missing} />
           <p className="text-muted-foreground/75 text-xs">
             {raw9Missing
-              ? "RAW 9 isn't available for this library on this Mac. Your choice is kept for when it is."
+              ? "RAW 9 isn't available for this library. Your choice is kept for when it is."
               : "Cameras that don't support RAW 9 always use the best decoder they offer."}
           </p>
         </div>

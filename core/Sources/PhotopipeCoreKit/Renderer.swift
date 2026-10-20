@@ -340,8 +340,8 @@ public final class Renderer: @unchecked Sendable {
     /// nil when the file cannot be read yet, which is not the same answer as no.
     public func known(file: ImageFile, major: Int) -> Bool? {
         guard file.isRaw else { return false }
-        // reading the header costs more than the probe it saves, so a path
-        // answered once never reads again
+        // even the camera cache costs a header read, so a path answered once
+        // never reads again
         let pathKey = "\(file.path)|v\(major)"
         if let known = lock.withLock({ supportsByPath[pathKey] }), known.mtime == file.mtime {
             return known.supported
@@ -361,8 +361,11 @@ public final class Renderer: @unchecked Sendable {
         }
         if let cachedForCamera { return cachedForCamera }
 
-        let versions = CIRAWFilter(imageURL: url)?.supportedDecoderVersions ?? []
-        let supported = versions.contains { Self.isVersion($0, major) }
+        let filter = CIRAWFilter(imageURL: url)
+        let versions = filter?.supportedDecoderVersions ?? []
+        let supported = versions.contains { version in
+            Self.isVersion(version, major) && filter.map { Self.renders($0, with: version) } == true
+        }
         // A file still being copied off a card names its camera in the header
         // but reports ["None"] here. That is "cannot read yet", not a verdict,
         // and caching it under the camera would answer for every sibling.
@@ -390,15 +393,24 @@ public final class Renderer: @unchecked Sendable {
         version.rawValue == "\(major)" || version.rawValue.hasPrefix("\(major).")
     }
 
-    /// Setting a version the file does not offer makes outputImage nil.
+    /// Setting a version the file does not offer makes outputImage nil, and so
+    /// can one it offers: a 5D Mark IV CR2 on iOS offers 9 and renders nothing.
     static func resolveDecoder(
-        requested: Int?, supported: [CIRAWDecoderVersion]
+        requested: Int?, supported: [CIRAWDecoderVersion],
+        renders: (CIRAWDecoderVersion) -> Bool = { _ in true }
     ) -> CIRAWDecoderVersion? {
         // supportedDecoderVersions is sorted oldest to newest
-        guard let requested else { return supported.last }
-        return supported.first { $0.rawValue == "\(requested)" }
-            ?? supported.first { isVersion($0, requested) }
-            ?? supported.last
+        let match = requested.flatMap { requested in
+            supported.first { $0.rawValue == "\(requested)" }
+                ?? supported.first { isVersion($0, requested) }
+        }
+        let newestFirst = supported.reversed().filter { $0 != match }
+        return ([match].compactMap { $0 } + newestFirst).first(where: renders)
+    }
+
+    private static func renders(_ filter: CIRAWFilter, with version: CIRAWDecoderVersion) -> Bool {
+        filter.decoderVersion = version
+        return filter.outputImage != nil
     }
 
     /// A request the file cannot honour renders exactly what no request would,
@@ -422,7 +434,8 @@ public final class Renderer: @unchecked Sendable {
             throw RenderError.unreadable(file.path)
         }
         if let version = Self.resolveDecoder(
-            requested: decoderVersion, supported: filter.supportedDecoderVersions)
+            requested: decoderVersion, supported: filter.supportedDecoderVersions,
+            renders: { Self.renders(filter, with: $0) })
         {
             filter.decoderVersion = version
         }

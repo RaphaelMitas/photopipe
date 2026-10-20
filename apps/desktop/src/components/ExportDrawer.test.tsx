@@ -169,7 +169,7 @@ describe("export decoder row", () => {
       expect(screen.getByTestId("export-decoder-9")).toBeDisabled(),
     );
     expect(screen.getByTestId("export-decoder-help").textContent).toContain(
-      "isn't available for these photos on this Mac",
+      "isn't available for these photos.",
     );
     expect(screen.queryByTestId("decoder-banner")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("run-export"));
