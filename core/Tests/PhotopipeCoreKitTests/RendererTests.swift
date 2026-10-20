@@ -934,15 +934,19 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
         "the export took a slot in the loupe's filter cache, where it evicts warm filters")
 }
 
-@Test func raw9SupportMatchesTheDecoderARaw9RequestRuns() throws {
+@Test func raw9SupportMatchesWhatTheFilterRenders() throws {
     guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let renderer = Renderer(cacheDir: cacheDir)
     let file = try imageFile(for: fixture)
 
-    let filter = try renderer.makeFilter(for: file, decoderVersion: 9).filter
-    let expected = Renderer.isVersion(filter.decoderVersion, 9)
+    let filter = try #require(CIRAWFilter(imageURL: fixture))
+    let expected = filter.supportedDecoderVersions.contains { version in
+        guard Renderer.isVersion(version, 9) else { return false }
+        filter.decoderVersion = version
+        return filter.outputImage != nil
+    }
     #expect(renderer.supports(file: file, major: 9) == expected)
     // the second ask answers from the per-camera cache, same verdict
     #expect(renderer.supports(file: file, major: 9) == expected)
