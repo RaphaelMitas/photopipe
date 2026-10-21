@@ -222,10 +222,7 @@ private func writeEntry(_ name: String, in dir: URL, bytes: Int, hoursAgo: Doubl
         return entry
     }
 
-    let deadline = Date().addingTimeInterval(10)
-    while FileManager.default.fileExists(atPath: entries[0].path), Date() < deadline {
-        Thread.sleep(forTimeInterval: 0.01)
-    }
+    cache.pruneQueue.sync {}
 
     #expect(!FileManager.default.fileExists(atPath: entries[0].path), "the least recently served goes")
     #expect(FileManager.default.fileExists(atPath: entries[1].path))

@@ -19,6 +19,7 @@ final class CacheFolder: Sendable {
     // a hit's touch and the prune's stat-then-delete must not interleave
     private static let lock = NSLock()
     private let usage: Mutex<Usage>
+    let pruneQueue = DispatchQueue(label: "CacheFolder.prune", qos: .utility)
 
     init(dir: URL, maxBytes: Int) {
         self.dir = dir
@@ -63,7 +64,7 @@ final class CacheFolder: Sendable {
             return true
         }
         guard start else { return }
-        DispatchQueue.global(qos: .utility).async { [self] in
+        pruneQueue.async { [self] in
             let remaining = prune()
             let retry = usage.withLock {
                 // what was just served can hold a prune over budget, so wait for more writes
@@ -76,7 +77,7 @@ final class CacheFolder: Sendable {
             }
             guard retry else { return }
             // by then what the ten minute window held is past it, even if nothing more is written
-            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.recentlyServed) {
+            pruneQueue.asyncAfter(deadline: .now() + Self.recentlyServed) {
                 [self] in
                 usage.withLock { $0.retryScheduled = false }
                 pruneInBackground()
