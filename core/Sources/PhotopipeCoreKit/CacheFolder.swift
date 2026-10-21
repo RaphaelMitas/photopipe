@@ -8,13 +8,12 @@ final class CacheFolder: Sendable {
     let maxBytes: Int
 
     private struct Usage {
-        var estimatedBytes = 0
-        var pruneAbove: Int
+        var bytesUntilPrune: Int
         var pruning = false
     }
 
     private static let maxAge: TimeInterval = 7 * 24 * 3600
-    // the webview reuses a served path for React Query's 5 min gcTime without asking again
+    // the webview reuses a path it let go of for React Query's 5 min gcTime without asking again
     private static let recentlyServed: TimeInterval = 10 * 60
     // a hit's touch and the prune's stat-then-delete must not interleave
     private static let lock = NSLock()
@@ -23,8 +22,10 @@ final class CacheFolder: Sendable {
     init(dir: URL, maxBytes: Int) {
         self.dir = dir
         self.maxBytes = maxBytes
-        usage = Mutex(Usage(pruneAbove: maxBytes))
+        usage = Mutex(Usage(bytesUntilPrune: maxBytes))
     }
+
+    private var headroom: Int { maxBytes / 10 }
 
     func url(forKey key: String) -> URL {
         let digest = SHA256.hash(data: Data(key.utf8))
@@ -45,8 +46,8 @@ final class CacheFolder: Sendable {
         let bytes = (try? temp.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
         _ = try? fm.replaceItemAt(url, withItemAt: temp)
         let overBudget = usage.withLock {
-            $0.estimatedBytes += bytes
-            return $0.estimatedBytes > $0.pruneAbove
+            $0.bytesUntilPrune -= bytes
+            return $0.bytesUntilPrune < 0
         }
         if overBudget { pruneInBackground() }
         return url
@@ -56,26 +57,30 @@ final class CacheFolder: Sendable {
         let start = usage.withLock {
             guard !$0.pruning else { return false }
             $0.pruning = true
-            // writes landing during the prune count on top of what it leaves
-            $0.estimatedBytes = 0
+            // writes landing during the prune spend from what it leaves
+            $0.bytesUntilPrune = 0
             return true
         }
         guard start else { return }
         DispatchQueue.global(qos: .utility).async { [self] in
-            let remaining = prune(olderThan: Self.maxAge)
+            let remaining = prune()
             usage.withLock {
-                $0.estimatedBytes += remaining
                 // what was just served can hold a prune over budget, so wait for more writes
-                $0.pruneAbove = max(maxBytes, remaining + maxBytes / 10)
+                $0.bytesUntilPrune += max(maxBytes - remaining, headroom)
                 $0.pruning = false
+            }
+            guard remaining > maxBytes else { return }
+            // by then what held it over budget has aged out, even if nothing more is written
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.recentlyServed) {
+                [self] in pruneInBackground()
             }
         }
     }
 
     /// Returns the bytes left behind.
     @discardableResult
-    func prune(olderThan age: TimeInterval) -> Int {
-        let cutoff = Date().addingTimeInterval(-age)
+    func prune() -> Int {
+        let cutoff = Date().addingTimeInterval(-Self.maxAge)
         let fm = FileManager.default
         guard
             let entries = try? fm.contentsOfDirectory(
@@ -99,8 +104,7 @@ final class CacheFolder: Sendable {
             }
         }
         var total = kept.reduce(0) { $0 + $1.size }
-        // a tenth of headroom, so the next prune is a tenth of the budget away
-        let target = maxBytes - maxBytes / 10
+        let target = maxBytes - headroom
         for var file in kept.sorted(by: { $0.modified < $1.modified })
         where total > target && file.modified.timeIntervalSinceNow < -Self.recentlyServed {
             file.url.removeAllCachedResourceValues()

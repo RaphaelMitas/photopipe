@@ -198,7 +198,7 @@ func makePNG(width: Int = 64, height: Int = 48) throws -> (ImageFile, URL) {
     let second = try thumbnailer.thumbnail(for: file, maxPixel: 32)
     #expect(second == first)
     let inodeAfter = try FileManager.default.attributesOfItem(atPath: first.path)[.systemFileNumber] as? Int
-    #expect(inode != nil && inode == inodeAfter, "a hit refreshes the mtime but never rewrites the file")
+    #expect(inode != nil && inode == inodeAfter, "a hit never rewrites the file")
 }
 
 @Test func thumbnailKeyChangesWithMtimeAndSize() throws {
