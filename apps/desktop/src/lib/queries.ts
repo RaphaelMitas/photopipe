@@ -1,5 +1,8 @@
 import {
+  type DefaultError,
   keepPreviousData,
+  MutationObserver,
+  type MutationObserverOptions,
   type QueryClient,
   queryOptions,
   skipToken,
@@ -501,9 +504,25 @@ async function writeField<V>(
   markFetching(queryClient, shoot);
 }
 
+/// `useMutation` minus the subscription, which re-renders App on every write's state change.
+function useMutate<TData, TVariables, TOnMutateResult>(
+  options: MutationObserverOptions<
+    TData,
+    DefaultError,
+    TVariables,
+    TOnMutateResult
+  >,
+) {
+  const queryClient = useQueryClient();
+  const [observer] = useState(() => new MutationObserver(queryClient, options));
+  useEffect(() => observer.setOptions(options), [observer, options]);
+  useEffect(() => () => observer.reset(), [observer]);
+  return observer.mutate;
+}
+
 function useFieldWrite<V>(shoot: string | null, field: PhotoField<V>) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useMutate({
     mutationKey: field.mutationKey,
     mutationFn: ({ path, value }: { path: string; value: V }) =>
       writeField(queryClient, shoot, path, field, value),
@@ -550,7 +569,7 @@ const BATCH_CONCURRENCY = 4;
 /// leaves the images cache alone until every write has settled.
 function useBatchWrite<V>(shoot: string | null, field: PhotoField<V>) {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useMutate({
     mutationKey: field.mutationKey,
     mutationFn: async (values: Map<string, V>): Promise<BatchResult> => {
       // A long batch outlives its shoot, so it keeps the one it started with.

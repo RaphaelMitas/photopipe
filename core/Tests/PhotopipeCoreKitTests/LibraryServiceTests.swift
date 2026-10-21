@@ -261,6 +261,24 @@ private func tempIndexPath() -> String {
     #expect(service.status(since: settled).changedShoots == [])
 }
 
+@Test func aRootBehindPrivateTakesRatingsByListedAndCanonicalPath() throws {
+    let root = try makeTree(
+        ["2026-07-12_zell": ["DSC001.ARW"]],
+        at: URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("photopipe-private-\(UUID().uuidString)"))
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let service = makeService()
+    _ = try service.setRoot(path: root.path, indexPath: tempIndexPath())
+    waitUntilIndexed(service)
+
+    let listed = try #require(service.listImages(shoot: "2026-07-12_zell").first?.path)
+    #expect(listed.hasPrefix("/private/"))
+    #expect(try service.setRating(shoot: "2026-07-12_zell", path: listed, rating: 2).rating == 2)
+    let canonical = root.appendingPathComponent("2026-07-12_zell/DSC001.ARW").path
+    #expect(try service.setRating(shoot: "2026-07-12_zell", path: canonical, rating: 3).rating == 3)
+}
+
 @Test func aRatingWrittenDuringIndexingIsNotOverwrittenByIt() throws {
     let root = try makeTree(["2026-07-12_zell": (0..<200).map { "DSC\($0).ARW" }])
     defer { try? FileManager.default.removeItem(at: root) }

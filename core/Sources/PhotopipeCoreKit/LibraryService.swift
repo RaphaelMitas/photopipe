@@ -323,15 +323,15 @@ public final class LibraryService: @unchecked Sendable {
             mtime: ((attrs[.modificationDate] as? Date) ?? .distantPast).timeIntervalSince1970)
     }
 
-    /// One canonical index for the whole selection: resolving each path against
-    /// a linear scan makes selecting a whole shoot quadratic.
+    /// One index for the whole selection, since a linear scan per path is quadratic.
     private func images(inShoot shootName: String, paths: [String]) throws -> [ImageFile] {
-        var byCanonical: [String: ImageFile] = [:]
-        for image in try snapshotImages(inShoot: shootName) {
-            byCanonical[Self.canonical(image.path)] = image
-        }
+        let images = try snapshotImages(inShoot: shootName)
+        let byPath = Self.byPath(images)
+        // the walk keeps /private and canonical() drops it
+        lazy var byCanonical = Dictionary(
+            images.map { (Self.canonical($0.path), $0) }, uniquingKeysWith: { $1 })
         return try paths.map { path in
-            guard let image = byCanonical[Self.canonical(path)] else {
+            guard let image = byPath[path] ?? byCanonical[Self.canonical(path)] else {
                 throw ServiceError.unknownImage(path)
             }
             return image

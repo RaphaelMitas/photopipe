@@ -1,15 +1,8 @@
 import type { ImageFile } from "./core";
 
-/// The browser re-sorts under a rating, so the loupe walks the order it
-/// arrived with. `current` has to be one of `held`; the caller rebuilds when
-/// it is not, because only the sort knows where an unknown photo belongs.
-export function heldOrder(
-  held: string[],
-  live: ImageFile[],
-  current: ImageFile,
-): ImageFile[] {
+/// The browser re-sorts under a rating, so the loupe walks the order it arrived with.
+export function heldOrder(held: string[], live: ImageFile[]): ImageFile[] {
   const byPath = new Map(live.map((image) => [image.path, image]));
-  byPath.set(current.path, current); // the open photo outlives the filter
   const known = new Set(held);
   const newcomers = new Map<string | null, ImageFile[]>();
   let anchor: string | null = null;

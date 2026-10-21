@@ -338,8 +338,6 @@ export default function App() {
   const openImage = currentPath
     ? allImages.find((image) => image.path === currentPath)
     : undefined;
-  // The second clause catches a keypress that lands on a photo the walk has
-  // just dropped: rebuilding places it, where holding would lose it.
   const reorder =
     held.current.key !== heldKey ||
     (openImage !== undefined && !held.current.paths.includes(openImage.path));
@@ -352,7 +350,7 @@ export default function App() {
       openImage,
     );
     if (!openImage || reorder) return live;
-    const order = heldOrder(held.current.paths, live, openImage);
+    const order = heldOrder(held.current.paths, live);
     // holding can slot a newcomer beside the wrong held photo; regrouping puts it back in its stack
     return stacksOn
       ? groupStacks(order).flatMap((stack) => stack.frames)

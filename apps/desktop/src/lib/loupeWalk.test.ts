@@ -8,19 +8,13 @@ describe("heldOrder", () => {
   it("keeps its order when the browser re-sorts underneath", () => {
     const b = makeImage("b.arw", { rating: 5 });
     const live = [b, makeImage("a.arw"), makeImage("c.arw")];
-    expect(rels(heldOrder(held, live, b))).toEqual(["a.arw", "b.arw", "c.arw"]);
-  });
-
-  it("holds a photo the filter has dropped in the place it had", () => {
-    const b = makeImage("b.arw", { rating: 0 });
-    const live = [makeImage("a.arw"), makeImage("c.arw")];
-    expect(rels(heldOrder(held, live, b))).toEqual(["a.arw", "b.arw", "c.arw"]);
+    expect(rels(heldOrder(held, live))).toEqual(["a.arw", "b.arw", "c.arw"]);
   });
 
   it("drops a photo that has left the shoot", () => {
     const a = makeImage("a.arw");
     const live = [a, makeImage("c.arw")];
-    expect(rels(heldOrder(held, live, a))).toEqual(["a.arw", "c.arw"]);
+    expect(rels(heldOrder(held, live))).toEqual(["a.arw", "c.arw"]);
   });
 
   it("slots a photo it has never seen beside the one it arrived after", () => {
@@ -31,7 +25,7 @@ describe("heldOrder", () => {
       makeImage("b2.arw"),
       makeImage("c.arw"),
     ];
-    expect(rels(heldOrder(held, live, a))).toEqual([
+    expect(rels(heldOrder(held, live))).toEqual([
       "a.arw",
       "b.arw",
       "b2.arw",
@@ -48,7 +42,7 @@ describe("heldOrder", () => {
       makeImage("b.arw"),
       makeImage("c.arw"),
     ];
-    expect(rels(heldOrder(held, live, a))).toEqual([
+    expect(rels(heldOrder(held, live))).toEqual([
       "aa.arw",
       "ab.arw",
       "a.arw",
@@ -66,7 +60,7 @@ describe("heldOrder", () => {
       makeImage("c.arw"),
       makeImage("c2.arw"),
     ];
-    expect(rels(heldOrder(held, live, a))).toEqual([
+    expect(rels(heldOrder(held, live))).toEqual([
       "a.arw",
       "a2.arw",
       "b.arw",
@@ -85,7 +79,7 @@ describe("heldOrder", () => {
       makeImage("a.arw"),
       makeImage("c.arw"),
     ];
-    expect(rels(heldOrder(held, live, b))).toEqual([
+    expect(rels(heldOrder(held, live))).toEqual([
       "a.arw",
       "b.arw",
       "x.arw",
@@ -96,15 +90,6 @@ describe("heldOrder", () => {
   it("takes an arrival and a departure in the same pass", () => {
     const a = makeImage("a.arw");
     const live = [a, makeImage("b2.arw"), makeImage("c.arw")];
-    expect(rels(heldOrder(held, live, a))).toEqual([
-      "a.arw",
-      "b2.arw",
-      "c.arw",
-    ]);
-  });
-
-  it("gives back just the open photo when the browser has emptied", () => {
-    const a = makeImage("a.arw");
-    expect(rels(heldOrder(held, [], a))).toEqual(["a.arw"]);
+    expect(rels(heldOrder(held, live))).toEqual(["a.arw", "b2.arw", "c.arw"]);
   });
 });

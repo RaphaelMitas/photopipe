@@ -152,7 +152,7 @@ describe("useSetRatings", () => {
       { ...image("D"), rating: 1 },
       { ...image("E"), rating: 1 },
     ]);
-    ratings.mutate(new Map(paths.map((path) => [path, 5])));
+    const result = ratings(new Map(paths.map((path) => [path, 5])));
     // Four workers hold A to D; E is still queued when it is rated by hand.
     await waitFor(() => expect(release.length).toBe(4));
     client.setQueryData<ImageFile[]>(["images", "shoot1"], (old) =>
@@ -160,8 +160,7 @@ describe("useSetRatings", () => {
     );
     for (const go of release) go();
 
-    await waitFor(() => expect(ratings.isSuccess).toBe(true));
-    expect(ratings.data).toEqual({
+    await expect(result).resolves.toEqual({
       written: 3,
       failed: [paths[1]],
       overtaken: 1,
@@ -196,14 +195,13 @@ describe("usePasteEdits", () => {
     );
 
     const look: Edit = { ...identityEdit, exposure: 1.5 };
-    mutation.mutate(
+    await mutation(
       new Map([
         ["/r/shoot1/A.ARW", look],
         ["/r/shoot1/B.ARW", look],
       ]),
     );
 
-    await waitFor(() => expect(mutation.isSuccess).toBe(true));
     const images = client.getQueryData<ImageFile[]>(["images", "shoot1"]);
     expect(images?.[0].edit.exposure).toBe(1.5);
     expect(images?.[1].edit.exposure).toBe(0);
@@ -240,7 +238,7 @@ describe("usePasteEdits", () => {
     );
 
     const look: Edit = { ...identityEdit, exposure: 1.5 };
-    mutation.mutate(
+    const result = mutation(
       new Map(names.map((name) => [`/r/shoot1/${name}.ARW`, look])),
     );
     // Four workers, six photos: F is still queued.
@@ -256,12 +254,15 @@ describe("usePasteEdits", () => {
     let released = 0;
     await waitFor(() => {
       while (released < gate.length) gate[released++]();
-      expect(mutation.isSuccess).toBe(true);
+      expect(released).toBe(5);
     });
 
     expect(written).not.toContain(last);
-    expect(mutation.data?.overtaken).toBe(1);
-    expect(mutation.data?.written).toBe(5);
+    await expect(result).resolves.toEqual({
+      written: 5,
+      failed: [],
+      overtaken: 1,
+    });
     expect(
       client.getQueryData<ImageFile[]>(["images", "shoot1"])?.[5].edit.exposure,
     ).toBe(-1);
@@ -300,11 +301,11 @@ describe("edit writes to one photo", () => {
       </QueryClientProvider>,
     );
 
-    single.mutate({
+    void single({
       path: "/r/shoot1/A.ARW",
       value: { ...identityEdit, exposure: 1 },
     });
-    paste.mutate(
+    const pasted = paste(
       new Map([["/r/shoot1/A.ARW", { ...identityEdit, exposure: 2 }]]),
     );
 
@@ -313,7 +314,7 @@ describe("edit writes to one photo", () => {
     await waitFor(() => expect(gate.length).toBe(2));
     gate[1]({ edit: identityEdit });
 
-    await waitFor(() => expect(paste.isSuccess).toBe(true));
+    await pasted;
     expect(events).toEqual(["start 1", "end 1", "start 2", "end 2"]);
   });
 });
@@ -540,9 +541,7 @@ describe("useSetRating", () => {
     );
     await waitFor(() => expect(calls("listImages")).toBe(1));
 
-    await act(() =>
-      mutation.mutateAsync({ path: "/r/shoot1/A.ARW", value: 3 }),
-    );
+    await act(() => mutation({ path: "/r/shoot1/A.ARW", value: 3 }));
     const polled = calls("status");
     await waitFor(() => expect(calls("status")).toBeGreaterThan(polled + 1));
 
@@ -601,9 +600,7 @@ describe("useSetRating", () => {
     disk[1] = { ...disk[1], rating: 5 };
     generation = 2;
     await waitFor(() => expect(held.length).toBe(1));
-    await act(() =>
-      mutation.mutateAsync({ path: "/r/shoot1/A.ARW", value: 3 }),
-    );
+    await act(() => mutation({ path: "/r/shoot1/A.ARW", value: 3 }));
     held[0]();
 
     await waitFor(() =>
@@ -650,7 +647,7 @@ describe("useSetRating", () => {
       expect(client.getQueryData(["images", "shoot1"])).toBeDefined(),
     );
 
-    const rated = mutation.mutateAsync({ path: "/r/shoot1/A.ARW", value: 3 });
+    const rated = mutation({ path: "/r/shoot1/A.ARW", value: 3 });
     await waitFor(() => expect(held.length).toBe(1));
     void client.invalidateQueries({ queryKey: ["images", "shoot1"] });
     await waitFor(() => expect(held.length).toBe(2));
@@ -704,12 +701,12 @@ describe("useSetRating", () => {
     );
     await waitFor(() => expect(listed).toBe(1));
 
-    const batched = batch.mutateAsync(new Map([["/r/s/C.ARW", 4]]));
+    const batched = batch(new Map([["/r/s/C.ARW", 4]]));
     await waitFor(() => expect(held.length).toBe(1));
     shoot1 = [shoot1[0], { ...shoot1[1], rating: 5 }];
     void client.invalidateQueries({ queryKey: ["images", "shoot1"] });
     await waitFor(() => expect(held.length).toBe(2));
-    await act(() => rate.mutateAsync({ path: "/r/shoot1/A.ARW", value: 3 }));
+    await act(() => rate({ path: "/r/shoot1/A.ARW", value: 3 }));
     held[0]();
     await act(() => batched);
 
@@ -751,8 +748,8 @@ describe("useSetRating", () => {
       expect(client.getQueryData(["images", "shoot1"])).toBeDefined(),
     );
 
-    const first = mutation.mutateAsync({ path: "/r/shoot1/A.ARW", value: 3 });
-    const second = mutation.mutateAsync({ path: "/r/shoot1/A.ARW", value: 4 });
+    const first = mutation({ path: "/r/shoot1/A.ARW", value: 3 });
+    const second = mutation({ path: "/r/shoot1/A.ARW", value: 4 });
     await waitFor(() => expect(refusals.length).toBe(1));
     refusals[0]();
     await act(() => first.catch(() => {}));
@@ -795,8 +792,8 @@ describe("useSetRating", () => {
       expect(client.getQueryData(["images", "shoot1"])).toBeDefined(),
     );
 
-    const first = batch.mutateAsync(new Map([["/r/shoot1/A.ARW", 3]]));
-    const second = batch.mutateAsync(new Map([["/r/shoot1/A.ARW", 4]]));
+    const first = batch(new Map([["/r/shoot1/A.ARW", 3]]));
+    const second = batch(new Map([["/r/shoot1/A.ARW", 4]]));
     let settled = false;
     void Promise.all([first, second]).then(() => {
       settled = true;
@@ -837,8 +834,8 @@ describe("useSetRating", () => {
     const rating = () =>
       client.getQueryData<ImageFile[]>(["images", "shoot1"])?.[0].rating;
 
-    const first = mutation.mutateAsync({ path: "/r/shoot1/A.ARW", value: 3 });
-    const second = mutation.mutateAsync({ path: "/r/shoot1/A.ARW", value: 4 });
+    const first = mutation({ path: "/r/shoot1/A.ARW", value: 3 });
+    const second = mutation({ path: "/r/shoot1/A.ARW", value: 4 });
     await waitFor(() => expect(pending.length).toBe(1));
     expect(rating()).toBe(4);
 

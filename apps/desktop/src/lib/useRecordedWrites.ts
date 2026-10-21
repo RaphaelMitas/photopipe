@@ -28,10 +28,10 @@ export const ratingDetail = (rating: number) =>
 export function useRecordedWrites(shoot: string | null) {
   const queryClient = useQueryClient();
   // stable across renders, so an entry can hold on to them
-  const { mutateAsync: setRating } = useSetRating(shoot);
-  const { mutateAsync: setRatings } = useSetRatings(shoot);
-  const { mutateAsync: setEdit } = useSetEdit(shoot);
-  const { mutateAsync: pasteEdits } = usePasteEdits(shoot);
+  const setRating = useSetRating(shoot);
+  const setRatings = useSetRatings(shoot);
+  const setEdit = useSetEdit(shoot);
+  const pasteEdits = usePasteEdits(shoot);
 
   const ratings = useMemo(
     () =>
