@@ -257,9 +257,11 @@ describe("usePasteEdits", () => {
     });
 
     expect(written).not.toContain(last);
-    const { overtaken, written: count } = await result;
-    expect(overtaken).toBe(1);
-    expect(count).toBe(5);
+    await expect(result).resolves.toEqual({
+      written: 5,
+      failed: [],
+      overtaken: 1,
+    });
     expect(
       client.getQueryData<ImageFile[]>(["images", "shoot1"])?.[5].edit.exposure,
     ).toBe(-1);

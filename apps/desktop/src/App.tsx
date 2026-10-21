@@ -344,39 +344,33 @@ export default function App() {
     held.current.key !== heldKey ||
     (openImage !== undefined && !held.current.paths.includes(openImage.path));
 
-  const ordered = useMemo(
-    () =>
-      stacksOn
-        ? stackedOrder(allImages, filter.matches, activeSort)
-        : filteredImages,
-    [stacksOn, allImages, filter.matches, activeSort, filteredImages],
+  const loupeOrder = useCallback(
+    (keep?: ImageFile) =>
+      (stacksOn ? stackedOrder : browserOrder)(
+        allImages,
+        filter.matches,
+        activeSort,
+        keep,
+      ),
+    [stacksOn, allImages, filter.matches, activeSort],
   );
+  const loupeBase = useMemo(
+    () => (stacksOn ? loupeOrder() : filteredImages),
+    [stacksOn, loupeOrder, filteredImages],
+  );
+  // Only a photo the filter would drop changes the order, so a plain arrow step reuses it.
+  const outside =
+    openImage && !loupeBase.includes(openImage) ? openImage : undefined;
+  const hasOpen = openImage !== undefined;
   const loupeImages = useMemo(() => {
-    // the open photo only changes the order once the filter would drop it
-    const live =
-      !openImage || ordered.includes(openImage)
-        ? ordered
-        : (stacksOn ? stackedOrder : browserOrder)(
-            allImages,
-            filter.matches,
-            activeSort,
-            openImage,
-          );
-    if (!openImage || reorder) return live;
-    const order = heldOrder(held.current.paths, live, openImage);
+    const live = outside ? loupeOrder(outside) : loupeBase;
+    if (!hasOpen || reorder) return live;
+    const order = heldOrder(held.current.paths, live, outside);
     // holding can slot a newcomer beside the wrong held photo; regrouping puts it back in its stack
     return stacksOn
       ? groupStacks(order).flatMap((stack) => stack.frames)
       : order;
-  }, [
-    ordered,
-    stacksOn,
-    allImages,
-    openImage,
-    reorder,
-    filter.matches,
-    activeSort,
-  ]);
+  }, [loupeBase, loupeOrder, outside, hasOpen, reorder, stacksOn]);
 
   held.current = {
     key: heldKey,

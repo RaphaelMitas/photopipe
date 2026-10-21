@@ -490,8 +490,7 @@ async function writeField<V>(
   markFetching(queryClient, shoot);
 }
 
-/// `useMutation` without the subscription: it re-renders its caller on every
-/// state change, and the photo writes are called from the top of the app.
+/// `useMutation` minus the subscription, which re-renders App on every write's state change.
 function useMutate<TData, TVariables, TOnMutateResult = unknown>(
   options: MutationObserverOptions<
     TData,
