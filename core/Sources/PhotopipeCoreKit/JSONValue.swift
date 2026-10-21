@@ -1,6 +1,5 @@
 import Foundation
 
-/// Minimal JSON value type for protocol params/results.
 public enum JSONValue: Equatable, Sendable {
     case null
     case bool(Bool)
