@@ -115,7 +115,7 @@ export function Loupe({
       : images[index + direction];
   const next = neighbour(1);
   const previous = neighbour(-1);
-  // The render lane runs newest first, so neighbours wait until this photo is rendered.
+  // The render lane runs newest first, so neighbours wait for this photo's first attempt.
   const landed = !render.isFetching || render.failureCount > 0;
   usePrefetchRender(landed ? next : undefined, next?.edit);
   usePrefetchRender(landed ? previous : undefined, previous?.edit);
@@ -175,7 +175,7 @@ export function Loupe({
   }, [zoom.state, photoBox, stage, pixelWidth, pixelHeight, zoomKey]);
   // Only ask once the gesture settles, or a pinch fires a render per frame.
   const settled = useSettled(wanted, 180);
-  // A slice for a view, photo or mode you have already left is neither asked for nor drawn.
+  // A slice for a view, photo or mode you have left would render ahead of this one and land in the wrong place.
   const current =
     settled?.zoomKey === zoomKey && viewportKey(wanted) === viewportKey(settled)
       ? settled
