@@ -339,36 +339,23 @@ export default function App() {
     ? allImages.find((image) => image.path === currentPath)
     : undefined;
   const reorder =
-    openImage === undefined ||
     held.current.key !== heldKey ||
-    !held.current.paths.includes(openImage.path);
+    (openImage !== undefined && !held.current.paths.includes(openImage.path));
 
-  const loupeOrder = useCallback(
-    (keep?: ImageFile) =>
-      (stacksOn ? stackedOrder : browserOrder)(
-        allImages,
-        filter.matches,
-        activeSort,
-        keep,
-      ),
-    [stacksOn, allImages, filter.matches, activeSort],
-  );
-  const loupeBase = useMemo(
-    () => (stacksOn ? loupeOrder() : filteredImages),
-    [stacksOn, loupeOrder, filteredImages],
-  );
-  // Only a photo the filter would drop changes the order, so a plain arrow step reuses it.
-  const outside =
-    openImage && !loupeBase.includes(openImage) ? openImage : undefined;
   const loupeImages = useMemo(() => {
-    const live = outside ? loupeOrder(outside) : loupeBase;
-    if (reorder) return live;
+    const live = (stacksOn ? stackedOrder : browserOrder)(
+      allImages,
+      filter.matches,
+      activeSort,
+      openImage,
+    );
+    if (!openImage || reorder) return live;
     const order = heldOrder(held.current.paths, live);
     // holding can slot a newcomer beside the wrong held photo; regrouping puts it back in its stack
     return stacksOn
       ? groupStacks(order).flatMap((stack) => stack.frames)
       : order;
-  }, [loupeBase, loupeOrder, outside, reorder, stacksOn]);
+  }, [stacksOn, allImages, openImage, reorder, filter.matches, activeSort]);
 
   held.current = {
     key: heldKey,
