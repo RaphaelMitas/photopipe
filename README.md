@@ -129,4 +129,6 @@ merging it builds, signs, notarizes and publishes. See
 
 ## Licence
 
-[MIT](LICENSE). © 2026 Raphael Mitas.
+[MIT](LICENSE). © 2026 Raphael Mitas. The photos in
+`apps/desktop/e2e/store` are not part of that licence, see
+[their note](apps/desktop/e2e/store/LICENSE.md).

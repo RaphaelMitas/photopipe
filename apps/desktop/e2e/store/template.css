@@ -1,0 +1,243 @@
+:root {
+  --accent: #ff7a2f;
+}
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+html,
+body {
+  width: var(--w);
+  height: var(--h);
+  overflow: hidden;
+  background: #0b0c0f;
+}
+body {
+  font-family: -apple-system, system-ui, sans-serif;
+  color: #fff;
+  -webkit-font-smoothing: antialiased;
+}
+
+.stage {
+  position: relative;
+  width: var(--w);
+  height: var(--h);
+  overflow: hidden;
+}
+
+.bg,
+.bg img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.bg img {
+  object-fit: cover;
+  object-position: var(--bg-pos, 50% 50%);
+}
+.scrim {
+  position: absolute;
+  inset: 0;
+}
+
+.copy {
+  position: absolute;
+  z-index: 2;
+}
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  font:
+    600 44px / 1 -apple-system,
+    sans-serif;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.92);
+  margin-bottom: 52px;
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.35);
+}
+.eyebrow img {
+  width: 84px;
+  height: 84px;
+  border-radius: 19px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+h1 {
+  font-weight: 700;
+  font-size: var(--h1, 168px);
+  line-height: 1;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+  text-shadow: 0 4px 60px rgba(0, 0, 0, 0.35);
+}
+h1 em {
+  font-style: normal;
+  color: var(--accent);
+}
+.sub {
+  margin-top: 48px;
+  font:
+    500 var(--sub, 52px) / 1.32 -apple-system,
+    sans-serif;
+  color: rgba(255, 255, 255, 0.86);
+  max-width: var(--sub-w, 820px);
+  text-wrap: balance;
+  text-shadow: 0 2px 30px rgba(0, 0, 0, 0.45);
+}
+.fine {
+  margin-top: 36px;
+  font:
+    500 var(--fine, 38px) / 1.35 -apple-system,
+    sans-serif;
+  color: rgba(255, 255, 255, 0.8);
+  max-width: var(--sub-w, 820px);
+}
+
+.window {
+  position: absolute;
+  z-index: 1;
+  border-radius: 26px;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.14),
+    0 50px 140px rgba(0, 0, 0, 0.6),
+    0 18px 40px rgba(0, 0, 0, 0.35);
+  background: #111;
+}
+.window img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.layout-left .copy {
+  left: var(--pad);
+  top: 50%;
+  transform: translateY(-50%);
+  width: var(--copy-w);
+}
+.layout-left .window {
+  right: var(--pad-r, var(--pad));
+  top: var(--win-top, 50%);
+  transform: translateY(var(--win-shift, -50%));
+  width: var(--win-w);
+}
+
+.layout-compare .copy {
+  left: 0;
+  right: 0;
+  top: var(--copy-top);
+  text-align: center;
+}
+.layout-compare .copy .sub {
+  margin-left: auto;
+  margin-right: auto;
+}
+.layout-compare .window {
+  right: var(--pad);
+  top: var(--win-top);
+  width: var(--win-w);
+}
+.panel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: var(--panel-w);
+  overflow: hidden;
+  box-shadow: 0 0 120px rgba(0, 0, 0, 0.5);
+}
+.panel img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: var(--panel-pos, 50% 50%);
+}
+.layout-panel.side-left .panel {
+  left: 0;
+}
+.layout-panel.side-right .panel {
+  right: 0;
+}
+.layout-panel .copy {
+  top: var(--copy-top, 130px);
+  width: var(--copy-w);
+}
+.layout-panel .window {
+  top: var(--win-top);
+  width: var(--win-w);
+}
+.layout-panel.side-left .copy,
+.layout-panel.side-left .window {
+  right: var(--pad);
+}
+.layout-panel.side-right .copy,
+.layout-panel.side-right .window {
+  left: var(--pad);
+}
+
+.tiles {
+  position: absolute;
+  left: var(--pad);
+  top: var(--tiles-top);
+  width: var(--tile-w);
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  z-index: 1;
+}
+.tile {
+  position: relative;
+  aspect-ratio: 3 / 2;
+  border-radius: 22px;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.12),
+    0 30px 80px rgba(0, 0, 0, 0.5);
+}
+.tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.tile figcaption {
+  position: absolute;
+  left: 24px;
+  top: 24px;
+  font:
+    600 34px / 1 -apple-system,
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 14px 22px;
+  border-radius: 999px;
+  background: rgba(10, 12, 16, 0.6);
+}
+.tile:last-child figcaption::before {
+  content: "";
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-right: 13px;
+  vertical-align: 3px;
+}
+
+.callout {
+  position: absolute;
+  z-index: 3;
+  border-radius: 22px;
+  background-repeat: no-repeat;
+  box-shadow:
+    0 0 0 4px var(--accent),
+    0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+.layout-panel .bg img,
+.layout-compare .bg img {
+  filter: blur(80px) brightness(0.42) saturate(1.1);
+  transform: scale(1.15);
+}

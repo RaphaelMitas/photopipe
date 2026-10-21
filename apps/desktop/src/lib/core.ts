@@ -287,6 +287,6 @@ export function fileSrc(path: string): string {
   try {
     return convertFileSrc(path);
   } catch {
-    return placeholderFor(path);
+    return URL.canParse(path) ? path : placeholderFor(path);
   }
 }

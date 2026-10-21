@@ -26,6 +26,7 @@ jobs:
       - run: pnpm --filter desktop test
       - run: pnpm --filter desktop exec playwright install --with-deps chromium
       - run: pnpm --filter desktop e2e
+      - run: pnpm --filter desktop store-screenshots
 
   native:
     name: Swift, Rust & app build (macOS)

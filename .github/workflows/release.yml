@@ -311,6 +311,39 @@ jobs:
             -f release_tag="$TAG" \
             -f source_repo=RaphaelMitas/photopipe
 
+  # The listing's screenshots, from the released UI. A macOS runner, because
+  # the frames are set in the system font.
+  store-screenshots:
+    name: Capture the App Store screenshots
+    needs: [check]
+    if: (needs.check.outputs.is-release == 'true' || needs.check.outputs.submit == 'true') && needs.check.outputs.mas == 'true'
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.check.outputs.ref }}
+      - name: Fall back to this workflow's commit for tags cut before the store spec
+        run: |
+          if [ ! -f apps/desktop/e2e/store.spec.ts ]; then
+            echo "::warning::The released commit has no store screenshots; capturing them from $GITHUB_SHA."
+            git fetch --depth=1 origin "$GITHUB_SHA"
+            git checkout FETCH_HEAD
+          fi
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter desktop exec playwright install chromium
+      - run: pnpm --filter desktop store-screenshots
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: store-screenshots
+          path: apps/desktop/store-screenshots
+
   # Skipped without the store secrets, so a release still succeeds before they exist.
   mas:
     name: Build, sign, upload to the App Store
@@ -425,7 +458,7 @@ jobs:
   # version, and waiting is cheaper here than on a macOS runner.
   mas-review:
     name: Update the Mac listing, submit for review
-    needs: [check, mas]
+    needs: [check, mas, store-screenshots]
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -520,7 +553,7 @@ jobs:
   # to one platform, so the iPad neither waits on the Mac nor reruns with it.
   ipad-review:
     name: Update the iPad listing, submit for review
-    needs: [check, ipad]
+    needs: [check, ipad, store-screenshots]
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
