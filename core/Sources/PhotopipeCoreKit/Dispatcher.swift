@@ -38,9 +38,9 @@ public final class Dispatcher: Sendable {
     private func result(for request: Request) throws -> any Encodable {
         switch request.method {
         case "ping":
-            return JSONValue.object(["pong": .bool(true)])
+            return ["pong": true]
         case "imageExtensions":
-            return JSONValue.object(["extensions": .array(imageExtensions.sorted().map(JSONValue.string))])
+            return ["extensions": imageExtensions.sorted()]
         case "setRoot":
             return try library.setRoot(
                 path: request.string("path"), indexPath: request.param("indexPath")?.stringValue)
@@ -55,14 +55,14 @@ public final class Dispatcher: Sendable {
         case "thumbnail":
             let cachePath = try library.thumbnail(
                 path: request.string("path"), maxPixel: request.param("maxPixel")?.intValue ?? 256)
-            return JSONValue.object(["cachePath": .string(cachePath)])
+            return ["cachePath": cachePath]
         case "render":
             let cachePath = try library.render(
                 path: request.string("path"), edit: request.edit() ?? .identity,
                 maxPixel: request.param("maxPixel")?.intValue ?? 2000,
                 viewport: Self.viewport(from: request.param("viewport")),
                 decoderVersion: request.param("decoderVersion")?.intValue)
-            return JSONValue.object(["cachePath": .string(cachePath)])
+            return ["cachePath": cachePath]
         case "setRating":
             return try library.setRating(
                 shoot: request.string("shoot"), path: request.string("path"),
@@ -75,16 +75,15 @@ public final class Dispatcher: Sendable {
             let asShot = try library.rawDefaults(
                 path: request.string("path"),
                 decoderVersion: request.param("decoderVersion")?.intValue)
-            return JSONValue.object([
-                "temperature": asShot.map { .number($0.temperature) } ?? .null,
-                "tint": asShot.map { .number($0.tint) } ?? .null,
-                "denoise": asShot.map { .number($0.denoise * 100) } ?? .null,
-            ])
+            return [
+                "temperature": asShot?.temperature, "tint": asShot?.tint,
+                "denoise": asShot.map { $0.denoise * 100 },
+            ]
         case "trash":
             return try library.trashImages(
                 shoot: request.string("shoot"), paths: request.strings("paths"))
         case "decoderAvailability":
-            return JSONValue.object(["raw9": library.raw9Availability().map(JSONValue.bool) ?? .null])
+            return ["raw9": library.raw9Availability()]
         case "decoderSupport":
             return try library.decoderSupport(paths: request.strings("paths"))
         case "exportFiles":
@@ -114,10 +113,10 @@ public final class Dispatcher: Sendable {
                 cover: request.param("cover")?.stringValue)
         case "captureDate":
             let day = try library.captureDate(path: request.string("path"))
-            return JSONValue.object(["day": day.map(JSONValue.string) ?? .null])
+            return ["day": day]
         case "rescan":
             library.rescanNow()
-            return JSONValue.object([:])
+            return [String: String]()
         case "status":
             return library.status(since: request.param("since")?.intValue)
         default:
