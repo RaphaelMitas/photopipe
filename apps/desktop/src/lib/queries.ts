@@ -216,8 +216,7 @@ export function useRender(file: RenderFile, edit: Edit) {
   });
 }
 
-/// Lets a slider drag lag behind, but a photo you step to renders with its own
-/// edit straight away instead of first with the last photo's.
+/// A photo you step to renders with its own edit at once; only slider drags lag.
 export function useDeferredEdit(file: RenderFile, edit: Edit) {
   const deferredEdit = useDeferredValue(edit);
   const deferredPath = useDeferredValue(file?.path);

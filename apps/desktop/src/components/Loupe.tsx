@@ -152,13 +152,14 @@ export function Loupe({
     [stage, pixelWidth, pixelHeight],
   );
 
+  const zoomKey = `${image?.path}|${cropping}`;
   const zoom = useZoom({
     stageRef,
     stage,
     photoBox,
     pixelWidth,
     enabled: !cropping && !!image,
-    resetKey: `${image?.path}|${cropping}`,
+    resetKey: zoomKey,
   });
   const wanted = useMemo(() => {
     const request = viewportRequest(
@@ -170,22 +171,16 @@ export function Loupe({
       pixelHeight,
       window.devicePixelRatio,
     );
-    return request && { ...request, path: image?.path };
-  }, [zoom.state, photoBox, stage, pixelWidth, pixelHeight, image?.path]);
+    return request && { ...request, zoomKey };
+  }, [zoom.state, photoBox, stage, pixelWidth, pixelHeight, zoomKey]);
   // Only ask once the gesture settles, or a pinch fires a render per frame.
   const settled = useSettled(wanted, 180);
-  // Stepping off a zoomed photo would otherwise ask for the old slice of the new photo.
-  const regionRender = useViewportRender(
-    image,
-    previewEdit,
-    settled?.path === image?.path ? settled : null,
-  );
-  // A slice rendered for a view you have already moved past would sit in the
-  // wrong place, so it is drawn only while it still matches.
-  const sharp =
-    viewportKey(wanted) === viewportKey(settled)
-      ? regionRender.data
-      : undefined;
+  // A slice for a view, photo or mode you have already left is neither asked for nor drawn.
+  const current =
+    settled?.zoomKey === zoomKey && viewportKey(wanted) === viewportKey(settled)
+      ? settled
+      : null;
+  const sharp = useViewportRender(image, previewEdit, current).data;
   const sharpening = wanted !== null && !sharp;
 
   // Key repeat outruns re-rendering, so a nudge composes on the ref instead of
