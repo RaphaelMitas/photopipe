@@ -65,8 +65,7 @@ func makeService(in dir: URL) -> LibraryService {
 }
 
 /// Builds a scratch photo tree: [shootName: [relative file paths]] → root URL.
-func makeTree(_ layout: [String: [String]]) throws -> URL {
-    let root = scratchDir("tree")
+func makeTree(_ layout: [String: [String]], at root: URL = scratchDir("tree")) throws -> URL {
     for (shoot, paths) in layout {
         for relative in paths {
             let file = root.appendingPathComponent(shoot).appendingPathComponent(relative)

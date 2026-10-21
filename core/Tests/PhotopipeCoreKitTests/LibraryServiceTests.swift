@@ -262,11 +262,10 @@ private func tempIndexPath() -> String {
 }
 
 @Test func aRootBehindPrivateTakesRatingsByListedAndCanonicalPath() throws {
-    let root = URL(fileURLWithPath: NSTemporaryDirectory())
-        .appendingPathComponent("photopipe-private-\(UUID().uuidString)")
-    let shoot = root.appendingPathComponent("2026-07-12_zell")
-    try FileManager.default.createDirectory(at: shoot, withIntermediateDirectories: true)
-    try Data("x".utf8).write(to: shoot.appendingPathComponent("DSC001.ARW"))
+    let root = try makeTree(
+        ["2026-07-12_zell": ["DSC001.ARW"]],
+        at: URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("photopipe-private-\(UUID().uuidString)"))
     defer { try? FileManager.default.removeItem(at: root) }
 
     let service = makeService()
@@ -276,7 +275,7 @@ private func tempIndexPath() -> String {
     let listed = try #require(service.listImages(shoot: "2026-07-12_zell").first?.path)
     #expect(listed.hasPrefix("/private/"))
     #expect(try service.setRating(shoot: "2026-07-12_zell", path: listed, rating: 2).rating == 2)
-    let canonical = shoot.appendingPathComponent("DSC001.ARW").path
+    let canonical = root.appendingPathComponent("2026-07-12_zell/DSC001.ARW").path
     #expect(try service.setRating(shoot: "2026-07-12_zell", path: canonical, rating: 3).rating == 3)
 }
 

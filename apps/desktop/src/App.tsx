@@ -338,11 +338,12 @@ export default function App() {
   const openImage = currentPath
     ? allImages.find((image) => image.path === currentPath)
     : undefined;
-  // The second clause catches a keypress that lands on a photo the walk has
+  // The last clause catches a keypress that lands on a photo the walk has
   // just dropped: rebuilding places it, where holding would lose it.
   const reorder =
+    openImage === undefined ||
     held.current.key !== heldKey ||
-    (openImage !== undefined && !held.current.paths.includes(openImage.path));
+    !held.current.paths.includes(openImage.path);
 
   const loupeOrder = useCallback(
     (keep?: ImageFile) =>
@@ -361,16 +362,15 @@ export default function App() {
   // Only a photo the filter would drop changes the order, so a plain arrow step reuses it.
   const outside =
     openImage && !loupeBase.includes(openImage) ? openImage : undefined;
-  const hasOpen = openImage !== undefined;
   const loupeImages = useMemo(() => {
     const live = outside ? loupeOrder(outside) : loupeBase;
-    if (!hasOpen || reorder) return live;
-    const order = heldOrder(held.current.paths, live, outside);
+    if (reorder) return live;
+    const order = heldOrder(held.current.paths, live);
     // holding can slot a newcomer beside the wrong held photo; regrouping puts it back in its stack
     return stacksOn
       ? groupStacks(order).flatMap((stack) => stack.frames)
       : order;
-  }, [loupeBase, loupeOrder, outside, hasOpen, reorder, stacksOn]);
+  }, [loupeBase, loupeOrder, outside, reorder, stacksOn]);
 
   held.current = {
     key: heldKey,

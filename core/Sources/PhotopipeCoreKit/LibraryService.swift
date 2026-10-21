@@ -327,10 +327,9 @@ public final class LibraryService: @unchecked Sendable {
     private func images(inShoot shootName: String, paths: [String]) throws -> [ImageFile] {
         let images = try snapshotImages(inShoot: shootName)
         let byPath = Self.byPath(images)
-        // Clients send back the paths they were listed, so canonicalizing every
-        // photo is the fallback: the walk keeps /private, canonical() drops it.
+        // the walk keeps /private and canonical() drops it
         lazy var byCanonical = Dictionary(
-            images.map { (Self.canonical($0.path), $0) }, uniquingKeysWith: { _, last in last })
+            images.map { (Self.canonical($0.path), $0) }, uniquingKeysWith: { $1 })
         return try paths.map { path in
             guard let image = byPath[path] ?? byCanonical[Self.canonical(path)] else {
                 throw ServiceError.unknownImage(path)
