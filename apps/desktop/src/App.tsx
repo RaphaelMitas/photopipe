@@ -338,8 +338,8 @@ export default function App() {
   const openImage = currentPath
     ? allImages.find((image) => image.path === currentPath)
     : undefined;
-  // The last clause catches a keypress that lands on a photo the walk has
-  // just dropped: rebuilding places it, where holding would lose it.
+  // The last clause catches a keypress onto a photo the walk has just dropped:
+  // holding would slot it beside whatever it follows; only the sort knows its place.
   const reorder =
     openImage === undefined ||
     held.current.key !== heldKey ||

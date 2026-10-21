@@ -491,7 +491,7 @@ async function writeField<V>(
 }
 
 /// `useMutation` minus the subscription, which re-renders App on every write's state change.
-function useMutate<TData, TVariables, TOnMutateResult = unknown>(
+function useMutate<TData, TVariables, TOnMutateResult>(
   options: MutationObserverOptions<
     TData,
     DefaultError,
