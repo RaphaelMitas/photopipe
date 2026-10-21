@@ -10,6 +10,7 @@ final class CacheFolder: Sendable {
     private struct Usage {
         var bytesUntilPrune: Int
         var pruning = false
+        var retryScheduled = false
     }
 
     private static let maxAge: TimeInterval = 7 * 24 * 3600
@@ -64,15 +65,21 @@ final class CacheFolder: Sendable {
         guard start else { return }
         DispatchQueue.global(qos: .utility).async { [self] in
             let remaining = prune()
-            usage.withLock {
+            let retry = usage.withLock {
                 // what was just served can hold a prune over budget, so wait for more writes
                 $0.bytesUntilPrune += max(maxBytes - remaining, headroom)
                 $0.pruning = false
+                let overTarget = remaining > maxBytes - headroom || $0.bytesUntilPrune < 0
+                guard overTarget, !$0.retryScheduled else { return false }
+                $0.retryScheduled = true
+                return true
             }
-            guard remaining > maxBytes else { return }
-            // by then what held it over budget has aged out, even if nothing more is written
+            guard retry else { return }
+            // by then what the ten minute window held is past it, even if nothing more is written
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + Self.recentlyServed) {
-                [self] in pruneInBackground()
+                [self] in
+                usage.withLock { $0.retryScheduled = false }
+                pruneInBackground()
             }
         }
     }

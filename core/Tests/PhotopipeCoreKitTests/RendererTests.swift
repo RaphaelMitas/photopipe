@@ -134,15 +134,9 @@ private func tempCacheDir() -> URL {
 @Test func pruneRemovesOnlyStaleRenders() throws {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
-    try FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
-
-    let stale = cacheDir.appendingPathComponent("stale.jpg")
-    let fresh = cacheDir.appendingPathComponent("fresh.jpg")
-    let foreign = cacheDir.appendingPathComponent("notes.txt")
-    for url in [stale, fresh, foreign] {
-        try Data("x".utf8).write(to: url)
-    }
-    try backdate(stale, hoursAgo: 8 * 24)
+    let stale = try writeEntry("stale.jpg", in: cacheDir, bytes: 1, hoursAgo: 8 * 24)
+    let fresh = try writeEntry("fresh.jpg", in: cacheDir, bytes: 1, hoursAgo: 0)
+    let foreign = try writeEntry("notes.txt", in: cacheDir, bytes: 1, hoursAgo: 8 * 24)
 
     CacheFolder(dir: cacheDir, maxBytes: .max).prune()
 
