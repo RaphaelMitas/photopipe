@@ -9,7 +9,14 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import {
   type CoreMethods,
@@ -207,6 +214,14 @@ export function useRender(file: RenderFile, edit: Edit) {
     placeholderData: (previous: string | undefined, previousQuery) =>
       previousQuery?.queryKey[1] === file?.path ? previous : undefined,
   });
+}
+
+/// Lets a slider drag lag behind, but a photo you step to renders with its own
+/// edit straight away instead of first with the last photo's.
+export function useDeferredEdit(file: RenderFile, edit: Edit) {
+  const deferredEdit = useDeferredValue(edit);
+  const deferredPath = useDeferredValue(file?.path);
+  return deferredPath === file?.path ? deferredEdit : edit;
 }
 
 /// The zoomed loupe renders only the slice on screen, at 1:1. Asking for the

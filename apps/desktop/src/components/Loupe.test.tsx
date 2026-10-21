@@ -245,7 +245,7 @@ describe("Loupe keyboard culling", () => {
 });
 
 describe("Loupe render order", () => {
-  it("asks for the neighbours only once the photo you stopped on is rendered, next last", async () => {
+  it("asks for the neighbours only once the photo you stopped on is rendered, next first", async () => {
     const rendered: string[] = [];
     let finishFirst: () => void = () => {};
     invoke.mockImplementation(async (_cmd, { method, params }) => {
@@ -267,8 +267,8 @@ describe("Loupe render order", () => {
     await waitFor(() =>
       expect(rendered).toEqual([
         "/r/s/DSC00002.ARW",
-        "/r/s/DSC00001.ARW",
         "/r/s/DSC00003.ARW",
+        "/r/s/DSC00001.ARW",
       ]),
     );
   });
