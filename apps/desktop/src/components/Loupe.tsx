@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Edit, fileSrc, type ImageFile } from "@/lib/core";
 import {
   aspectRatioFor,
@@ -19,6 +12,7 @@ import { EXPOSURE_RANGE, EXPOSURE_STEP } from "@/lib/editSliders";
 import { isModalOpen } from "@/lib/modal";
 import { capturePointer, cursorIn, normalizedIn } from "@/lib/pointer";
 import {
+  useDeferredEdit,
   usePrefetchRender,
   useRender,
   useThumbnail,
@@ -99,7 +93,7 @@ export function Loupe({
 }: Props) {
   const image = images[index];
   const cropDraft = session.draft;
-  const deferredEdit = useDeferredValue(edit);
+  const deferredEdit = useDeferredEdit(image, edit);
   const cropping = cropDraft !== null;
   const filmstrip = filmstripPref.use();
 
@@ -121,8 +115,10 @@ export function Loupe({
       : images[index + direction];
   const next = neighbour(1);
   const previous = neighbour(-1);
-  usePrefetchRender(next, next?.edit);
-  usePrefetchRender(previous, previous?.edit);
+  // The render lane runs newest first, so neighbours wait for this photo's first attempt.
+  const landed = !render.isFetching || render.failureCount > 0;
+  usePrefetchRender(landed ? next : undefined, next?.edit);
+  usePrefetchRender(landed ? previous : undefined, previous?.edit);
   const multiFrame = stacks !== null && stacks.current.frames.length > 1;
 
   const stageRef = useRef<HTMLDivElement>(null);
@@ -156,36 +152,35 @@ export function Loupe({
     [stage, pixelWidth, pixelHeight],
   );
 
+  const zoomKey = `${image?.path}|${cropping}`;
   const zoom = useZoom({
     stageRef,
     stage,
     photoBox,
     pixelWidth,
     enabled: !cropping && !!image,
-    resetKey: `${image?.path}|${cropping}`,
+    resetKey: zoomKey,
   });
-  const wanted = useMemo(
-    () =>
-      viewportRequest(
-        zoom.state,
-        photoBox,
-        stage.width,
-        stage.height,
-        pixelWidth,
-        pixelHeight,
-        window.devicePixelRatio,
-      ),
-    [zoom.state, photoBox, stage, pixelWidth, pixelHeight],
-  );
+  const wanted = useMemo(() => {
+    const request = viewportRequest(
+      zoom.state,
+      photoBox,
+      stage.width,
+      stage.height,
+      pixelWidth,
+      pixelHeight,
+      window.devicePixelRatio,
+    );
+    return request && { ...request, zoomKey };
+  }, [zoom.state, photoBox, stage, pixelWidth, pixelHeight, zoomKey]);
   // Only ask once the gesture settles, or a pinch fires a render per frame.
   const settled = useSettled(wanted, 180);
-  const regionRender = useViewportRender(image, previewEdit, settled);
-  // A slice rendered for a view you have already moved past would sit in the
-  // wrong place, so it is drawn only while it still matches.
-  const sharp =
-    viewportKey(wanted) === viewportKey(settled)
-      ? regionRender.data
-      : undefined;
+  // A slice for a view, photo or mode you have left would render ahead of this one and land in the wrong place.
+  const current =
+    settled?.zoomKey === zoomKey && viewportKey(wanted) === viewportKey(settled)
+      ? settled
+      : null;
+  const sharp = useViewportRender(image, previewEdit, current).data;
   const sharpening = wanted !== null && !sharp;
 
   // Key repeat outruns re-rendering, so a nudge composes on the ref instead of

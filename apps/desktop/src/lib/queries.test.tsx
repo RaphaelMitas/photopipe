@@ -3,6 +3,7 @@ import { act, cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type Edit, type ImageFile, identityEdit } from "./core";
 import {
+  useDeferredEdit,
   useImages,
   useLibrarySync,
   usePasteEdits,
@@ -370,6 +371,37 @@ describe("useRender and the RAW decoder", () => {
       method: "render",
       params: expect.objectContaining({ decoderVersion: 8 }),
     });
+  });
+});
+
+describe("useDeferredEdit", () => {
+  it("renders a photo you step to with its own edit, never the last one's", async () => {
+    invoke.mockReset();
+    invoke.mockResolvedValue({ cachePath: "/cache/x.jpg" });
+    const photos = ["A", "B"].map((name, exposure) => ({
+      file: { path: `/r/shoot1/${name}.JPG`, mtime: 1, isRaw: false },
+      edit: { ...identityEdit, exposure },
+    }));
+    function Preview({ index }: { index: number }) {
+      const { file, edit } = photos[index];
+      useRender(file, useDeferredEdit(file, edit));
+      return null;
+    }
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = (index: number) => (
+      <QueryClientProvider client={client}>
+        <Preview index={index} />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(view(0));
+    rerender(view(1));
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(
+      invoke.mock.calls.map(([, { params }]) => [params.path, params.edit]),
+    ).toEqual(photos.map(({ file, edit }) => [file.path, edit]));
   });
 });
 
