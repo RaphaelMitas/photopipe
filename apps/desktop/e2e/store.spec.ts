@@ -57,6 +57,18 @@ for (const device of DEVICES) {
       [...document.images].every((image) => image.complete),
     );
     await page.waitForTimeout(500);
+    // A photo without a committed preview is drawn instead; none may show.
+    const drawn = await page.evaluate(
+      () =>
+        [...document.images].filter((image) => {
+          if (!image.src.startsWith("data:image/svg")) return false;
+          const r = image.getBoundingClientRect();
+          const x = (r.left + r.right) / 2;
+          const y = (r.top + r.bottom) / 2;
+          return document.elementFromPoint(x, y) === image;
+        }).length,
+    );
+    expect(drawn).toBe(0);
     const shot = await page.screenshot();
     await context.close();
     return shot;

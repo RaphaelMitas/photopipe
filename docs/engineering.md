@@ -184,7 +184,8 @@ updater and the pkg rules the store enforces. Every release then goes all the wa
 Connect. The macOS job uploads the pkg. A second job, `mas-review`, on a Linux
 runner because it mostly waits for Apple to process the upload, sends the
 listing (text from `fastlane/metadata/en-US`, screenshots from the
-`store-screenshots` job, see Screenshots below), attaches the build and submits it for review with automatic release.
+`store-screenshots` job, see Screenshots below), attaches the build and
+submits it for review with automatic release.
 What's New is written per release and platform by `scripts/whats-new.sh`:
 the `feat:` and `fix:` subjects since the previous tag that touch
 `apps/desktop` or `core`, minus those naming only the other platform. A commit
@@ -198,7 +199,8 @@ signed with `MAS_CERTIFICATE`'s Apple Distribution identity and
 `IOS_PROVISIONING_PROFILE`. Its build number goes in through
 `bundle.iOS.bundleVersion`, since `--build-number` appends a fourth component
 the store refuses. `ipad-review` submits it with
-`fastlane/ipad/description.txt` and the iPad screenshots. Both review jobs share `.github/actions/store-review`, which
+`fastlane/ipad/description.txt` and the iPad screenshots. Both review jobs
+share `.github/actions/store-review`, which
 refuses to submit while the listing still says TODO or one of its URLs does
 not load; the build is in TestFlight by then, so nothing is lost. A version
 already waiting for review is pulled first, because Apple freezes it. The
