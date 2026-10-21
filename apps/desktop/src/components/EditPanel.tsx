@@ -16,7 +16,7 @@ import {
   RotateCcw,
   X,
 } from "lucide-react";
-import { type ReactNode, useDeferredValue, useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import {
   type Edit,
   type ImageFile,
@@ -33,7 +33,12 @@ import {
   signed,
   TONE_SLIDERS,
 } from "@/lib/editSliders";
-import { useRaw9Availability, useRawDefaults, useRender } from "@/lib/queries";
+import {
+  useDeferredEdit,
+  useRaw9Availability,
+  useRawDefaults,
+  useRender,
+} from "@/lib/queries";
 import {
   setRawDecoderVersion,
   useRawDecoderQuickSwitch,
@@ -225,7 +230,7 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
   const raw = image.isRaw;
   const rawDefaults = useRawDefaults(raw ? image : undefined);
   // deferred like the Loupe's request, so both resolve to the same query
-  const render = useRender(image, useDeferredValue(edit));
+  const render = useRender(image, useDeferredEdit(image, edit));
 
   const set = (partial: Partial<Edit>) => onChange({ ...edit, ...partial });
 
