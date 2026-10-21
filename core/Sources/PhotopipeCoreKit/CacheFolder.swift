@@ -9,17 +9,21 @@ final class CacheFolder: Sendable {
 
     private struct Usage {
         var estimatedBytes = 0
+        var pruneAbove: Int
         var pruning = false
     }
 
     private static let maxAge: TimeInterval = 7 * 24 * 3600
+    // the webview reuses a served path for React Query's 5 min gcTime without asking again
+    private static let recentlyServed: TimeInterval = 10 * 60
     // a hit's touch and the prune's stat-then-delete must not interleave
     private static let lock = NSLock()
-    private let usage = Mutex(Usage())
+    private let usage: Mutex<Usage>
 
     init(dir: URL, maxBytes: Int) {
         self.dir = dir
         self.maxBytes = maxBytes
+        usage = Mutex(Usage(pruneAbove: maxBytes))
     }
 
     func url(forKey key: String) -> URL {
@@ -42,7 +46,7 @@ final class CacheFolder: Sendable {
         _ = try? fm.replaceItemAt(url, withItemAt: temp)
         let overBudget = usage.withLock {
             $0.estimatedBytes += bytes
-            return $0.estimatedBytes > maxBytes
+            return $0.estimatedBytes > $0.pruneAbove
         }
         if overBudget { pruneInBackground() }
         return url
@@ -61,6 +65,8 @@ final class CacheFolder: Sendable {
             let remaining = prune(olderThan: Self.maxAge)
             usage.withLock {
                 $0.estimatedBytes += remaining
+                // what was just served can hold a prune over budget, so wait for more writes
+                $0.pruneAbove = max(maxBytes, remaining + maxBytes / 10)
                 $0.pruning = false
             }
         }
@@ -93,9 +99,10 @@ final class CacheFolder: Sendable {
             }
         }
         var total = kept.reduce(0) { $0 + $1.size }
-        // a tenth of headroom, so the next prune is that many writes away
+        // a tenth of headroom, so the next prune is a tenth of the budget away
         let target = maxBytes - maxBytes / 10
-        for var file in kept.sorted(by: { $0.modified < $1.modified }) where total > target {
+        for var file in kept.sorted(by: { $0.modified < $1.modified })
+        where total > target && file.modified.timeIntervalSinceNow < -Self.recentlyServed {
             file.url.removeAllCachedResourceValues()
             Self.lock.withLock {
                 // served since the listing, so no longer the least recent

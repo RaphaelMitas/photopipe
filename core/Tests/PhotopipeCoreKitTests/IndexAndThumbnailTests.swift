@@ -194,12 +194,11 @@ func makePNG(width: Int = 64, height: Int = 48) throws -> (ImageFile, URL) {
         producedSource.flatMap { CGImageSourceCreateImageAtIndex($0, 0, nil) })
     #expect(max(produced.width, produced.height) <= 32)
 
-    // Cache hit: same path, file not rewritten.
     let inode = try FileManager.default.attributesOfItem(atPath: first.path)[.systemFileNumber] as? Int
     let second = try thumbnailer.thumbnail(for: file, maxPixel: 32)
     #expect(second == first)
     let inodeAfter = try FileManager.default.attributesOfItem(atPath: first.path)[.systemFileNumber] as? Int
-    #expect(inode != nil && inode == inodeAfter)
+    #expect(inode != nil && inode == inodeAfter, "a hit refreshes the mtime but never rewrites the file")
 }
 
 @Test func thumbnailKeyChangesWithMtimeAndSize() throws {
