@@ -1,15 +1,26 @@
 import CryptoKit
 import Foundation
+import Synchronization
 
 /// An entry's mtime is when it was last served, so pruning by age or size drops what nobody looks at first.
-struct CacheFolder: Sendable {
+final class CacheFolder: Sendable {
     let dir: URL
     let maxBytes: Int
 
+    private struct Usage {
+        var estimatedBytes = 0
+        var pruning = false
+    }
+
     private static let maxAge: TimeInterval = 7 * 24 * 3600
-    private static let touchInterval: TimeInterval = 24 * 3600
     // a hit's touch and the prune's stat-then-delete must not interleave
     private static let lock = NSLock()
+    private let usage = Mutex(Usage())
+
+    init(dir: URL, maxBytes: Int) {
+        self.dir = dir
+        self.maxBytes = maxBytes
+    }
 
     func url(forKey key: String) -> URL {
         let digest = SHA256.hash(data: Data(key.utf8))
@@ -19,32 +30,51 @@ struct CacheFolder: Sendable {
 
     func cachedFile(at url: URL, orWrite write: (URL) throws -> Void) throws -> URL {
         let fm = FileManager.default
-        let hit = Self.lock.withLock { () -> Bool in
-            guard let modified = Self.modified(url) else { return false }
-            // half, so an entry just handed out stays at least 12h clear of the size prune's cutoff
-            if modified.timeIntervalSinceNow > -Self.touchInterval / 2 { return true }
-            return (try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)) != nil
+        let hit = Self.lock.withLock {
+            (try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)) != nil
         }
         if hit { return url }
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         // a reader never sees half a JPEG
         let temp = dir.appendingPathComponent("tmp-\(UUID().uuidString).jpg")
         try write(temp)
+        let bytes = (try? temp.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
         _ = try? fm.replaceItemAt(url, withItemAt: temp)
+        let overBudget = usage.withLock {
+            $0.estimatedBytes += bytes
+            return $0.estimatedBytes > maxBytes
+        }
+        if overBudget { pruneInBackground() }
         return url
     }
 
     func pruneInBackground() {
-        DispatchQueue.global(qos: .utility).async { prune(olderThan: Self.maxAge) }
+        let start = usage.withLock {
+            guard !$0.pruning else { return false }
+            $0.pruning = true
+            // writes landing during the prune count on top of what it leaves
+            $0.estimatedBytes = 0
+            return true
+        }
+        guard start else { return }
+        DispatchQueue.global(qos: .utility).async { [self] in
+            let remaining = prune(olderThan: Self.maxAge)
+            usage.withLock {
+                $0.estimatedBytes += remaining
+                $0.pruning = false
+            }
+        }
     }
 
-    func prune(olderThan age: TimeInterval) {
+    /// Returns the bytes left behind.
+    @discardableResult
+    func prune(olderThan age: TimeInterval) -> Int {
         let cutoff = Date().addingTimeInterval(-age)
         let fm = FileManager.default
         guard
             let entries = try? fm.contentsOfDirectory(
                 at: dir, includingPropertiesForKeys: nil)
-        else { return }
+        else { return 0 }
         var kept: [(url: URL, modified: Date, size: Int)] = []
         for var entry in entries where entry.pathExtension == "jpg" {
             entry.removeAllCachedResourceValues()
@@ -63,9 +93,9 @@ struct CacheFolder: Sendable {
             }
         }
         var total = kept.reduce(0) { $0 + $1.size }
-        // a hit only touches entries over 12h old, so a younger mtime may hide a recent hit
-        for var file in kept.sorted(by: { $0.modified < $1.modified })
-        where total > maxBytes && file.modified.timeIntervalSinceNow < -Self.touchInterval {
+        // a tenth of headroom, so the next prune is that many writes away
+        let target = maxBytes - maxBytes / 10
+        for var file in kept.sorted(by: { $0.modified < $1.modified }) where total > target {
             file.url.removeAllCachedResourceValues()
             Self.lock.withLock {
                 // served since the listing, so no longer the least recent
@@ -75,6 +105,7 @@ struct CacheFolder: Sendable {
                 total -= file.size
             }
         }
+        return total
     }
 
     private static func modified(_ url: URL) -> Date? {
