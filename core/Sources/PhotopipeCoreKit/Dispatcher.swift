@@ -35,65 +35,59 @@ public final class Dispatcher: Sendable {
         return CropRect(left: left, top: top, right: right, bottom: bottom).sanitized()
     }
 
-    private func result(for request: Request) throws -> JSONValue {
+    private func result(for request: Request) throws -> any Encodable {
         switch request.method {
         case "ping":
-            return .object(["pong": .bool(true)])
+            return ["pong": true]
         case "imageExtensions":
-            return .object(["extensions": .array(imageExtensions.sorted().map(JSONValue.string))])
+            return ["extensions": imageExtensions.sorted()]
         case "setRoot":
-            return try JSONValue(
-                encoding: library.setRoot(
-                    path: request.string("path"), indexPath: request.param("indexPath")?.stringValue))
+            return try library.setRoot(
+                path: request.string("path"), indexPath: request.param("indexPath")?.stringValue)
         case "listShoots":
-            return .object(["shoots": try JSONValue(encoding: library.listShoots())])
+            return ["shoots": library.listShoots()]
         case "listImages":
-            let images = try library.listImages(shoot: request.string("shoot"))
-            return .object(["images": try JSONValue(encoding: images)])
+            return ["images": try library.listImages(shoot: request.string("shoot"))]
         case "scoreShoot":
-            return try JSONValue(encoding: library.scoreShoot(shoot: request.string("shoot")))
+            return try library.scoreShoot(shoot: request.string("shoot"))
         case "stackShoot":
-            return try JSONValue(encoding: library.stackShoot(shoot: request.string("shoot")))
+            return try library.stackShoot(shoot: request.string("shoot"))
         case "thumbnail":
             let cachePath = try library.thumbnail(
                 path: request.string("path"), maxPixel: request.param("maxPixel")?.intValue ?? 256)
-            return .object(["cachePath": .string(cachePath)])
+            return ["cachePath": cachePath]
         case "render":
             let cachePath = try library.render(
                 path: request.string("path"), edit: request.edit() ?? .identity,
                 maxPixel: request.param("maxPixel")?.intValue ?? 2000,
                 viewport: Self.viewport(from: request.param("viewport")),
                 decoderVersion: request.param("decoderVersion")?.intValue)
-            return .object(["cachePath": .string(cachePath)])
+            return ["cachePath": cachePath]
         case "setRating":
-            return try JSONValue(
-                encoding: library.setRating(
-                    shoot: request.string("shoot"), path: request.string("path"),
-                    rating: request.int("rating")))
+            return try library.setRating(
+                shoot: request.string("shoot"), path: request.string("path"),
+                rating: request.int("rating"))
         case "setEdit":
-            return try JSONValue(
-                encoding: library.setEdit(
-                    shoot: request.string("shoot"), path: request.string("path"),
-                    edit: required("edit", request.edit())))
+            return try library.setEdit(
+                shoot: request.string("shoot"), path: request.string("path"),
+                edit: required("edit", request.edit()))
         case "rawDefaults":
             let asShot = try library.rawDefaults(
                 path: request.string("path"),
                 decoderVersion: request.param("decoderVersion")?.intValue)
-            return .object([
-                "temperature": asShot.map { .number($0.temperature) } ?? .null,
-                "tint": asShot.map { .number($0.tint) } ?? .null,
-                "denoise": asShot.map { .number($0.denoise * 100) } ?? .null,
-            ])
+            return [
+                "temperature": asShot?.temperature, "tint": asShot?.tint,
+                "denoise": asShot.map { $0.denoise * 100 },
+            ]
         case "trash":
-            return try JSONValue(
-                encoding: library.trashImages(
-                    shoot: request.string("shoot"), paths: request.strings("paths")))
+            return try library.trashImages(
+                shoot: request.string("shoot"), paths: request.strings("paths"))
         case "decoderAvailability":
-            return .object(["raw9": library.raw9Availability().map(JSONValue.bool) ?? .null])
+            return ["raw9": library.raw9Availability()]
         case "decoderSupport":
-            return try JSONValue(encoding: library.decoderSupport(paths: request.strings("paths")))
+            return try library.decoderSupport(paths: request.strings("paths"))
         case "exportFiles":
-            let job = try library.startExport(
+            return try library.startExport(
                 shoot: request.string("shoot"), paths: request.strings("paths"),
                 destination: request.string("destination"),
                 zip: request.param("zip")?.boolValue ?? false,
@@ -102,33 +96,29 @@ public final class Dispatcher: Sendable {
                     ?? .original,
                 quality: request.param("quality")?.intValue ?? 90,
                 decoderVersion: request.param("decoderVersion")?.intValue)
-            return try JSONValue(encoding: job)
         case "exportStatus":
-            return try JSONValue(encoding: library.exportStatus(id: request.string("id")))
+            return try library.exportStatus(id: request.string("id"))
         case "cancelExport":
-            return try JSONValue(encoding: library.cancelExport(id: request.string("id")))
+            return try library.cancelExport(id: request.string("id"))
         case "createProject":
-            return try JSONValue(
-                encoding: library.createProject(
-                    name: request.string("name"), notes: request.string("notes")))
+            return try library.createProject(
+                name: request.string("name"), notes: request.string("notes"))
         case "importFiles":
-            let job = try library.startImport(
+            return try library.startImport(
                 shoot: request.string("shoot"), paths: request.strings("paths"))
-            return try JSONValue(encoding: job)
         case "updateProject":
-            return try JSONValue(
-                encoding: library.updateProject(
-                    shoot: request.string("shoot"), name: request.string("name"),
-                    day: request.param("day")?.stringValue, notes: request.string("notes"),
-                    cover: request.param("cover")?.stringValue))
+            return try library.updateProject(
+                shoot: request.string("shoot"), name: request.string("name"),
+                day: request.param("day")?.stringValue, notes: request.string("notes"),
+                cover: request.param("cover")?.stringValue)
         case "captureDate":
             let day = try library.captureDate(path: request.string("path"))
-            return .object(["day": day.map(JSONValue.string) ?? .null])
+            return ["day": day]
         case "rescan":
             library.rescanNow()
-            return .object([:])
+            return [String: String]()
         case "status":
-            return try JSONValue(encoding: library.status(since: request.param("since")?.intValue))
+            return library.status(since: request.param("since")?.intValue)
         default:
             throw DispatchError.unknownMethod(request.method)
         }
