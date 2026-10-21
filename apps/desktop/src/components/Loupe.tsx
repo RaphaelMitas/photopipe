@@ -121,8 +121,10 @@ export function Loupe({
       : images[index + direction];
   const next = neighbour(1);
   const previous = neighbour(-1);
-  usePrefetchRender(next, next?.edit);
-  usePrefetchRender(previous, previous?.edit);
+  // The render lane runs newest first, so neighbours wait for this photo and next is asked last.
+  const landed = !render.isFetching;
+  usePrefetchRender(landed ? previous : undefined, previous?.edit);
+  usePrefetchRender(landed ? next : undefined, next?.edit);
   const multiFrame = stacks !== null && stacks.current.frames.length > 1;
 
   const stageRef = useRef<HTMLDivElement>(null);

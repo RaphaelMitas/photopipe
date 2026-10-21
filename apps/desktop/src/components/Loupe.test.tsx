@@ -7,6 +7,7 @@ import { SidebarProvider } from "@photopipe/ui/components/sidebar";
 import { TooltipProvider } from "@photopipe/ui/components/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -26,7 +27,12 @@ import type { RatingFilter } from "./RatingFilter";
 afterEach(cleanup);
 
 const invoke = vi.hoisted(() =>
-  vi.fn(async () => ({ cachePath: "/fake/render.jpg" })),
+  vi.fn<
+    (
+      cmd: string,
+      args: { method: string; params?: { path?: string } },
+    ) => Promise<unknown>
+  >(async () => ({ cachePath: "/fake/render.jpg" })),
 );
 vi.mock("@tauri-apps/api/core", () => ({
   invoke,
@@ -238,6 +244,36 @@ describe("Loupe keyboard culling", () => {
   });
 });
 
+describe("Loupe render order", () => {
+  it("asks for the neighbours only once the photo you stopped on is rendered, next last", async () => {
+    const rendered: string[] = [];
+    let finishFirst: () => void = () => {};
+    invoke.mockImplementation(async (_cmd, { method, params }) => {
+      if (method === "render") {
+        rendered.push(params?.path ?? "");
+        if (rendered.length === 1)
+          await new Promise<void>((resolve) => {
+            finishFirst = resolve;
+          });
+      }
+      return { cachePath: "/fake/render.jpg" };
+    });
+    renderLoupe(1);
+    await waitFor(() => expect(rendered).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(rendered).toEqual(["/r/s/DSC00002.ARW"]);
+
+    act(() => finishFirst());
+    await waitFor(() =>
+      expect(rendered).toEqual([
+        "/r/s/DSC00002.ARW",
+        "/r/s/DSC00001.ARW",
+        "/r/s/DSC00003.ARW",
+      ]),
+    );
+  });
+});
+
 describe("Loupe crop mode", () => {
   const draft = () => draftFromEdit(identityEdit, 3000, 2000);
 
@@ -443,15 +479,11 @@ describe("EditSidebar", () => {
 
   it("keeps a stored RAW 9 when this Mac can only give RAW 8", async () => {
     localStorage.setItem("photopipe.rawDecoder", "9");
-    invoke.mockImplementation((async (
-      _cmd: string,
-      args: { method?: string },
-    ) =>
-      args?.method === "decoderAvailability"
+    invoke.mockImplementation(async (_cmd, { method }) =>
+      method === "decoderAvailability"
         ? { raw9: false }
-        : { cachePath: "/fake/render.jpg" }) as unknown as () => Promise<{
-      cachePath: string;
-    }>);
+        : { cachePath: "/fake/render.jpg" },
+    );
     renderEditSidebar(identityEdit);
     await waitFor(() =>
       expect(screen.getByTestId("decoder-quick-9")).toBeDisabled(),
