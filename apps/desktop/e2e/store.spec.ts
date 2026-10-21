@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { type Browser, expect, type Page, test } from "@playwright/test";
+import { openShoot } from "./open-shoot";
 import {
   type Capture,
   type Device,
@@ -48,11 +49,7 @@ for (const device of DEVICES) {
       colorScheme: "dark",
     });
     const page = await context.newPage();
-    await page.goto(device.url);
-    await page.getByTestId("root-input").fill(device.root);
-    await page.getByTestId("root-submit").click();
-    await page.getByTestId(`shoot-${shoot}`).click();
-    await expect(page.getByTestId("grid")).toBeVisible();
+    await openShoot(page, shoot, device);
     await steps(page);
     // Out of the way of hover overlays, then wait out the image decodes.
     await page.mouse.move(2, height / 2 - 2);
