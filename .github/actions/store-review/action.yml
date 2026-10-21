@@ -47,6 +47,11 @@ runs:
         ruby-version: "4.0.7"
         bundler-cache: true
 
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+      with:
+        name: store-screenshots
+        path: ${{ runner.temp }}/store-screenshots
+
     - name: Stage the listing
       shell: bash
       env:
@@ -56,11 +61,9 @@ runs:
       run: |
         # deliver wants one folder per locale
         mkdir -p fastlane/screenshots/en-US
+        cp "$RUNNER_TEMP/store-screenshots/$PLATFORM"/*.png fastlane/screenshots/en-US/
         if [ "$PLATFORM" = ipad ]; then
-          cp docs/screenshots/ipad/*.png fastlane/screenshots/en-US/
           cp fastlane/ipad/description.txt fastlane/metadata/en-US/description.txt
-        else
-          cp docs/screenshots/*.png fastlane/screenshots/en-US/
         fi
         # deliver leaves it out on a platform's first version, which has no What's New.
         ./scripts/whats-new.sh "$TAG" "$REF" "$PLATFORM" > fastlane/metadata/en-US/release_notes.txt

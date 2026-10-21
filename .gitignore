@@ -10,3 +10,6 @@ playwright-report/
 
 # Vendored into the bundle by scripts/fetch-exiftool.sh (21MB)
 apps/desktop/src-tauri/resources/exiftool/
+
+# Written by `pnpm store-screenshots`, uploaded by the release
+apps/desktop/store-screenshots/

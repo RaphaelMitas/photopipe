@@ -1,5 +1,8 @@
+import storeRenders from "../e2e/store/renders.json";
+import storeShoots from "../e2e/store/shoots.json";
 import {
   type CoreMethods,
+  type Edit,
   type ExportProgress,
   editKey,
   type ImageFile,
@@ -109,6 +112,62 @@ const shoots: Shoot[] = [
 
 const emptyShoots = new Set<string>();
 
+type StorePhoto = Pick<
+  ImageFile,
+  "rel" | "rating" | "score" | "width" | "height" | "captured"
+> & { stack?: string | null; preview?: string };
+type StoreShoot = { notes: string; cover: string; photos: StorePhoto[] };
+type StoreRender = { name: string; edit: Partial<Edit> };
+
+// `?store` swaps the drawn library for the real photos in the App Store screenshots.
+const storeFiles = import.meta.glob<string>("../e2e/store/*/*.jpg", {
+  query: "?url",
+  import: "default",
+  eager: true,
+});
+const storeImages = new Map<string, ImageFile[]>();
+// Another photo's preview, so frame 1's filmstrip shows landscapes, not more portraits.
+const storePreviews = new Map<string, string>();
+if (new URLSearchParams(location.search).has("store")) {
+  const data: Record<string, StoreShoot> = storeShoots;
+  const renders: StoreRender[] = storeRenders;
+  const edits = new Map(renders.map((r) => [`${r.name}.ARW`, r.edit]));
+  shoots.splice(0, shoots.length);
+  for (const [name, shoot] of Object.entries(data)) {
+    const path = `/fake/${name}`;
+    storeImages.set(
+      name,
+      shoot.photos.map(({ preview, stack, ...p }) => {
+        if (preview) storePreviews.set(`${path}/${p.rel}`, preview);
+        return image(path, p.rel, {
+          ...p,
+          stack: stack ? `${path}/${stack}` : null,
+          edit: { ...identityEdit, ...edits.get(p.rel) },
+        });
+      }),
+    );
+    shoots.push({
+      name,
+      path,
+      day: name.slice(0, 10),
+      imageCount: shoot.photos.length,
+      notes: shoot.notes,
+      cover: shoot.cover,
+      coverPath: `${path}/${shoot.cover}`,
+      indexed: true,
+    });
+  }
+}
+
+function storeSrc(path: string, edited: boolean): string | null {
+  if (!storeImages.size) return null;
+  const stem = path.slice(path.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "");
+  const url =
+    (edited && storeFiles[`../e2e/store/renders/${stem}.jpg`]) ||
+    storeFiles[`../e2e/store/photos/${storePreviews.get(path) ?? stem}.jpg`];
+  return url ? new URL(url, location.href).href : null;
+}
+
 function projectFields(params: {
   name: string;
   notes: string;
@@ -127,8 +186,13 @@ function projectFields(params: {
 /// start: every file listed, none of its metadata read yet.
 const indexing = new URLSearchParams(location.search).get("indexing") === "1";
 
+const allImages = () =>
+  [zellImages, miscImages, bigImages, ...storeImages.values()].flat();
+
 function imagesFor(shoot: string): ImageFile[] {
   if (emptyShoots.has(shoot)) return [];
+  const real = storeImages.get(shoot);
+  if (real) return real;
   if (shoot === "2026-07-12_zell") return zellImages;
   if (shoot === "2026-08-01_dolomites") return bigImages;
   return miscImages;
@@ -277,24 +341,25 @@ const E2E_HANDLERS: CoreHandlers = {
     return { done: total, total, running: false };
   },
   thumbnail: (params) => ({
-    cachePath: `/fake/thumbs/${params.path}.jpg`,
+    cachePath:
+      storeSrc(params.path, false) ?? `/fake/thumbs/${params.path}.jpg`,
   }),
   render: ({ path, edit, viewport }) => {
+    const real = storeSrc(path, editKey(edit) !== editKey(identityEdit));
+    if (real) return { cachePath: real };
     const region = viewport
       ? `@${viewport.left},${viewport.top},${viewport.right},${viewport.bottom}`
       : "";
     return { cachePath: `/fake/renders/${editKey(edit)}${region}/${path}.jpg` };
   },
   setRating: (params) => {
-    const all = [...zellImages, ...miscImages, ...bigImages];
-    const target = all.find((entry) => entry.path === params.path);
+    const target = allImages().find((entry) => entry.path === params.path);
     if (!target) throw `unknown_image: ${params.path}`;
     target.rating = params.rating;
     return { rating: target.rating };
   },
   setEdit: (params) => {
-    const all = [...zellImages, ...miscImages, ...bigImages];
-    const target = all.find((entry) => entry.path === params.path);
+    const target = allImages().find((entry) => entry.path === params.path);
     if (!target) throw `unknown_image: ${params.path}`;
     target.edit = params.edit;
     return { edit: target.edit };

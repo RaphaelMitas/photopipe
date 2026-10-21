@@ -183,9 +183,8 @@ updater and the pkg rules the store enforces. Every release then goes all the wa
 (pinned by `Gemfile.lock`), so `pnpm release` needs no visit to App Store
 Connect. The macOS job uploads the pkg. A second job, `mas-review`, on a Linux
 runner because it mostly waits for Apple to process the upload, sends the
-listing (text from `fastlane/metadata/en-US`, screenshots copied from
-`docs/screenshots`, whose 2560x1600 is one of the Mac sizes deliver accepts),
-attaches the build and submits it for review with automatic release.
+listing (text from `fastlane/metadata/en-US`, screenshots from the
+`store-screenshots` job, see Screenshots below), attaches the build and submits it for review with automatic release.
 What's New is written per release and platform by `scripts/whats-new.sh`:
 the `feat:` and `fix:` subjects since the previous tag that touch
 `apps/desktop` or `core`, minus those naming only the other platform. A commit
@@ -199,8 +198,7 @@ signed with `MAS_CERTIFICATE`'s Apple Distribution identity and
 `IOS_PROVISIONING_PROFILE`. Its build number goes in through
 `bundle.iOS.bundleVersion`, since `--build-number` appends a fourth component
 the store refuses. `ipad-review` submits it with
-`fastlane/ipad/description.txt` and `docs/screenshots/ipad` (2732x2048, the
-13-inch iPad's). Both review jobs share `.github/actions/store-review`, which
+`fastlane/ipad/description.txt` and the iPad screenshots. Both review jobs share `.github/actions/store-review`, which
 refuses to submit while the listing still says TODO or one of its URLs does
 not load; the build is in TestFlight by then, so nothing is lost. A version
 already waiting for review is pulled first, because Apple freezes it. The
@@ -296,12 +294,29 @@ The cask in `RaphaelMitas/homebrew-tap` needs `auto_updates true`, or
 
 ### Screenshots
 
-`pnpm screenshots` captures `docs/screenshots/*.png` and the iPad's
-`docs/screenshots/ipad/*.png` from the real UI against the e2e mock, so
-neither the README nor the store can show an app that no longer exists. The
-iPad set loads `/?ipad`, which gives the mock the iPad's feature set. The
-photos are landscapes drawn from each file name, deterministic and
-machine-independent.
+`pnpm screenshots` captures `docs/screenshots/*.png` for the README and the
+landing page from the real UI against the e2e mock, so neither can show an
+app that no longer exists. The photos are landscapes drawn from each file
+name, deterministic and machine-independent.
+
+The App Store gets its own set. `pnpm store-screenshots` runs the mock in
+`?store` mode, which swaps the drawn library for real photos from
+`apps/desktop/e2e/store`, captures the UI for the Mac (2880x1800) and the
+13-inch iPad (2732x2048, through `?ipad`), and frames each capture with a
+headline and photos (`e2e/store/frames.ts`). It writes to
+`apps/desktop/store-screenshots`, which is not committed: every release builds
+the set fresh on a macOS runner, because the frames are set in the system
+font, and both review jobs upload it. CI runs it too, so a UI change that
+breaks a capture fails the PR rather than the release.
+
+The photos are the maker's own and not under the MIT licence (see
+`e2e/store/LICENSE.md`). Only the ones a screenshot shows are committed, as
+small previews; the RAW originals stay out of git. The edited photos in
+`e2e/store/renders` come from Photopipe's renderer, with the edits listed in
+`renders.json`. After changing an edit or the renderer, regenerate them from
+the originals with
+`PHOTOPIPE_STORE_ORIGINALS=<folder> swift test --filter storeRenders` in
+`core/`.
 
 ## Still to do
 

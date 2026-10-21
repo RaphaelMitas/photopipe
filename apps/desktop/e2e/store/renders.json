@@ -1,0 +1,150 @@
+[
+  {
+    "name": "DSC03455",
+    "src": "DSC03455.ARW",
+    "edit": {
+      "exposure": 0.2,
+      "highlights": -25,
+      "shadows": 20,
+      "vibrance": 30,
+      "saturation": 5,
+      "dehaze": 12,
+      "clarity": 10,
+      "curveRGB": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 0.25,
+          "y": 0.2
+        },
+        {
+          "x": 0.75,
+          "y": 0.83
+        },
+        {
+          "x": 1,
+          "y": 1
+        }
+      ]
+    }
+  },
+  {
+    "name": "DSC04450",
+    "src": "DSC04450.ARW",
+    "edit": {
+      "exposure": 0.2,
+      "highlights": -25,
+      "shadows": 20,
+      "vibrance": 30,
+      "saturation": 5,
+      "dehaze": 12,
+      "clarity": 10,
+      "curveRGB": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 0.25,
+          "y": 0.2
+        },
+        {
+          "x": 0.75,
+          "y": 0.83
+        },
+        {
+          "x": 1,
+          "y": 1
+        }
+      ]
+    }
+  },
+  {
+    "name": "DSC04417",
+    "src": "DSC04417.ARW",
+    "edit": {
+      "exposure": 1.3,
+      "highlights": -40,
+      "shadows": 55,
+      "whites": 20,
+      "blacks": -15,
+      "vibrance": 45,
+      "saturation": 10,
+      "dehaze": 20,
+      "clarity": 20,
+      "curveRGB": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 0.25,
+          "y": 0.18
+        },
+        {
+          "x": 0.75,
+          "y": 0.85
+        },
+        {
+          "x": 1,
+          "y": 1
+        }
+      ]
+    }
+  },
+  {
+    "name": "DSC04417_before",
+    "src": "DSC04417.ARW",
+    "edit": {}
+  },
+  {
+    "name": "DSC04421_bright",
+    "src": "DSC04421.ARW",
+    "edit": {
+      "exposure": 0.75,
+      "highlights": -30,
+      "shadows": 40,
+      "vibrance": 30,
+      "saturation": 5,
+      "dehaze": 12,
+      "clarity": 10,
+      "curveRGB": [
+        {
+          "x": 0,
+          "y": 0
+        },
+        {
+          "x": 0.25,
+          "y": 0.2
+        },
+        {
+          "x": 0.75,
+          "y": 0.83
+        },
+        {
+          "x": 1,
+          "y": 1
+        }
+      ],
+      "whites": 10
+    }
+  },
+  {
+    "name": "DSC04233_bright",
+    "src": "DSC04233.ARW",
+    "edit": {
+      "exposure": 0.5,
+      "highlights": -35,
+      "shadows": 45,
+      "whites": 10,
+      "vibrance": 15
+    }
+  },
+  {
+    "name": "DSC04432",
+    "src": "DSC04432.ARW",
+    "edit": {}
+  }
+]
