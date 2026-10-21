@@ -344,20 +344,39 @@ export default function App() {
     held.current.key !== heldKey ||
     (openImage !== undefined && !held.current.paths.includes(openImage.path));
 
+  const ordered = useMemo(
+    () =>
+      stacksOn
+        ? stackedOrder(allImages, filter.matches, activeSort)
+        : filteredImages,
+    [stacksOn, allImages, filter.matches, activeSort, filteredImages],
+  );
   const loupeImages = useMemo(() => {
-    const live = (stacksOn ? stackedOrder : browserOrder)(
-      allImages,
-      filter.matches,
-      activeSort,
-      openImage,
-    );
+    // the open photo only changes the order once the filter would drop it
+    const live =
+      !openImage || ordered.includes(openImage)
+        ? ordered
+        : (stacksOn ? stackedOrder : browserOrder)(
+            allImages,
+            filter.matches,
+            activeSort,
+            openImage,
+          );
     if (!openImage || reorder) return live;
     const order = heldOrder(held.current.paths, live, openImage);
     // holding can slot a newcomer beside the wrong held photo; regrouping puts it back in its stack
     return stacksOn
       ? groupStacks(order).flatMap((stack) => stack.frames)
       : order;
-  }, [stacksOn, allImages, openImage, reorder, filter.matches, activeSort]);
+  }, [
+    ordered,
+    stacksOn,
+    allImages,
+    openImage,
+    reorder,
+    filter.matches,
+    activeSort,
+  ]);
 
   held.current = {
     key: heldKey,
