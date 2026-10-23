@@ -203,9 +203,9 @@ export function frames(device: Device): Frame[] {
   ];
 }
 
-export const CREATIVE_ASSETS: { name: string; size: Size; frame: Frame }[] = [
+export const CREATIVE_ASSETS: { file: string; size: Size; frame: Frame }[] = [
   {
-    name: "header",
+    file: "header.png",
     size: { width: 3840, height: 1646 },
     frame: {
       layout: "wipe",
@@ -216,7 +216,7 @@ export const CREATIVE_ASSETS: { name: string; size: Size; frame: Frame }[] = [
     },
   },
   {
-    name: "search",
+    file: "search.png",
     size: { width: 3840, height: 2560 },
     frame: {
       layout: "bleed",
@@ -238,12 +238,11 @@ export const CREATIVE_ASSETS: { name: string; size: Size; frame: Frame }[] = [
 
 /// Everything arrives as a URL, so the page needs no file access.
 export function framePage(
-  size: Size,
+  { width, height }: Size,
   frame: Frame,
   css: string,
   url: { photo: (src: string) => string; capture?: string; icon: string },
 ): string {
-  const { width, height } = size;
   const vars = {
     w: `${width}px`,
     h: `${height}px`,

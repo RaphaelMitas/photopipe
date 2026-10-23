@@ -278,7 +278,12 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
         )}
       >
         <Group id="tone" title="Tone" summary={toneSummary(edit)}>
-          <CurveEditor edit={edit} imageSrc={render.data} onChange={set} />
+          <CurveEditor
+            edit={edit}
+            imageSrc={render.data}
+            photo={image.path}
+            onChange={set}
+          />
           <Row
             label="Exposure"
             value={edit.exposure}

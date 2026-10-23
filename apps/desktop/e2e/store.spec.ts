@@ -200,14 +200,7 @@ test("@store creative", async ({ browser }) => {
       ).toBeAttached();
     },
   );
-  await compose(
-    browser,
-    "store-screenshots/creative",
-    CREATIVE_ASSETS.map(({ name, size, frame }) => ({
-      file: `${name}.png`,
-      size,
-      frame,
-    })),
-    { "ipad-editor": editor },
-  );
+  await compose(browser, "store-screenshots/creative", CREATIVE_ASSETS, {
+    "ipad-editor": editor,
+  });
 });
