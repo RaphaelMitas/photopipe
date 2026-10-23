@@ -7,6 +7,7 @@ private struct StoreRender: Decodable {
     let name: String
     let src: String
     let edit: Edit
+    let maxPixel: Int?
 }
 
 /// The App Store screenshots show these renders. Their RAW originals stay out
@@ -24,7 +25,7 @@ private struct StoreRender: Decodable {
     for render in renders {
         let src = URL(fileURLWithPath: originals).appendingPathComponent(render.src)
         let file = ImageFile(path: src.path, rel: render.src, ext: src.pathExtension, size: 1, mtime: 1)
-        let rendered = try renderer.render(file: file, edit: render.edit, maxPixel: 2880)
+        let rendered = try renderer.render(file: file, edit: render.edit, maxPixel: render.maxPixel ?? 2880)
         let out = store.appendingPathComponent("renders/\(render.name).jpg")
         try? FileManager.default.removeItem(at: out)
         try FileManager.default.copyItem(at: rendered, to: out)
