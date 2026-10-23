@@ -2,10 +2,10 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { openShoot } from "./open-shoot";
 import {
+  type Asset,
   type Capture,
   CREATIVE_ASSETS,
   type Device,
-  type Frame,
   framePage,
   frames,
   SIZES,
@@ -15,8 +15,7 @@ import {
 // The App Store screenshots: the real UI against the e2e mock in `?store`
 // mode, with the maker's own photos from e2e/store, framed by store/frames.ts.
 // Tagged @store: `pnpm store-screenshots` runs only these and writes to
-// store-screenshots/. The release uploads the device sets; the creative assets
-// go into the Asset Library by hand.
+// store-screenshots/.
 
 const IPAD = {
   name: "ipad",
@@ -84,7 +83,7 @@ async function capture(
 async function compose(
   browser: Browser,
   out: string,
-  list: { file: string; size: Size; frame: Frame }[],
+  list: Asset[],
   captures: Partial<Record<Capture, Buffer>>,
 ) {
   const css = readFileSync("e2e/store/template.css", "utf8");
