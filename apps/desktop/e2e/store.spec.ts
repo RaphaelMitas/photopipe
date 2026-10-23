@@ -116,6 +116,12 @@ async function sortByInstinct(page: Page) {
   await page.keyboard.press("Escape");
 }
 
+async function selectKeepers(page: Page) {
+  await page.getByTestId("hist-4").click();
+  await page.getByTestId("open-export").click();
+  await page.getByTestId("select-filtered").click();
+}
+
 async function loupeOnBlueHour(page: Page) {
   await page.getByTestId("hist-5").click();
   await page.getByTestId("thumb").first().click();
@@ -149,18 +155,14 @@ for (const device of DEVICES) {
         await expect(page.getByTestId("loupe-name")).toHaveText("DSC03455.ARW");
       }),
       "nature-keepers-selected": await shoot(LANDSCAPES, async (page) => {
-        await page.getByTestId("hist-4").click();
-        await page.getByTestId("open-export").click();
-        await page.getByTestId("select-filtered").click();
+        await selectKeepers(page);
         await page.getByTestId("drawer-close").click();
         await expect(page.getByTestId("selection-count")).toHaveText(
           "34 selected",
         );
       }),
       "nature-export": await shoot(LANDSCAPES, async (page) => {
-        await page.getByTestId("hist-4").click();
-        await page.getByTestId("open-export").click();
-        await page.getByTestId("select-filtered").click();
+        await selectKeepers(page);
         await expect(page.getByTestId("drawer-count")).toHaveText("34");
       }),
       "nature-grid-instinct-3up": await shoot(LANDSCAPES, async (page) => {
