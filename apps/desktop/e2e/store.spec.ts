@@ -12,10 +12,9 @@ import {
   type Size,
 } from "./store/frames";
 
-// The App Store screenshots: the real UI against the e2e mock in `?store`
-// mode, with the maker's own photos from e2e/store, framed by store/frames.ts.
-// Tagged @store: `pnpm store-screenshots` runs only these and writes to
-// store-screenshots/.
+// The App Store screenshots and creative assets: the real UI against the e2e
+// mock in `?store` mode, with the maker's own photos from e2e/store, framed by
+// store/frames.ts. Tagged @store: `pnpm store-screenshots` runs only these.
 
 const IPAD = {
   name: "ipad",
