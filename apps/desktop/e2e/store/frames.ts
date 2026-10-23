@@ -203,7 +203,9 @@ export function frames(device: Device): Frame[] {
   ];
 }
 
-export const CREATIVE_ASSETS: { file: string; size: Size; frame: Frame }[] = [
+export type Asset = { file: string; size: Size; frame: Frame };
+
+export const CREATIVE_ASSETS: Asset[] = [
   {
     file: "header.png",
     size: { width: 3840, height: 1646 },
