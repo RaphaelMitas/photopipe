@@ -205,7 +205,11 @@ export function CurveEditor({ edit, imageSrc, onChange }: Props) {
         onDoubleClick={onDoubleClick}
       >
         {histogram && (
-          <path d={histogramPath(histogram)} fill="rgba(255,255,255,0.08)" />
+          <path
+            data-testid="curve-histogram"
+            d={histogramPath(histogram)}
+            fill="rgba(255,255,255,0.08)"
+          />
         )}
         {[0.25, 0.5, 0.75].map((fraction) => (
           <g key={fraction} stroke="rgba(255,255,255,0.07)">

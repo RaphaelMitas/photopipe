@@ -97,6 +97,8 @@ h1 em {
 
 .window {
   position: absolute;
+  top: var(--win-top);
+  width: var(--win-w);
   z-index: 1;
   border-radius: 26px;
   overflow: hidden;
@@ -120,9 +122,7 @@ h1 em {
 }
 .layout-left .window {
   right: var(--pad-r, var(--pad));
-  top: var(--win-top, 50%);
   transform: translateY(var(--win-shift, -50%));
-  width: var(--win-w);
 }
 
 .layout-compare .copy {
@@ -137,8 +137,6 @@ h1 em {
 }
 .layout-compare .window {
   right: var(--pad);
-  top: var(--win-top);
-  width: var(--win-w);
 }
 .layout-bleed .copy {
   left: var(--pad);
@@ -146,8 +144,6 @@ h1 em {
 }
 .layout-bleed .window {
   left: var(--win-left);
-  top: var(--win-top);
-  width: var(--win-w);
 }
 .layout-wipe .copy {
   left: 0;
@@ -178,10 +174,6 @@ h1 em {
 .layout-panel .copy {
   top: var(--copy-top, 130px);
   width: var(--copy-w);
-}
-.layout-panel .window {
-  top: var(--win-top);
-  width: var(--win-w);
 }
 .layout-panel.side-left .copy,
 .layout-panel.side-left .window {
@@ -246,15 +238,7 @@ h1 em {
 }
 
 .wipe {
-  position: absolute;
-  inset: 0;
   clip-path: inset(0 50% 0 0);
-}
-.wipe img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: var(--bg-pos);
 }
 .divider {
   position: absolute;

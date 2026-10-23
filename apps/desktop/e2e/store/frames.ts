@@ -35,8 +35,7 @@ export type Frame = {
     top: string;
   };
   tiles?: { label: string; src: string }[];
-  // the photo before its edit, over the left half of bg
-  wipe?: string;
+  before?: string;
   vars: Record<string, string>;
 };
 
@@ -204,9 +203,7 @@ export function frames(device: Device): Frame[] {
   ];
 }
 
-/// The App Store's creative assets, shown on iPadOS and uploaded by hand in
-/// App Store Connect's Asset Library.
-export const CREATIVE: { name: string; size: Size; frame: Frame }[] = [
+export const CREATIVE_ASSETS: { name: string; size: Size; frame: Frame }[] = [
   {
     name: "header",
     size: { width: 3840, height: 1646 },
@@ -214,7 +211,7 @@ export const CREATIVE: { name: string; size: Size; frame: Frame }[] = [
       layout: "wipe",
       h1: "The blue hour <em>you actually saw.</em>",
       bg: { src: render("DSC04417"), pos: "50% 40%" },
-      wipe: render("DSC04417_before"),
+      before: render("DSC04417_before"),
       vars: { h1: "170px", "copy-bottom": "170px" },
     },
   },
@@ -231,9 +228,9 @@ export const CREATIVE: { name: string; size: Size; frame: Frame }[] = [
         pad: "150px",
         "copy-top": "170px",
         h1: "230px",
-        "win-left": "-700px",
+        "win-left": "-120px",
         "win-top": "560px",
-        "win-w": "4400px",
+        "win-w": "3800px",
       },
     },
   },
@@ -275,7 +272,7 @@ ${frame.scrim ? `<div class="scrim" style="background:${frame.scrim}"></div>` : 
 ${capture ? `<div class="window"><img src="${capture}"></div>` : ""}
 ${frame.callout ? callout(frame.callout) : ""}
 ${tiles}
-${frame.wipe ? `<div class="wipe"><img src="${url.photo(frame.wipe)}"></div><div class="divider"></div><span class="badge before">Before</span><span class="badge after">After</span>` : ""}
+${frame.before ? `<div class="bg wipe"><img src="${url.photo(frame.before)}"></div><div class="divider"></div><span class="badge before">Before</span><span class="badge after">After</span>` : ""}
 <div class="copy">
 ${frame.eyebrow ? `<div class="eyebrow"><img src="${url.icon}">Photopipe</div>` : ""}
 <h1>${frame.h1}</h1>

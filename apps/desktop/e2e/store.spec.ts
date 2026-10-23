@@ -3,7 +3,7 @@ import { type Browser, expect, type Page, test } from "@playwright/test";
 import { openShoot } from "./open-shoot";
 import {
   type Capture,
-  CREATIVE,
+  CREATIVE_ASSETS,
   type Device,
   type Frame,
   framePage,
@@ -18,21 +18,15 @@ import {
 // store-screenshots/. The release uploads the device sets; the creative assets
 // go into the Asset Library by hand.
 
-const MAC = {
-  name: "mac",
-  url: "/?store",
-  root: "/Users/you/Pictures/Camera",
-} as const;
 const IPAD = {
   name: "ipad",
   url: "/?store&ipad",
   root: "/private/var/mobile/Library/LiveFiles/com.apple.filesystems.userfsd/SD/Photos",
 } as const;
-const DEVICES = [MAC, IPAD] satisfies {
-  name: Device;
-  url: string;
-  root: string;
-}[];
+const DEVICES = [
+  { name: "mac", url: "/?store", root: "/Users/you/Pictures/Camera" },
+  IPAD,
+] as const satisfies { name: Device; url: string; root: string }[];
 
 const TRIP = "2026-09-03_zell-am-see";
 const LANDSCAPES = "2026-09-03_landscapes";
@@ -45,13 +39,14 @@ const photo = (src: string) =>
 async function capture(
   browser: Browser,
   device: (typeof DEVICES)[number],
-  viewport: { width: number; height: number; deviceScaleFactor: number },
+  viewport: Size,
+  deviceScaleFactor: number,
   shoot: string,
   steps: (page: Page) => Promise<void>,
 ): Promise<Buffer> {
   const context = await browser.newContext({
-    viewport: { width: viewport.width, height: viewport.height },
-    deviceScaleFactor: viewport.deviceScaleFactor,
+    viewport,
+    deviceScaleFactor,
     colorScheme: "dark",
   });
   const page = await context.newPage();
@@ -88,9 +83,8 @@ async function capture(
 
 async function compose(
   browser: Browser,
-  size: Size,
   out: string,
-  list: { file: string; frame: Frame }[],
+  list: { file: string; size: Size; frame: Frame }[],
   captures: Partial<Record<Capture, Buffer>>,
 ) {
   const css = readFileSync("e2e/store/template.css", "utf8");
@@ -99,10 +93,11 @@ async function compose(
     readFileSync("../../brand/macos/icon-dark-1024.png"),
   );
   mkdirSync(out, { recursive: true });
-  const page = await browser.newPage({ viewport: size });
-  for (const { file, frame } of list) {
+  const page = await browser.newPage();
+  for (const { file, size, frame } of list) {
     const shot = frame.capture && captures[frame.capture];
     if (frame.capture && !shot) throw new Error(`no ${frame.capture} capture`);
+    await page.setViewportSize(size);
     await page.setContent(
       framePage(size, frame, css, {
         photo,
@@ -116,32 +111,36 @@ async function compose(
   await page.close();
 }
 
+async function sortByInstinct(page: Page) {
+  await page.getByTestId("sort").click();
+  await page.getByTestId("sort-score").click();
+  await page.keyboard.press("Escape");
+}
+
 async function loupeOnBlueHour(page: Page) {
   await page.getByTestId("hist-5").click();
   await page.getByTestId("thumb").first().click();
   await expect(page.getByTestId("loupe")).toBeVisible();
   for (let i = 0; i < 3; i += 1) await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC04417.ARW");
+  // The histogram decodes its own copy of the render, outside the image wait.
+  await expect(page.getByTestId("curve-histogram")).toBeAttached();
 }
 
 for (const device of DEVICES) {
-  const { width, height } = SIZES[device.name];
-  const viewport = {
-    width: width / 2,
-    height: height / 2,
-    deviceScaleFactor: 2,
-  };
-
-  async function sortByInstinct(page: Page) {
-    await page.getByTestId("sort").click();
-    await page.getByTestId("sort-score").click();
-    await page.keyboard.press("Escape");
-  }
+  const size = SIZES[device.name];
 
   test(`@store ${device.name}`, async ({ browser }) => {
     test.setTimeout(180_000);
     const shoot = (name: string, steps: (page: Page) => Promise<void>) =>
-      capture(browser, device, viewport, name, steps);
+      capture(
+        browser,
+        device,
+        { width: size.width / 2, height: size.height / 2 },
+        2,
+        name,
+        steps,
+      );
     const captures: Partial<Record<Capture, Buffer>> = {
       "loupe-DSC03455": await shoot(TRIP, async (page) => {
         await page.getByTestId("hist-4").click();
@@ -173,9 +172,12 @@ for (const device of DEVICES) {
     };
     await compose(
       browser,
-      SIZES[device.name],
       `store-screenshots/${device.name}`,
-      frames(device.name).map((frame, i) => ({ file: `0${i + 1}.png`, frame })),
+      frames(device.name).map((frame, i) => ({
+        file: `0${i + 1}.png`,
+        size,
+        frame,
+      })),
       captures,
     );
   });
@@ -187,20 +189,25 @@ test("@store creative", async ({ browser }) => {
   const editor = await capture(
     browser,
     IPAD,
-    { width: 1200, height: 800, deviceScaleFactor: 4 },
+    { width: 1200, height: 800 },
+    4,
     LANDSCAPES,
     async (page) => {
       await loupeOnBlueHour(page);
       await page.keyboard.press("ControlOrMeta+b");
+      await expect(
+        page.locator("[data-slot=sidebar][data-state=collapsed]"),
+      ).toBeAttached();
     },
   );
-  for (const { name, size, frame } of CREATIVE) {
-    await compose(
-      browser,
+  await compose(
+    browser,
+    "store-screenshots/creative",
+    CREATIVE_ASSETS.map(({ name, size, frame }) => ({
+      file: `${name}.png`,
       size,
-      "store-screenshots/creative",
-      [{ file: `${name}.png`, frame }],
-      { "ipad-editor": editor },
-    );
-  }
+      frame,
+    })),
+    { "ipad-editor": editor },
+  );
 });
