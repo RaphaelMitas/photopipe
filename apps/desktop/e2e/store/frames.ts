@@ -1,6 +1,8 @@
 export type Device = "mac" | "ipad";
 
-export const SIZES: Record<Device, { width: number; height: number }> = {
+export type Size = { width: number; height: number };
+
+export const SIZES: Record<Device, Size> = {
   mac: { width: 2880, height: 1800 },
   ipad: { width: 2732, height: 2048 },
 };
@@ -10,20 +12,21 @@ export type Capture =
   | "loupe-DSC04417"
   | "nature-keepers-selected"
   | "nature-grid-instinct-3up"
-  | "nature-export";
+  | "nature-export"
+  | "ipad-editor";
 
 type Image = { src: string; pos: string };
 
-type Frame = {
+export type Frame = {
   layout: string;
   h1: string;
-  sub: string;
+  sub?: string;
   fine?: string;
   eyebrow?: boolean;
   bg: Image;
   panel?: Image;
   scrim?: string;
-  capture: Capture;
+  capture?: Capture;
   // a crop of the capture, scaled up and outlined on top of the window
   callout?: {
     crop: { x: number; y: number; w: number; h: number };
@@ -32,6 +35,7 @@ type Frame = {
     top: string;
   };
   tiles?: { label: string; src: string }[];
+  before?: string;
   vars: Record<string, string>;
 };
 
@@ -199,14 +203,48 @@ export function frames(device: Device): Frame[] {
   ];
 }
 
+export type Asset = { file: string; size: Size; frame: Frame };
+
+export const CREATIVE_ASSETS: Asset[] = [
+  {
+    file: "header.png",
+    size: { width: 3840, height: 1646 },
+    frame: {
+      layout: "wipe",
+      h1: "The blue hour <em>you actually saw.</em>",
+      bg: { src: render("DSC04417"), pos: "50% 40%" },
+      before: render("DSC04417_before"),
+      vars: { h1: "170px", "copy-bottom": "170px" },
+    },
+  },
+  {
+    file: "search.png",
+    size: { width: 3840, height: 2560 },
+    frame: {
+      layout: "bleed",
+      h1: "Edit RAW <em>on iPad.</em>",
+      bg: { src: render("DSC04450"), pos: "50% 30%" },
+      scrim: "rgba(6,8,14,.35)",
+      capture: "ipad-editor",
+      vars: {
+        pad: "150px",
+        "copy-top": "170px",
+        h1: "230px",
+        "win-left": "-120px",
+        "win-top": "560px",
+        "win-w": "3800px",
+      },
+    },
+  },
+];
+
 /// Everything arrives as a URL, so the page needs no file access.
 export function framePage(
-  device: Device,
+  { width, height }: Size,
   frame: Frame,
   css: string,
-  url: { photo: (src: string) => string; capture: string; icon: string },
+  url: { photo: (src: string) => string; capture?: string; icon: string },
 ): string {
-  const { width, height } = SIZES[device];
   const vars = {
     w: `${width}px`,
     h: `${height}px`,
@@ -232,13 +270,14 @@ export function framePage(
 <div class="bg"><img src="${url.photo(frame.bg.src)}"></div>
 ${frame.panel ? `<div class="panel" style="--panel-pos:${frame.panel.pos}"><img src="${url.photo(frame.panel.src)}"></div>` : ""}
 ${frame.scrim ? `<div class="scrim" style="background:${frame.scrim}"></div>` : ""}
-<div class="window"><img src="${capture}"></div>
+${capture ? `<div class="window"><img src="${capture}"></div>` : ""}
 ${frame.callout ? callout(frame.callout) : ""}
 ${tiles}
+${frame.before ? `<div class="bg wipe"><img src="${url.photo(frame.before)}"></div><div class="divider"></div><span class="badge before">Before</span><span class="badge after">After</span>` : ""}
 <div class="copy">
 ${frame.eyebrow ? `<div class="eyebrow"><img src="${url.icon}">Photopipe</div>` : ""}
 <h1>${frame.h1}</h1>
-<p class="sub">${frame.sub}</p>
+${frame.sub ? `<p class="sub">${frame.sub}</p>` : ""}
 ${frame.fine ? `<p class="fine">${frame.fine}</p>` : ""}
 </div></div></body></html>`;
 }

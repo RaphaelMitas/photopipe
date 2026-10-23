@@ -311,12 +311,19 @@ the set fresh on a macOS runner, because the frames are set in the system
 font, and both review jobs upload it. CI runs it too, so a UI change that
 breaks a capture fails the PR rather than the release.
 
+The same run writes the two creative assets iPadOS shows on the product page,
+the header (3840x1646) and the search result (3840x2560), to
+`store-screenshots/creative`. fastlane can't upload those, so they go into App
+Store Connect's Asset Library by hand, from the release's `store-screenshots`
+artifact. Apple reviews them on their own, and they can replace the live ones
+without a new version.
+
 The photos are the maker's own and not under the MIT licence (see
 `e2e/store/LICENSE.md`). Only the ones a screenshot shows are committed, as
 small previews; the RAW originals stay out of git. The edited photos in
 `e2e/store/renders` come from Photopipe's renderer, with the edits listed in
-`renders.json`. After changing an edit or the renderer, regenerate them from
-the originals with
+`renders.json`, at 2880 pixels unless an entry sets `maxPixel`. After changing
+an edit or the renderer, regenerate them from the originals with
 `PHOTOPIPE_STORE_ORIGINALS=<folder> swift test --filter storeRenders` in
 `core/`.
 

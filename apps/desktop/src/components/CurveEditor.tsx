@@ -43,8 +43,12 @@ function curvePath(points: CurvePoint[]): string {
 
 // Luminance histogram of the current render, drawn behind the curve. The
 // asset protocol may refuse canvas readback; then the curve stands alone.
-function useHistogram(src: string | undefined): number[] | null {
-  const [bins, setBins] = useState<number[] | null>(null);
+// Kept while an edit re-renders the photo, dropped when the photo changes.
+function useHistogram(src: string | undefined, photo: string): number[] | null {
+  const [histogram, setHistogram] = useState<{
+    photo: string;
+    bins: number[];
+  } | null>(null);
   useEffect(() => {
     if (!src) return;
     let cancelled = false;
@@ -68,18 +72,21 @@ function useHistogram(src: string | undefined): number[] | null {
         }
         const max = Math.max(...next);
         if (!cancelled && max > 0) {
-          setBins(next.map((count) => Math.sqrt(count / max)));
+          setHistogram({
+            photo,
+            bins: next.map((count) => Math.sqrt(count / max)),
+          });
         }
       } catch {
-        if (!cancelled) setBins(null);
+        if (!cancelled) setHistogram(null);
       }
     };
     image.src = src;
     return () => {
       cancelled = true;
     };
-  }, [src]);
-  return bins;
+  }, [src, photo]);
+  return histogram?.photo === photo ? histogram.bins : null;
 }
 
 function histogramPath(bins: number[]): string {
@@ -96,17 +103,18 @@ function histogramPath(bins: number[]): string {
 type Props = {
   edit: Edit;
   imageSrc?: string;
+  photo: string;
   onChange: (partial: Partial<Edit>) => void;
 };
 
-export function CurveEditor({ edit, imageSrc, onChange }: Props) {
+export function CurveEditor({ edit, imageSrc, photo, onChange }: Props) {
   const [channel, setChannel] = useState<CurveChannel>("rgb");
   const dragIndex = useRef<number | null>(null);
   const active =
     CURVE_CHANNELS.find((entry) => entry.channel === channel) ??
     CURVE_CHANNELS[0];
   const points = materialized(edit[active.key]);
-  const histogram = useHistogram(imageSrc);
+  const histogram = useHistogram(imageSrc, photo);
 
   const emit = (next: CurvePoint[]) => {
     onChange({ [active.key]: isIdentityCurve(next) ? [] : next });
@@ -205,7 +213,11 @@ export function CurveEditor({ edit, imageSrc, onChange }: Props) {
         onDoubleClick={onDoubleClick}
       >
         {histogram && (
-          <path d={histogramPath(histogram)} fill="rgba(255,255,255,0.08)" />
+          <path
+            data-testid="curve-histogram"
+            d={histogramPath(histogram)}
+            fill="rgba(255,255,255,0.08)"
+          />
         )}
         {[0.25, 0.5, 0.75].map((fraction) => (
           <g key={fraction} stroke="rgba(255,255,255,0.07)">

@@ -92,12 +92,14 @@
           "y": 1
         }
       ]
-    }
+    },
+    "maxPixel": 3840
   },
   {
     "name": "DSC04417_before",
     "src": "DSC04417.ARW",
-    "edit": {}
+    "edit": {},
+    "maxPixel": 3840
   },
   {
     "name": "DSC04421_bright",

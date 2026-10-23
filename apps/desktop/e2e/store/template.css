@@ -97,6 +97,8 @@ h1 em {
 
 .window {
   position: absolute;
+  top: var(--win-top);
+  width: var(--win-w);
   z-index: 1;
   border-radius: 26px;
   overflow: hidden;
@@ -120,9 +122,7 @@ h1 em {
 }
 .layout-left .window {
   right: var(--pad-r, var(--pad));
-  top: var(--win-top, 50%);
   transform: translateY(var(--win-shift, -50%));
-  width: var(--win-w);
 }
 
 .layout-compare .copy {
@@ -137,8 +137,19 @@ h1 em {
 }
 .layout-compare .window {
   right: var(--pad);
-  top: var(--win-top);
-  width: var(--win-w);
+}
+.layout-bleed .copy {
+  left: var(--pad);
+  top: var(--copy-top);
+}
+.layout-bleed .window {
+  left: var(--win-left);
+}
+.layout-wipe .copy {
+  left: 0;
+  right: 0;
+  bottom: var(--copy-bottom);
+  text-align: center;
 }
 .panel {
   position: absolute;
@@ -163,10 +174,6 @@ h1 em {
 .layout-panel .copy {
   top: var(--copy-top, 130px);
   width: var(--copy-w);
-}
-.layout-panel .window {
-  top: var(--win-top);
-  width: var(--win-w);
 }
 .layout-panel.side-left .copy,
 .layout-panel.side-left .window {
@@ -203,9 +210,12 @@ h1 em {
   display: block;
 }
 .tile figcaption {
-  position: absolute;
   left: 24px;
   top: 24px;
+}
+.tile figcaption,
+.badge {
+  position: absolute;
   font:
     600 34px / 1 -apple-system,
     sans-serif;
@@ -215,7 +225,8 @@ h1 em {
   border-radius: 999px;
   background: rgba(10, 12, 16, 0.6);
 }
-.tile:last-child figcaption::before {
+.tile:last-child figcaption::before,
+.badge.after::before {
   content: "";
   display: inline-block;
   width: 13px;
@@ -224,6 +235,48 @@ h1 em {
   background: var(--accent);
   margin-right: 13px;
   vertical-align: 3px;
+}
+
+.wipe {
+  clip-path: inset(0 50% 0 0);
+}
+.divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(50% - 2px);
+  width: 4px;
+  background: #fff;
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
+}
+.divider::after {
+  content: "\2039\00a0\203a";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 110px;
+  height: 110px;
+  margin: -55px 0 0 -55px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #111;
+  font:
+    700 48px / 1 -apple-system,
+    sans-serif;
+}
+.badge {
+  top: 180px;
+  font-size: 44px;
+}
+.badge.before {
+  right: calc(50% + 60px);
+}
+.badge.after {
+  left: calc(50% + 60px);
 }
 
 .callout {
