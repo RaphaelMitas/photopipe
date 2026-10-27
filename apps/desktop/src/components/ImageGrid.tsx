@@ -2,6 +2,7 @@ import { type Rect, useVirtualizer } from "@tanstack/react-virtual";
 import { Check } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ImageFile } from "@/lib/core";
+import { splitRel } from "@/lib/fileName";
 import { fixedRect } from "@/lib/fixedRect";
 import { clickIntent, type SelectModifiers } from "@/lib/selection";
 import { useVirtualJump } from "@/lib/useVirtualJump";
@@ -48,11 +49,6 @@ function packRows(images: ImageFile[], containerWidth: number): Row[] {
   flush(false);
 
   return rows;
-}
-
-function splitRel(rel: string): [string, string] {
-  const cut = rel.lastIndexOf("/");
-  return cut === -1 ? ["", rel] : [rel.slice(0, cut + 1), rel.slice(cut + 1)];
 }
 
 const LONG_PRESS_MS = 400;
