@@ -255,8 +255,7 @@ export function ExportNames({
           className="flex gap-1.5 text-[10px] text-amber-400"
         >
           <TriangleAlert className="mt-px size-3 shrink-0" />
-          Some names repeat and get -1, -2. Add {"{seq}"} or {"{original}"} to
-          keep them apart.
+          Some names repeat and get -1, -2. Add {"{seq}"} to keep them apart.
         </p>
       )}
       {!problem && undated > 0 && (

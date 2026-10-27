@@ -317,10 +317,12 @@ export function ExportDrawer({
   );
   const names = useMemo(
     () =>
-      images.map((image, i) =>
-        exportName(options.template, image, i, images.length, shoot),
-      ),
-    [images, options.template, shoot],
+      options.rename
+        ? images.map((image, i) =>
+            exportName(options.template, image, i, images.length, shoot),
+          )
+        : null,
+    [images, options.rename, options.template, shoot],
   );
   const badTemplate =
     options.rename && templateProblem(options.template) !== null;
@@ -427,7 +429,7 @@ export function ExportDrawer({
         zip,
         flatten: options.flatten,
         decoderVersion: effectiveDecoder,
-        names: options.rename ? names : null,
+        names,
       },
       destination,
     );
@@ -586,7 +588,7 @@ export function ExportDrawer({
           />
         }
       >
-        {options.rename ? (
+        {names ? (
           <ExportNames
             template={options.template}
             recent={options.recentTemplates}
