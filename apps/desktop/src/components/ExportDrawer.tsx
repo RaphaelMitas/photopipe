@@ -45,7 +45,9 @@ export type ExportOptions = {
 };
 
 export function exportLabel(count: number, format: ExportFormat): string {
-  return `Export ${format === "jpeg" ? `${count} as JPEG` : pluralize(count, "original")}`;
+  return format === "jpeg"
+    ? `Export ${count} as JPEG`
+    : `Export ${pluralize(count, "original")}`;
 }
 
 type Props = {
