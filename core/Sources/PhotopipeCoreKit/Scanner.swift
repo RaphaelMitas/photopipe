@@ -107,8 +107,7 @@ public func enrich(_ file: ImageFile) -> ImageFile {
         exif: header.exif)
 }
 
-/// The file's mtime and size guard the cached header; the sidecar's mtime guards
-/// rating and edit, so a rewrite shows the newer rating without dropping the photo from its stack.
+/// A sidecar rewrite rereads rating and edit but keeps the header, so the photo stays in its stack.
 public func carryEnrichment(
     into walked: LibrarySnapshot, from cache: [String: ImageFile]
 ) -> LibrarySnapshot {
