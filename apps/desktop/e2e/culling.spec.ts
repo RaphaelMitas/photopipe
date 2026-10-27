@@ -632,6 +632,7 @@ test("y splits the loupe, and the divider drags without panning the zoom", async
     Math.abs((moved?.x ?? 0) + (moved?.width ?? 0) / 2 - target),
   ).toBeLessThan(2);
   expect(await zoomTransform()).toBe(zoomed);
+  await expect(page.getByTestId("split-divider")).not.toBeFocused();
 
   await page.keyboard.press("y");
   await expect(page.getByTestId("loupe-before")).toHaveCount(0);

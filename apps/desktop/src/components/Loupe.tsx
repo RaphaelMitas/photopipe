@@ -597,6 +597,8 @@ function SplitDivider({
           drag.onPointerDown(event);
         }}
         onDoubleClick={ownTap.onDoubleClick}
+        // Focused by a drag, it would ring on the next key and take Enter from the stack.
+        onMouseDown={(event) => event.preventDefault()}
       >
         <span className="mx-auto block h-full w-0.5 bg-white/90" />
         <span className="absolute top-1/2 left-1/2 flex h-9 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md border border-white/70 bg-background/85 text-white">
