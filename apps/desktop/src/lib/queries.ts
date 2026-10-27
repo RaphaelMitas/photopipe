@@ -125,27 +125,34 @@ export function useScoring(shoot: string | null, enabled: boolean) {
   return { progress, justRated };
 }
 
-/// Stacks are trusted once every listed photo carries one, which the core only
-/// gives a photo it has analyzed; until then they would regroup under you.
-export function useStacking(shoot: string | null, enabled: boolean) {
-  const { progress } = usePass("stackShoot", shoot, enabled);
-  const images = useImages(shoot).data;
-  const complete =
-    images !== undefined &&
-    images.length > 0 &&
-    images.every((image) => image.stack !== null);
-  // newly imported photos must not take stacks away mid-visit
+// photos arriving mid-visit must not take a finished pass back
+function useLatch(shoot: string | null, enabled: boolean, complete: boolean) {
   const [readyShoot, setReadyShoot] = useState<string | null>(null);
   useEffect(() => {
     // off, or a library switch, drops the latch: shoot names repeat across libraries
     if (!enabled) setReadyShoot(null);
     else if (complete) setReadyShoot(shoot);
   }, [enabled, complete, shoot]);
-  return {
-    progress,
-    ready:
-      enabled && (complete || (readyShoot !== null && readyShoot === shoot)),
-  };
+  return enabled && (complete || (readyShoot !== null && readyShoot === shoot));
+}
+
+/// Stacks are trusted once every listed photo carries one, which the core only
+/// gives a photo it has analyzed; until then they would regroup under you.
+export function useStacking(shoot: string | null, enabled: boolean) {
+  const { progress } = usePass("stackShoot", shoot, enabled);
+  const images = useImages(shoot).data;
+  // the core cuts stacks by capture time, which only enrichment reads
+  const complete =
+    images !== undefined &&
+    images.length > 0 &&
+    images.every((image) => image.stack !== null && image.enriched);
+  return { progress, ready: useLatch(shoot, enabled, complete) };
+}
+
+export function useEnriched(shoot: string | null, enabled: boolean) {
+  const images = useImages(shoot).data;
+  const complete = images?.every((image) => image.enriched) ?? false;
+  return useLatch(shoot, enabled, complete);
 }
 
 export function useThumbnail(
