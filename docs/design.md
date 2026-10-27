@@ -81,7 +81,7 @@ A dance event is mostly bursts: the same couple, the same second, several
 frames. With **Stacks** on, the loupe walks near-identical frames as one stop,
 so the first pass asks "is this moment worth it" once instead of six times.
 A rating or a flag there goes to every frame. Inside the stack, **Pick** flags
-one frame and touches nothing else; it becomes the cover. Once a stack has a
+one frame and touches nothing else; a pick becomes the cover. Once a stack has a
 pick, `⇧X` rejects the frames nobody judged, no flag and no stars, as a step
 of its own. Pick used to move the stars onto one frame and clear the rest;
 rejecting the rest with it would make one keypress the input to a deletion,
