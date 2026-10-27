@@ -6,11 +6,10 @@ import UniformTypeIdentifiers
 
 @testable import PhotopipeCoreKit
 
-/// Each photo is a one-number print and its capture time.
-private func stacked(_ photos: [String: (Float, Double?)]) -> [String: String] {
+private func stacked(_ photos: [String: (print: Float, captured: Double?)]) -> [String: String] {
     Stacker.stacks(
-        photos.mapValues { Print(feature: [$0.0, 0]) },
-        captured: photos.compactMapValues { $0.1 })
+        photos.mapValues { Print(feature: [$0.print, 0]) },
+        captured: photos.compactMapValues(\.captured))
 }
 
 @Test func aPhotoJoinsOnlyWhenItLooksLikeEveryPhotoInTheStack() {

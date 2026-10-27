@@ -48,7 +48,7 @@ public struct ImageFile: Encodable, Equatable, Sendable {
     /// rated yet. Lives in its own table rather than the file record, so it is
     /// filled in on the way out rather than carried through the snapshot.
     public let score: Double?
-    /// Capture time in seconds, read as if the camera clock were UTC; nil when unknown.
+    /// Seconds, the camera clock read as if it were UTC.
     public let captured: Double?
     public let exif: Exif
     /// Path of the first photo in its stack of near-identical photos, its own path when it stands
@@ -68,7 +68,7 @@ public struct ImageFile: Encodable, Equatable, Sendable {
         path: String, rel: String, ext: String, size: Int64, mtime: Double,
         rating: Int = 0, edit: Edit = .identity,
         width: Int = Dimensions.fallback.width, height: Int = Dimensions.fallback.height,
-        score: Double? = nil, captured: Double? = nil, exif: Exif = Exif(), stack: String? = nil,
+        score: Double? = nil, captured: Double? = nil, exif: Exif = .empty, stack: String? = nil,
         enriched: Bool = false, sidecarMtime: Double = 0
     ) {
         self.path = path

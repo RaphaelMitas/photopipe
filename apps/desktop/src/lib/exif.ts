@@ -5,7 +5,7 @@ export const shutterText = (seconds: number) =>
     ? `1/${Math.round(1 / seconds)}`
     : `${Number(seconds.toFixed(1))} s`;
 
-export const fNumber = (aperture: number) => Number(aperture.toFixed(1));
+export const fNumber = (aperture: number) => Number(aperture.toFixed(2));
 
 export const focalMm = (focal: number) => Math.round(focal);
 

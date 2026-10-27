@@ -93,7 +93,7 @@ export function editKey(edit: Edit): string {
   ].join("|");
 }
 
-// Mirrors core Exif.swift: shutter in seconds, focal in mm; absent when the file lacks it.
+// units as in core Exif.swift: shutter in seconds, focal in mm
 export type Exif = {
   shutter?: number;
   aperture?: number;

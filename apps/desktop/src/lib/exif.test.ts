@@ -24,6 +24,7 @@ describe("exif", () => {
     expect(
       exposureParts({ shutter: 1 / 40, aperture: 2.8, iso: 6400, focal: 35 }),
     ).toEqual(["1/40", "f/2.8", "ISO 6400", "35mm"]);
+    expect(exposureParts({ aperture: 0.95 })).toEqual(["f/0.95"]);
   });
 
   it("shows the camera's clock, not the clock shifted into the local zone", () => {

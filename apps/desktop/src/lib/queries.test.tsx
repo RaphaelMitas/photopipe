@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type Edit, type ImageFile, identityEdit } from "./core";
 import {
   useDeferredEdit,
+  useEnriched,
   useImages,
   useLibrarySync,
   usePasteEdits,
@@ -883,5 +884,34 @@ describe("useStacking", () => {
     listed = [listed[0], { ...image("b"), stack: "/r/shoot1/b.ARW" }];
     await act(() => client.refetchQueries({ queryKey: ["images", "s"] }));
     await waitFor(() => expect(ready).toBe(true));
+  });
+});
+
+describe("useEnriched", () => {
+  it("stays on when a photo arriving mid-visit has not been read yet", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    let listed: ImageFile[] = [image("a")];
+    invoke.mockImplementation(async () => ({ images: listed }));
+
+    let enriched = false;
+    let seen = 0;
+    function Harness() {
+      enriched = useEnriched("s", true);
+      seen = useImages("s").data?.length ?? 0;
+      return null;
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(enriched).toBe(true));
+
+    listed = [...listed, { ...image("b"), enriched: false }];
+    await act(() => client.refetchQueries({ queryKey: ["images", "s"] }));
+    await waitFor(() => expect(seen).toBe(2));
+    expect(enriched).toBe(true);
   });
 });

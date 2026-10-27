@@ -62,6 +62,7 @@ import { flagPref } from "@/lib/pref";
 import {
   cachedImage,
   jobStatus,
+  useEnriched,
   useExportJobs,
   useImages,
   useLibrarySync,
@@ -201,6 +202,8 @@ export default function App() {
   );
   const stacksWanted = stacksPref.use();
   const stacking = useStacking(openShoot, ready && stacksWanted);
+  const stacksOn = stacksWanted && stacking.ready;
+  const enriched = useEnriched(openShoot, ready);
   const writes = useRecordedWrites(openShoot);
   const reveal = useReveal();
   const revealPaths = useFeatures().reveal
@@ -211,9 +214,6 @@ export default function App() {
   const scan = useLibrarySync(ready, ready ? rootState.generation : null);
 
   const allImages = images.data ?? [];
-  const enriched = allImages.every((image) => image.enriched);
-  // stacks are cut by capture time, which only enrichment knows
-  const stacksOn = stacksWanted && stacking.ready && enriched;
   // A finished pass is the signal, not a score on every photo: the core counts
   // a file it cannot read as answered, and one of those would otherwise keep
   // Instinct greyed out for the whole project forever.

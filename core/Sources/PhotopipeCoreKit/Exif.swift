@@ -1,28 +1,19 @@
 import Foundation
 import ImageIO
 
-/// What the camera recorded about the shot. Every field is nil when the file does not carry it.
 public struct Exif: Codable, Equatable, Sendable {
-    /// Seconds.
+    // seconds
     public var shutter: Double?
     public var aperture: Double?
     public var iso: Int?
-    /// Millimetres, as the lens reports it, not the 35 mm equivalent.
+    // mm, not the 35 mm equivalent
     public var focal: Double?
     public var lens: String?
     public var body: String?
+}
 
-    public init(
-        shutter: Double? = nil, aperture: Double? = nil, iso: Int? = nil, focal: Double? = nil,
-        lens: String? = nil, body: String? = nil
-    ) {
-        self.shutter = shutter
-        self.aperture = aperture
-        self.iso = iso
-        self.focal = focal
-        self.lens = lens
-        self.body = body
-    }
+extension Exif {
+    public static let empty = Exif()
 
     init(_ props: [CFString: Any]) {
         let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any] ?? [:]
@@ -31,12 +22,12 @@ public struct Exif: Codable, Equatable, Sendable {
         self.init(
             shutter: Self.positive(exif[kCGImagePropertyExifExposureTime]),
             aperture: Self.positive(exif[kCGImagePropertyExifFNumber]),
-            // a CR3 leaves ISOSpeedRatings empty and records ISOSpeed instead
+            // ISOSpeedRatings stops at 65535 and a CR3 leaves it empty; the others carry the rest
             iso: [
                 (exif[kCGImagePropertyExifISOSpeedRatings] as? [Int])?.first,
                 exif[kCGImagePropertyExifISOSpeed] as? Int,
                 exif[kCGImagePropertyExifRecommendedExposureIndex] as? Int,
-            ].lazy.compactMap { $0 }.first { $0 > 0 },
+            ].compactMap { $0 }.max().flatMap { $0 > 0 ? $0 : nil },
             focal: Self.positive(exif[kCGImagePropertyExifFocalLength]),
             lens: Self.text(exif[kCGImagePropertyExifLensModel])
                 ?? Self.text(aux[kCGImagePropertyExifAuxLensModel]),
