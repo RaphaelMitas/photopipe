@@ -17,6 +17,7 @@ export function makeImage(
     height: 2000,
     score: null,
     captured: null,
+    exif: {},
     stack: null,
     enriched: true,
     isRaw: /\.(arw|dng)$/i.test(rel),
