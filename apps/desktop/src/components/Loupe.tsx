@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type Edit, fileSrc, type ImageFile } from "@/lib/core";
+import {
+  type Edit,
+  fileSrc,
+  framing,
+  type ImageFile,
+  identityEdit,
+} from "@/lib/core";
 import {
   aspectRatioFor,
   type Box,
@@ -8,10 +14,11 @@ import {
   moveCrop,
   rotatedSize,
 } from "@/lib/crop";
+import { clamp01 } from "@/lib/curve";
 import { EXPOSURE_RANGE, EXPOSURE_STEP } from "@/lib/editSliders";
 import { isModalOpen } from "@/lib/modal";
 import { pluralize } from "@/lib/plural";
-import { capturePointer, cursorIn, normalizedIn } from "@/lib/pointer";
+import { capturePointer, cursorIn, normalizedIn, useDrag } from "@/lib/pointer";
 import {
   useDeferredEdit,
   usePrefetchRender,
@@ -50,6 +57,21 @@ const NUDGE: Record<string, { x: number; y: number }> = {
   ArrowDown: { x: 0, y: 1 },
 };
 
+const CHIP =
+  "rounded-md border border-border bg-background/85 px-2.5 py-1 font-mono text-[11px] backdrop-blur-sm";
+
+// Keeping the framing keeps both halves of the split on the same pixels.
+const unedited = (edit: Edit): Edit => ({ ...identityEdit, ...framing(edit) });
+
+function usePrefetchNeighbour(
+  photo: ImageFile | undefined,
+  comparing: boolean,
+) {
+  const before = useMemo(() => photo && unedited(photo.edit), [photo]);
+  usePrefetchRender(photo, photo?.edit);
+  usePrefetchRender(comparing ? photo : undefined, before);
+}
+
 /// Holds a value back until it has stopped changing for `delayMs`.
 function useSettled<T>(value: T, delayMs: number): T {
   const [settled, setSettled] = useState(value);
@@ -75,6 +97,7 @@ type Props = {
   edit: Edit;
   crop: CropSession;
   stacks: LoupeStacks | null;
+  split: boolean;
   onEditChange: (edit: Edit) => void;
   onNavigate: (path: string) => void;
   onClose: () => void;
@@ -87,6 +110,7 @@ export function Loupe({
   edit,
   crop: session,
   stacks,
+  split,
   onEditChange,
   onNavigate,
   onClose,
@@ -96,6 +120,7 @@ export function Loupe({
   const cropDraft = session.draft;
   const deferredEdit = useDeferredEdit(image, edit);
   const cropping = cropDraft !== null;
+  const comparing = split && !cropping;
   const filmstrip = filmstripPref.use();
 
   // While cropping the stage shows the full turned frame, uncropped and
@@ -108,7 +133,10 @@ export function Loupe({
         : deferredEdit,
     [cropping, deferredEdit, draftRotation],
   );
+  // Queries fetch in call order and an idle lane usually starts on the first, so the edit asks first.
   const render = useRender(image, previewEdit);
+  const beforeEdit = useMemo(() => unedited(deferredEdit), [deferredEdit]);
+  const before = useRender(comparing ? image : undefined, beforeEdit);
   const thumb = useThumbnail(image);
   const neighbour = (direction: 1 | -1) =>
     stacks && image
@@ -117,9 +145,11 @@ export function Loupe({
   const next = neighbour(1);
   const previous = neighbour(-1);
   // The render lane runs newest first, so neighbours wait for this photo's first attempt.
-  const landed = !render.isFetching || render.failureCount > 0;
-  usePrefetchRender(landed ? next : undefined, next?.edit);
-  usePrefetchRender(landed ? previous : undefined, previous?.edit);
+  const landed = [render, before].every(
+    (query) => !query.isFetching || query.failureCount > 0,
+  );
+  usePrefetchNeighbour(landed ? next : undefined, comparing);
+  usePrefetchNeighbour(landed ? previous : undefined, comparing);
   const multiFrame = stacks !== null && stacks.current.frames.length > 1;
 
   const stageRef = useRef<HTMLDivElement>(null);
@@ -182,7 +212,13 @@ export function Loupe({
       ? settled
       : null;
   const sharp = useViewportRender(image, previewEdit, current).data;
-  const sharpening = wanted !== null && !sharp;
+  const sharpBefore = useViewportRender(
+    comparing ? image : undefined,
+    beforeEdit,
+    current,
+  ).data;
+  const sharpening = wanted !== null && (!sharp || (comparing && !sharpBefore));
+  const [divider, setDivider] = useState(0.5);
 
   // Key repeat outruns re-rendering, so a nudge composes on the ref instead of
   // the draft this listener closed over.
@@ -313,18 +349,12 @@ export function Loupe({
     cropping && render.isPlaceholderData ? undefined : render.data;
   // The slice sits outside the zoom transform, laid out at its own on-screen
   // size, so it is never a scaled-up copy of the fitted render.
-  const region =
-    sharp && zoom.state
-      ? {
-          src: sharp,
-          rect: visibleScreenRect(
-            zoom.state,
-            photoBox,
-            stage.width,
-            stage.height,
-          ),
-        }
-      : null;
+  const sliceRect = zoom.state
+    ? visibleScreenRect(zoom.state, photoBox, stage.width, stage.height)
+    : null;
+  const zoomTransform = zoom.state
+    ? `translate(${zoom.state.tx}px, ${zoom.state.ty}px) scale(${zoom.state.scale})`
+    : undefined;
   const ratio = cropDraft
     ? aspectRatioFor(
         cropDraft.aspect,
@@ -365,9 +395,7 @@ export function Loupe({
               : "0 0",
             transform: cropDraft
               ? `rotate(${cropDraft.angle}deg)`
-              : zoom.state
-                ? `translate(${zoom.state.tx}px, ${zoom.state.ty}px) scale(${zoom.state.scale})`
-                : undefined,
+              : zoomTransform,
           }}
         >
           {freshRender ? (
@@ -392,20 +420,46 @@ export function Loupe({
             </div>
           )}
         </div>
-        {region && (
-          <img
-            data-testid="loupe-region"
-            src={fileSrc(region.src)}
-            alt={image.rel}
-            draggable={false}
-            className="pointer-events-none absolute select-none"
-            style={{
-              left: `${region.rect.left}px`,
-              top: `${region.rect.top}px`,
-              width: `${region.rect.width}px`,
-              height: `${region.rect.height}px`,
-            }}
-          />
+        <Slice
+          testId="loupe-region"
+          src={sharp}
+          rect={sliceRect}
+          alt={image.rel}
+        />
+        {comparing && (
+          <>
+            <div
+              data-testid="loupe-before"
+              className="pointer-events-none absolute inset-0 bg-black"
+              style={{ clipPath: `inset(0 ${(1 - divider) * 100}% 0 0)` }}
+            >
+              <div
+                className="absolute inset-0"
+                style={{ transformOrigin: "0 0", transform: zoomTransform }}
+              >
+                {before.data && (
+                  <img
+                    data-testid="loupe-before-image"
+                    src={fileSrc(before.data)}
+                    alt={image.rel}
+                    draggable={false}
+                    className="h-full w-full object-contain select-none"
+                  />
+                )}
+              </div>
+              <Slice
+                testId="loupe-before-region"
+                src={sharpBefore}
+                rect={sliceRect}
+                alt={image.rel}
+              />
+            </div>
+            <SplitDivider
+              stageRef={stageRef}
+              at={divider}
+              onMove={setDivider}
+            />
+          </>
         )}
         {cropDraft && photoBox.width > 0 && (
           <CropOverlay
@@ -420,7 +474,7 @@ export function Loupe({
         {cropDraft && (
           <div
             data-testid="crop-angle-hud"
-            className="absolute top-3 left-1/2 -translate-x-1/2 rounded-md border border-border bg-background/85 px-2.5 py-1 font-mono text-[11px] backdrop-blur-sm"
+            className={`${CHIP} absolute top-3 left-1/2 -translate-x-1/2`}
           >
             {`∠ ${cropDraft.angle > 0 ? "+" : ""}${cropDraft.angle.toFixed(1)}° · double-click to reset`}
           </div>
@@ -429,7 +483,7 @@ export function Loupe({
           <>
             <div
               data-testid="zoom-level"
-              className="absolute bottom-3 left-3 rounded-md border border-border bg-background/85 px-2.5 py-1 font-mono text-[11px] backdrop-blur-sm"
+              className={`${CHIP} absolute bottom-3 left-3`}
             >
               {`${Math.round((zoom.state.scale / (zoom.scale100 || 1)) * 100)}% · ${
                 sharpening ? "sharpening…" : "double-click to fit"
@@ -456,7 +510,9 @@ export function Loupe({
         {multiFrame && !cropping && (
           <StackOverlay stacks={stacks} path={image.path} />
         )}
-        {(render.isFetching || !render.data) && (
+        {(render.isFetching ||
+          !render.data ||
+          (comparing && (before.isFetching || !before.data))) && (
           <div className="absolute top-3 right-3 h-2 w-2 animate-pulse rounded-full bg-primary" />
         )}
       </div>
@@ -484,6 +540,84 @@ const ownTap = {
   onDoubleClick: (event: React.MouseEvent) => event.stopPropagation(),
 };
 
+function Slice({
+  testId,
+  src,
+  rect,
+  alt,
+}: {
+  testId: string;
+  src: string | undefined;
+  rect: ReturnType<typeof visibleScreenRect> | null;
+  alt: string;
+}) {
+  if (!src || !rect) return null;
+  return (
+    <img
+      data-testid={testId}
+      src={fileSrc(src)}
+      alt={alt}
+      draggable={false}
+      className="pointer-events-none absolute select-none"
+      style={{
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+      }}
+    />
+  );
+}
+
+function SplitDivider({
+  stageRef,
+  at,
+  onMove,
+}: {
+  stageRef: React.RefObject<HTMLDivElement | null>;
+  at: number;
+  onMove: (at: number) => void;
+}) {
+  const drag = useDrag((event) => {
+    const node = stageRef.current;
+    if (node) onMove(clamp01(normalizedIn(node, event).x));
+  });
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="split-divider"
+        aria-label="Drag to compare before and after"
+        className="group absolute inset-y-0 w-4 -translate-x-1/2 cursor-ew-resize"
+        style={{ left: `${at * 100}%` }}
+        {...drag}
+        onPointerDown={(event) => {
+          ownTap.onPointerDown(event);
+          drag.onPointerDown(event);
+        }}
+        onDoubleClick={ownTap.onDoubleClick}
+        // Focused by a drag, it would ring on the next key and take Enter from the stack.
+        onMouseDown={(event) => event.preventDefault()}
+      >
+        <span className="mx-auto block h-full w-[1.5px] bg-white/90 shadow-[0_0_2px_rgba(0,0,0,0.45)]" />
+        <span className="absolute top-1/2 left-1/2 h-9 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.25),0_2px_8px_rgba(0,0,0,0.4)] transition-[height] group-hover:h-11 group-active:h-11" />
+      </button>
+      <span
+        className={`${CHIP} pointer-events-none absolute top-3 font-semibold`}
+        style={{ right: `calc(${(1 - at) * 100}% + 10px)` }}
+      >
+        Before
+      </span>
+      <span
+        className={`${CHIP} pointer-events-none absolute top-3`}
+        style={{ left: `calc(${at * 100}% + 10px)` }}
+      >
+        After
+      </span>
+    </>
+  );
+}
+
 function StackOverlay({ stacks, path }: { stacks: LoupeStacks; path: string }) {
   const { frames } = stacks.current;
   const rating = stackRating(stacks.current);
@@ -496,7 +630,7 @@ function StackOverlay({ stacks, path }: { stacks: LoupeStacks; path: string }) {
         data-testid="stack-chip"
         {...ownTap}
         onClick={stacks.inside ? stacks.onLeave : stacks.onEnter}
-        className="absolute top-3 left-3 flex items-center gap-2 rounded-md border border-border bg-background/85 px-2.5 py-1 font-mono text-[11px] backdrop-blur-sm"
+        className={`${CHIP} absolute top-3 left-3 flex items-center gap-2`}
       >
         {stacks.inside ? (
           <>
@@ -715,11 +849,9 @@ function Navigator({
   onCenter: (point: { x: number; y: number }) => void;
 }) {
   const box = fitRect(160, 120, pixelWidth, pixelHeight);
-  const dragging = useRef(false);
-
-  const centerFrom = (event: React.PointerEvent<HTMLDivElement>) => {
-    onCenter(normalizedIn(event.currentTarget, event));
-  };
+  const drag = useDrag((event) =>
+    onCenter(normalizedIn(event.currentTarget, event)),
+  );
 
   if (box.width <= 0) return null;
   return (
@@ -727,17 +859,7 @@ function Navigator({
       data-testid="zoom-navigator"
       className="absolute top-3 right-3 overflow-hidden rounded-lg border border-border shadow-lg"
       style={{ width: box.width, height: box.height }}
-      onPointerDown={(event) => {
-        dragging.current = true;
-        capturePointer(event);
-        centerFrom(event);
-      }}
-      onPointerMove={(event) => {
-        if (dragging.current) centerFrom(event);
-      }}
-      onPointerUp={() => {
-        dragging.current = false;
-      }}
+      {...drag}
     >
       <img
         src={src}

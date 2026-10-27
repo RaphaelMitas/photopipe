@@ -375,6 +375,35 @@ describe("useRender and the RAW decoder", () => {
   });
 });
 
+describe("useRender and a busy lane", () => {
+  it("keeps asking for a render on screen however often the lane drops it", async () => {
+    invoke.mockReset();
+    for (let drop = 0; drop < 5; drop++) {
+      invoke.mockRejectedValueOnce(
+        "superseded: dropped for a newer render request",
+      );
+    }
+    invoke.mockResolvedValue({ cachePath: "/cache/before.jpg" });
+    function Shown() {
+      const before = useRender(
+        { path: "/r/shoot1/A.ARW", mtime: 1, isRaw: true },
+        identityEdit,
+      );
+      return before.data ? <p>{before.data}</p> : null;
+    }
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <Shown />
+      </QueryClientProvider>,
+    );
+    expect(await view.findByText("/cache/before.jpg")).toBeTruthy();
+    expect(invoke).toHaveBeenCalledTimes(6);
+  });
+});
+
 describe("useDeferredEdit", () => {
   it("renders a photo you step to with its own edit, never the last one's", async () => {
     invoke.mockReset();
@@ -419,7 +448,7 @@ describe("usePrefetchRender", () => {
     return render.data ? <p>{render.data}</p> : null;
   }
 
-  async function arrive(landed: boolean) {
+  async function arrive(landed: boolean, drops = 1) {
     invoke.mockReset();
     let reject: (reason: string) => void = () => {};
     invoke.mockReturnValueOnce(
@@ -427,6 +456,11 @@ describe("usePrefetchRender", () => {
         reject = rejectFirst;
       }),
     );
+    for (let drop = 1; drop < drops; drop++) {
+      invoke.mockRejectedValueOnce(
+        "superseded: dropped for a newer render request",
+      );
+    }
     invoke.mockResolvedValue({ cachePath: "/cache/b.jpg" });
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false, retryDelay: 0 } },
@@ -450,6 +484,12 @@ describe("usePrefetchRender", () => {
     const view = await arrive(true);
     expect(await view.findByText("/cache/b.jpg")).toBeTruthy();
     expect(invoke).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps asking for a landed prefetch however often the lane drops it", async () => {
+    const view = await arrive(true, 5);
+    expect(await view.findByText("/cache/b.jpg")).toBeTruthy();
+    expect(invoke).toHaveBeenCalledTimes(6);
   });
 
   it("lets a superseded prefetch nobody landed on go", async () => {

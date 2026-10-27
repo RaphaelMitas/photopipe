@@ -175,7 +175,7 @@ export function LoupeSidebar({
               : stacks.current.inside
                 ? "←→ frames · 1–5 rate this frame · p pick"
                 : "←→ stacks · 1–5 rate every frame · enter inside"
-          } · 0 clear · ↑↓ exposure · pinch or double-click zoom · r reset · e edit · ⌘C/⌘V settings · ⌘Z undo · s stacks · ${
+          } · 0 clear · ↑↓ exposure · pinch or double-click zoom · r reset · e edit · y before/after · ⌘C/⌘V settings · ⌘Z undo · s stacks · ${
             stacks.current?.inside ? "esc up" : "esc"
           }`}
         </p>

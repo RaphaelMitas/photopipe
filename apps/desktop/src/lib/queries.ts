@@ -173,6 +173,11 @@ type RenderFile = Pick<ImageFile, "path" | "mtime" | "isRaw"> | undefined;
 
 const PREVIEW_MAX_PIXEL = 2560;
 
+const superseded = (error: unknown) => String(error).startsWith("superseded");
+// The split's before keeps its key through a slider drag, whose renders can drop it any number of times.
+const renderRetry = (failures: number, error: unknown) =>
+  superseded(error) || failures < 3;
+
 function renderDecoderVersion(file: RenderFile, version: number) {
   return file?.isRaw ? version : undefined;
 }
@@ -209,6 +214,9 @@ function renderQueryOptions(
           ).cachePath
       : skipToken,
     staleTime: Number.POSITIVE_INFINITY,
+    retry: renderRetry,
+    retryDelay: (failures, error) =>
+      superseded(error) ? 0 : 1000 * 2 ** failures,
   });
 }
 
@@ -273,8 +281,8 @@ export function usePrefetchRender(file: RenderFile, edit: Edit | undefined) {
     queryClient.prefetchQuery({
       ...options,
       // the loupe may land on it mid-flight and inherit this fetch's retry
-      retry: (failures) =>
-        failures < 3 &&
+      retry: (failures, error) =>
+        renderRetry(failures, error) &&
         (queryClient
           .getQueryCache()
           .find({ queryKey: options.queryKey })
