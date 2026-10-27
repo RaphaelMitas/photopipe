@@ -2,6 +2,7 @@ import { cn } from "@photopipe/ui/lib/utils";
 import { type Rect, useVirtualizer } from "@tanstack/react-virtual";
 import { useMemo, useRef } from "react";
 import type { ImageFile } from "@/lib/core";
+import { fNumber, focalMm, shutterText, takenTime } from "@/lib/exif";
 import { fixedRect } from "@/lib/fixedRect";
 import { clickIntent, type SelectModifiers } from "@/lib/selection";
 import { useVirtualJump } from "@/lib/useVirtualJump";
@@ -9,6 +10,36 @@ import { ExposureBadge, RatingBadge } from "./PhotoBadges";
 import { Thumbnail } from "./Thumbnail";
 
 const ROW_HEIGHT = 44;
+
+type Column = {
+  label: string;
+  className: string;
+  value: (image: ImageFile) => string | number | null | undefined;
+};
+
+const COLUMNS: Column[] = [
+  {
+    label: "Taken",
+    className: "w-24 text-left text-muted-foreground",
+    value: (image) => image.captured && takenTime(image.captured),
+  },
+  {
+    label: "Shutter",
+    className: "w-14",
+    value: (image) => image.exif.shutter && shutterText(image.exif.shutter),
+  },
+  {
+    label: "f",
+    className: "w-10",
+    value: (image) => image.exif.aperture && fNumber(image.exif.aperture),
+  },
+  { label: "ISO", className: "w-12", value: (image) => image.exif.iso },
+  {
+    label: "mm",
+    className: "w-10",
+    value: (image) => image.exif.focal && focalMm(image.exif.focal),
+  },
+];
 
 type Props = {
   images: ImageFile[];
@@ -51,6 +82,14 @@ export function ImageList({
       <div className="flex shrink-0 items-center gap-3 border-b border-border px-3 py-1.5 font-mono text-[10px] text-muted-foreground uppercase">
         <span className="w-12 shrink-0" />
         <span className="min-w-0 flex-1">Photo</span>
+        {COLUMNS.map((column) => (
+          <span
+            key={column.label}
+            className={cn("shrink-0 text-right", column.className)}
+          >
+            {column.label}
+          </span>
+        ))}
         <span className="w-24 shrink-0 text-right">Rating</span>
       </div>
       <div
@@ -96,6 +135,17 @@ export function ImageList({
                 <span className="min-w-0 flex-1 truncate font-mono text-xs">
                   {image.rel}
                 </span>
+                {COLUMNS.map((column) => (
+                  <span
+                    key={column.label}
+                    className={cn(
+                      "shrink-0 text-right font-mono text-xs",
+                      column.className,
+                    )}
+                  >
+                    {column.value(image)}
+                  </span>
+                ))}
                 <span className="flex w-24 shrink-0 items-center justify-end gap-1.5 text-xs">
                   <ExposureBadge
                     exposure={image.edit.exposure}
