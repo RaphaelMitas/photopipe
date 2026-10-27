@@ -590,6 +590,58 @@ test("zooming renders the visible slice and drops it again on fit", async ({
   await expect(page.getByTestId("loupe-region")).toHaveCount(0);
 });
 
+test("y splits the loupe, and the divider drags without panning the zoom", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.locator("[data-path='DSC00832.jpg']").click();
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.jpg");
+
+  await page.keyboard.press("y");
+  await expect(page.getByTestId("loupe-before-image")).toBeVisible();
+  await expect(page.getByTestId("edit-split")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  const stage = await page.getByTestId("loupe-before").boundingBox();
+  if (!stage) throw new Error("no split on the stage");
+  await page.mouse.dblclick(
+    stage.x + stage.width * 0.6,
+    stage.y + stage.height / 2,
+  );
+  await expect(page.getByTestId("zoom-level")).toContainText("100%");
+  await expect(page.getByTestId("loupe-region")).toHaveCount(1);
+  await expect(page.getByTestId("loupe-before-region")).toHaveCount(1);
+
+  const zoomTransform = () =>
+    page
+      .getByTestId("loupe-image")
+      .evaluate((img) => (img.parentElement as HTMLElement).style.transform);
+  const zoomed = await zoomTransform();
+  const divider = await page.getByTestId("split-divider").boundingBox();
+  if (!divider) throw new Error("no divider");
+  const target = stage.x + stage.width * 0.25;
+  const y = divider.y + divider.height / 2;
+  await page.mouse.move(divider.x + divider.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(target, y, { steps: 5 });
+  await page.mouse.up();
+  const moved = await page.getByTestId("split-divider").boundingBox();
+  expect(
+    Math.abs((moved?.x ?? 0) + (moved?.width ?? 0) / 2 - target),
+  ).toBeLessThan(2);
+  expect(await zoomTransform()).toBe(zoomed);
+  await expect(page.getByTestId("split-divider")).not.toBeFocused();
+
+  await page.keyboard.press("y");
+  await expect(page.getByTestId("loupe-before")).toHaveCount(0);
+  await page.keyboard.press("y");
+  await page.keyboard.press("Escape");
+  await page.locator("[data-path='DSC00832.jpg']").click();
+  await expect(page.getByTestId("loupe-before")).toHaveCount(0);
+});
+
 test("the decoder tooltip opens and closes on a real click", async ({
   page,
 }) => {

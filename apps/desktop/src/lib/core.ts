@@ -58,6 +58,14 @@ export const identityEdit: Edit = Object.freeze({
   rotation: 0,
 });
 
+export function framing(edit: Edit) {
+  return {
+    crop: edit.crop ?? null,
+    cropAngle: edit.cropAngle ?? 0,
+    rotation: edit.rotation ?? 0,
+  };
+}
+
 export function isIdentityEdit(edit: Edit): boolean {
   return editKey(edit) === editKey(identityEdit);
 }

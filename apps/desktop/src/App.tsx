@@ -389,6 +389,9 @@ export default function App() {
   // The browser keeps the current photo after the loupe closes, so anything
   // acting on "the photo you are looking at" has to ask whether it is open.
   const loupePhoto = loupeOpen ? loupeImage : null;
+  const [split, setSplit] = useState(false);
+  if (split && !loupePhoto) setSplit(false);
+  const toggleSplit = useCallback(() => setSplit((on) => !on), []);
 
   const toggleStacks = useCallback(() => stacksPref.set(!stacksPref.get()), []);
   // stacks arriving or an import can regroup you onto a non-cover frame, which means inside
@@ -673,6 +676,9 @@ export default function App() {
       if (event.key === "s" && !event.altKey && loupeOpen && !cropping) {
         toggleStacks();
       }
+      if (event.key === "y" && !event.altKey && loupeOpen && !cropping) {
+        toggleSplit();
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -691,6 +697,7 @@ export default function App() {
     ratePhotos,
     flagPhotos,
     selectedImages,
+    toggleSplit,
   ]);
 
   const trashPhotos = (paths: string[]) =>
@@ -763,6 +770,7 @@ export default function App() {
       index={loupeIndex}
       edit={loupeEdit}
       crop={crop}
+      split={split}
       stacks={
         loupeStacks && currentStack
           ? {
@@ -1009,6 +1017,8 @@ export default function App() {
                 onChange={(edit) => changeEdit(loupeImage, edit)}
                 onHold={holdEdit}
                 crop={crop}
+                split={split}
+                onToggleSplit={toggleSplit}
                 canPaste={clipboard !== null}
                 onCopySettings={() => copySettings(loupeImage)}
                 onPasteSettings={() => pasteSettings([loupeImage])}
