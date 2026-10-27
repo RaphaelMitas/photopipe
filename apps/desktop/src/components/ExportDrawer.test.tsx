@@ -265,6 +265,8 @@ describe("export size", () => {
       customLongEdge: 1600,
     });
     expect(stored("custom", 1600).size).toBe("custom");
+    expect(stored("custom", 256).customLongEdge).toBe(256);
+    expect(stored("custom", 16384).customLongEdge).toBe(16384);
     expect(stored(2048, 1600).size).toBe("full");
     expect(stored("4096", 1600).size).toBe("full");
     for (const junk of [100, 99999, 1600.5, "1600", null]) {
@@ -308,9 +310,11 @@ describe("export size", () => {
     fireEvent.change(field, { target: { value: "20000" } });
     fireEvent.keyDown(field, { key: "Enter" });
     expect(field).toHaveValue("16384");
-    fireEvent.change(field, { target: { value: "" } });
-    fireEvent.blur(field);
-    expect(field).toHaveValue("16384");
+    for (const junk of ["", "abc"]) {
+      fireEvent.change(field, { target: { value: junk } });
+      fireEvent.blur(field);
+      expect(field).toHaveValue("16384");
+    }
     await waitFor(() => expect(screen.getByTestId("run-export")).toBeEnabled());
     fireEvent.click(screen.getByTestId("run-export"));
     await waitFor(() => expect(onExport).toHaveBeenCalled());

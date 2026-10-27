@@ -18,7 +18,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { ExportFormat } from "@/lib/core";
 import { useFeatures } from "@/lib/features";
 import { pref } from "@/lib/pref";
@@ -157,10 +157,8 @@ function CustomLongEdge({
   onChange: (value: number) => void;
 }) {
   const [draft, setDraft] = useState(String(value));
-  const hintId = useId();
-  const typed = Number(draft);
-  const valid = toCustomLongEdge(typed) !== null;
   const commit = () => {
+    const typed = Number(draft);
     const next =
       draft.trim() === "" || !Number.isFinite(typed)
         ? value
@@ -169,41 +167,33 @@ function CustomLongEdge({
     if (next !== value) onChange(next);
   };
   return (
-    <>
-      <div className="flex items-center gap-2 text-xs">
-        {/* the Size label's invisible twin keeps the field under its buttons */}
-        <span aria-hidden className="invisible">
-          Size
+    <div className="flex items-center gap-2 text-xs">
+      {/* the Size label's invisible twin keeps the field under its buttons */}
+      <span aria-hidden className="invisible">
+        Size
+      </span>
+      <div className="relative flex-1">
+        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted-foreground">
+          Long edge
         </span>
-        <div className="relative flex-1">
-          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted-foreground">
-            Long edge
-          </span>
-          <Input
-            data-testid="custom-long-edge"
-            aria-label="Long edge in pixels"
-            aria-invalid={!valid}
-            aria-describedby={valid ? undefined : hintId}
-            inputMode="numeric"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onBlur={commit}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") commit();
-            }}
-            className="h-8 pr-8 pl-20 text-right text-xs tabular-nums md:text-xs"
-          />
-          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground">
-            px
-          </span>
-        </div>
+        <Input
+          data-testid="custom-long-edge"
+          aria-label="Long edge in pixels"
+          title={`${CUSTOM_MIN} to ${CUSTOM_MAX} px`}
+          inputMode="numeric"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") commit();
+          }}
+          className="h-8 pr-8 pl-20 text-right text-xs tabular-nums md:text-xs"
+        />
+        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground">
+          px
+        </span>
       </div>
-      {!valid && (
-        <p id={hintId} className="text-[10px] text-muted-foreground">
-          {CUSTOM_MIN} to {CUSTOM_MAX} px.
-        </p>
-      )}
-    </>
+    </div>
   );
 }
 
