@@ -107,23 +107,21 @@ public func enrich(_ file: ImageFile) -> ImageFile {
         exif: header.exif)
 }
 
-/// A cached record only counts while both the file and the sidecar it was read
-/// from are the ones still on disk — otherwise a rating written since, by us or
-/// by Lightroom, would stay invisible behind the cache.
+/// The file's mtime and size guard the cached header; the sidecar's mtime guards
+/// rating and edit, so a rewrite shows the newer rating without dropping the photo from its stack.
 public func carryEnrichment(
     into walked: LibrarySnapshot, from cache: [String: ImageFile]
 ) -> LibrarySnapshot {
     var imagesByShoot: [String: [ImageFile]] = [:]
     for (shoot, images) in walked.imagesByShoot {
         imagesByShoot[shoot] = images.map { image in
-            guard let known = cache[image.path], known.enriched,
-                known.mtime == image.mtime, known.size == image.size
+            guard let known = cache[image.path], known.mtime == image.mtime,
+                known.size == image.size
             else { return image }
-            // the header is the image's own, so a rewritten sidecar keeps the photo in its stack
             let header = image.with(
                 dimensions: (known.width, known.height), captured: known.captured,
                 exif: known.exif)
-            guard known.sidecarMtime == image.sidecarMtime else { return header }
+            guard known.enriched, known.sidecarMtime == image.sidecarMtime else { return header }
             return header.with(rating: known.rating, edit: known.edit, enriched: true)
         }
     }

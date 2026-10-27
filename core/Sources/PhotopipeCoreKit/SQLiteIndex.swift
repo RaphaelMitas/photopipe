@@ -261,7 +261,7 @@ public final class SQLiteIndex: @unchecked Sendable {
         }
     }
 
-    /// NULL for the default keeps the index small; most photos carry no edit.
+    /// NULL for the default keeps the index small.
     private func bindJSON<Value: Encodable & Equatable>(
         _ statement: OpaquePointer?, _ index: Int32, _ value: Value, unless empty: Value
     ) throws {

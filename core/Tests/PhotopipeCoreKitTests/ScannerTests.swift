@@ -181,4 +181,8 @@ func makeTree(_ layout: [String: [String]], at root: URL = scratchDir("tree")) t
     let carried = carryEnrichment(into: snapshot, from: [known.path: known]).imagesByShoot["s"]?[0]
     #expect(carried?.enriched == false && carried?.rating == 0)
     #expect(carried?.captured == 12.5 && carried?.exif.iso == 6400)
+
+    // a second rescan before enrichment reaches it
+    let rescanned = carried.flatMap { carryEnrichment(into: snapshot, from: [$0.path: $0]) }
+    #expect(rescanned?.imagesByShoot["s"]?[0].captured == 12.5)
 }
