@@ -543,10 +543,11 @@ public final class LibraryService: @unchecked Sendable {
         guard !images.isEmpty else { throw FileActions.ActionError.noFiles }
         if let names {
             guard names.count == images.count else {
-                throw ServiceError.invalidExportName("\(names.count) names for \(images.count) photos")
+                throw ServiceError.invalidExportName(
+                    "\(names.count) names for \(images.count) photos")
             }
             if let bad = names.first(where: { !FileActions.isUsableName($0) }) {
-                throw ServiceError.invalidExportName(bad)
+                throw ServiceError.invalidExportName("\(bad) is not a usable file name")
             }
         }
         return try exporter.start(
@@ -661,8 +662,8 @@ extension LibraryService.ServiceError: WireError {
             ResponseError(code: "invalid_rating", message: "rating \(rating) not in 0...5")
         case .invalidProjectName(let name):
             ResponseError(code: "invalid_project_name", message: "\(name) is not a usable project name")
-        case .invalidExportName(let name):
-            ResponseError(code: "invalid_export_name", message: "\(name) is not a usable file name")
+        case .invalidExportName(let message):
+            ResponseError(code: "invalid_export_name", message: message)
         case .invalidProjectDay(let day):
             ResponseError(code: "invalid_project_day", message: "\(day) is not a YYYY-MM-DD date")
         case .unknownExport(let id): ResponseError(code: "unknown_export", message: id)

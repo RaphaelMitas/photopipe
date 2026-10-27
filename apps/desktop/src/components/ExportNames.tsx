@@ -124,6 +124,11 @@ export function ExportNames({
   const mirror = useRef<HTMLDivElement>(null);
   const problem = templateProblem(template);
 
+  const followScroll = (event: React.SyntheticEvent<HTMLInputElement>) => {
+    if (mirror.current)
+      mirror.current.scrollLeft = event.currentTarget.scrollLeft;
+  };
+
   const insert = (token: string) => {
     const field = input.current;
     const start = field?.selectionStart ?? template.length;
@@ -185,10 +190,8 @@ export function ExportNames({
           maxLength={TEMPLATE_LIMIT}
           value={template}
           onChange={(event) => onChange(event.target.value)}
-          onScroll={(event) => {
-            if (mirror.current)
-              mirror.current.scrollLeft = event.currentTarget.scrollLeft;
-          }}
+          onScroll={followScroll}
+          onSelect={followScroll}
           className="h-8 pr-20 font-mono text-transparent text-xs caret-foreground md:text-xs"
         />
         <PresetMenu
