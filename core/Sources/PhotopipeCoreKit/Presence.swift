@@ -52,7 +52,9 @@ enum Presence {
             by: CGAffineTransform(translationX: extent.minX, y: extent.minY)
                 .scaledBy(
                     x: extent.width / estimate.extent.width,
-                    y: extent.height / estimate.extent.height))
+                    y: extent.height / estimate.extent.height
+                )
+                .translatedBy(x: -estimate.extent.minX, y: -estimate.extent.minY))
     }
 
     private static func clamped(_ image: CIImage, _ filter: String, radius: CGFloat) -> CIImage {
