@@ -220,7 +220,7 @@ export default function App() {
     : allImages.length > 0 && allImages.every((image) => image.score != null);
   // Sorting a half-rated project would put photos in an order the scores do not
   // support, so until the pass is done the browser falls back to name. Capture
-  // times arrive with the stack pass, so Date waits for it the same way.
+  // times arrive with the stack pass, so with stacks on Date waits for it too.
   const sortReady = {
     name: true,
     date: !stacksWanted || stacking.ready,

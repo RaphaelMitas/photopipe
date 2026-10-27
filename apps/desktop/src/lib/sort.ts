@@ -14,8 +14,10 @@ export const sortPref = pref(
   String,
 );
 
-// A copy off the card or a metadata write moves mtime; the shutter does not.
-const takenAt = (image: ImageFile) => image.captured ?? image.mtime;
+// captured is the camera's wall clock read as UTC, so mtime moves onto that clock too
+const takenAt = (image: ImageFile) =>
+  image.captured ??
+  image.mtime - new Date(image.mtime * 1000).getTimezoneOffset() * 60;
 
 /// The core lists a shoot by name, so that order is the baseline every other
 /// sort falls back to for ties and for files that have no score.

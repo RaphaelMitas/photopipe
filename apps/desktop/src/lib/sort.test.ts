@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { browserOrder, sortImages } from "./sort";
 import { makeImage, rels } from "./test-image";
 
@@ -77,17 +77,24 @@ describe("sortImages", () => {
     ]);
   });
 
-  it("dates a photo without a capture time by its file and keeps ties in name order", () => {
+  it("dates a photo without a capture time by its file, on the camera's clock", () => {
+    vi.stubEnv("TZ", "Europe/Berlin");
+    const wallClock = (hour: number, minute: number) =>
+      Date.UTC(2026, 6, 4, hour, minute) / 1000;
     const images = [
-      makeImage("a.png", { captured: null, mtime: 150 }),
-      makeImage("b.arw", { captured: 100, mtime: 999 }),
-      makeImage("c.arw", { captured: 150, mtime: 1 }),
+      makeImage("export.png", { captured: null, mtime: wallClock(19, 30) }),
+      makeImage("first.arw", { captured: wallClock(21, 0) }),
+      makeImage("second.arw", { captured: wallClock(21, 45) }),
     ];
-    expect(rels(sortImages(images, "date"))).toEqual([
-      "b.arw",
-      "a.png",
-      "c.arw",
-    ]);
+    try {
+      expect(rels(sortImages(images, "date"))).toEqual([
+        "first.arw",
+        "export.png",
+        "second.arw",
+      ]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("does not mutate the list it was given", () => {
