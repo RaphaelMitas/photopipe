@@ -1,5 +1,6 @@
 import {
   type DefaultError,
+  hashKey,
   keepPreviousData,
   MutationObserver,
   type MutationObserverOptions,
@@ -338,11 +339,12 @@ const SET_FLAG_KEY = ["setFlag"];
 const TRASH_KEY = ["write", "trash"];
 const SET_EDIT_KEY = ["setEdit"];
 
+const XMP_WRITE_KEYS = [SET_RATING_KEY, SET_FLAG_KEY, SET_EDIT_KEY];
+
 function xmpWritesInFlight(queryClient: QueryClient): number {
-  return (
-    queryClient.isMutating({ mutationKey: SET_RATING_KEY }) +
-    queryClient.isMutating({ mutationKey: SET_FLAG_KEY }) +
-    queryClient.isMutating({ mutationKey: SET_EDIT_KEY })
+  return XMP_WRITE_KEYS.reduce(
+    (sum, mutationKey) => sum + queryClient.isMutating({ mutationKey }),
+    0,
   );
 }
 
@@ -667,13 +669,14 @@ export const useSetFlags = (shoot: string | null) =>
   useBatchWrite(shoot, FLAG_FIELD);
 
 // an undo still waiting on a write could un-reject a photo already in the Trash
-export function useTrashBlocked() {
-  const ratings = useIsMutating({ mutationKey: SET_RATING_KEY });
-  const flags = useIsMutating({ mutationKey: SET_FLAG_KEY });
-  const edits = useIsMutating({ mutationKey: SET_EDIT_KEY });
-  const trashing = useIsMutating({ mutationKey: TRASH_KEY });
-  return ratings + flags + edits + trashing > 0;
-}
+const TRASH_BLOCKERS = new Set([...XMP_WRITE_KEYS, TRASH_KEY].map(hashKey));
+
+export const useTrashBlocked = () =>
+  useIsMutating({
+    predicate: ({ options }) =>
+      options.mutationKey !== undefined &&
+      TRASH_BLOCKERS.has(hashKey(options.mutationKey)),
+  }) > 0;
 
 export function useReveal() {
   return useMutation({
