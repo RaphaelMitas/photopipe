@@ -1,4 +1,3 @@
-import { ChevronsLeftRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type Edit,
@@ -589,7 +588,7 @@ function SplitDivider({
         type="button"
         data-testid="split-divider"
         aria-label="Drag to compare before and after"
-        className="absolute inset-y-0 w-4 -translate-x-1/2 cursor-ew-resize"
+        className="group absolute inset-y-0 w-4 -translate-x-1/2 cursor-ew-resize"
         style={{ left: `${at * 100}%` }}
         {...drag}
         onPointerDown={(event) => {
@@ -600,10 +599,8 @@ function SplitDivider({
         // Focused by a drag, it would ring on the next key and take Enter from the stack.
         onMouseDown={(event) => event.preventDefault()}
       >
-        <span className="mx-auto block h-full w-0.5 bg-white/90" />
-        <span className="absolute top-1/2 left-1/2 flex h-9 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md border border-white/70 bg-background/85 text-white">
-          <ChevronsLeftRight className="size-3" />
-        </span>
+        <span className="mx-auto block h-full w-[1.5px] bg-white/90 shadow-[0_0_2px_rgba(0,0,0,0.45)]" />
+        <span className="absolute top-1/2 left-1/2 h-9 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.25),0_2px_8px_rgba(0,0,0,0.4)] transition-[height] group-hover:h-11 group-active:h-11" />
       </button>
       <span
         className={`${CHIP} pointer-events-none absolute top-3 font-semibold`}
