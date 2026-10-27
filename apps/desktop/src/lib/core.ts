@@ -58,7 +58,6 @@ export const identityEdit: Edit = Object.freeze({
   rotation: 0,
 });
 
-// A crop rect is normalized against its own turned frame, so it never leaves its photo.
 export function framing(edit: Edit) {
   return {
     crop: edit.crop ?? null,

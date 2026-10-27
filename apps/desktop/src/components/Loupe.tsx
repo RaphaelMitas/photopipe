@@ -125,10 +125,10 @@ export function Loupe({
         : deferredEdit,
     [cropping, deferredEdit, draftRotation],
   );
-  const beforeEdit = useMemo(() => unedited(deferredEdit), [deferredEdit]);
-  // Queries fetch in call order and the lane runs newest first, so the edit asks last.
-  const before = useRender(comparing ? image : undefined, beforeEdit);
+  // Queries fetch in call order and an idle lane starts on the first, so the edit asks first.
   const render = useRender(image, previewEdit);
+  const beforeEdit = useMemo(() => unedited(deferredEdit), [deferredEdit]);
+  const before = useRender(comparing ? image : undefined, beforeEdit);
   const thumb = useThumbnail(image);
   const neighbour = (direction: 1 | -1) =>
     stacks && image
@@ -145,10 +145,10 @@ export function Loupe({
     () => previous && unedited(previous.edit),
     [previous],
   );
-  usePrefetchRender(landed && comparing ? next : undefined, nextBefore);
-  usePrefetchRender(landed && comparing ? previous : undefined, previousBefore);
   usePrefetchRender(landed ? next : undefined, next?.edit);
+  usePrefetchRender(landed && comparing ? next : undefined, nextBefore);
   usePrefetchRender(landed ? previous : undefined, previous?.edit);
+  usePrefetchRender(landed && comparing ? previous : undefined, previousBefore);
   const multiFrame = stacks !== null && stacks.current.frames.length > 1;
 
   const stageRef = useRef<HTMLDivElement>(null);
@@ -210,12 +210,12 @@ export function Loupe({
     settled?.zoomKey === zoomKey && viewportKey(wanted) === viewportKey(settled)
       ? settled
       : null;
+  const sharp = useViewportRender(image, previewEdit, current).data;
   const sharpBefore = useViewportRender(
     comparing ? image : undefined,
     beforeEdit,
     current,
   ).data;
-  const sharp = useViewportRender(image, previewEdit, current).data;
   const sharpening = wanted !== null && (!sharp || (comparing && !sharpBefore));
   const [divider, setDivider] = useState(0.5);
 
@@ -591,8 +591,7 @@ function SplitDivider({
         style={{ left: `${at * 100}%` }}
         {...drag}
         onPointerDown={(event) => {
-          // a zoomed stage would take this press as the start of a pan
-          event.stopPropagation();
+          ownTap.onPointerDown(event);
           drag.onPointerDown(event);
         }}
         onDoubleClick={ownTap.onDoubleClick}

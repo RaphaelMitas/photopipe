@@ -167,6 +167,9 @@ type RenderFile = Pick<ImageFile, "path" | "mtime" | "isRaw"> | undefined;
 const PREVIEW_MAX_PIXEL = 2560;
 
 const superseded = (error: unknown) => String(error).startsWith("superseded");
+// A key no slider moves, like the split's before, would give up while a drag fills the lane.
+const renderRetry = (failures: number, error: unknown) =>
+  superseded(error) || failures < 3;
 
 function renderDecoderVersion(file: RenderFile, version: number) {
   return file?.isRaw ? version : undefined;
@@ -204,8 +207,7 @@ function renderQueryOptions(
           ).cachePath
       : skipToken,
     staleTime: Number.POSITIVE_INFINITY,
-    // A key no slider moves, like the split's before, would give up while a drag fills the lane.
-    retry: (failures, error) => superseded(error) || failures < 3,
+    retry: renderRetry,
     retryDelay: (failures, error) =>
       superseded(error) ? 0 : 1000 * 2 ** failures,
   });
@@ -272,8 +274,8 @@ export function usePrefetchRender(file: RenderFile, edit: Edit | undefined) {
     queryClient.prefetchQuery({
       ...options,
       // the loupe may land on it mid-flight and inherit this fetch's retry
-      retry: (failures) =>
-        failures < 3 &&
+      retry: (failures, error) =>
+        renderRetry(failures, error) &&
         (queryClient
           .getQueryCache()
           .find({ queryKey: options.queryKey })

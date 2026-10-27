@@ -447,7 +447,7 @@ describe("usePrefetchRender", () => {
     return render.data ? <p>{render.data}</p> : null;
   }
 
-  async function arrive(landed: boolean) {
+  async function arrive(landed: boolean, drops = 1) {
     invoke.mockReset();
     let reject: (reason: string) => void = () => {};
     invoke.mockReturnValueOnce(
@@ -455,6 +455,11 @@ describe("usePrefetchRender", () => {
         reject = rejectFirst;
       }),
     );
+    for (let drop = 1; drop < drops; drop++) {
+      invoke.mockRejectedValueOnce(
+        "superseded: dropped for a newer render request",
+      );
+    }
     invoke.mockResolvedValue({ cachePath: "/cache/b.jpg" });
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false, retryDelay: 0 } },
@@ -478,6 +483,12 @@ describe("usePrefetchRender", () => {
     const view = await arrive(true);
     expect(await view.findByText("/cache/b.jpg")).toBeTruthy();
     expect(invoke).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps asking for a landed prefetch however often the lane drops it", async () => {
+    const view = await arrive(true, 5);
+    expect(await view.findByText("/cache/b.jpg")).toBeTruthy();
+    expect(invoke).toHaveBeenCalledTimes(6);
   });
 
   it("lets a superseded prefetch nobody landed on go", async () => {
