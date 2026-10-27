@@ -118,11 +118,12 @@ public final class LibraryService: @unchecked Sendable {
         let scores = scorer.values(for: images)
         // one read, so a print landing mid-call cannot be counted without being stacked
         let answers = printer.answers(for: images)
-        let prints = answers.compactMapValues { $0 }
-        let stacks = Stacker.stacks(prints)
+        let captured = Dictionary(
+            uniqueKeysWithValues: images.compactMap { image in image.captured.map { (image.path, $0) } })
+        let stacks = Stacker.stacks(answers.compactMapValues { $0 }, captured: captured)
         return images.map { image in
             image.with(
-                score: scores[image.path], captured: prints[image.path]?.captured,
+                score: scores[image.path],
                 stack: stacks[image.path] ?? (answers.keys.contains(image.path) ? image.path : nil))
         }
     }

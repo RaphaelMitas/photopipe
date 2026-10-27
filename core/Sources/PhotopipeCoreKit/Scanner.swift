@@ -97,11 +97,14 @@ public func walkLibrary(root: String) throws -> LibrarySnapshot {
 public func enrich(_ file: ImageFile) -> ImageFile {
     guard !file.enriched else { return file }
     let (rating, edit) = XMP.read(file: file)
+    let header = Dimensions.header(for: file)
     return file.with(
         rating: rating,
         edit: edit,
-        dimensions: Dimensions.cached(for: file) ?? Dimensions.fallback,
-        enriched: true)
+        dimensions: header.dimensions ?? Dimensions.fallback,
+        enriched: true,
+        captured: header.captured,
+        exif: header.exif)
 }
 
 /// A cached record only counts while both the file and the sidecar it was read
@@ -119,7 +122,8 @@ public func carryEnrichment(
             else { return image }
             return image.with(
                 rating: known.rating, edit: known.edit,
-                dimensions: (known.width, known.height), enriched: true)
+                dimensions: (known.width, known.height), enriched: true,
+                captured: known.captured, exif: known.exif)
         }
     }
     let shoots = walked.shoots.map { shoot in

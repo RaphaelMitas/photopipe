@@ -10,8 +10,11 @@ public enum Dimensions {
     }
 
     public static func read(at url: URL) -> (width: Int, height: Int)? {
-        guard let props = properties(at: url),
-            let width = props[kCGImagePropertyPixelWidth] as? Int,
+        properties(at: url).flatMap(dimensions)
+    }
+
+    static func dimensions(_ props: [CFString: Any]) -> (width: Int, height: Int)? {
+        guard let width = props[kCGImagePropertyPixelWidth] as? Int,
             let height = props[kCGImagePropertyPixelHeight] as? Int,
             width > 0, height > 0
         else { return nil }
@@ -67,22 +70,30 @@ public enum Dimensions {
         return formatter
     }()
 
-    private static let cacheLock = NSLock()
-    nonisolated(unsafe) private static var cache:
-        [String: (mtime: Double, dims: (width: Int, height: Int)?)] = [:]
+    /// Everything enrichment takes from a file's header, so it is read once.
+    public struct Header: Sendable {
+        public let dimensions: (width: Int, height: Int)?
+        public let captured: Double?
+        public let exif: Exif
+    }
 
-    public static func cached(for file: ImageFile) -> (width: Int, height: Int)? {
+    private static let cacheLock = NSLock()
+    nonisolated(unsafe) private static var cache: [String: (mtime: Double, header: Header)] = [:]
+
+    public static func header(for file: ImageFile) -> Header {
         cacheLock.lock()
         if let entry = cache[file.path], entry.mtime == file.mtime {
             cacheLock.unlock()
-            return entry.dims
+            return entry.header
         }
         cacheLock.unlock()
 
-        let dims = read(at: URL(fileURLWithPath: file.path))
+        let props = properties(at: URL(fileURLWithPath: file.path)) ?? [:]
+        let header = Header(
+            dimensions: dimensions(props), captured: captureTime(props), exif: Exif(props))
         cacheLock.lock()
-        cache[file.path] = (file.mtime, dims)
+        cache[file.path] = (file.mtime, header)
         cacheLock.unlock()
-        return dims
+        return header
     }
 }

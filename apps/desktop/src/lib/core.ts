@@ -93,8 +93,18 @@ export function editKey(edit: Edit): string {
   ].join("|");
 }
 
-// `enriched` is false while rating, edit and dimensions are still the
-// placeholders the core's directory walk left behind.
+// Mirrors core Exif.swift: shutter in seconds, focal in mm; absent when the file lacks it.
+export type Exif = {
+  shutter?: number;
+  aperture?: number;
+  iso?: number;
+  focal?: number;
+  lens?: string;
+  body?: string;
+};
+
+// `enriched` is false while rating, edit, dimensions, capture time and exif
+// are still the placeholders the core's directory walk left behind.
 export type ImageFile = {
   path: string;
   rel: string;
@@ -106,7 +116,9 @@ export type ImageFile = {
   height: number;
   // Vision's aesthetic score, -1..1, null for a photo it has not rated.
   score: number | null;
+  // seconds, the camera clock read as if it were UTC
   captured: number | null;
+  exif: Exif;
   // path of the first photo in its stack, its own when alone, null until analyzed
   stack: string | null;
   enriched: boolean;

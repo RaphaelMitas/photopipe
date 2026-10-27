@@ -6,40 +6,43 @@ import UniformTypeIdentifiers
 
 @testable import PhotopipeCoreKit
 
-private func fakePrint(_ x: Float, at captured: Double?) -> Print {
-    Print(feature: [x, 0], captured: captured)
+/// Each photo is a one-number print and its capture time.
+private func stacked(_ photos: [String: (Float, Double?)]) -> [String: String] {
+    Stacker.stacks(
+        photos.mapValues { Print(feature: [$0.0, 0]) },
+        captured: photos.compactMapValues { $0.1 })
 }
 
 @Test func aPhotoJoinsOnlyWhenItLooksLikeEveryPhotoInTheStack() {
     // a–b and b–c are each 0.3 apart, a–c 0.6: chaining neighbours would take c too
-    let stacks = Stacker.stacks([
-        "a": fakePrint(0, at: 0), "b": fakePrint(0.3, at: 1), "c": fakePrint(0.6, at: 2),
+    let stacks = stacked([
+        "a": (0, 0), "b": (0.3, 1), "c": (0.6, 2),
     ])
     #expect(stacks == ["a": "a", "b": "a"])
 }
 
 @Test func anOddFrameMidBurstDoesNotCutTheBurstInTwo() {
-    let stacks = Stacker.stacks([
-        "a": fakePrint(0, at: 0), "b": fakePrint(0.1, at: 1),
-        "x": fakePrint(5, at: 2), "c": fakePrint(0.2, at: 3),
+    let stacks = stacked([
+        "a": (0, 0), "b": (0.1, 1),
+        "x": (5, 2), "c": (0.2, 3),
     ])
     #expect(stacks == ["a": "a", "b": "a", "c": "a"])
 }
 
 @Test func aStackIsNamedByItsFirstPhotoInCaptureOrder() {
-    let stacks = Stacker.stacks(["z": fakePrint(0, at: 10), "m": fakePrint(0.1, at: 11)])
+    let stacks = stacked(["z": (0, 10), "m": (0.1, 11)])
     #expect(stacks == ["z": "z", "m": "z"])
 }
 
 @Test func identicalPhotosOutsideTheWindowStayApart() {
-    let stacks = Stacker.stacks([
-        "a": fakePrint(0, at: 0), "b": fakePrint(0, at: 30), "c": fakePrint(0, at: 61),
+    let stacks = stacked([
+        "a": (0, 0), "b": (0, 30), "c": (0, 61),
     ])
     #expect(stacks == ["a": "a", "b": "a"])
 }
 
 @Test func photosWithoutACaptureTimeStandAlone() {
-    let stacks = Stacker.stacks(["a": fakePrint(0, at: 0), "b": fakePrint(0, at: nil)])
+    let stacks = stacked(["a": (0, 0), "b": (0, nil)])
     #expect(stacks.isEmpty)
 }
 
@@ -78,15 +81,14 @@ private func writeJPEG(
     #expect(CGImageDestinationFinalize(destination))
 }
 
-@Test func aPrintCarriesTheCaptureTimeToTheSubsecond() async throws {
+@Test func enrichmentCarriesTheCaptureTimeToTheSubsecond() throws {
     let url = URL(fileURLWithPath: tempFile("captured.jpg"))
     try writeJPEG(url, pattern: 3, subsec: "963")
     defer { try? FileManager.default.removeItem(at: url) }
 
-    let print = try #require(await Printer.print(path: url.path))
-    #expect(!print.feature.isEmpty)
+    let file = enrich(ImageFile(path: url.path, rel: "captured.jpg", ext: "jpg", size: 1, mtime: 1))
     // 2026-08-08 19:24:28 read as UTC
-    #expect(try #require(print.captured) == 1_786_217_068.963)
+    #expect(try #require(file.captured) == 1_786_217_068.963)
 }
 
 @Test func printsSurviveTheIndexIncludingUnreadableFiles() throws {
@@ -94,8 +96,8 @@ private func writeJPEG(
     defer { try? FileManager.default.removeItem(atPath: path) }
     let index = try SQLiteIndex(path: path)
     let rows: [(String, Printer.Row)] = [
-        ("/r/a", .init(value: Print(feature: [0.25, -1, 3], captured: 12.5), mtime: 1, size: 2, version: 1)),
-        ("/r/b", .init(value: Print(feature: [1], captured: nil), mtime: 3, size: 4, version: 1)),
+        ("/r/a", .init(value: Print(feature: [0.25, -1, 3]), mtime: 1, size: 2, version: 1)),
+        ("/r/b", .init(value: Print(feature: [1]), mtime: 3, size: 4, version: 1)),
         ("/r/c", .init(value: nil, mtime: 5, size: 6, version: 1)),
     ]
     try index.savePrints(rows)
@@ -148,7 +150,7 @@ private func writeJPEG(
     let path = tempFile("index.sqlite")
     defer { try? FileManager.default.removeItem(atPath: path) }
     let index = try SQLiteIndex(path: path)
-    let row = Printer.Row(value: Print(feature: [1], captured: 1), mtime: 1, size: 1, version: 1)
+    let row = Printer.Row(value: Print(feature: [1]), mtime: 1, size: 1, version: 1)
     try index.savePrints([("/lib/a.arw", row), ("/lib2/b.arw", row), ("/li/c.arw", row)])
     #expect(try index.loadPrints(under: "/lib").keys.sorted() == ["/lib/a.arw"])
 }
