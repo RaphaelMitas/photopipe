@@ -80,19 +80,16 @@ public enum Dimensions {
     nonisolated(unsafe) private static var cache: [String: (mtime: Double, size: Int64, header: Header)] = [:]
 
     public static func header(for file: ImageFile) -> Header {
-        cacheLock.lock()
-        if let entry = cache[file.path], entry.mtime == file.mtime, entry.size == file.size {
-            cacheLock.unlock()
+        if let entry = cacheLock.withLock({ cache[file.path] }),
+            entry.mtime == file.mtime, entry.size == file.size
+        {
             return entry.header
         }
-        cacheLock.unlock()
 
         let props = properties(at: URL(fileURLWithPath: file.path)) ?? [:]
         let header = Header(
             dimensions: dimensions(props), captured: captureTime(props), exif: Exif(props))
-        cacheLock.lock()
-        cache[file.path] = (file.mtime, file.size, header)
-        cacheLock.unlock()
+        cacheLock.withLock { cache[file.path] = (file.mtime, file.size, header) }
         return header
     }
 }

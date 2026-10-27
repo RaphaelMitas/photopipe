@@ -12,6 +12,7 @@ describe("exif", () => {
     expect(shutterText(0.000199999994946943)).toBe("1/5000");
     expect(shutterText(1 / 40)).toBe("1/40");
     expect(shutterText(1 / 3)).toBe("1/3");
+    expect(shutterText(0.3)).toBe("0.3 s");
     expect(shutterText(0.5)).toBe("0.5 s");
     expect(shutterText(2)).toBe("2 s");
   });

@@ -125,8 +125,7 @@ export function useScoring(shoot: string | null, enabled: boolean) {
   return { progress, justRated };
 }
 
-/// True once `complete` has held for this shoot, so photos arriving mid-visit
-/// do not take it back.
+// photos arriving mid-visit must not take a finished pass back
 function useLatch(shoot: string | null, enabled: boolean, complete: boolean) {
   const [readyShoot, setReadyShoot] = useState<string | null>(null);
   useEffect(() => {
