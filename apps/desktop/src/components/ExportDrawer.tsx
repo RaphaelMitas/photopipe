@@ -24,6 +24,7 @@ import {
   DEFAULT_TEMPLATE,
   exportName,
   NAME_PRESETS,
+  TEMPLATE_LIMIT,
   templateProblem,
 } from "@/lib/exportNames";
 import { useFeatures } from "@/lib/features";
@@ -229,7 +230,6 @@ type StoredOptions = Omit<
 };
 
 const RECENT_LIMIT = 3;
-const TEMPLATE_LIMIT = 200;
 
 function longEdgeOf({ size, customLongEdge }: StoredOptions): number | null {
   if (size === "full") return null;

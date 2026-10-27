@@ -18,9 +18,10 @@ import {
   NAME_PRESETS,
   NAME_TOKENS,
   stem,
+  TEMPLATE_LIMIT,
   templateParts,
   templateProblem,
-  usesCaptureTime,
+  usesToken,
 } from "@/lib/exportNames";
 import { pluralize } from "@/lib/plural";
 import { SORT_LABELS, type SortKey } from "@/lib/sort";
@@ -128,7 +129,9 @@ export function ExportNames({
     const start = field?.selectionStart ?? template.length;
     const end = field?.selectionEnd ?? start;
     const text = `{${token}}`;
-    onChange(template.slice(0, start) + text + template.slice(end));
+    const next = template.slice(0, start) + text + template.slice(end);
+    if (next.length > TEMPLATE_LIMIT) return;
+    onChange(next);
     requestAnimationFrame(() => {
       field?.focus();
       field?.setSelectionRange(start + text.length, start + text.length);
@@ -138,16 +141,16 @@ export function ExportNames({
   const paths = images.map((image, i) =>
     exportPath(image, names[i], format, flatten),
   );
-  const seen = new Set<string>();
-  const repeats = paths.filter((path) => {
-    const key = path.toLowerCase();
-    if (seen.has(key)) return true;
-    seen.add(key);
-    return false;
-  }).length;
-  const undated = usesCaptureTime(template)
-    ? images.filter((image) => image.captured === null).length
+  const repeats =
+    paths.length - new Set(paths.map((path) => path.toLowerCase())).size;
+  const undated =
+    usesToken(template, "date") || usesToken(template, "time")
+      ? images.filter((image) => image.captured === null).length
+      : 0;
+  const unrated = usesToken(template, "rating")
+    ? images.filter((image) => !image.enriched).length
     : 0;
+  const numbered = usesToken(template, "seq");
   const more = images.length - PREVIEW_COUNT;
 
   return (
@@ -179,6 +182,7 @@ export function ExportNames({
           spellCheck={false}
           autoCorrect="off"
           autoCapitalize="off"
+          maxLength={TEMPLATE_LIMIT}
           value={template}
           onChange={(event) => onChange(event.target.value)}
           onScroll={(event) => {
@@ -229,12 +233,14 @@ export function ExportNames({
                 </div>
               ))}
             </div>
-            {(more > 0 || template.includes("{seq}")) && (
+            {(more > 0 || numbered) && (
               <span className="font-sans">
-                {more > 0 && `…and ${more} more`}
-                {more > 0 && template.includes("{seq}") && ", "}
-                {template.includes("{seq}") &&
-                  `numbered in grid order (${SORT_LABELS[sort]})`}
+                {[
+                  more > 0 && `…and ${more} more`,
+                  numbered && `numbered in grid order (${SORT_LABELS[sort]})`,
+                ]
+                  .filter(Boolean)
+                  .join(", ")}
               </span>
             )}
           </div>
@@ -255,6 +261,12 @@ export function ExportNames({
           {pluralize(undated, "photo")} {undated === 1 ? "has" : "have"} no
           capture time loaded and {undated === 1 ? "uses" : "use"} the file
           date.
+        </p>
+      )}
+      {!problem && unrated > 0 && (
+        <p data-testid="name-unrated" className="text-[10px] text-amber-400">
+          {pluralize(unrated, "photo")} {unrated === 1 ? "is" : "are"} still
+          being read, so {"{rating}"} may say 0.
         </p>
       )}
     </>

@@ -1,5 +1,5 @@
 import type { ExportFormat, ImageFile } from "./core";
-import { fileName } from "./fileName";
+import { fileName, splitRel } from "./fileName";
 import { takenAt } from "./sort";
 
 export const NAME_TOKENS = [
@@ -20,6 +20,7 @@ export const NAME_PRESETS = [
 ] as const;
 
 export const DEFAULT_TEMPLATE = NAME_PRESETS[0].template;
+export const TEMPLATE_LIMIT = 200;
 
 const TOKEN = /\{([^{}]*)\}/g;
 // leaves room for a collision suffix and the extension under the 255-byte limit
@@ -59,13 +60,11 @@ export function templateParts(template: string): TemplatePart[] {
   return parts;
 }
 
-export const usesCaptureTime = (template: string) =>
-  /\{(date|time)\}/.test(template);
+export const usesToken = (template: string, token: NameToken) =>
+  template.includes(`{${token}}`);
 
 export const stem = (image: ImageFile) =>
   fileName(image.rel).replace(/\.[^.]*$/, "");
-
-const pad = (value: number, width = 2) => String(value).padStart(width, "0");
 
 function tokenValue(
   token: NameToken,
@@ -74,15 +73,15 @@ function tokenValue(
   count: number,
   shoot: string,
 ): string {
-  // takenAt is the camera's wall clock expressed as UTC, so read it back as UTC
-  const taken = new Date(takenAt(image) * 1000);
+  // takenAt is the camera's wall clock expressed as UTC, so the ISO form reads it as is
+  const taken = new Date(takenAt(image) * 1000).toISOString();
   switch (token) {
     case "date":
-      return `${taken.getUTCFullYear()}-${pad(taken.getUTCMonth() + 1)}-${pad(taken.getUTCDate())}`;
+      return taken.slice(0, 10);
     case "time":
-      return `${pad(taken.getUTCHours())}${pad(taken.getUTCMinutes())}${pad(taken.getUTCSeconds())}`;
+      return taken.slice(11, 19).replaceAll(":", "");
     case "seq":
-      return pad(index + 1, Math.max(3, String(count).length));
+      return String(index + 1).padStart(Math.max(3, String(count).length), "0");
     case "original":
       return stem(image);
     case "rating":
@@ -105,8 +104,7 @@ function clean(name: string): string {
   return out.replace(/^[\s.]+/, "").trimEnd();
 }
 
-/// The file name without its extension; the core adds the extension and the
-/// -1/-2 suffixes when two names meet.
+/// Stem only; the core adds the extension and any -1/-2 suffix.
 export function exportName(
   template: string,
   image: ImageFile,
@@ -133,6 +131,6 @@ export function exportPath(
 ): string {
   const ext =
     format === "jpeg" ? "jpg" : (/\.([^./]*)$/.exec(image.rel)?.[1] ?? "");
-  const dir = flatten ? "" : image.rel.slice(0, image.rel.lastIndexOf("/") + 1);
+  const dir = flatten ? "" : splitRel(image.rel)[0];
   return `${dir}${name}${ext ? `.${ext}` : ""}`;
 }

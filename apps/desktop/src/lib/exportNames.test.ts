@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { exportName, templateProblem } from "./exportNames";
 import { makeImage } from "./test-image";
 
-// 2026-10-24 23:41:05 on the camera's clock, which the core hands over as UTC
 const captured = Date.UTC(2026, 9, 24, 23, 41, 5) / 1000;
 
 describe("exportName", () => {

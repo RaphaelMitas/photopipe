@@ -73,7 +73,7 @@ public enum FileActions {
         #endif
     }
 
-    /// A leading dot is refused because the scan would hide the file.
+    /// A leading dot is refused because the scan would hide it.
     static func isUsableName(_ name: String) -> Bool {
         let scalars = name.unicodeScalars
         return !name.isEmpty && !scalars.contains("/") && !scalars.contains(":")

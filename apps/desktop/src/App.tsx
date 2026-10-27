@@ -989,7 +989,7 @@ export default function App() {
               <ExportDrawer
                 shoot={openShoot}
                 images={selectedImages}
-                sort={sort}
+                sort={activeSort}
                 selectedCount={selection.selected.size}
                 editedCount={editedCount}
                 filteredCount={filteredImages.length}
