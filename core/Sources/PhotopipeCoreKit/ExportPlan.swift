@@ -1,4 +1,5 @@
 import Foundation
+import System
 
 public enum ExportFormat: String, Sendable {
     case original
@@ -9,7 +10,7 @@ extension Exporter.Plan {
     static func export(
         _ images: [ImageFile], to destination: String, zip: Bool, flatten: Bool,
         format: ExportFormat, quality: Int, longEdge: Int?, decoderVersion: Int?,
-        renderer: Renderer
+        names: [String]?, renderer: Renderer
     ) throws -> Exporter.Plan {
         let fm = FileManager.default
         let staging =
@@ -20,15 +21,21 @@ extension Exporter.Plan {
         let base = staging ?? URL(fileURLWithPath: destination)
 
         var used: Set<String> = []
-        let items = images.map { image in
-            var rel = image.rel
+        let items = images.enumerated().map { index, image in
+            var path = FilePath(image.rel)
+            if let name = names?[index] {
+                // joined by hand: setting `extension` would eat a dot the name carries
+                let ext = path.extension
+                path.removeLastComponent()
+                path.append(ext.map { "\(name).\($0)" } ?? name)
+            }
             if format == .jpeg {
-                rel = (rel as NSString).deletingPathExtension + ".jpg"
+                path.extension = "jpg"
             }
-            if flatten {
-                rel = (rel as NSString).lastPathComponent
+            if flatten, let leaf = path.lastComponent {
+                path = FilePath(root: nil, [leaf])
             }
-            let name = FileActions.uniqueName(rel) { candidate in
+            let name = FileActions.uniqueName(path.string) { candidate in
                 used.contains(candidate.lowercased())
                     || (staging == nil
                         && fm.fileExists(atPath: base.appendingPathComponent(candidate).path))
