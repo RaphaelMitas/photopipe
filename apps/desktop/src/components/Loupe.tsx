@@ -75,7 +75,6 @@ export type LoupeStacks = {
   inside: boolean;
   onEnter: () => void;
   onLeave: () => void;
-  /// False when nothing was written, so the loupe stays put.
   onPick: () => boolean;
 };
 
@@ -88,7 +87,7 @@ type Props = {
   onEditChange: (edit: Edit) => void;
   onNavigate: (path: string) => void;
   onClose: () => void;
-  /// False when nothing was written, so the loupe stays put.
+  /// False when the rating was refused, so the loupe stays put.
   onRate: (path: string, rating: number) => boolean;
 };
 
@@ -108,7 +107,6 @@ export function Loupe({
   const deferredEdit = useDeferredEdit(image, edit);
   const cropping = cropDraft !== null;
   const filmstrip = filmstripPref.use();
-  const autoAdvance = autoAdvancePref.use();
 
   // While cropping the stage shows the full turned frame, uncropped and
   // unstraightened; the crop and the CSS angle preview sit on top.
@@ -245,10 +243,18 @@ export function Loupe({
         }
         return;
       }
-      const advance = (to: ImageFile | undefined) => {
-        if (!autoAdvance) return;
+      const advance = (to: ImageFile | undefined, end: string) => {
+        if (!autoAdvancePref.get()) return;
         if (to) onNavigate(to.path);
-        else toast("Nothing after this one", { id: "auto-advance" });
+        else toast(end, { id: "auto-advance" });
+      };
+      const rate = (rating: number) => {
+        // held down, the repeats would rate every photo it advances onto
+        if (event.repeat || !onRate(image.path, rating) || rating === 0) return;
+        advance(
+          next,
+          stacks?.inside ? "Last frame of this stack" : "Last photo",
+        );
       };
       switch (event.key) {
         case "Escape":
@@ -273,21 +279,19 @@ export function Loupe({
         case "p":
         case "P":
           if (multiFrame && stacks.inside && stacks.onPick()) {
-            advance(step(stacks.list, image.path, false, 1));
+            advance(step(stacks.list, image.path, false, 1), "Last photo");
           }
           break;
-        case "0":
-          onRate(image.path, 0);
+        case "a":
+          autoAdvancePref.toggle();
           break;
+        case "0":
         case "1":
         case "2":
         case "3":
         case "4":
         case "5":
-          // held down, the repeats would rate every photo it advances onto
-          if (!event.repeat && onRate(image.path, Number(event.key))) {
-            advance(next);
-          }
+          rate(Number(event.key));
           break;
         case "ArrowUp":
           event.preventDefault();
@@ -320,7 +324,6 @@ export function Loupe({
     session,
     stacks,
     multiFrame,
-    autoAdvance,
     next,
     previous,
     onClose,

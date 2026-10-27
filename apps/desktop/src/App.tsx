@@ -26,7 +26,7 @@ import {
 } from "@/components/ExportDrawer";
 import { HistoryControls } from "@/components/HistoryControls";
 import { IndexingStatus } from "@/components/IndexingStatus";
-import { autoAdvancePref, Loupe } from "@/components/Loupe";
+import { Loupe } from "@/components/Loupe";
 import { LoupeSidebar } from "@/components/LoupeSidebar";
 import { NewProjectDialog } from "@/components/NewProjectDialog";
 import { ratingCounts, useRatingFilter } from "@/components/RatingFilter";
@@ -115,7 +115,6 @@ type RootState =
 const EDIT_COMMIT_MS = 400;
 
 const editPanelPref = flagPref("photopipe.editPanel", "shown", "hidden", true);
-const toggleEditPanel = () => editPanelPref.set(!editPanelPref.get());
 
 export default function App() {
   const [rootState, setRootState] = useState<RootState>({
@@ -386,7 +385,6 @@ export default function App() {
   // acting on "the photo you are looking at" has to ask whether it is open.
   const loupePhoto = loupeOpen ? loupeImage : null;
 
-  const toggleStacks = useCallback(() => stacksPref.set(!stacksPref.get()), []);
   // stacks arriving or an import can regroup you onto a non-cover frame, which means inside
   const membership = currentStack?.frames.map((frame) => frame.path).join("\n");
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a change in who is in the stack re-decides
@@ -405,7 +403,7 @@ export default function App() {
     const before = new Map(frames.map((frame) => [frame.path, frame.rating]));
     return { live: { ...stack, frames }, before };
   };
-  const rateWholeStack = (stack: Stack, rating: number) => {
+  const rateWholeStack = (stack: Stack, rating: number, path: string) => {
     const read = readStack(stack);
     if (!read) return false;
     writes.rateMany(
@@ -413,6 +411,7 @@ export default function App() {
       read.before,
       "Rating",
       `${ratingDetail(rating)} · stack of ${stack.frames.length}`,
+      path,
     );
     return true;
   };
@@ -442,7 +441,7 @@ export default function App() {
   };
   const rateShown = (path: string, rating: number) => {
     if (currentStack && multiFrame && !insideStack) {
-      return rateWholeStack(currentStack, rating);
+      return rateWholeStack(currentStack, rating, path);
     }
     writes.rate(path, rating);
     return true;
@@ -562,6 +561,8 @@ export default function App() {
   const stacksNow = useRef(loupeStacks);
   // the browser has no stacks, so undo there lands on the photo it changed
   stacksNow.current = loupeOpen ? loupeStacks : null;
+  const insideNow = useRef(insideStack);
+  insideNow.current = insideStack;
   // Before the write, so you are on the photo when the step lands.
   const showPhoto = useCallback(
     (entry: HistoryEntry) => {
@@ -569,19 +570,23 @@ export default function App() {
         cachedImage(queryClient, openShoot, path) !== undefined;
       const current = currentPathNow.current;
       const stacks = stacksNow.current;
-      const here = current && stacks ? stackOf(stacks, current) : undefined;
+      // inside a stack each frame is its own stop
+      const here =
+        current && stacks && !insideNow.current
+          ? stackOf(stacks, current)
+          : undefined;
       const touchesHere = entry.paths.some((path) =>
         here ? inStack(here, path) : path === current,
       );
       const next = touchesHere ? undefined : entry.paths.find(present);
+      const stop =
+        entry.stackStop && present(entry.stackStop)
+          ? entry.stackStop
+          : undefined;
       if (next) {
-        const stack = stacks ? stackOf(stacks, next) : undefined;
-        // a step on every frame was taken outside the stack; any other lands inside, on the frame it changed
-        const whole = stack?.frames.every((frame) =>
-          entry.paths.includes(frame.path),
-        );
-        setCurrentPath(stack && whole ? coverOf(stack).path : next);
-        setInsideAnchor(whole ? null : next);
+        setCurrentPath(stop ?? next);
+        // a whole-stack step lands back outside, where it was taken; any other on the frame it changed
+        setInsideAnchor(stop ? null : next);
       }
       setRevealed((count) => count + 1);
     },
@@ -667,13 +672,10 @@ export default function App() {
         selection.clear();
       }
       if (event.key === "e" && !event.altKey && loupeOpen && !cropping) {
-        toggleEditPanel();
+        editPanelPref.toggle();
       }
       if (event.key === "s" && !event.altKey && loupeOpen && !cropping) {
-        toggleStacks();
-      }
-      if (event.key === "a" && !event.altKey && loupeOpen && !cropping) {
-        autoAdvancePref.set(!autoAdvancePref.get());
+        stacksPref.toggle();
       }
     };
     window.addEventListener("keydown", handler);
@@ -689,7 +691,6 @@ export default function App() {
     pasteTargets,
     pasteSettings,
     travel,
-    toggleStacks,
   ]);
 
   const enterShoot = (shoot: string | null) => {
@@ -836,7 +837,7 @@ export default function App() {
               on: stacksWanted,
               ready: stacking.ready,
               progress: stacking.progress,
-              onToggle: toggleStacks,
+              onToggle: stacksPref.toggle,
               current:
                 currentStack && multiFrame
                   ? { stack: currentStack, inside: insideStack }
@@ -940,7 +941,7 @@ export default function App() {
                 size="sm"
                 variant={editOpen ? "secondary" : "ghost"}
                 data-testid="toggle-edit"
-                onClick={toggleEditPanel}
+                onClick={editPanelPref.toggle}
                 disabled={cropping}
                 title={
                   cropping ? "Finish the crop first" : "Toggle edit panel (e)"
@@ -998,7 +999,7 @@ export default function App() {
                 canPaste={clipboard !== null}
                 onCopySettings={() => copySettings(loupeImage)}
                 onPasteSettings={() => pasteSettings([loupeImage])}
-                onClose={toggleEditPanel}
+                onClose={editPanelPref.toggle}
               />
             )}
             {drawerOpen && openShoot && !inLoupe && (

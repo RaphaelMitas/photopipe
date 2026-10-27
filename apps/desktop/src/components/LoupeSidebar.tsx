@@ -14,6 +14,7 @@ import {
 } from "@photopipe/ui/components/sidebar";
 import { Switch } from "@photopipe/ui/components/switch";
 import { ChevronLeft } from "lucide-react";
+import type { ReactNode } from "react";
 import type { ImageFile, PassProgress } from "@/lib/core";
 import { fileName } from "@/lib/fileName";
 import { instinctScore } from "@/lib/instinct";
@@ -145,40 +146,26 @@ export function LoupeSidebar({
                 testid="filmstrip"
                 onChange={filmstripPref.set}
               />
-              <div className="mt-2 flex items-center justify-between gap-2">
-                <Label
-                  htmlFor="stacks"
-                  className="flex flex-col items-start gap-0.5 font-normal text-xs"
-                >
-                  <span className="text-foreground">Stacks</span>
+              <SwitchRow
+                id="stacks"
+                title="Stacks"
+                hint={
                   <span data-testid="stacks-status">
                     {stacks.on && !stacks.ready
                       ? `finding stacks${finding(stacks.progress)}`
                       : "near-identical photos · s"}
                   </span>
-                </Label>
-                <Switch
-                  id="stacks"
-                  data-testid="stacks-toggle"
-                  checked={stacks.on}
-                  onCheckedChange={stacks.onToggle}
-                />
-              </div>
-              <div className="mt-2 flex items-center justify-between gap-2">
-                <Label
-                  htmlFor="auto-advance"
-                  className="flex flex-col items-start gap-0.5 font-normal text-xs"
-                >
-                  <span className="text-foreground">Auto-advance</span>
-                  <span>next after rating · a</span>
-                </Label>
-                <Switch
-                  id="auto-advance"
-                  data-testid="auto-advance-toggle"
-                  checked={autoAdvance}
-                  onCheckedChange={autoAdvancePref.set}
-                />
-              </div>
+                }
+                checked={stacks.on}
+                onCheckedChange={stacks.onToggle}
+              />
+              <SwitchRow
+                id="auto-advance"
+                title="Auto-advance"
+                hint="next after rating · a"
+                checked={autoAdvance}
+                onCheckedChange={autoAdvancePref.set}
+              />
             </div>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -200,6 +187,38 @@ export function LoupeSidebar({
         </p>
       </SidebarFooter>
     </Sidebar>
+  );
+}
+
+function SwitchRow({
+  id,
+  title,
+  hint,
+  checked,
+  onCheckedChange,
+}: {
+  id: string;
+  title: string;
+  hint: ReactNode;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="mt-2 flex items-center justify-between gap-2">
+      <Label
+        htmlFor={id}
+        className="flex flex-col items-start gap-0.5 font-normal text-xs"
+      >
+        <span className="text-foreground">{title}</span>
+        <span>{hint}</span>
+      </Label>
+      <Switch
+        id={id}
+        data-testid={`${id}-toggle`}
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+      />
+    </div>
   );
 }
 

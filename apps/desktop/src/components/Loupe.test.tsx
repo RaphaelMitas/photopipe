@@ -14,6 +14,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { Toaster } from "sonner";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type Edit, type ImageFile, identityEdit } from "@/lib/core";
 import { type CropDraft, draftFromEdit } from "@/lib/crop";
@@ -196,18 +197,23 @@ describe("Loupe auto-advance", () => {
     expect(onNavigate).toHaveBeenCalledTimes(1);
   });
 
-  it("stays on the last photo", () => {
+  it("stays on the last photo and says so", async () => {
     autoAdvancePref.set(true);
+    render(<Toaster />);
     const { onRate, onNavigate } = renderLoupe(2);
     fireEvent.keyDown(window, { key: "5" });
     expect(onRate).toHaveBeenCalledWith("/r/s/DSC00003.ARW", 5);
     expect(onNavigate).not.toHaveBeenCalled();
+    expect(await screen.findByText("Last photo")).toBeInTheDocument();
   });
 
-  it("does nothing extra while off", () => {
+  it("only rates while off, and a turns it on", () => {
     const { onNavigate } = renderLoupe(0);
     fireEvent.keyDown(window, { key: "3" });
     expect(onNavigate).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: "a" });
+    fireEvent.keyDown(window, { key: "3" });
+    expect(onNavigate).toHaveBeenCalledWith("/r/s/DSC00002.ARW");
   });
 
   it("moves a whole stack on to the next stack", () => {
@@ -217,15 +223,19 @@ describe("Loupe auto-advance", () => {
     expect(onNavigate).toHaveBeenCalledWith(three.path);
   });
 
-  it("steps frame by frame inside a stack and stops at its last frame", () => {
+  it("steps frame by frame inside a stack and stops at its last frame", async () => {
     autoAdvancePref.set(true);
     const { onNavigate } = renderLoupe(0, 0, null, twoStacks(true));
     fireEvent.keyDown(window, { key: "3" });
     expect(onNavigate).toHaveBeenCalledWith(two.path);
     cleanup();
+    render(<Toaster />);
     const last = renderLoupe(1, 0, null, twoStacks(true));
     fireEvent.keyDown(window, { key: "3" });
     expect(last.onNavigate).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText("Last frame of this stack"),
+    ).toBeInTheDocument();
   });
 
   it("leaves the stack for the next one after a pick, not after a click on Pick", () => {

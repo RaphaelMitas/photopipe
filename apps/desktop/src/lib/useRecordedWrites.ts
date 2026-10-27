@@ -77,12 +77,20 @@ export function useRecordedWrites(shoot: string | null) {
       before: Map<string, number>,
       label: string,
       detail: string,
+      stackStop?: string,
     ) => {
       if (values.size === 0) return Promise.resolve();
       const written = landed(setRatings(values));
       void written.catch(() => {});
       void ratings.record(
-        { icon: Star, label, detail, paths: [...values.keys()], written },
+        {
+          icon: Star,
+          label,
+          detail,
+          paths: [...values.keys()],
+          stackStop,
+          written,
+        },
         before,
         values,
       );

@@ -8,6 +8,8 @@ type HistoryAction = {
   label: string;
   detail?: string;
   paths: string[];
+  /// The frame a whole-stack step was taken on, from outside the stack.
+  stackStop?: string;
   channel: HistoryChannel;
   stage: (direction: HistoryDirection, path: string) => void;
   // the write that made the entry: undo waits for it, its failure drops the entry
