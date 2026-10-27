@@ -250,21 +250,27 @@ describe("export size", () => {
     expect(decodeOptions(old)).toEqual({
       format: "jpeg",
       quality: 100,
-      longEdge: null,
+      size: "full",
+      customLongEdge: 4096,
       zip: true,
       flatten: true,
     });
   });
 
-  it("keeps a size it offers and drops one it does not", () => {
-    const sized = (longEdge: unknown) =>
-      decodeOptions(JSON.stringify({ format: "jpeg", longEdge })).longEdge;
-    expect(sized(2048)).toBe(2048);
-    expect(sized(1080)).toBe(1080);
-    expect(sized(3000)).toBeNull();
-    expect(sized("2048")).toBeNull();
-    expect(sized(-1)).toBeNull();
-    expect(decodeOptions("{not json").longEdge).toBeNull();
+  it("keeps a size and custom edge it can export, and drops the rest", () => {
+    const stored = (size: unknown, customLongEdge: unknown) =>
+      decodeOptions(JSON.stringify({ format: "jpeg", size, customLongEdge }));
+    expect(stored("2048", 1600)).toMatchObject({
+      size: "2048",
+      customLongEdge: 1600,
+    });
+    expect(stored("custom", 1600).customLongEdge).toBe(1600);
+    expect(stored(2048, 1600).size).toBe("full");
+    expect(stored("4096", 1600).size).toBe("full");
+    for (const junk of [100, 99999, 1600.5, "1600", null]) {
+      expect(stored("custom", junk).customLongEdge).toBe(4096);
+    }
+    expect(decodeOptions("{not json").size).toBe("full");
   });
 
   it("hands the picked size to the export", async () => {
@@ -280,5 +286,24 @@ describe("export size", () => {
     fireEvent.click(screen.getByTestId("run-export"));
     await waitFor(() => expect(onExport).toHaveBeenCalled());
     expect(onExport.mock.calls[0][0].longEdge).toBe(2048);
+  });
+
+  it("exports the custom edge typed a digit at a time", async () => {
+    mockSupport(0, 3);
+    const { onExport } = renderDrawer();
+    fireEvent.click(screen.getByTestId("format-jpeg"));
+    fireEvent.click(screen.getByTestId("size-custom"));
+    const field = screen.getByTestId("custom-long-edge");
+    for (const typed of ["", "1", "16", "160", "1600"]) {
+      fireEvent.change(field, { target: { value: typed } });
+    }
+    expect(field).toHaveValue("1600");
+    fireEvent.change(field, { target: { value: "16000000" } });
+    fireEvent.blur(field);
+    expect(field).toHaveValue("1600");
+    await waitFor(() => expect(screen.getByTestId("run-export")).toBeEnabled());
+    fireEvent.click(screen.getByTestId("run-export"));
+    await waitFor(() => expect(onExport).toHaveBeenCalled());
+    expect(onExport.mock.calls[0][0].longEdge).toBe(1600);
   });
 });

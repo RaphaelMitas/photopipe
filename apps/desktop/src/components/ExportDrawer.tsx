@@ -4,6 +4,7 @@ import {
   AlertTitle,
 } from "@photopipe/ui/components/alert";
 import { Button } from "@photopipe/ui/components/button";
+import { Input } from "@photopipe/ui/components/input";
 import { Progress } from "@photopipe/ui/components/progress";
 import { Segmented } from "@photopipe/ui/components/segmented";
 import { Switch } from "@photopipe/ui/components/switch";
@@ -35,17 +36,24 @@ import {
 import { pickFolder } from "@/lib/roots";
 import { DecoderSegmented } from "./DecoderSegmented";
 
-const LONG_EDGES = [4096, 2048, 1080] as const;
+const SIZES = ["full", "2048", "1080", "custom"] as const;
+type Size = (typeof SIZES)[number];
 
-type LongEdge = (typeof LONG_EDGES)[number] | null;
+const CUSTOM_MIN = 256;
+const CUSTOM_MAX = 16384;
 
-const toLongEdge = (value: unknown): LongEdge =>
-  LONG_EDGES.find((edge) => edge === value) ?? null;
+const toCustomLongEdge = (value: unknown): number | null =>
+  typeof value === "number" &&
+  Number.isInteger(value) &&
+  value >= CUSTOM_MIN &&
+  value <= CUSTOM_MAX
+    ? value
+    : null;
 
 export type ExportOptions = {
   format: ExportFormat;
   quality: 90 | 100;
-  longEdge: LongEdge;
+  longEdge: number | null;
   zip: boolean;
   flatten: boolean;
   decoderVersion: RawDecoderVersion;
@@ -140,8 +148,66 @@ function Row({
   );
 }
 
+/// Saves only values it can export, so typing 1600 is never clamped at its 1.
+function CustomLongEdge({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  const invalid = toCustomLongEdge(Number(draft)) === null;
+  return (
+    <>
+      <div className="flex items-center gap-2 text-xs">
+        {/* the Size label's invisible twin keeps the field under its buttons */}
+        <span aria-hidden className="invisible">
+          Size
+        </span>
+        <div className="relative flex-1">
+          <span className="absolute inset-y-0 left-3 flex items-center text-muted-foreground">
+            Long edge
+          </span>
+          <Input
+            data-testid="custom-long-edge"
+            aria-label="Long edge in pixels"
+            inputMode="numeric"
+            value={draft}
+            aria-invalid={invalid}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              const next = toCustomLongEdge(Number(event.target.value));
+              if (next !== null) onChange(next);
+            }}
+            onBlur={() => setDraft(String(value))}
+            className="h-8 pr-8 pl-20 text-right text-xs tabular-nums md:text-xs"
+          />
+          <span className="absolute inset-y-0 right-3 flex items-center text-muted-foreground">
+            px
+          </span>
+        </div>
+      </div>
+      {invalid && (
+        <p className="text-[10px] text-destructive">
+          Between {CUSTOM_MIN} and {CUSTOM_MAX} px.
+        </p>
+      )}
+    </>
+  );
+}
+
 /// The decoder is seeded from culling on every open, so it never persists.
-type StoredOptions = Omit<ExportOptions, "decoderVersion">;
+/// The custom edge lives apart from the pick, so a typed 2048 stays Custom.
+type StoredOptions = Omit<ExportOptions, "decoderVersion" | "longEdge"> & {
+  size: Size;
+  customLongEdge: number;
+};
+
+function longEdgeOf({ size, customLongEdge }: StoredOptions): number | null {
+  if (size === "full") return null;
+  return size === "custom" ? customLongEdge : Number(size);
+}
 
 export function decodeOptions(stored: string | null): StoredOptions {
   try {
@@ -151,7 +217,13 @@ export function decodeOptions(stored: string | null): StoredOptions {
         format:
           "format" in parsed && parsed.format === "jpeg" ? "jpeg" : "original",
         quality: "quality" in parsed && parsed.quality === 100 ? 100 : 90,
-        longEdge: toLongEdge("longEdge" in parsed ? parsed.longEdge : null),
+        size:
+          SIZES.find((size) => "size" in parsed && size === parsed.size) ??
+          "full",
+        customLongEdge:
+          toCustomLongEdge(
+            "customLongEdge" in parsed ? parsed.customLongEdge : null,
+          ) ?? 4096,
         zip: "zip" in parsed && parsed.zip === true,
         flatten: !("flatten" in parsed && parsed.flatten === false),
       };
@@ -162,7 +234,8 @@ export function decodeOptions(stored: string | null): StoredOptions {
   return {
     format: "jpeg",
     quality: 90,
-    longEdge: null,
+    size: "full",
+    customLongEdge: 4096,
     zip: false,
     flatten: true,
   };
@@ -269,11 +342,20 @@ export function ExportDrawer({
     return pickFolder("Export to folder").catch(() => null);
   };
 
+  const longEdge = longEdgeOf(options);
+
   const runExport = async () => {
     const destination = await pickDestination();
     if (destination)
       onExport(
-        { ...options, zip, decoderVersion: effectiveDecoder },
+        {
+          format: options.format,
+          quality: options.quality,
+          longEdge,
+          zip,
+          flatten: options.flatten,
+          decoderVersion: effectiveDecoder,
+        },
         destination,
       );
   };
@@ -374,28 +456,31 @@ export function ExportDrawer({
             </Row>
             <Row label="Size">
               <Segmented
-                value={String(options.longEdge ?? "full")}
+                value={options.size}
                 options={[
                   ["full", "Full"],
-                  ...LONG_EDGES.map((edge): [string, string] => [
-                    String(edge),
-                    String(edge),
-                  ]),
+                  ["2048", "2048"],
+                  ["1080", "1080"],
+                  ["custom", "Custom"],
                 ]}
                 testid="size"
-                onChange={(size) =>
-                  patch({ longEdge: toLongEdge(Number(size)) })
-                }
+                onChange={(size) => patch({ size })}
               />
             </Row>
+            {options.size === "custom" && (
+              <CustomLongEdge
+                value={options.customLongEdge}
+                onChange={(customLongEdge) => patch({ customLongEdge })}
+              />
+            )}
           </>
         ) : null}
         <p className="text-[10px] text-muted-foreground">
           {options.format === "original"
             ? "Copies the files untouched; edits are ignored."
-            : options.longEdge === null
+            : longEdge === null
               ? "Renders every photo full-resolution with its edits baked in."
-              : `Renders every photo ${options.longEdge} px on the long edge with its edits baked in. Smaller photos keep their size.`}
+              : `Renders every photo ${longEdge} px on the long edge with its edits baked in. Smaller photos keep their size.`}
         </p>
         {showDecoder && (
           <>

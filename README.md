@@ -71,7 +71,7 @@ as the filter — a count per rating, click a bar to narrow.
 Export always acts on the selection (quick actions select the filtered set
 or everything for you) and offers two formats: **Original** copies the bytes
 untouched, **JPEG** renders each photo with its edits baked in, at full
-resolution or 4096, 2048 or 1080 px on the long edge, quality 90 or 100, to
+resolution, 2048, 1080 or any custom long edge, quality 90 or 100, to
 a folder or a zip — flat or mirroring your subfolders, never silently
 overwriting on a name collision. Jobs run in the drawer's activity section,
 where errors stay visible instead of vanishing with a toast.
