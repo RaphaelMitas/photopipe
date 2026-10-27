@@ -16,6 +16,7 @@ import { Switch } from "@photopipe/ui/components/switch";
 import { ChevronLeft } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ImageFile, PassProgress } from "@/lib/core";
+import { exposureParts, takenText } from "@/lib/exif";
 import { fileName } from "@/lib/fileName";
 import { instinctScore } from "@/lib/instinct";
 import { sortImages } from "@/lib/sort";
@@ -102,6 +103,7 @@ export function LoupeSidebar({
             >
               {position}
             </span>
+            <ShotInfo image={image} />
             <Stars
               value={image.rating}
               onRate={(rating) => onRate(image.path, rating)}
@@ -226,6 +228,41 @@ const finding = (progress: PassProgress | null) =>
   progress && progress.total > 0
     ? ` · ${Math.floor((progress.done / progress.total) * 100)}%`
     : "…";
+
+function ShotInfo({ image }: { image: ImageFile }) {
+  const exposure = exposureParts(image.exif);
+  const gear = [image.exif.lens, image.exif.body].filter(Boolean).join(" · ");
+  return (
+    <>
+      {exposure.length > 0 && (
+        <div
+          data-testid="loupe-exposure"
+          className="mt-1 flex justify-between gap-2 font-mono text-xs"
+        >
+          {exposure.map((part) => (
+            <span key={part}>{part}</span>
+          ))}
+        </div>
+      )}
+      {gear && (
+        <span
+          className="truncate font-mono text-[10px] text-muted-foreground"
+          title={gear}
+        >
+          {gear}
+        </span>
+      )}
+      {image.captured !== null && (
+        <span
+          data-testid="loupe-taken"
+          className="font-mono text-[10px] text-muted-foreground"
+        >
+          {takenText(image.captured)}
+        </span>
+      )}
+    </>
+  );
+}
 
 function InstinctPick({ stack }: { stack: Stack }) {
   const [instinct] = sortImages(stack.frames, "score");

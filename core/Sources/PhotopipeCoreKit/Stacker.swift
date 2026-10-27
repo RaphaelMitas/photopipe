@@ -6,11 +6,9 @@ import Vision
 
 public struct Print: Equatable, Sendable {
     public let feature: [Float]
-    public let captured: Double?
 
-    public init(feature: [Float], captured: Double?) {
+    public init(feature: [Float]) {
         self.feature = feature
-        self.captured = captured
     }
 }
 
@@ -27,9 +25,7 @@ extension Analyzer where Value == Print {
             let observation = try? await ImageRequestHandler(image).perform(
                 GenerateImageFeaturePrintRequest())
         else { return nil }
-        let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
-        return Print(
-            feature: floats(observation), captured: props.flatMap(Dimensions.captureTime))
+        return Print(feature: floats(observation))
     }
 
     /// A raw's embedded preview is cheap and big enough; a JPEG's embedded thumbnail is often
@@ -61,9 +57,9 @@ public enum Stacker {
 
     /// Standalone photos and those with no capture time are left out. Matching every frame keeps
     /// slow drift from chaining a whole song; trying every open stack keeps a misfire from cutting a burst.
-    public static func stacks(_ prints: [String: Print]) -> [String: String] {
+    public static func stacks(_ prints: [String: Print], captured: [String: Double]) -> [String: String] {
         let ordered = prints.compactMap { path, print in
-            print.captured.map { (path: path, print: print, captured: $0) }
+            captured[path].map { (path: path, print: print, captured: $0) }
         }
         .sorted { ($0.captured, $0.path) < ($1.captured, $1.path) }
 

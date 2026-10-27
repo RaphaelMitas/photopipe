@@ -11,10 +11,12 @@ public final class SQLiteIndex: @unchecked Sendable {
     }
 
     private var db: OpaquePointer?
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
     private let path: String
 
     // bump when a read learns something a cached row lacks, or stale rows get written back over it
-    private static let schemaVersion = 7
+    private static let schemaVersion = 8
 
     public init(path: String) throws {
         self.path = path
@@ -65,7 +67,9 @@ public final class SQLiteIndex: @unchecked Sendable {
                 width INTEGER NOT NULL DEFAULT 0,
                 height INTEGER NOT NULL DEFAULT 0,
                 enriched INTEGER NOT NULL DEFAULT 0,
-                sidecar_mtime REAL NOT NULL DEFAULT 0
+                sidecar_mtime REAL NOT NULL DEFAULT 0,
+                captured REAL,
+                exif TEXT
             );
             CREATE INDEX IF NOT EXISTS files_shoot ON files(shoot);
             CREATE TABLE IF NOT EXISTS scores (
@@ -78,7 +82,6 @@ public final class SQLiteIndex: @unchecked Sendable {
             CREATE TABLE IF NOT EXISTS prints (
                 path TEXT PRIMARY KEY,
                 feature BLOB,
-                captured REAL,
                 mtime REAL NOT NULL,
                 size INTEGER NOT NULL,
                 version INTEGER NOT NULL
@@ -147,11 +150,10 @@ public final class SQLiteIndex: @unchecked Sendable {
         let sql = """
             INSERT OR REPLACE INTO files
             (path, shoot, rel, ext, size, mtime, rating, edit, width, height, enriched,
-             sidecar_mtime)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+             sidecar_mtime, captured, exif)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """
         try withStatement(sql) { statement in
-            let encoder = JSONEncoder()
             for (shoot, files) in filesByShoot {
                 for file in files {
                     sqlite3_reset(statement)
@@ -162,19 +164,14 @@ public final class SQLiteIndex: @unchecked Sendable {
                     sqlite3_bind_int64(statement, 5, file.size)
                     sqlite3_bind_double(statement, 6, file.mtime)
                     sqlite3_bind_int64(statement, 7, Int64(file.rating))
-                    // The overwhelming majority of photos carry no edit; storing
-                    // NULL for those keeps the index small on a big library.
-                    if file.edit == .identity {
-                        sqlite3_bind_null(statement, 8)
-                    } else {
-                        let json = String(decoding: try encoder.encode(file.edit), as: UTF8.self)
-                        sqlite3_bind_text(statement, 8, json, -1, transientDestructor)
-                    }
+                    try bindJSON(statement, 8, file.edit, unless: .identity)
                     sqlite3_bind_int64(statement, 9, Int64(file.width))
                     sqlite3_bind_int64(statement, 10, Int64(file.height))
                     // a row another build writes carries its own version, so it reads as unparsed
                     sqlite3_bind_int64(statement, 11, file.enriched ? Int64(Self.schemaVersion) : 0)
                     sqlite3_bind_double(statement, 12, file.sidecarMtime)
+                    bindDouble(statement, 13, file.captured)
+                    try bindJSON(statement, 14, file.exif, unless: .empty)
                     guard sqlite3_step(statement) == SQLITE_DONE else {
                         throw IndexError.exec(errorMessage)
                     }
@@ -192,11 +189,10 @@ public final class SQLiteIndex: @unchecked Sendable {
 
         let sql = """
             SELECT path, shoot, rel, ext, size, mtime, rating, edit, width, height, enriched,
-                   sidecar_mtime
+                   sidecar_mtime, captured, exif
             FROM files
             """
         return try withStatement(sql) { statement in
-            let decoder = JSONDecoder()
             var filesByShoot: [String: [ImageFile]] = [:]
             while sqlite3_step(statement) == SQLITE_ROW {
                 guard let pathText = sqlite3_column_text(statement, 0),
@@ -204,9 +200,6 @@ public final class SQLiteIndex: @unchecked Sendable {
                     let relText = sqlite3_column_text(statement, 2),
                     let extText = sqlite3_column_text(statement, 3)
                 else { continue }
-                let edit = sqlite3_column_text(statement, 7).flatMap { json in
-                    try? decoder.decode(Edit.self, from: Data(String(cString: json).utf8))
-                }
                 let record = ImageFile(
                     path: String(cString: pathText),
                     rel: String(cString: relText),
@@ -214,9 +207,11 @@ public final class SQLiteIndex: @unchecked Sendable {
                     size: sqlite3_column_int64(statement, 4),
                     mtime: sqlite3_column_double(statement, 5),
                     rating: Int(sqlite3_column_int64(statement, 6)),
-                    edit: edit ?? .identity,
+                    edit: columnJSON(Edit.self, statement, 7) ?? .identity,
                     width: Int(sqlite3_column_int64(statement, 8)),
                     height: Int(sqlite3_column_int64(statement, 9)),
+                    captured: columnDouble(statement, 12),
+                    exif: columnJSON(Exif.self, statement, 13) ?? .empty,
                     enriched: sqlite3_column_int64(statement, 10) == Self.schemaVersion,
                     sidecarMtime: sqlite3_column_double(statement, 11))
                 filesByShoot[String(cString: shootText), default: []].append(record)
@@ -237,7 +232,7 @@ public final class SQLiteIndex: @unchecked Sendable {
     }
 
     public func loadPrints(under root: String) throws -> [String: Printer.Row] {
-        try loadRows("feature, captured", from: "prints", under: root) { statement in
+        try loadRows("feature", from: "prints", under: root) { statement in
             guard let blob = sqlite3_column_blob(statement, 1) else { return nil }
             let bytes = UnsafeRawBufferPointer(
                 start: blob, count: Int(sqlite3_column_bytes(statement, 1)))
@@ -246,13 +241,13 @@ public final class SQLiteIndex: @unchecked Sendable {
             feature.withUnsafeMutableBytes {
                 $0.copyMemory(from: UnsafeRawBufferPointer(rebasing: bytes[..<$0.count]))
             }
-            return Print(feature: feature, captured: columnDouble(statement, 2))
+            return Print(feature: feature)
         }
     }
 
     public func savePrints(_ rows: [(String, Printer.Row)]) throws {
         try saveRows(
-            "INSERT OR REPLACE INTO prints (path, feature, captured, mtime, size, version) VALUES (?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO prints (path, feature, mtime, size, version) VALUES (?,?,?,?,?)",
             rows
         ) { statement, print in
             if let print {
@@ -263,7 +258,26 @@ public final class SQLiteIndex: @unchecked Sendable {
             } else {
                 sqlite3_bind_null(statement, 2)
             }
-            bindDouble(statement, 3, print?.captured)
+        }
+    }
+
+    /// NULL for the default keeps the index small.
+    private func bindJSON<Value: Encodable & Equatable>(
+        _ statement: OpaquePointer?, _ index: Int32, _ value: Value, unless empty: Value
+    ) throws {
+        guard value != empty else {
+            sqlite3_bind_null(statement, index)
+            return
+        }
+        let json = String(decoding: try encoder.encode(value), as: UTF8.self)
+        sqlite3_bind_text(statement, index, json, -1, transientDestructor)
+    }
+
+    private func columnJSON<Value: Decodable>(
+        _ type: Value.Type, _ statement: OpaquePointer?, _ column: Int32
+    ) -> Value? {
+        sqlite3_column_text(statement, column).flatMap { json in
+            try? decoder.decode(type, from: Data(String(cString: json).utf8))
         }
     }
 
