@@ -107,9 +107,10 @@ instead of being preview-only. Export offers two formats:
   sRGB, quality 90 or 100, the rating carried into the JPEG's XMP. Size is
   Full, 2048, 1080 or a custom 256 to 16384 px on the long edge of the
   cropped, turned frame, for chats and social without a second app. A
-  smaller photo keeps its size rather than being upscaled. The edits run at twice the target, never
-  past the full frame, and a raw decodes at that size too, so any size under
-  half the sensor is also faster. No output sharpening or presets.
+  smaller photo keeps its size rather than being upscaled. The edits run at
+  twice the target, never past the full frame, and a raw decodes at that
+  size too, so any size under half the frame is also faster. No output
+  sharpening or presets.
 
 Destination is a folder or a zip. Flatten drops the subfolder structure;
 name collisions (two `DSC01301.ARW` in different subfolders, or `x.arw` and

@@ -295,7 +295,12 @@ describe("export size", () => {
     fireEvent.click(screen.getByTestId("size-custom"));
     const field = screen.getByTestId("custom-long-edge");
     // backspacing 4096 away passes 409, which must not stick
-    for (const typed of ["409", "40", "", "1", "16", "160", "1600"]) {
+    for (const typed of ["409", "40", ""]) {
+      fireEvent.change(field, { target: { value: typed } });
+    }
+    fireEvent.blur(field);
+    expect(field).toHaveValue("4096");
+    for (const typed of ["1", "16", "160", "1600"]) {
       fireEvent.change(field, { target: { value: typed } });
     }
     fireEvent.blur(field);
