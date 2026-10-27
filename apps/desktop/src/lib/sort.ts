@@ -14,7 +14,7 @@ export const sortPref = pref(
   String,
 );
 
-// captured is the camera's wall clock read as UTC, so mtime moves onto that clock too
+// captured reads the camera clock as UTC; local wall time is mtime's closest match
 const takenAt = (image: ImageFile) =>
   image.captured ??
   image.mtime - new Date(image.mtime * 1000).getTimezoneOffset() * 60;
