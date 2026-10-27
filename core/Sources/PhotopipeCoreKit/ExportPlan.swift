@@ -8,7 +8,8 @@ public enum ExportFormat: String, Sendable {
 extension Exporter.Plan {
     static func export(
         _ images: [ImageFile], to destination: String, zip: Bool, flatten: Bool,
-        format: ExportFormat, quality: Int, decoderVersion: Int?, renderer: Renderer
+        format: ExportFormat, quality: Int, longEdge: Int?, decoderVersion: Int?,
+        renderer: Renderer
     ) throws -> Exporter.Plan {
         let fm = FileManager.default
         let staging =
@@ -39,8 +40,8 @@ extension Exporter.Plan {
             // the writers, four wide, rather than in the request that plans it.
             return Item(label: image.rel) {
                 try write(
-                    enrich(image), format: format, quality: quality, to: target, staging: zip,
-                    decoderVersion: decoderVersion, renderer: renderer)
+                    enrich(image), format: format, quality: quality, longEdge: longEdge,
+                    to: target, staging: zip, decoderVersion: decoderVersion, renderer: renderer)
             }
         }
 
@@ -49,8 +50,8 @@ extension Exporter.Plan {
     }
 
     private static func write(
-        _ image: ImageFile, format: ExportFormat, quality: Int, to planned: URL, staging: Bool,
-        decoderVersion: Int?, renderer: Renderer
+        _ image: ImageFile, format: ExportFormat, quality: Int, longEdge: Int?, to planned: URL,
+        staging: Bool, decoderVersion: Int?, renderer: Renderer
     ) throws {
         let fm = FileManager.default
         try fm.createDirectory(
@@ -73,7 +74,7 @@ extension Exporter.Plan {
                 ? planned : FileActions.uniqueURL(for: planned)
             try renderer.exportJPEG(
                 file: image, edit: image.edit,
-                quality: Double(quality) / 100, to: target,
+                quality: Double(quality) / 100, to: target, longEdge: longEdge,
                 decoderVersion: decoderVersion)
             #if os(macOS)
                 if image.rating > 0 {

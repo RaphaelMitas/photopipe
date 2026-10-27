@@ -42,21 +42,8 @@ enum Presence {
 
     private static let coarseLongEdge: CGFloat = 1024
 
-    private static func longEdge(_ image: CIImage) -> CGFloat {
-        max(image.extent.width, image.extent.height)
-    }
-
-    // clamped and whole pixels, or a part-transparent edge row blurs into a bright band
     private static func coarse(_ image: CIImage) -> CIImage {
-        let extent = image.extent
-        let scale = min(coarseLongEdge / longEdge(image), 1)
-        let size = CGSize(
-            width: max((extent.width * scale).rounded(), 1),
-            height: max((extent.height * scale).rounded(), 1))
-        return image.clampedToExtent()
-            .transformed(by: .init(translationX: -extent.minX, y: -extent.minY))
-            .transformed(by: .init(scaleX: size.width / extent.width, y: size.height / extent.height))
-            .cropped(to: CGRect(origin: .zero, size: size))
+        Renderer.fitted(image, longEdge: coarseLongEdge)
     }
 
     private static func upscaled(_ estimate: CIImage, to image: CIImage) -> CIImage {
@@ -65,7 +52,9 @@ enum Presence {
             by: CGAffineTransform(translationX: extent.minX, y: extent.minY)
                 .scaledBy(
                     x: extent.width / estimate.extent.width,
-                    y: extent.height / estimate.extent.height))
+                    y: extent.height / estimate.extent.height
+                )
+                .translatedBy(x: -estimate.extent.minX, y: -estimate.extent.minY))
     }
 
     private static func clamped(_ image: CIImage, _ filter: String, radius: CGFloat) -> CIImage {
@@ -89,8 +78,8 @@ enum Presence {
         let coarse = coarse(image)
         // dark channel kept per channel, so its per-channel max estimates a tinted airlight
         let veil = blurred(
-            clamped(coarse, "CIMorphologyMinimum", radius: longEdge(coarse) * 0.01),
-            radius: longEdge(coarse) * 0.02)
+            clamped(coarse, "CIMorphologyMinimum", radius: coarse.longEdge * 0.01),
+            radius: coarse.longEdge * 0.02)
         let light = veil.applyingFilter(
             "CIAreaMaximum", parameters: [kCIInputExtentKey: CIVector(cgRect: veil.extent)]
         ).clampedToExtent()
@@ -101,12 +90,12 @@ enum Presence {
 
     static func clarity(_ image: CIImage, amount: Double) -> CIImage {
         let coarse = coarse(image)
-        let base = upscaled(blurred(coarse, radius: longEdge(coarse) * 0.015), to: image)
+        let base = upscaled(blurred(coarse, radius: coarse.longEdge * 0.015), to: image)
         return apply("localContrast", to: image, arguments: [base, Float(amount / 100)])
     }
 
     static func texture(_ image: CIImage, amount: Double) -> CIImage {
-        let base = blurred(image, radius: longEdge(image) * 0.0015)
+        let base = blurred(image, radius: image.longEdge * 0.0015)
         return apply("localContrast", to: image, arguments: [base, Float(amount / 100)])
     }
 }

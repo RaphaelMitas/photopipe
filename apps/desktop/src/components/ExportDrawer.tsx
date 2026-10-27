@@ -4,6 +4,7 @@ import {
   AlertTitle,
 } from "@photopipe/ui/components/alert";
 import { Button } from "@photopipe/ui/components/button";
+import { Input } from "@photopipe/ui/components/input";
 import { Progress } from "@photopipe/ui/components/progress";
 import { Segmented } from "@photopipe/ui/components/segmented";
 import { Switch } from "@photopipe/ui/components/switch";
@@ -36,9 +37,24 @@ import {
 import { pickFolder } from "@/lib/roots";
 import { DecoderSegmented } from "./DecoderSegmented";
 
+const SIZES = ["full", "2048", "1080", "custom"] as const;
+type Size = (typeof SIZES)[number];
+
+const CUSTOM_MIN = 256;
+const CUSTOM_MAX = 16384;
+
+const toCustomLongEdge = (value: unknown): number | null =>
+  typeof value === "number" &&
+  Number.isInteger(value) &&
+  value >= CUSTOM_MIN &&
+  value <= CUSTOM_MAX
+    ? value
+    : null;
+
 export type ExportOptions = {
   format: ExportFormat;
   quality: 90 | 100;
+  longEdge: number | null;
   zip: boolean;
   flatten: boolean;
   decoderVersion: RawDecoderVersion;
@@ -120,10 +136,83 @@ function Section({
   );
 }
 
-/// The decoder is seeded from culling on every open, so it never persists.
-type StoredOptions = Omit<ExportOptions, "decoderVersion">;
+function Row({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="flex-1 text-muted-foreground text-xs">{label}</span>
+      {children}
+    </div>
+  );
+}
 
-function decodeOptions(stored: string | null): StoredOptions {
+/// Commits on blur, so the 409 on the way to retyping 4096 is never saved.
+function CustomLongEdge({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  const commit = () => {
+    const typed = Number(draft);
+    const next =
+      draft.trim() === "" || !Number.isFinite(typed)
+        ? value
+        : Math.min(Math.max(Math.round(typed), CUSTOM_MIN), CUSTOM_MAX);
+    setDraft(String(next));
+    if (next !== value) onChange(next);
+  };
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      {/* the Size label's invisible twin keeps the field under its buttons */}
+      <span aria-hidden className="invisible">
+        Size
+      </span>
+      <div className="relative flex-1">
+        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted-foreground">
+          Long edge
+        </span>
+        <Input
+          data-testid="custom-long-edge"
+          aria-label="Long edge in pixels"
+          title={`${CUSTOM_MIN} to ${CUSTOM_MAX} px`}
+          inputMode="numeric"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") commit();
+          }}
+          className="h-8 pr-8 pl-20 text-right text-xs tabular-nums md:text-xs"
+        />
+        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground">
+          px
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/// The decoder is seeded from culling on every open, so it never persists.
+/// The custom edge lives apart from the pick, so a typed 2048 stays Custom.
+type StoredOptions = Omit<ExportOptions, "decoderVersion" | "longEdge"> & {
+  size: Size;
+  customLongEdge: number;
+};
+
+function longEdgeOf({ size, customLongEdge }: StoredOptions): number | null {
+  if (size === "full") return null;
+  return size === "custom" ? customLongEdge : Number(size);
+}
+
+export function decodeOptions(stored: string | null): StoredOptions {
   try {
     const parsed: unknown = stored ? JSON.parse(stored) : null;
     if (typeof parsed === "object" && parsed !== null) {
@@ -131,6 +220,13 @@ function decodeOptions(stored: string | null): StoredOptions {
         format:
           "format" in parsed && parsed.format === "jpeg" ? "jpeg" : "original",
         quality: "quality" in parsed && parsed.quality === 100 ? 100 : 90,
+        size:
+          SIZES.find((size) => "size" in parsed && size === parsed.size) ??
+          "full",
+        customLongEdge:
+          toCustomLongEdge(
+            "customLongEdge" in parsed ? parsed.customLongEdge : null,
+          ) ?? 4096,
         zip: "zip" in parsed && parsed.zip === true,
         flatten: !("flatten" in parsed && parsed.flatten === false),
       };
@@ -138,7 +234,14 @@ function decodeOptions(stored: string | null): StoredOptions {
   } catch {
     // Corrupt preferences never block an export.
   }
-  return { format: "jpeg", quality: 90, zip: false, flatten: true };
+  return {
+    format: "jpeg",
+    quality: 90,
+    size: "full",
+    customLongEdge: 4096,
+    zip: false,
+    flatten: true,
+  };
 }
 
 const optionsPref = pref("photopipe.export", decodeOptions, JSON.stringify);
@@ -242,11 +345,20 @@ export function ExportDrawer({
     return pickFolder("Export to folder").catch(() => null);
   };
 
+  const longEdge = longEdgeOf(options);
+
   const runExport = async () => {
     const destination = await pickDestination();
     if (destination)
       onExport(
-        { ...options, zip, decoderVersion: effectiveDecoder },
+        {
+          format: options.format,
+          quality: options.quality,
+          longEdge,
+          zip,
+          flatten: options.flatten,
+          decoderVersion: effectiveDecoder,
+        },
         destination,
       );
   };
@@ -331,41 +443,58 @@ export function ExportDrawer({
           onChange={(format) => patch({ format })}
         />
         {options.format === "jpeg" ? (
-          <div className="flex items-center gap-2">
-            <span className="flex-1 text-muted-foreground text-xs">
-              Quality
-            </span>
-            <Segmented
-              value={options.quality === 100 ? "100" : "90"}
-              options={[
-                ["90", "90"],
-                ["100", "100"],
-              ]}
-              testid="quality"
-              onChange={(quality) =>
-                patch({ quality: quality === "100" ? 100 : 90 })
-              }
-            />
-          </div>
+          <>
+            <Row label="Quality">
+              <Segmented
+                value={options.quality === 100 ? "100" : "90"}
+                options={[
+                  ["90", "90"],
+                  ["100", "100"],
+                ]}
+                testid="quality"
+                onChange={(quality) =>
+                  patch({ quality: quality === "100" ? 100 : 90 })
+                }
+              />
+            </Row>
+            <Row label="Size">
+              <Segmented
+                value={options.size}
+                options={[
+                  ["full", "Full"],
+                  ["2048", "2048"],
+                  ["1080", "1080"],
+                  ["custom", "Custom"],
+                ]}
+                testid="size"
+                onChange={(size) => patch({ size })}
+              />
+            </Row>
+            {options.size === "custom" && (
+              <CustomLongEdge
+                value={options.customLongEdge}
+                onChange={(customLongEdge) => patch({ customLongEdge })}
+              />
+            )}
+          </>
         ) : null}
         <p className="text-[10px] text-muted-foreground">
-          {options.format === "jpeg"
-            ? "Renders every photo full-resolution with its edits baked in."
-            : "Copies the files untouched; edits are ignored."}
+          {options.format === "original"
+            ? "Copies the files untouched; edits are ignored."
+            : longEdge === null
+              ? "Renders every photo full-resolution with its edits baked in."
+              : `Renders every photo ${longEdge} px on the long edge with its edits baked in. Smaller photos keep their size.`}
         </p>
         {showDecoder && (
           <>
-            <div className="flex items-center gap-2">
-              <span className="flex-1 text-muted-foreground text-xs">
-                Decoder
-              </span>
+            <Row label="Decoder">
               <DecoderSegmented
                 value={effectiveDecoder}
                 testid="export-decoder"
                 raw9Disabled={noRaw9}
                 onChange={setDecoderVersion}
               />
-            </div>
+            </Row>
             <p
               data-testid="export-decoder-help"
               className="text-[10px] text-muted-foreground"
@@ -388,15 +517,14 @@ export function ExportDrawer({
             onChange={(dest) => patch({ zip: dest === "zip" })}
           />
         )}
-        <div className="flex items-center justify-between gap-2 text-muted-foreground text-xs">
-          <span>Flatten subfolders</span>
+        <Row label="Flatten subfolders">
           <Switch
             data-testid="flatten"
             aria-label="Flatten subfolders"
             checked={options.flatten}
             onCheckedChange={(flatten) => patch({ flatten })}
           />
-        </div>
+        </Row>
         {banner && (
           <Alert data-testid="decoder-banner" className="gap-1 px-3 py-2.5">
             <TriangleAlert className="text-amber-400" />

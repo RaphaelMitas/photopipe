@@ -18,7 +18,7 @@ public final class Renderer: @unchecked Sendable {
     private let curveColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
     // bump when the pixels change for an unchanged key
-    private static let pipelineVersion = 2
+    private static let pipelineVersion = 3
 
     /// None of these are zero, so a slider left alone has to reach for them.
     public struct RawDefaults: Sendable {
@@ -74,15 +74,11 @@ public final class Renderer: @unchecked Sendable {
             for: file, edit: edit, maxPixel: maxPixel, viewport: viewport,
             decoderVersion: decoderVersion)
         return try cache.cachedFile(at: dest) { temp in
-            var image = try sourceImage(
-                for: file, edit: edit, maxPixel: maxPixel, viewport: viewport,
-                decoderVersion: decoderVersion)
-            // raws already decoded close to this; other formats did not
-            let longEdge = max(image.extent.width, image.extent.height)
-            let scale = CGFloat(maxPixel) / longEdge
-            if scale < 1 {
-                image = image.transformed(by: .init(scaleX: scale, y: scale))
-            }
+            let image = Self.fitted(
+                try sourceImage(
+                    for: file, edit: edit, maxPixel: maxPixel, viewport: viewport,
+                    decoderVersion: decoderVersion),
+                longEdge: CGFloat(maxPixel))
 
             guard
                 let jpeg = context.jpegRepresentation(
@@ -97,11 +93,16 @@ public final class Renderer: @unchecked Sendable {
 
     public func exportJPEG(
         file: ImageFile, edit: Edit, quality: Double, to destination: URL,
-        decoderVersion: Int? = nil
+        longEdge: Int? = nil, decoderVersion: Int? = nil
     ) throws {
-        let image = try sourceImage(
-            for: file, edit: edit, maxPixel: nil, decoderVersion: decoderVersion)
-        // A full-resolution render holds on to surfaces the context will happily
+        // past any sensor, and doubling it must not overflow
+        if let longEdge, !(1...100_000).contains(longEdge) { throw RenderError.encodeFailed }
+        // decoding straight at the target comes out visibly soft
+        var image = try sourceImage(
+            for: file, edit: edit, maxPixel: longEdge.map { $0 * 2 },
+            decoderVersion: decoderVersion, cacheFilter: false)
+        if let longEdge { image = Self.fitted(image, longEdge: CGFloat(longEdge)) }
+        // An export render holds on to surfaces the context will happily
         // keep for the next one. Nothing else reuses them, and about a hundred
         // in they stop being handed out at all: every render after that comes
         // back nil while memory still looks fine.
@@ -136,18 +137,18 @@ public final class Renderer: @unchecked Sendable {
         return try makeFilter(for: file, decoderVersion: decoderVersion).defaults
     }
 
-    /// A nil maxPixel renders the full sensor, for export.
+    /// A nil maxPixel renders the full sensor.
     private func sourceImage(
         for file: ImageFile, edit: Edit, maxPixel: Int?, viewport: CropRect? = nil,
-        decoderVersion: Int? = nil
+        decoderVersion: Int? = nil, cacheFilter: Bool = true
     ) throws -> CIImage {
         var image: CIImage
         if file.isRaw {
             let cached = try rawFilter(
-                for: file, maxPixel: maxPixel, decoderVersion: decoderVersion)
+                for: file, maxPixel: cacheFilter ? maxPixel : nil, decoderVersion: decoderVersion)
             let filter = cached.filter
             let output = lock.withLock {
-                let scale = Self.rawScaleFactor(
+                let scale = Self.sourceScale(
                     for: edit, orientedSize: cached.orientedSizeBeforeScaling, maxPixel: maxPixel,
                     viewport: viewport)
                 // Unconditionally, even when unchanged: skipping the assignment
@@ -178,7 +179,9 @@ public final class Renderer: @unchecked Sendable {
             let base = CIImage(
                 cgImageSource: source, index: 0, options: [.applyOrientationProperty: true])
             guard !base.extent.isEmpty else { throw RenderError.unreadable(file.path) }
-            image = base
+            let scale = Self.sourceScale(
+                for: edit, orientedSize: base.extent.size, maxPixel: maxPixel, viewport: viewport)
+            image = Self.fitted(base, longEdge: base.longEdge * CGFloat(scale))
             if edit.exposure != 0 {
                 image = image.applyingFilter(
                     "CIExposureAdjust", parameters: ["inputEV": edit.exposure])
@@ -285,9 +288,29 @@ public final class Renderer: @unchecked Sendable {
             .transformed(by: .init(translationX: -rect.minX, y: -rect.minY))
     }
 
-    /// A preview that decodes the full sensor first costs RAW 9 three times
-    /// as much.
-    static func rawScaleFactor(
+    /// Clamped and whole pixels, or a part-transparent edge row blurs into a bright band.
+    static func fitted(_ image: CIImage, longEdge: CGFloat) -> CIImage {
+        let extent = image.extent
+        let scale = longEdge / image.longEdge
+        guard scale < 1 else { return image }
+        let size = CGSize(
+            width: max((extent.width * scale).rounded(), 1),
+            height: max((extent.height * scale).rounded(), 1))
+        let scaleY = size.height / extent.height
+        return image.clampedToExtent()
+            .transformed(by: .init(translationX: -extent.minX, y: -extent.minY))
+            .applyingFilter(
+                "CILanczosScaleTransform",
+                parameters: [
+                    kCIInputScaleKey: scaleY,
+                    kCIInputAspectRatioKey: size.width / extent.width / scaleY,
+                ]
+            )
+            .cropped(to: CGRect(origin: .zero, size: size))
+    }
+
+    /// Decoding the full sensor and shrinking after costs RAW 9 three times as much.
+    static func sourceScale(
         for edit: Edit, orientedSize: CGSize, maxPixel: Int?, viewport: CropRect? = nil
     ) -> Float {
         guard let maxPixel, maxPixel > 0, let crop = saneCrop(edit) else { return 1 }
@@ -307,7 +330,7 @@ public final class Renderer: @unchecked Sendable {
     private func rawFilter(
         for file: ImageFile, maxPixel: Int?, decoderVersion: Int?
     ) throws -> CachedFilter {
-        // a full-sensor export is decoded once; caching it would evict the loupe's warm filters
+        // an export is decoded once; caching it would evict the loupe's warm filters
         guard let maxPixel else { return try makeFilter(for: file, decoderVersion: decoderVersion) }
         let key = "\(file.path)|\(maxPixel)\(Self.decoderTag(decoderVersion))"
         let warm = lock.withLock { () -> CachedFilter? in
@@ -454,4 +477,8 @@ public final class Renderer: @unchecked Sendable {
         }
         return entry
     }
+}
+
+extension CIImage {
+    var longEdge: CGFloat { max(extent.width, extent.height) }
 }

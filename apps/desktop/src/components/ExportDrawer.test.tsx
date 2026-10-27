@@ -7,7 +7,11 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ExportDrawer, type ExportOptions } from "./ExportDrawer";
+import {
+  decodeOptions,
+  ExportDrawer,
+  type ExportOptions,
+} from "./ExportDrawer";
 
 afterEach(cleanup);
 afterEach(() => localStorage.clear());
@@ -30,7 +34,8 @@ function nonCoreAnswer(cmd: string) {
 const RAWS = ["/r/s/A.ARW", "/r/s/B.ARW", "/r/s/C.ARW"];
 
 function renderDrawer(rawPaths: string[] = RAWS) {
-  const onExport = vi.fn();
+  const onExport =
+    vi.fn<(options: ExportOptions, destination: string) => void>();
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -130,7 +135,7 @@ describe("export decoder row", () => {
     expect(screen.queryByTestId("decoder-banner")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("run-export"));
     await waitFor(() => expect(onExport).toHaveBeenCalled());
-    expect((onExport.mock.calls[0][0] as ExportOptions).decoderVersion).toBe(9);
+    expect(onExport.mock.calls[0][0].decoderVersion).toBe(9);
   });
 
   it("dismissing holds for that choice and the export keeps it", async () => {
@@ -145,7 +150,7 @@ describe("export decoder row", () => {
     expect(screen.queryByTestId("decoder-banner")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("run-export"));
     await waitFor(() => expect(onExport).toHaveBeenCalled());
-    const options = onExport.mock.calls[0][0] as ExportOptions;
+    const options = onExport.mock.calls[0][0];
     expect(options.decoderVersion).toBe(8);
   });
 
@@ -174,7 +179,7 @@ describe("export decoder row", () => {
     expect(screen.queryByTestId("decoder-banner")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("run-export"));
     await waitFor(() => expect(onExport).toHaveBeenCalled());
-    expect((onExport.mock.calls[0][0] as ExportOptions).decoderVersion).toBe(8);
+    expect(onExport.mock.calls[0][0].decoderVersion).toBe(8);
   });
 
   it("keeps RAW 9 disabled while a new selection is being probed", async () => {
@@ -236,5 +241,83 @@ describe("export decoder row", () => {
     renderDrawer([]);
     expect(screen.queryByTestId("export-decoder-8")).not.toBeInTheDocument();
     expect(coreCalls()).toBe(calls);
+  });
+});
+
+describe("export size", () => {
+  it("loads options saved before the size existed at full size", () => {
+    const old = JSON.stringify({ format: "jpeg", quality: 100, zip: true });
+    expect(decodeOptions(old)).toEqual({
+      format: "jpeg",
+      quality: 100,
+      size: "full",
+      customLongEdge: 4096,
+      zip: true,
+      flatten: true,
+    });
+  });
+
+  it("keeps a size and custom edge it can export, and drops the rest", () => {
+    const stored = (size: unknown, customLongEdge: unknown) =>
+      decodeOptions(JSON.stringify({ format: "jpeg", size, customLongEdge }));
+    expect(stored("2048", 1600)).toMatchObject({
+      size: "2048",
+      customLongEdge: 1600,
+    });
+    expect(stored("custom", 1600).size).toBe("custom");
+    expect(stored("custom", 256).customLongEdge).toBe(256);
+    expect(stored("custom", 16384).customLongEdge).toBe(16384);
+    expect(stored(2048, 1600).size).toBe("full");
+    expect(stored("4096", 1600).size).toBe("full");
+    for (const junk of [100, 99999, 1600.5, "1600", null]) {
+      expect(stored("custom", junk).customLongEdge).toBe(4096);
+    }
+    expect(decodeOptions("{not json").size).toBe("full");
+  });
+
+  it("hands the picked size to the export", async () => {
+    mockSupport(0, 3);
+    const { onExport } = renderDrawer();
+    fireEvent.click(screen.getByTestId("format-jpeg"));
+    fireEvent.click(screen.getByTestId("size-2048"));
+    expect(screen.getByTestId("size-2048")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await waitFor(() => expect(screen.getByTestId("run-export")).toBeEnabled());
+    fireEvent.click(screen.getByTestId("run-export"));
+    await waitFor(() => expect(onExport).toHaveBeenCalled());
+    expect(onExport.mock.calls[0][0].longEdge).toBe(2048);
+  });
+
+  it("saves the custom edge once it is left, clamped to what it can export", async () => {
+    mockSupport(0, 3);
+    const { onExport } = renderDrawer();
+    fireEvent.click(screen.getByTestId("format-jpeg"));
+    fireEvent.click(screen.getByTestId("size-custom"));
+    const field = screen.getByTestId("custom-long-edge");
+    // backspacing 4096 away passes 409, which must not stick
+    for (const typed of ["409", "40", ""]) {
+      fireEvent.change(field, { target: { value: typed } });
+    }
+    fireEvent.blur(field);
+    expect(field).toHaveValue("4096");
+    for (const typed of ["1", "16", "160", "1600"]) {
+      fireEvent.change(field, { target: { value: typed } });
+    }
+    fireEvent.blur(field);
+    expect(field).toHaveValue("1600");
+    fireEvent.change(field, { target: { value: "20000" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(field).toHaveValue("16384");
+    for (const junk of ["", "abc"]) {
+      fireEvent.change(field, { target: { value: junk } });
+      fireEvent.blur(field);
+      expect(field).toHaveValue("16384");
+    }
+    await waitFor(() => expect(screen.getByTestId("run-export")).toBeEnabled());
+    fireEvent.click(screen.getByTestId("run-export"));
+    await waitFor(() => expect(onExport).toHaveBeenCalled());
+    expect(onExport.mock.calls[0][0].longEdge).toBe(16384);
   });
 });
