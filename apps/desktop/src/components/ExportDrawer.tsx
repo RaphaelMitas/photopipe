@@ -125,6 +125,21 @@ function Section({
   );
 }
 
+function Row({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="flex-1 text-muted-foreground text-xs">{label}</span>
+      {children}
+    </div>
+  );
+}
+
 /// The decoder is seeded from culling on every open, so it never persists.
 type StoredOptions = Omit<ExportOptions, "decoderVersion">;
 
@@ -344,10 +359,7 @@ export function ExportDrawer({
         />
         {options.format === "jpeg" ? (
           <>
-            <div className="flex items-center gap-2">
-              <span className="flex-1 text-muted-foreground text-xs">
-                Quality
-              </span>
+            <Row label="Quality">
               <Segmented
                 value={options.quality === 100 ? "100" : "90"}
                 options={[
@@ -359,9 +371,8 @@ export function ExportDrawer({
                   patch({ quality: quality === "100" ? 100 : 90 })
                 }
               />
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="flex-1 text-muted-foreground text-xs">Size</span>
+            </Row>
+            <Row label="Size">
               <Segmented
                 value={String(options.longEdge ?? "full")}
                 options={[
@@ -376,7 +387,7 @@ export function ExportDrawer({
                   patch({ longEdge: toLongEdge(Number(size)) })
                 }
               />
-            </div>
+            </Row>
           </>
         ) : null}
         <p className="text-[10px] text-muted-foreground">
@@ -388,17 +399,14 @@ export function ExportDrawer({
         </p>
         {showDecoder && (
           <>
-            <div className="flex items-center gap-2">
-              <span className="flex-1 text-muted-foreground text-xs">
-                Decoder
-              </span>
+            <Row label="Decoder">
               <DecoderSegmented
                 value={effectiveDecoder}
                 testid="export-decoder"
                 raw9Disabled={noRaw9}
                 onChange={setDecoderVersion}
               />
-            </div>
+            </Row>
             <p
               data-testid="export-decoder-help"
               className="text-[10px] text-muted-foreground"

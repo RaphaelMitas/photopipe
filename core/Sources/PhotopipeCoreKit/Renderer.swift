@@ -95,10 +95,12 @@ public final class Renderer: @unchecked Sendable {
         file: ImageFile, edit: Edit, quality: Double, to destination: URL,
         longEdge: Int? = nil, decoderVersion: Int? = nil
     ) throws {
-        if let longEdge, longEdge <= 0 { throw RenderError.encodeFailed }
-        // the crop rounds inward at the decoded size, so decode a little over the edge
+        // past any sensor, and doubling it must not overflow
+        if let longEdge, !(1...100_000).contains(longEdge) { throw RenderError.encodeFailed }
+        // a raw decoded straight at the target comes out visibly soft; twice
+        // over and down is close to a full decode at half its cost
         var image = try sourceImage(
-            for: file, edit: edit, maxPixel: longEdge.map { $0 + 2 },
+            for: file, edit: edit, maxPixel: longEdge.map { $0 * 2 },
             decoderVersion: decoderVersion, forExport: true)
         if let longEdge { image = Self.fitted(image, longEdge: CGFloat(longEdge)) }
         // A full-resolution render holds on to surfaces the context will happily
@@ -143,15 +145,8 @@ public final class Renderer: @unchecked Sendable {
     ) throws -> CIImage {
         var image: CIImage
         if file.isRaw {
-            let cached: CachedFilter
-            if let maxPixel, !forExport {
-                cached = try rawFilter(
-                    for: file, maxPixel: maxPixel, decoderVersion: decoderVersion)
-            } else {
-                // an export decodes each photo once; caching it would evict the
-                // loupe's warm filters
-                cached = try makeFilter(for: file, decoderVersion: decoderVersion)
-            }
+            let cached = try rawFilter(
+                for: file, maxPixel: forExport ? nil : maxPixel, decoderVersion: decoderVersion)
             let filter = cached.filter
             let output = lock.withLock {
                 let scale = Self.sourceScale(
@@ -296,8 +291,7 @@ public final class Renderer: @unchecked Sendable {
             .transformed(by: .init(translationX: -rect.minX, y: -rect.minY))
     }
 
-    /// Shrinks to fit in whole pixels: a fractional extent leaves a
-    /// part-transparent edge row, which blurs into a bright band.
+    /// Only shrinks, and to whole pixels, or a part-transparent edge row bleeds into a blur.
     static func fitted(_ image: CIImage, longEdge: CGFloat) -> CIImage {
         let extent = image.extent
         let scale = longEdge / max(extent.width, extent.height)
@@ -318,8 +312,7 @@ public final class Renderer: @unchecked Sendable {
             .cropped(to: CGRect(origin: .zero, size: size))
     }
 
-    /// A preview that decodes the full sensor first costs RAW 9 three times
-    /// as much.
+    /// Decoding the full sensor and shrinking after costs RAW 9 three times as much.
     static func sourceScale(
         for edit: Edit, orientedSize: CGSize, maxPixel: Int?, viewport: CropRect? = nil
     ) -> Float {
@@ -338,8 +331,10 @@ public final class Renderer: @unchecked Sendable {
     }
 
     private func rawFilter(
-        for file: ImageFile, maxPixel: Int, decoderVersion: Int?
+        for file: ImageFile, maxPixel: Int?, decoderVersion: Int?
     ) throws -> CachedFilter {
+        // an export is decoded once; caching it would evict the loupe's warm filters
+        guard let maxPixel else { return try makeFilter(for: file, decoderVersion: decoderVersion) }
         let key = "\(file.path)|\(maxPixel)\(Self.decoderTag(decoderVersion))"
         let warm = lock.withLock { () -> CachedFilter? in
             guard let cached = filtersByPathAndSize[key], cached.mtime == file.mtime else {

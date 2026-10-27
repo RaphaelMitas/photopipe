@@ -54,6 +54,17 @@ private func tempCacheDir() -> URL {
         .appendingPathComponent("photopipe-render-tests-\(UUID().uuidString)")
 }
 
+private func withExportScratch(_ body: (Renderer, URL) throws -> Void) throws {
+    let cacheDir = tempCacheDir()
+    let out = tempCacheDir()
+    defer {
+        try? FileManager.default.removeItem(at: cacheDir)
+        try? FileManager.default.removeItem(at: out)
+    }
+    try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+    try body(Renderer(cacheDir: cacheDir), out)
+}
+
 @Test func renderAppliesExposureInRawPipeline() throws {
     guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
@@ -877,133 +888,99 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
 
 @Test func exportJPEGBakesTheExposureIn() throws {
     guard let fixture = rawFixture("sony-a7iv.arw") else { return }
-    let cacheDir = tempCacheDir()
-    let out = tempCacheDir()
-    defer {
-        try? FileManager.default.removeItem(at: cacheDir)
-        try? FileManager.default.removeItem(at: out)
+    try withExportScratch { renderer, out in
+        let file = try imageFile(for: fixture)
+
+        let neutral = out.appendingPathComponent("neutral.jpg")
+        let bright = out.appendingPathComponent("bright.jpg")
+        try renderer.exportJPEG(file: file, edit: .identity, quality: 0.9, to: neutral)
+        try renderer.exportJPEG(file: file, edit: Edit(exposure: 2), quality: 0.9, to: bright)
+
+        #expect(
+            try meanLuminance(of: bright) > meanLuminance(of: neutral),
+            "the persisted exposure must be baked into the delivery")
+        // Full resolution, not the loupe size.
+        let width = try pixelSize(of: neutral).width
+        #expect(width > 2000, "export must be full resolution, got width \(width)")
     }
-    try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
-    let renderer = Renderer(cacheDir: cacheDir)
-    let file = try imageFile(for: fixture)
-
-    let neutral = out.appendingPathComponent("neutral.jpg")
-    let bright = out.appendingPathComponent("bright.jpg")
-    try renderer.exportJPEG(file: file, edit: .identity, quality: 0.9, to: neutral)
-    try renderer.exportJPEG(file: file, edit: Edit(exposure: 2), quality: 0.9, to: bright)
-
-    #expect(
-        try meanLuminance(of: bright) > meanLuminance(of: neutral),
-        "the persisted exposure must be baked into the delivery")
-    // Full resolution, not the loupe size.
-    let width = try pixelSize(of: neutral).width
-    #expect(width > 2000, "export must be full resolution, got width \(width)")
 }
 
-/// The crop rounds inward at the decoded size, which left a cropped export a
-/// pixel short of the long edge it was asked for.
+/// A cropped export once landed a pixel short of the long edge.
 @Test func aResizedExportLandsOnTheLongEdgeOfTheTurnedCrop() throws {
     guard let fixture = rawFixture("sony-a7iv.arw") else { return }
-    let cacheDir = tempCacheDir()
-    let out = tempCacheDir()
-    defer {
-        try? FileManager.default.removeItem(at: cacheDir)
-        try? FileManager.default.removeItem(at: out)
-    }
-    try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
-    let renderer = Renderer(cacheDir: cacheDir)
-    let file = try imageFile(for: fixture)
+    try withExportScratch { renderer, out in
+        let file = try imageFile(for: fixture)
 
-    let crop = CropRect(left: 0.113, top: 0.071, right: 0.877, bottom: 0.613)
-    let cases: [(edit: Edit, portrait: Bool)] = [
-        (Edit(crop: crop), false),
-        // the turn makes the sensor's short side the crop's long one
-        (Edit(crop: crop, rotation: 90), true),
-        (Edit(crop: crop, cropAngle: 4.7, rotation: 270), true),
-    ]
-    for (index, (edit, portrait)) in cases.enumerated() {
-        let url = out.appendingPathComponent("\(index).jpg")
-        try renderer.exportJPEG(
-            file: file, edit: edit, quality: 0.9, to: url, longEdge: 1080)
-        let size = try pixelSize(of: url)
-        #expect(max(size.width, size.height) == 1080, "\(edit): \(size)")
-        #expect((size.height > size.width) == portrait, "\(edit): \(size)")
+        let crop = CropRect(left: 0.113, top: 0.071, right: 0.877, bottom: 0.613)
+        let cases: [(edit: Edit, portrait: Bool)] = [
+            (Edit(crop: crop), false),
+            (Edit(crop: crop, rotation: 90), true),
+            (Edit(crop: crop, cropAngle: 4.7, rotation: 270), true),
+        ]
+        for (index, (edit, portrait)) in cases.enumerated() {
+            let url = out.appendingPathComponent("\(index).jpg")
+            try renderer.exportJPEG(
+                file: file, edit: edit, quality: 0.9, to: url, longEdge: 1080)
+            let size = try pixelSize(of: url)
+            #expect(max(size.width, size.height) == 1080, "\(edit): \(size)")
+            #expect((size.height > size.width) == portrait, "\(edit): \(size)")
+        }
     }
 }
 
 @Test func aResizedExportNeverUpscales() throws {
     guard let fixture = rawFixture("sony-a7iv.arw") else { return }
-    let cacheDir = tempCacheDir()
-    let out = tempCacheDir()
-    defer {
-        try? FileManager.default.removeItem(at: cacheDir)
-        try? FileManager.default.removeItem(at: out)
-    }
-    try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
-    let renderer = Renderer(cacheDir: cacheDir)
-    let file = try imageFile(for: fixture)
+    try withExportScratch { renderer, out in
+        let file = try imageFile(for: fixture)
 
-    // about 1400 px across at full resolution, short of the 2048 asked for
-    let small = Edit(crop: CropRect(left: 0.4, top: 0.4, right: 0.6, bottom: 0.6))
-    let full = out.appendingPathComponent("full.jpg")
-    let resized = out.appendingPathComponent("resized.jpg")
-    try renderer.exportJPEG(file: file, edit: small, quality: 0.9, to: full)
-    try renderer.exportJPEG(file: file, edit: small, quality: 0.9, to: resized, longEdge: 2048)
-    #expect(try pixelSize(of: resized) == pixelSize(of: full))
+        // about 1400 px across at full resolution, short of the 2048 asked for
+        let small = Edit(crop: CropRect(left: 0.4, top: 0.4, right: 0.6, bottom: 0.6))
+        let full = out.appendingPathComponent("full.jpg")
+        let resized = out.appendingPathComponent("resized.jpg")
+        try renderer.exportJPEG(file: file, edit: small, quality: 0.9, to: full)
+        try renderer.exportJPEG(file: file, edit: small, quality: 0.9, to: resized, longEdge: 2048)
+        #expect(try pixelSize(of: resized) == pixelSize(of: full))
+    }
 }
 
-@Test func aResizedNonRawExportScalesAtTheSourceToo() throws {
-    let cacheDir = tempCacheDir()
-    let out = tempCacheDir()
-    defer {
-        try? FileManager.default.removeItem(at: cacheDir)
-        try? FileManager.default.removeItem(at: out)
+@Test func aResizedNonRawExportLandsOnTheTurnedCropToo() throws {
+    try withExportScratch { renderer, out in
+        let jpegURL = try writeHalvesJPEG(width: 3001, height: 1999)
+        defer { try? FileManager.default.removeItem(at: jpegURL) }
+        let url = out.appendingPathComponent("turned.jpg")
+        try renderer.exportJPEG(
+            file: try imageFile(for: jpegURL),
+            edit: Edit(crop: CropRect(left: 0.05, top: 0.1, right: 0.93, bottom: 0.8), rotation: 90),
+            quality: 0.9, to: url, longEdge: 1080)
+        let size = try pixelSize(of: url)
+        #expect(size.height == 1080, "the turned crop is portrait: \(size)")
+
+        let tiny = try writeHalvesJPEG(width: 64, height: 48)
+        defer { try? FileManager.default.removeItem(at: tiny) }
+        let kept = out.appendingPathComponent("tiny.jpg")
+        try renderer.exportJPEG(
+            file: try imageFile(for: tiny), edit: .identity, quality: 0.9, to: kept, longEdge: 1080)
+        #expect(try pixelSize(of: kept) == (64, 48))
     }
-    try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
-    let jpegURL = try writeHalvesJPEG(width: 3001, height: 1999)
-    defer { try? FileManager.default.removeItem(at: jpegURL) }
-    let renderer = Renderer(cacheDir: cacheDir)
-    let file = try imageFile(for: jpegURL)
-
-    let url = out.appendingPathComponent("turned.jpg")
-    try renderer.exportJPEG(
-        file: file,
-        edit: Edit(crop: CropRect(left: 0.05, top: 0.1, right: 0.93, bottom: 0.8), rotation: 90),
-        quality: 0.9, to: url, longEdge: 1080)
-    let size = try pixelSize(of: url)
-    #expect(size.height == 1080, "the turned crop is portrait: \(size)")
-
-    let tiny = try writeHalvesJPEG(width: 64, height: 48)
-    defer { try? FileManager.default.removeItem(at: tiny) }
-    let kept = out.appendingPathComponent("tiny.jpg")
-    try renderer.exportJPEG(
-        file: try imageFile(for: tiny), edit: .identity, quality: 0.9, to: kept, longEdge: 1080)
-    #expect(try pixelSize(of: kept) == (64, 48))
 }
 
 @Test func exportLeavesTheLoupeFilterCacheWarm() throws {
     guard let fixture = rawFixture("sony-a7iv.arw") else { return }
-    let cacheDir = tempCacheDir()
-    let out = tempCacheDir()
-    defer {
-        try? FileManager.default.removeItem(at: cacheDir)
-        try? FileManager.default.removeItem(at: out)
-    }
-    try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
-    let renderer = Renderer(cacheDir: cacheDir)
-    let file = try imageFile(for: fixture)
+    try withExportScratch { renderer, out in
+        let file = try imageFile(for: fixture)
 
-    _ = try renderer.render(file: file, edit: .identity, maxPixel: 64)
-    for longEdge in [nil, 1080] {
-        try renderer.exportJPEG(
-            file: file, edit: .identity, quality: 0.9,
-            to: out.appendingPathComponent("\(UUID().uuidString).jpg"), longEdge: longEdge)
-    }
-    _ = try renderer.render(file: file, edit: Edit(exposure: 1), maxPixel: 64)
+        _ = try renderer.render(file: file, edit: .identity, maxPixel: 64)
+        for longEdge in [nil, 1080] {
+            try renderer.exportJPEG(
+                file: file, edit: .identity, quality: 0.9,
+                to: out.appendingPathComponent("\(UUID().uuidString).jpg"), longEdge: longEdge)
+        }
+        _ = try renderer.render(file: file, edit: Edit(exposure: 1), maxPixel: 64)
 
-    #expect(
-        renderer.rawDecodeCount == 1,
-        "the export took a slot in the loupe's filter cache, where it evicts warm filters")
+        #expect(
+            renderer.rawDecodeCount == 1,
+            "the export took a slot in the loupe's filter cache, where it evicts warm filters")
+    }
 }
 
 @Test func raw9SupportMatchesWhatTheFilterRenders() throws {
