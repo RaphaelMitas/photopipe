@@ -62,6 +62,7 @@ import { flagPref } from "@/lib/pref";
 import {
   cachedImage,
   jobStatus,
+  useEnriched,
   useExportJobs,
   useImages,
   useLibrarySync,
@@ -202,6 +203,7 @@ export default function App() {
   const stacksWanted = stacksPref.use();
   const stacking = useStacking(openShoot, ready && stacksWanted);
   const stacksOn = stacksWanted && stacking.ready;
+  const enriched = useEnriched(openShoot, ready);
   const writes = useRecordedWrites(openShoot);
   const reveal = useReveal();
   const revealPaths = useFeatures().reveal
@@ -219,11 +221,11 @@ export default function App() {
     ? scoring.total > 0 && !scoring.running && scoring.done >= scoring.total
     : allImages.length > 0 && allImages.every((image) => image.score != null);
   // Sorting a half-rated project would put photos in an order the scores do not
-  // support, so until the pass is done the browser falls back to name. Capture
-  // times arrive with the stack pass, so with stacks on Date waits for it too.
+  // support, so until the pass is done the browser falls back to name. Date
+  // waits the same way for enrichment, which reads the capture times.
   const sortReady = {
     name: true,
-    date: !stacksWanted || stacking.ready,
+    date: enriched,
     rating: true,
     score: scoreReady,
   } satisfies Record<SortKey, boolean>;

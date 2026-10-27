@@ -81,6 +81,14 @@ struct RawFormatsTests {
         #expect(turned.width > turned.height, "got \(turned)")
     }
 
+    @Test(arguments: otherBrands + ["sony-a7iii.arw", "sony-a7iv.arw"])
+    func everyBrandShowsTheExposureItWasShotWith(_ name: String) throws {
+        guard let raw = rawFixture(name) else { return }
+        let exif = Exif(try #require(Dimensions.properties(at: raw)))
+        #expect(exif.shutter != nil && exif.aperture != nil && exif.iso != nil, "got \(exif)")
+        #expect(exif.focal != nil && exif.lens != nil && exif.body != nil, "got \(exif)")
+    }
+
     // a NEF: the macOS 15 CI runs on does not surface the XMP inside a CR3
     @Test func aStarRatedInCameraShowsAndStaysOnceTheRawHasASidecar() throws {
         let name = "nikon-z6ii.nef"

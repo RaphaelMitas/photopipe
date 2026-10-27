@@ -10,8 +10,11 @@ public enum Dimensions {
     }
 
     public static func read(at url: URL) -> (width: Int, height: Int)? {
-        guard let props = properties(at: url),
-            let width = props[kCGImagePropertyPixelWidth] as? Int,
+        properties(at: url).flatMap(dimensions)
+    }
+
+    static func dimensions(_ props: [CFString: Any]) -> (width: Int, height: Int)? {
+        guard let width = props[kCGImagePropertyPixelWidth] as? Int,
             let height = props[kCGImagePropertyPixelHeight] as? Int,
             width > 0, height > 0
         else { return nil }
@@ -67,22 +70,26 @@ public enum Dimensions {
         return formatter
     }()
 
+    public struct Header: Sendable {
+        public let dimensions: (width: Int, height: Int)?
+        public let captured: Double?
+        public let exif: Exif
+    }
+
     private static let cacheLock = NSLock()
-    nonisolated(unsafe) private static var cache:
-        [String: (mtime: Double, dims: (width: Int, height: Int)?)] = [:]
+    nonisolated(unsafe) private static var cache: [String: (mtime: Double, size: Int64, header: Header)] = [:]
 
-    public static func cached(for file: ImageFile) -> (width: Int, height: Int)? {
-        cacheLock.lock()
-        if let entry = cache[file.path], entry.mtime == file.mtime {
-            cacheLock.unlock()
-            return entry.dims
+    public static func header(for file: ImageFile) -> Header {
+        if let entry = cacheLock.withLock({ cache[file.path] }),
+            entry.mtime == file.mtime, entry.size == file.size
+        {
+            return entry.header
         }
-        cacheLock.unlock()
 
-        let dims = read(at: URL(fileURLWithPath: file.path))
-        cacheLock.lock()
-        cache[file.path] = (file.mtime, dims)
-        cacheLock.unlock()
-        return dims
+        let props = properties(at: URL(fileURLWithPath: file.path)) ?? [:]
+        let header = Header(
+            dimensions: dimensions(props), captured: captureTime(props), exif: Exif(props))
+        cacheLock.withLock { cache[file.path] = (file.mtime, file.size, header) }
+        return header
     }
 }
