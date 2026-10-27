@@ -94,6 +94,7 @@ import {
   stackOf,
   stacksPref,
   sweepStack,
+  toggled,
   toggledFlags,
 } from "@/lib/stacks";
 import { useCropSession } from "@/lib/useCropSession";
@@ -442,7 +443,7 @@ export default function App() {
       return flagPhotos(currentStack.frames, flag, stackSuffix(currentStack));
     }
     const photo = cachedImage(queryClient, openShoot, path);
-    if (photo) writes.flag(path, photo.flag === flag ? 0 : flag);
+    if (photo) writes.flag(path, toggled(photo.flag, flag));
   };
   const visit = (path: string | null, stacks: Stack[] | null) => {
     setCurrentPath(path);

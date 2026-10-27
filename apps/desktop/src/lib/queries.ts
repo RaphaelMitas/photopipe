@@ -666,11 +666,14 @@ export const useSetRatings = (shoot: string | null) =>
 export const useSetFlags = (shoot: string | null) =>
   useBatchWrite(shoot, FLAG_FIELD);
 
-// a reject still being written would land on a file already in the Trash
-export const useTrashBlocked = () =>
-  useIsMutating({ mutationKey: SET_FLAG_KEY }) +
-    useIsMutating({ mutationKey: TRASH_KEY }) >
-  0;
+// an undo still waiting on a write could un-reject a photo already in the Trash
+export function useTrashBlocked() {
+  const ratings = useIsMutating({ mutationKey: SET_RATING_KEY });
+  const flags = useIsMutating({ mutationKey: SET_FLAG_KEY });
+  const edits = useIsMutating({ mutationKey: SET_EDIT_KEY });
+  const trashing = useIsMutating({ mutationKey: TRASH_KEY });
+  return ratings + flags + edits + trashing > 0;
+}
 
 export function useReveal() {
   return useMutation({
