@@ -28,7 +28,7 @@ test("stacks: rate a whole stack, pick one inside it, undo the pick", async ({
 
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC01201.ARW");
-  await expect(page.getByTestId("stack-chip")).toContainText("⚑ 1");
+  await expect(page.getByTestId("stack-chip")).toContainText("✓ 1");
   await expect(page.getByTestId("stack-chip")).toContainText("all ★4");
   await expect(page.getByTestId("flag-pick")).toHaveAttribute(
     "aria-pressed",
@@ -36,7 +36,7 @@ test("stacks: rate a whole stack, pick one inside it, undo the pick", async ({
   );
 
   await page.keyboard.press("Meta+z");
-  await expect(page.getByTestId("stack-chip")).not.toContainText("⚑");
+  await expect(page.getByTestId("stack-chip")).not.toContainText("✓");
 });
 
 test("stacks: a pick, then ⇧X rejects the frames nobody judged", async ({
@@ -60,7 +60,7 @@ test("stacks: a pick, then ⇧X rejects the frames nobody judged", async ({
   await expect(page.getByTestId("stack-sweep")).toHaveCount(0);
 
   await page.keyboard.press("Escape");
-  await expect(page.getByTestId("stack-chip")).toContainText("⚑ 1");
+  await expect(page.getByTestId("stack-chip")).toContainText("✓ 1");
   await expect(page.getByTestId("stack-chip")).toContainText("✕ 3");
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("trash-rejects")).toContainText(

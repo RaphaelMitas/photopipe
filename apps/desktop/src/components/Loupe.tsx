@@ -506,11 +506,11 @@ function FlagPill({ flag }: { flag: Flag }) {
       data-testid="loupe-flag"
       className={`absolute top-3 left-1/2 -translate-x-1/2 rounded-full border bg-background/85 px-2.5 py-0.5 font-medium text-[11px] backdrop-blur-sm ${
         flag === 1
-          ? "border-foreground/40 text-foreground"
+          ? "border-success/60 text-success"
           : "border-destructive/60 text-destructive"
       }`}
     >
-      {flag === 1 ? "⚑ Picked" : "✕ Rejected"}
+      {flag === 1 ? "✓ Picked" : "✕ Rejected"}
     </div>
   );
 }
@@ -548,7 +548,7 @@ function StackOverlay({
         ) : (
           <>
             <span className="font-semibold">{frames.length} frames</span>
-            {picked > 0 && <span>⚑ {picked}</span>}
+            {picked > 0 && <span className="text-success">✓ {picked}</span>}
             {rejected > 0 && (
               <span className="text-destructive">✕ {rejected}</span>
             )}
@@ -564,9 +564,9 @@ function StackOverlay({
             data-testid="stack-pick"
             {...ownTap}
             onClick={onPick}
-            className="flex items-center gap-2.5 rounded-lg border border-primary/60 bg-background/95 py-1.5 pr-1.5 pl-3 text-sm shadow-lg backdrop-blur-sm"
+            className="flex items-center gap-2.5 rounded-lg border border-success/50 bg-background/95 py-1.5 pr-1.5 pl-3 text-sm shadow-lg backdrop-blur-sm"
           >
-            <span className="font-semibold">
+            <span className="font-semibold text-success">
               {image.flag === 1 ? "Unpick" : "Pick this one"}
             </span>
             {image.flag !== 1 && (

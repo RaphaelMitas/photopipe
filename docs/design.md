@@ -103,10 +103,10 @@ shown, not applied.
 ## The histogram is the filter
 
 The sidebar shows the rating spread as six bars (∅ then 1–5) with a count on
-each, between a ✕ bar for rejects and a ⚑ bar for picks. Clicking a bar
+each, between a ✕ bar for rejects and a ✓ bar for picks. Clicking a bar
 filters to it; ≥ = ≤ turn a star click into a range and ∅ is the unrated
 bar; ⌘ adds a bar and ⇧ a range. Bars of one kind widen each other and the
-two kinds narrow, so ⚑ with 4 and 5 is the picks with four or five stars.
+two kinds narrow, so ✓ with 4 and 5 is the picks with four or five stars.
 The flag bars count across all stars, so the eight bars no longer add up to
 the shoot. One control answers both "how far am I" and "show me the
 keepers" — it replaced the stage counts, which answered a question the flat

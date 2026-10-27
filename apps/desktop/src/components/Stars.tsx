@@ -1,5 +1,5 @@
 import { cn } from "@photopipe/ui/lib/utils";
-import { Flag as FlagIcon, Star, X } from "lucide-react";
+import { Check, Star, X } from "lucide-react";
 import type { Flag } from "@/lib/core";
 
 type Props = {
@@ -54,8 +54,8 @@ const FLAG_BUTTONS = [
     flag: 1,
     key: "P",
     label: "Pick",
-    icon: FlagIcon,
-    on: "bg-foreground text-background",
+    icon: Check,
+    on: "bg-success text-background",
   },
   {
     flag: -1,

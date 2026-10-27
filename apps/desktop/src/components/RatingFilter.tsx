@@ -174,9 +174,9 @@ const TONE = {
     off: "bg-destructive/30",
   },
   picked: {
-    on: "text-foreground",
-    bar: "bg-foreground",
-    off: "bg-foreground/25",
+    on: "text-success",
+    bar: "bg-success",
+    off: "bg-success/30",
   },
 };
 
@@ -274,7 +274,7 @@ function RatingHistogram({
         />
       ))}
       <Divider />
-      {flagBar(1, "picked", "⚑")}
+      {flagBar(1, "picked", "✓")}
     </div>
   );
 }

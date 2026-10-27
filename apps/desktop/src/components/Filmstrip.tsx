@@ -1,6 +1,6 @@
 import { cn } from "@photopipe/ui/lib/utils";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Flag as FlagIcon, Star } from "lucide-react";
+import { Check, Star } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import type { ImageFile } from "@/lib/core";
 import { pref } from "@/lib/pref";
@@ -162,7 +162,10 @@ export function Filmstrip({ images, index, mode, stacks, onNavigate }: Props) {
                       <span className="font-bold text-destructive">✕</span>
                     )}
                     {image.flag === 1 && (
-                      <FlagIcon className="size-2.5 fill-foreground text-foreground" />
+                      <Check
+                        className="size-2.5 text-success"
+                        strokeWidth={3}
+                      />
                     )}
                     {image.rating > 0 ? (
                       <>

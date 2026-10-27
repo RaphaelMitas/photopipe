@@ -1,5 +1,5 @@
 import { cn } from "@photopipe/ui/lib/utils";
-import { Flag as FlagIcon, Star } from "lucide-react";
+import { Check, Star } from "lucide-react";
 import type { Flag } from "@/lib/core";
 
 /// Rejects stay in view, just faded, so a change of mind is one look away.
@@ -21,11 +21,11 @@ export function PickMark({
       data-testid={testid}
       title="Picked"
       className={cn(
-        "flex size-4 items-center justify-center rounded-sm bg-foreground text-background",
+        "flex size-4 items-center justify-center rounded-sm bg-success text-background",
         className,
       )}
     >
-      <FlagIcon className="size-2.5 fill-current" />
+      <Check className="size-2.5" strokeWidth={3} />
     </span>
   );
 }

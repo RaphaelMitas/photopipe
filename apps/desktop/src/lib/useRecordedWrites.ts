@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  Check,
   ClipboardPaste,
-  Flag as FlagIcon,
   FlagOff,
   type LucideIcon,
   Star,
@@ -52,7 +52,7 @@ const FLAG: Judgment<Flag> = {
   of: (image) => image.flag,
   describe: (flag) =>
     flag === 1
-      ? { icon: FlagIcon, label: "Flag", detail: "picked" }
+      ? { icon: Check, label: "Flag", detail: "picked" }
       : flag === -1
         ? { icon: X, label: "Flag", detail: "rejected" }
         : { icon: FlagOff, label: "Flag", detail: "cleared" },
