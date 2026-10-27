@@ -34,6 +34,7 @@ import {
   type StatusResult,
 } from "./core";
 import { fileName } from "./fileName";
+import { pluralize } from "./plural";
 import { useRawDecoderVersion } from "./rawDecoder";
 import type { ViewportRequest } from "./zoom";
 
@@ -449,9 +450,6 @@ type PhotoField<V> = {
   failedMany: (count: number) => string;
 };
 
-export const photos = (count: number) =>
-  `${count} ${count === 1 ? "photo" : "photos"}`;
-
 const RATING_FIELD: PhotoField<number> = {
   mutationKey: SET_RATING_KEY,
   of: (image) => image.rating,
@@ -464,7 +462,8 @@ const RATING_FIELD: PhotoField<number> = {
         (await coreRequest("setRating", { shoot, path, rating })).rating,
     ),
   failedOne: (path) => `Rating ${fileName(path)} failed`,
-  failedMany: (count) => `${photos(count)} kept the rating they had`,
+  failedMany: (count) =>
+    `${pluralize(count, "photo")} kept the rating they had`,
 };
 
 const EDIT_FIELD: PhotoField<Edit> = {
@@ -477,7 +476,8 @@ const EDIT_FIELD: PhotoField<Edit> = {
       normalizeEdit((await coreRequest("setEdit", { shoot, path, edit })).edit),
     ),
   failedOne: (path) => `Saving edits for ${fileName(path)} failed`,
-  failedMany: (count) => `${photos(count)} kept the settings they had`,
+  failedMany: (count) =>
+    `${pluralize(count, "photo")} kept the settings they had`,
 };
 
 function cachedValue<V>(
@@ -657,8 +657,8 @@ export function useTrash(shoot: string | null) {
     mutationKey: ["write", "trash"],
     mutationFn: (paths: string[]) => coreRequest("trash", { shoot, paths }),
     onSuccess: (result, paths) => {
-      toast.success(`Moved ${photos(paths.length)} to the Trash`, {
-        description: `${result.files} files`,
+      toast.success(`Moved ${pluralize(paths.length, "photo")} to the Trash`, {
+        description: pluralize(result.files, "file"),
       });
       queryClient.invalidateQueries({ queryKey: imagesKey(shoot) });
       invalidateLibrary(queryClient);

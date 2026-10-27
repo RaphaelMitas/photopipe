@@ -20,6 +20,7 @@ import {
 import { useMemo, useState } from "react";
 import type { ExportFormat } from "@/lib/core";
 import { useFeatures } from "@/lib/features";
+import { pluralize } from "@/lib/plural";
 import { pref } from "@/lib/pref";
 import {
   type ExportJob,
@@ -44,7 +45,9 @@ export type ExportOptions = {
 };
 
 export function exportLabel(count: number, format: ExportFormat): string {
-  return `Export ${count} ${format === "jpeg" ? "as JPEG" : "originals"}`;
+  return format === "jpeg"
+    ? `Export ${count} as JPEG`
+    : `Export ${pluralize(count, "original")}`;
 }
 
 type Props = {

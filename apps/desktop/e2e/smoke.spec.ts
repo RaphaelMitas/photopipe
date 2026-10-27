@@ -11,7 +11,7 @@ test("first launch asks for a root, then shows the dashboard", async ({
   await expect(zell).toBeVisible();
   await expect(zell).toContainText("zell");
   await expect(zell).toContainText("4 photos");
-  await expect(page.getByTestId("shoot-misc")).toContainText("1 photos");
+  await expect(page.getByTestId("shoot-misc")).toContainText(/1 photo(?!s)/);
 });
 
 test("opening a shoot shows its grid; back returns to the library", async ({

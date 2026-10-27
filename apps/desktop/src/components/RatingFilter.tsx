@@ -6,6 +6,7 @@ import {
   SidebarGroupLabel,
 } from "@photopipe/ui/components/sidebar";
 import { type ReactNode, useCallback, useState } from "react";
+import { pluralize } from "@/lib/plural";
 
 type RatingOp = "gte" | "eq" | "lte" | "unrated";
 
@@ -140,7 +141,7 @@ function RatingHistogram({
             title={
               rating === 0
                 ? `${count} unrated`
-                : `${count} rated ${rating} star${rating === 1 ? "" : "s"}`
+                : `${count} rated ${pluralize(rating, "star")}`
             }
             onClick={() =>
               rating === 0
