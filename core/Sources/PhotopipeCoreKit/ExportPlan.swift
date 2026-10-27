@@ -1,4 +1,5 @@
 import Foundation
+import System
 
 public enum ExportFormat: String, Sendable {
     case original
@@ -21,19 +22,20 @@ extension Exporter.Plan {
 
         var used: Set<String> = []
         let items = images.enumerated().map { index, image in
-            var rel = image.rel
+            var path = FilePath(image.rel)
             if let name = names?[index] {
-                let ext = (rel as NSString).pathExtension
-                rel = ((rel as NSString).deletingLastPathComponent as NSString)
-                    .appendingPathComponent(ext.isEmpty ? name : "\(name).\(ext)")
+                // joined by hand: setting `extension` would eat a dot the name carries
+                let ext = path.extension
+                path.removeLastComponent()
+                path.append(ext.map { "\(name).\($0)" } ?? name)
             }
             if format == .jpeg {
-                rel = (rel as NSString).deletingPathExtension + ".jpg"
+                path.extension = "jpg"
             }
-            if flatten {
-                rel = (rel as NSString).lastPathComponent
+            if flatten, let leaf = path.lastComponent {
+                path = FilePath(root: nil, [leaf])
             }
-            let name = FileActions.uniqueName(rel) { candidate in
+            let name = FileActions.uniqueName(path.string) { candidate in
                 used.contains(candidate.lowercased())
                     || (staging == nil
                         && fm.fileExists(atPath: base.appendingPathComponent(candidate).path))

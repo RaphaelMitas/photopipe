@@ -236,9 +236,9 @@ private func exportNow(
     #expect(
         try exportNow(
             service, shoot: shoot.lastPathComponent, paths: paths, destination: mirrored.path,
-            flatten: false, names: ["show_001", "show_002", "show_003"]
+            flatten: false, names: ["show_001", "v1.2_002", "show_003"]
         ).done == 3)
-    for rel in ["show_001.ARW", "Tag1/show_002.jpg", "Tag2/show_003.jpg"] {
+    for rel in ["show_001.ARW", "Tag1/v1.2_002.jpg", "Tag2/show_003.jpg"] {
         #expect(fm.fileExists(atPath: mirrored.appendingPathComponent(rel).path), "\(rel)")
     }
 
