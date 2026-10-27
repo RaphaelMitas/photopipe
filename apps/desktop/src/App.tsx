@@ -326,6 +326,7 @@ export default function App() {
         flatten: options.flatten,
         format: options.format,
         quality: options.quality,
+        longEdge: options.longEdge,
         decoderVersion: options.decoderVersion,
       },
     });

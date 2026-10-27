@@ -260,6 +260,7 @@ export type CoreMethods = {
       flatten: boolean;
       format: ExportFormat;
       quality: number;
+      longEdge: number | null;
       decoderVersion: number;
     };
     result: ExportProgress;

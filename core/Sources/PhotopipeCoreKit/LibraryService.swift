@@ -542,14 +542,15 @@ public final class LibraryService: @unchecked Sendable {
     public func startExport(
         shoot shootName: String, paths: [String], destination: String,
         zip: Bool, flatten: Bool, format: ExportFormat, quality: Int,
-        decoderVersion: Int? = nil
+        longEdge: Int? = nil, decoderVersion: Int? = nil
     ) throws -> Exporter.Progress {
         let images = try images(inShoot: shootName, paths: pathsUnderRoot(paths))
         guard !images.isEmpty else { throw FileActions.ActionError.noFiles }
         return try exporter.start(
             plan: .export(
                 images, to: destination, zip: zip, flatten: flatten, format: format,
-                quality: quality, decoderVersion: decoderVersion, renderer: renderer),
+                quality: quality, longEdge: longEdge, decoderVersion: decoderVersion,
+                renderer: renderer),
             settled: rescanWhenSettled)
     }
 

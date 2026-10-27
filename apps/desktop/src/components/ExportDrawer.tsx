@@ -35,9 +35,17 @@ import {
 import { pickFolder } from "@/lib/roots";
 import { DecoderSegmented } from "./DecoderSegmented";
 
+const LONG_EDGES = [4096, 2048, 1080] as const;
+
+type LongEdge = (typeof LONG_EDGES)[number] | null;
+
+const toLongEdge = (value: unknown): LongEdge =>
+  LONG_EDGES.find((edge) => edge === value) ?? null;
+
 export type ExportOptions = {
   format: ExportFormat;
   quality: 90 | 100;
+  longEdge: LongEdge;
   zip: boolean;
   flatten: boolean;
   decoderVersion: RawDecoderVersion;
@@ -120,7 +128,7 @@ function Section({
 /// The decoder is seeded from culling on every open, so it never persists.
 type StoredOptions = Omit<ExportOptions, "decoderVersion">;
 
-function decodeOptions(stored: string | null): StoredOptions {
+export function decodeOptions(stored: string | null): StoredOptions {
   try {
     const parsed: unknown = stored ? JSON.parse(stored) : null;
     if (typeof parsed === "object" && parsed !== null) {
@@ -128,6 +136,7 @@ function decodeOptions(stored: string | null): StoredOptions {
         format:
           "format" in parsed && parsed.format === "jpeg" ? "jpeg" : "original",
         quality: "quality" in parsed && parsed.quality === 100 ? 100 : 90,
+        longEdge: toLongEdge("longEdge" in parsed ? parsed.longEdge : null),
         zip: "zip" in parsed && parsed.zip === true,
         flatten: !("flatten" in parsed && parsed.flatten === false),
       };
@@ -135,7 +144,13 @@ function decodeOptions(stored: string | null): StoredOptions {
   } catch {
     // Corrupt preferences never block an export.
   }
-  return { format: "jpeg", quality: 90, zip: false, flatten: true };
+  return {
+    format: "jpeg",
+    quality: 90,
+    longEdge: null,
+    zip: false,
+    flatten: true,
+  };
 }
 
 const optionsPref = pref("photopipe.export", decodeOptions, JSON.stringify);
@@ -328,27 +343,48 @@ export function ExportDrawer({
           onChange={(format) => patch({ format })}
         />
         {options.format === "jpeg" ? (
-          <div className="flex items-center gap-2">
-            <span className="flex-1 text-muted-foreground text-xs">
-              Quality
-            </span>
-            <Segmented
-              value={options.quality === 100 ? "100" : "90"}
-              options={[
-                ["90", "90"],
-                ["100", "100"],
-              ]}
-              testid="quality"
-              onChange={(quality) =>
-                patch({ quality: quality === "100" ? 100 : 90 })
-              }
-            />
-          </div>
+          <>
+            <div className="flex items-center gap-2">
+              <span className="flex-1 text-muted-foreground text-xs">
+                Quality
+              </span>
+              <Segmented
+                value={options.quality === 100 ? "100" : "90"}
+                options={[
+                  ["90", "90"],
+                  ["100", "100"],
+                ]}
+                testid="quality"
+                onChange={(quality) =>
+                  patch({ quality: quality === "100" ? 100 : 90 })
+                }
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="flex-1 text-muted-foreground text-xs">Size</span>
+              <Segmented
+                value={String(options.longEdge ?? "full")}
+                options={[
+                  ["full", "Full"],
+                  ...LONG_EDGES.map((edge): [string, string] => [
+                    String(edge),
+                    String(edge),
+                  ]),
+                ]}
+                testid="size"
+                onChange={(size) =>
+                  patch({ longEdge: toLongEdge(Number(size)) })
+                }
+              />
+            </div>
+          </>
         ) : null}
         <p className="text-[10px] text-muted-foreground">
-          {options.format === "jpeg"
-            ? "Renders every photo full-resolution with its edits baked in."
-            : "Copies the files untouched; edits are ignored."}
+          {options.format === "original"
+            ? "Copies the files untouched; edits are ignored."
+            : options.longEdge === null
+              ? "Renders every photo full-resolution with its edits baked in."
+              : `Renders every photo ${options.longEdge} px on the long edge with its edits baked in. Smaller photos keep their size.`}
         </p>
         {showDecoder && (
           <>

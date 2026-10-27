@@ -7,7 +7,11 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ExportDrawer, type ExportOptions } from "./ExportDrawer";
+import {
+  decodeOptions,
+  ExportDrawer,
+  type ExportOptions,
+} from "./ExportDrawer";
 
 afterEach(cleanup);
 afterEach(() => localStorage.clear());
@@ -236,5 +240,44 @@ describe("export decoder row", () => {
     renderDrawer([]);
     expect(screen.queryByTestId("export-decoder-8")).not.toBeInTheDocument();
     expect(coreCalls()).toBe(calls);
+  });
+});
+
+describe("export size", () => {
+  it("loads options saved before the size existed at full size", () => {
+    const old = JSON.stringify({ format: "jpeg", quality: 100, zip: true });
+    expect(decodeOptions(old)).toEqual({
+      format: "jpeg",
+      quality: 100,
+      longEdge: null,
+      zip: true,
+      flatten: true,
+    });
+  });
+
+  it("keeps a size it offers and drops one it does not", () => {
+    const sized = (longEdge: unknown) =>
+      decodeOptions(JSON.stringify({ format: "jpeg", longEdge })).longEdge;
+    expect(sized(2048)).toBe(2048);
+    expect(sized(1080)).toBe(1080);
+    expect(sized(3000)).toBeNull();
+    expect(sized("2048")).toBeNull();
+    expect(sized(-1)).toBeNull();
+    expect(decodeOptions("{not json").longEdge).toBeNull();
+  });
+
+  it("hands the picked size to the export", async () => {
+    mockSupport(0, 3);
+    const { onExport } = renderDrawer();
+    fireEvent.click(screen.getByTestId("format-jpeg"));
+    fireEvent.click(screen.getByTestId("size-2048"));
+    expect(screen.getByTestId("size-2048")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await waitFor(() => expect(screen.getByTestId("run-export")).toBeEnabled());
+    fireEvent.click(screen.getByTestId("run-export"));
+    await waitFor(() => expect(onExport).toHaveBeenCalled());
+    expect((onExport.mock.calls[0][0] as ExportOptions).longEdge).toBe(2048);
   });
 });

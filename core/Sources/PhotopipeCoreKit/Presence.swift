@@ -46,17 +46,8 @@ enum Presence {
         max(image.extent.width, image.extent.height)
     }
 
-    // clamped and whole pixels, or a part-transparent edge row blurs into a bright band
     private static func coarse(_ image: CIImage) -> CIImage {
-        let extent = image.extent
-        let scale = min(coarseLongEdge / longEdge(image), 1)
-        let size = CGSize(
-            width: max((extent.width * scale).rounded(), 1),
-            height: max((extent.height * scale).rounded(), 1))
-        return image.clampedToExtent()
-            .transformed(by: .init(translationX: -extent.minX, y: -extent.minY))
-            .transformed(by: .init(scaleX: size.width / extent.width, y: size.height / extent.height))
-            .cropped(to: CGRect(origin: .zero, size: size))
+        Renderer.fitted(image, longEdge: coarseLongEdge)
     }
 
     private static func upscaled(_ estimate: CIImage, to image: CIImage) -> CIImage {
