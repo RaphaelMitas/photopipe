@@ -77,7 +77,7 @@ export function useRecordedWrites(shoot: string | null) {
       before: Map<string, number>,
       label: string,
       detail: string,
-      stackStop?: string,
+      wholeStack?: boolean,
     ) => {
       if (values.size === 0) return Promise.resolve();
       const written = landed(setRatings(values));
@@ -88,7 +88,7 @@ export function useRecordedWrites(shoot: string | null) {
           label,
           detail,
           paths: [...values.keys()],
-          stackStop,
+          wholeStack,
           written,
         },
         before,

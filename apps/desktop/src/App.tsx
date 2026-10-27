@@ -403,7 +403,7 @@ export default function App() {
     const before = new Map(frames.map((frame) => [frame.path, frame.rating]));
     return { live: { ...stack, frames }, before };
   };
-  const rateWholeStack = (stack: Stack, rating: number, path: string) => {
+  const rateWholeStack = (stack: Stack, rating: number) => {
     const read = readStack(stack);
     if (!read) return false;
     writes.rateMany(
@@ -411,7 +411,7 @@ export default function App() {
       read.before,
       "Rating",
       `${ratingDetail(rating)} · stack of ${stack.frames.length}`,
-      path,
+      true,
     );
     return true;
   };
@@ -441,7 +441,7 @@ export default function App() {
   };
   const rateShown = (path: string, rating: number) => {
     if (currentStack && multiFrame && !insideStack) {
-      return rateWholeStack(currentStack, rating, path);
+      return rateWholeStack(currentStack, rating);
     }
     writes.rate(path, rating);
     return true;
@@ -570,7 +570,7 @@ export default function App() {
         cachedImage(queryClient, openShoot, path) !== undefined;
       const current = currentPathNow.current;
       const stacks = stacksNow.current;
-      // inside a stack each frame is its own stop
+      // inside a stack, a step on a sibling frame still moves you to it
       const here =
         current && stacks && !insideNow.current
           ? stackOf(stacks, current)
@@ -579,14 +579,13 @@ export default function App() {
         here ? inStack(here, path) : path === current,
       );
       const next = touchesHere ? undefined : entry.paths.find(present);
-      const stop =
-        entry.stackStop && present(entry.stackStop)
-          ? entry.stackStop
-          : undefined;
       if (next) {
-        setCurrentPath(stop ?? next);
-        // a whole-stack step lands back outside, where it was taken; any other on the frame it changed
-        setInsideAnchor(stop ? null : next);
+        // the cover as rated now: the stack-membership effect anchors any other frame inside
+        const stack =
+          entry.wholeStack && stacks ? stackOf(stacks, next) : undefined;
+        setCurrentPath(stack ? coverOf(stack).path : next);
+        // you land on the frame the step changed, inside its stack if it has one
+        setInsideAnchor(entry.wholeStack ? null : next);
       }
       setRevealed((count) => count + 1);
     },

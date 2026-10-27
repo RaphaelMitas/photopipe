@@ -70,7 +70,7 @@ test("tapping the stack chip goes in and out, even zoomed in", async ({
   await expect(page.getByTestId("stack-chip")).toContainText("3 frames");
 });
 
-test("auto-advance: undo inside a stack returns to the frame, a whole-stack step to where it was taken", async ({
+test("auto-advance: undo inside a stack returns to the frame, after a whole-stack rating to outside it", async ({
   page,
 }) => {
   await openShoot(page, "2026-08-01_dolomites");
@@ -88,16 +88,20 @@ test("auto-advance: undo inside a stack returns to the frame, a whole-stack step
   await expect(page.getByTestId("stack-chip")).toContainText("1 of 3");
   await expect(page.locator("[data-rating='0']")).toBeVisible();
 
-  // one frame already holds ★4, so the stack rating below writes only the other two
-  await page.keyboard.press("Meta+Shift+z");
-  await expect(page.locator("[data-rating='4']")).toBeVisible();
+  // a kept frame that is not the top score: the stack rating skips it, and undo makes it the cover again
+  const fours = page.getByTestId("hist-4");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("4");
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC01202.ARW");
+  await expect(fours).toHaveAttribute("title", "1 rated 4 stars");
   await page.keyboard.press("Escape");
-  await expect(page.getByTestId("stack-chip")).toContainText("★4 picked");
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC01201.ARW");
   await page.keyboard.press("4");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC01203.ARW");
+  await expect(fours).toHaveAttribute("title", "3 rated 4 stars");
 
   await page.keyboard.press("Meta+z");
-  await expect(page.getByTestId("loupe-name")).toHaveText("DSC01200.ARW");
+  await expect(fours).toHaveAttribute("title", "1 rated 4 stars");
+  await expect(page.getByTestId("loupe-position")).toHaveText("stack 1/193");
   await expect(page.getByTestId("stack-chip")).toContainText("3 frames");
-  await expect(page.getByTestId("stack-chip")).toContainText("★4 picked");
 });
