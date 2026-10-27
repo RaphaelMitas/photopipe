@@ -34,7 +34,8 @@ function nonCoreAnswer(cmd: string) {
 const RAWS = ["/r/s/A.ARW", "/r/s/B.ARW", "/r/s/C.ARW"];
 
 function renderDrawer(rawPaths: string[] = RAWS) {
-  const onExport = vi.fn();
+  const onExport =
+    vi.fn<(options: ExportOptions, destination: string) => void>();
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -134,7 +135,7 @@ describe("export decoder row", () => {
     expect(screen.queryByTestId("decoder-banner")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("run-export"));
     await waitFor(() => expect(onExport).toHaveBeenCalled());
-    expect((onExport.mock.calls[0][0] as ExportOptions).decoderVersion).toBe(9);
+    expect(onExport.mock.calls[0][0].decoderVersion).toBe(9);
   });
 
   it("dismissing holds for that choice and the export keeps it", async () => {
@@ -149,7 +150,7 @@ describe("export decoder row", () => {
     expect(screen.queryByTestId("decoder-banner")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("run-export"));
     await waitFor(() => expect(onExport).toHaveBeenCalled());
-    const options = onExport.mock.calls[0][0] as ExportOptions;
+    const options = onExport.mock.calls[0][0];
     expect(options.decoderVersion).toBe(8);
   });
 
@@ -178,7 +179,7 @@ describe("export decoder row", () => {
     expect(screen.queryByTestId("decoder-banner")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("run-export"));
     await waitFor(() => expect(onExport).toHaveBeenCalled());
-    expect((onExport.mock.calls[0][0] as ExportOptions).decoderVersion).toBe(8);
+    expect(onExport.mock.calls[0][0].decoderVersion).toBe(8);
   });
 
   it("keeps RAW 9 disabled while a new selection is being probed", async () => {
@@ -278,6 +279,6 @@ describe("export size", () => {
     await waitFor(() => expect(screen.getByTestId("run-export")).toBeEnabled());
     fireEvent.click(screen.getByTestId("run-export"));
     await waitFor(() => expect(onExport).toHaveBeenCalled());
-    expect((onExport.mock.calls[0][0] as ExportOptions).longEdge).toBe(2048);
+    expect(onExport.mock.calls[0][0].longEdge).toBe(2048);
   });
 });

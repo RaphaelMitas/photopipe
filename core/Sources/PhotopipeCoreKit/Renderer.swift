@@ -102,7 +102,7 @@ public final class Renderer: @unchecked Sendable {
             for: file, edit: edit, maxPixel: longEdge.map { $0 * 2 },
             decoderVersion: decoderVersion, cacheFilter: false)
         if let longEdge { image = Self.fitted(image, longEdge: CGFloat(longEdge)) }
-        // A full-resolution render holds on to surfaces the context will happily
+        // An export render holds on to surfaces the context will happily
         // keep for the next one. Nothing else reuses them, and about a hundred
         // in they stop being handed out at all: every render after that comes
         // back nil while memory still looks fine.
@@ -181,9 +181,7 @@ public final class Renderer: @unchecked Sendable {
             guard !base.extent.isEmpty else { throw RenderError.unreadable(file.path) }
             let scale = Self.sourceScale(
                 for: edit, orientedSize: base.extent.size, maxPixel: maxPixel, viewport: viewport)
-            image = Self.fitted(
-                base,
-                longEdge: base.longEdge * CGFloat(scale))
+            image = Self.fitted(base, longEdge: base.longEdge * CGFloat(scale))
             if edit.exposure != 0 {
                 image = image.applyingFilter(
                     "CIExposureAdjust", parameters: ["inputEV": edit.exposure])
@@ -290,7 +288,7 @@ public final class Renderer: @unchecked Sendable {
             .transformed(by: .init(translationX: -rect.minX, y: -rect.minY))
     }
 
-    /// Never upscales; clamped and whole pixels, or a part-transparent edge row blurs into a bright band.
+    /// Clamped and whole pixels, or a part-transparent edge row blurs into a bright band.
     static func fitted(_ image: CIImage, longEdge: CGFloat) -> CIImage {
         let extent = image.extent
         let scale = longEdge / image.longEdge

@@ -39,16 +39,6 @@ private func meanLuminance(of url: URL, region: CGRect? = nil) throws -> Double 
     return (channels.red + channels.green + channels.blue) / 3
 }
 
-private func pixelSize(of url: URL) throws -> (width: Int, height: Int) {
-    let source = try #require(CGImageSourceCreateWithURL(url as CFURL, nil))
-    let props = try #require(
-        CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
-    return (
-        try #require(props[kCGImagePropertyPixelWidth] as? Int),
-        try #require(props[kCGImagePropertyPixelHeight] as? Int)
-    )
-}
-
 private func tempCacheDir() -> URL {
     FileManager.default.temporaryDirectory
         .appendingPathComponent("photopipe-render-tests-\(UUID().uuidString)")
@@ -899,12 +889,11 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
         #expect(
             try meanLuminance(of: bright) > meanLuminance(of: neutral),
             "the persisted exposure must be baked into the delivery")
-        let width = try pixelSize(of: neutral).width
+        let width = try #require(Dimensions.read(at: neutral)).width
         #expect(width > 2000, "export must be full resolution, got width \(width)")
     }
 }
 
-/// A cropped export once landed a pixel short of the long edge.
 @Test func aResizedExportLandsOnTheLongEdgeOfTheTurnedCrop() throws {
     guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     try withExportScratch { renderer, out in
@@ -920,7 +909,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
             let url = out.appendingPathComponent("\(index).jpg")
             try renderer.exportJPEG(
                 file: file, edit: edit, quality: 0.9, to: url, longEdge: 1080)
-            let size = try pixelSize(of: url)
+            let size = try #require(Dimensions.read(at: url))
             #expect(max(size.width, size.height) == 1080, "\(edit): \(size)")
             #expect((size.height > size.width) == portrait, "\(edit): \(size)")
         }
@@ -953,7 +942,8 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
         let resized = out.appendingPathComponent("resized.jpg")
         try renderer.exportJPEG(file: file, edit: small, quality: 0.9, to: full)
         try renderer.exportJPEG(file: file, edit: small, quality: 0.9, to: resized, longEdge: 2048)
-        #expect(try pixelSize(of: resized) == pixelSize(of: full))
+        let resizedSize = try #require(Dimensions.read(at: resized))
+        #expect(try resizedSize == #require(Dimensions.read(at: full)))
     }
 }
 
@@ -965,16 +955,16 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
         try renderer.exportJPEG(
             file: try imageFile(for: jpegURL),
             edit: Edit(crop: CropRect(left: 0.05, top: 0.1, right: 0.93, bottom: 0.8), rotation: 90),
-            quality: 0.9, to: url, longEdge: 1080)
-        let size = try pixelSize(of: url)
-        #expect(size.height == 1080, "the turned crop is portrait: \(size)")
+            quality: 0.9, to: url, longEdge: 512)
+        let size = try #require(Dimensions.read(at: url))
+        #expect(size.height == 512, "the turned crop is portrait: \(size)")
 
         let tiny = try writeHalvesJPEG(width: 64, height: 48)
         defer { try? FileManager.default.removeItem(at: tiny) }
         let kept = out.appendingPathComponent("tiny.jpg")
         try renderer.exportJPEG(
             file: try imageFile(for: tiny), edit: .identity, quality: 0.9, to: kept, longEdge: 1080)
-        #expect(try pixelSize(of: kept) == (64, 48))
+        #expect(try #require(Dimensions.read(at: kept)) == (64, 48))
     }
 }
 
