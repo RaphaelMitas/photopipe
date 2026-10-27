@@ -30,7 +30,7 @@ const invoke = vi.hoisted(() =>
   vi.fn<
     (
       cmd: string,
-      args: { method: string; params?: { path?: string } },
+      args: { method: string; params?: { path?: string; edit?: Edit } },
     ) => Promise<unknown>
   >(async () => ({ cachePath: "/fake/render.jpg" })),
 );
@@ -62,6 +62,7 @@ function renderLoupe(
   exposure = 0,
   cropDraft: CropDraft | null = null,
   stacks: LoupeStacks | null = null,
+  { split = false, edit = {} }: { split?: boolean; edit?: Partial<Edit> } = {},
 ) {
   const onNavigate = vi.fn();
   const onClose = vi.fn();
@@ -79,7 +80,7 @@ function renderLoupe(
       <Loupe
         images={makeImages()}
         index={index}
-        edit={editWith(exposure)}
+        edit={{ ...editWith(exposure), ...edit }}
         crop={{
           draft: cropDraft,
           set: onCropDraft,
@@ -88,6 +89,7 @@ function renderLoupe(
           cancel: onCancelCrop,
         }}
         stacks={stacks}
+        split={split}
         onEditChange={onEditChange}
         onNavigate={onNavigate}
         onClose={onClose}
@@ -274,6 +276,34 @@ describe("Loupe render order", () => {
   });
 });
 
+describe("Loupe split", () => {
+  const framed = {
+    crop: { left: 0.1, top: 0.2, right: 0.9, bottom: 0.8 },
+    cropAngle: 1.5,
+    rotation: 90,
+  };
+
+  it("puts the photo as shot beside the edit, on the same framing", async () => {
+    renderLoupe(0, 1, null, null, { split: true, edit: framed });
+    await waitFor(() =>
+      expect(screen.getByTestId("loupe-before-image")).toBeInTheDocument(),
+    );
+    const edits = invoke.mock.calls
+      .filter(([, { method }]) => method === "render")
+      .map(([, { params }]) => params?.edit);
+    expect(edits).toContainEqual({ ...identityEdit, ...framed });
+    expect(edits).toContainEqual({ ...identityEdit, exposure: 1, ...framed });
+  });
+
+  it("steps aside while cropping", () => {
+    renderLoupe(0, 1, draftFromEdit(identityEdit, 3000, 2000), null, {
+      split: true,
+    });
+    expect(screen.queryByTestId("loupe-before")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("split-divider")).not.toBeInTheDocument();
+  });
+});
+
 describe("Loupe crop mode", () => {
   const draft = () => draftFromEdit(identityEdit, 3000, 2000);
 
@@ -435,6 +465,8 @@ describe("EditSidebar", () => {
               apply: onApplyCrop,
               cancel: onCancelCrop,
             }}
+            split={false}
+            onToggleSplit={vi.fn()}
             canPaste={false}
             onCopySettings={vi.fn()}
             onPasteSettings={vi.fn()}
@@ -558,6 +590,7 @@ describe("EditSidebar", () => {
     expect(screen.queryByTestId("enter-crop")).not.toBeInTheDocument();
     expect(screen.getByTestId("edit-reset-all")).toBeDisabled();
     expect(screen.getByTestId("edit-close")).toBeDisabled();
+    expect(screen.getByTestId("edit-split")).toBeDisabled();
     fireEvent.click(screen.getByTestId("crop-apply"));
     expect(onApplyCrop).toHaveBeenCalled();
     fireEvent.click(screen.getByTestId("crop-cancel"));

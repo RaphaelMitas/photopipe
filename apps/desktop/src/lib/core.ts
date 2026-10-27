@@ -58,6 +58,16 @@ export const identityEdit: Edit = Object.freeze({
   rotation: 0,
 });
 
+// What stays with a photo when its look is pasted over or compared against:
+// a crop rect is normalized against its own turned frame.
+export function framing(edit: Edit) {
+  return {
+    crop: edit.crop ?? null,
+    cropAngle: edit.cropAngle ?? 0,
+    rotation: edit.rotation ?? 0,
+  };
+}
+
 export function isIdentityEdit(edit: Edit): boolean {
   return editKey(edit) === editKey(identityEdit);
 }

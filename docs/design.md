@@ -137,6 +137,15 @@ elsewhere, so it only crosses between photos of the same kind and the toast
 says when it was left behind. There is no scope dialog: paste takes
 everything it can, every time, and ⌘Z takes it back.
 
+## Before is the look, not the framing
+
+**Y** splits the loupe: the photo as shot on the left of a divider, the edit
+on the right. "As shot" drops tone, colour, curves, white balance and denoise
+but keeps the crop, straighten and turn, for the same reason paste leaves them
+behind. With one framing both halves are the same pixels, so the split holds
+while zoomed and panned, and a raw renders its before off the decode the edit
+already warmed instead of a second one.
+
 ## Activity, not toasts
 
 Exports run as jobs in the drawer's activity section: running, done (with a

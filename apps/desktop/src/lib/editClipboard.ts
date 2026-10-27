@@ -1,4 +1,4 @@
-import type { Edit } from "./core";
+import { type Edit, framing } from "./core";
 
 export type EditClipboard = {
   path: string;
@@ -6,8 +6,8 @@ export type EditClipboard = {
   raw: boolean;
 };
 
-// A crop rect is normalized against its own turned frame, and white balance is
-// Kelvin on raw but incremental everywhere else — neither survives the trip.
+// White balance is Kelvin on raw but incremental everywhere else, so it does
+// not survive the trip.
 // Denoise only exists on raw, and null there means the decoder's own per-image
 // amount, so it cannot be carried onto a JPEG either.
 export function pasteEdit(
@@ -15,12 +15,7 @@ export function pasteEdit(
   clipboard: EditClipboard,
   targetRaw: boolean,
 ): Edit {
-  const pasted: Edit = {
-    ...clipboard.edit,
-    crop: target.crop ?? null,
-    cropAngle: target.cropAngle ?? 0,
-    rotation: target.rotation ?? 0,
-  };
+  const pasted: Edit = { ...clipboard.edit, ...framing(target) };
   if (targetRaw === clipboard.raw) return pasted;
   return {
     ...pasted,

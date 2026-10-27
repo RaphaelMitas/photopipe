@@ -1,5 +1,12 @@
+import { ChevronsLeftRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type Edit, fileSrc, type ImageFile } from "@/lib/core";
+import {
+  type Edit,
+  fileSrc,
+  framing,
+  type ImageFile,
+  identityEdit,
+} from "@/lib/core";
 import {
   aspectRatioFor,
   type Box,
@@ -50,6 +57,12 @@ const NUDGE: Record<string, { x: number; y: number }> = {
   ArrowDown: { x: 0, y: 1 },
 };
 
+const CHIP =
+  "rounded-md border border-border bg-background/85 px-2.5 py-1 font-mono text-[11px] backdrop-blur-sm";
+
+// Keeping the framing keeps both halves of the split on the same pixels.
+const unedited = (edit: Edit): Edit => ({ ...identityEdit, ...framing(edit) });
+
 /// Holds a value back until it has stopped changing for `delayMs`.
 function useSettled<T>(value: T, delayMs: number): T {
   const [settled, setSettled] = useState(value);
@@ -75,6 +88,7 @@ type Props = {
   edit: Edit;
   crop: CropSession;
   stacks: LoupeStacks | null;
+  split: boolean;
   onEditChange: (edit: Edit) => void;
   onNavigate: (path: string) => void;
   onClose: () => void;
@@ -87,6 +101,7 @@ export function Loupe({
   edit,
   crop: session,
   stacks,
+  split,
   onEditChange,
   onNavigate,
   onClose,
@@ -96,6 +111,7 @@ export function Loupe({
   const cropDraft = session.draft;
   const deferredEdit = useDeferredEdit(image, edit);
   const cropping = cropDraft !== null;
+  const comparing = split && !cropping;
   const filmstrip = filmstripPref.use();
 
   // While cropping the stage shows the full turned frame, uncropped and
@@ -109,6 +125,8 @@ export function Loupe({
     [cropping, deferredEdit, draftRotation],
   );
   const render = useRender(image, previewEdit);
+  const beforeEdit = useMemo(() => unedited(deferredEdit), [deferredEdit]);
+  const before = useRender(comparing ? image : undefined, beforeEdit);
   const thumb = useThumbnail(image);
   const neighbour = (direction: 1 | -1) =>
     stacks && image
@@ -117,9 +135,18 @@ export function Loupe({
   const next = neighbour(1);
   const previous = neighbour(-1);
   // The render lane runs newest first, so neighbours wait for this photo's first attempt.
-  const landed = !render.isFetching || render.failureCount > 0;
+  const landed = [render, before].every(
+    (query) => !query.isFetching || query.failureCount > 0,
+  );
+  const nextBefore = useMemo(() => next && unedited(next.edit), [next]);
+  const previousBefore = useMemo(
+    () => previous && unedited(previous.edit),
+    [previous],
+  );
   usePrefetchRender(landed ? next : undefined, next?.edit);
+  usePrefetchRender(landed && comparing ? next : undefined, nextBefore);
   usePrefetchRender(landed ? previous : undefined, previous?.edit);
+  usePrefetchRender(landed && comparing ? previous : undefined, previousBefore);
   const multiFrame = stacks !== null && stacks.current.frames.length > 1;
 
   const stageRef = useRef<HTMLDivElement>(null);
@@ -182,7 +209,13 @@ export function Loupe({
       ? settled
       : null;
   const sharp = useViewportRender(image, previewEdit, current).data;
-  const sharpening = wanted !== null && !sharp;
+  const sharpBefore = useViewportRender(
+    comparing ? image : undefined,
+    beforeEdit,
+    current,
+  ).data;
+  const sharpening = wanted !== null && (!sharp || (comparing && !sharpBefore));
+  const [divider, setDivider] = useState(0.5);
 
   // Key repeat outruns re-rendering, so a nudge composes on the ref instead of
   // the draft this listener closed over.
@@ -313,18 +346,12 @@ export function Loupe({
     cropping && render.isPlaceholderData ? undefined : render.data;
   // The slice sits outside the zoom transform, laid out at its own on-screen
   // size, so it is never a scaled-up copy of the fitted render.
-  const region =
-    sharp && zoom.state
-      ? {
-          src: sharp,
-          rect: visibleScreenRect(
-            zoom.state,
-            photoBox,
-            stage.width,
-            stage.height,
-          ),
-        }
-      : null;
+  const sliceRect = zoom.state
+    ? visibleScreenRect(zoom.state, photoBox, stage.width, stage.height)
+    : null;
+  const zoomTransform = zoom.state
+    ? `translate(${zoom.state.tx}px, ${zoom.state.ty}px) scale(${zoom.state.scale})`
+    : undefined;
   const ratio = cropDraft
     ? aspectRatioFor(
         cropDraft.aspect,
@@ -365,9 +392,7 @@ export function Loupe({
               : "0 0",
             transform: cropDraft
               ? `rotate(${cropDraft.angle}deg)`
-              : zoom.state
-                ? `translate(${zoom.state.tx}px, ${zoom.state.ty}px) scale(${zoom.state.scale})`
-                : undefined,
+              : zoomTransform,
           }}
         >
           {freshRender ? (
@@ -392,20 +417,46 @@ export function Loupe({
             </div>
           )}
         </div>
-        {region && (
-          <img
-            data-testid="loupe-region"
-            src={fileSrc(region.src)}
-            alt={image.rel}
-            draggable={false}
-            className="pointer-events-none absolute select-none"
-            style={{
-              left: `${region.rect.left}px`,
-              top: `${region.rect.top}px`,
-              width: `${region.rect.width}px`,
-              height: `${region.rect.height}px`,
-            }}
-          />
+        <Slice
+          testId="loupe-region"
+          src={sharp}
+          rect={sliceRect}
+          alt={image.rel}
+        />
+        {comparing && (
+          <>
+            <div
+              data-testid="loupe-before"
+              className="pointer-events-none absolute inset-0 bg-black"
+              style={{ clipPath: `inset(0 ${(1 - divider) * 100}% 0 0)` }}
+            >
+              <div
+                className="absolute inset-0"
+                style={{ transformOrigin: "0 0", transform: zoomTransform }}
+              >
+                {before.data && (
+                  <img
+                    data-testid="loupe-before-image"
+                    src={fileSrc(before.data)}
+                    alt={image.rel}
+                    draggable={false}
+                    className="h-full w-full object-contain select-none"
+                  />
+                )}
+              </div>
+              <Slice
+                testId="loupe-before-region"
+                src={sharpBefore}
+                rect={sliceRect}
+                alt={image.rel}
+              />
+            </div>
+            <SplitDivider
+              stageRef={stageRef}
+              at={divider}
+              onMove={setDivider}
+            />
+          </>
         )}
         {cropDraft && photoBox.width > 0 && (
           <CropOverlay
@@ -420,7 +471,7 @@ export function Loupe({
         {cropDraft && (
           <div
             data-testid="crop-angle-hud"
-            className="absolute top-3 left-1/2 -translate-x-1/2 rounded-md border border-border bg-background/85 px-2.5 py-1 font-mono text-[11px] backdrop-blur-sm"
+            className={`${CHIP} absolute top-3 left-1/2 -translate-x-1/2`}
           >
             {`∠ ${cropDraft.angle > 0 ? "+" : ""}${cropDraft.angle.toFixed(1)}° · double-click to reset`}
           </div>
@@ -429,7 +480,7 @@ export function Loupe({
           <>
             <div
               data-testid="zoom-level"
-              className="absolute bottom-3 left-3 rounded-md border border-border bg-background/85 px-2.5 py-1 font-mono text-[11px] backdrop-blur-sm"
+              className={`${CHIP} absolute bottom-3 left-3`}
             >
               {`${Math.round((zoom.state.scale / (zoom.scale100 || 1)) * 100)}% · ${
                 sharpening ? "sharpening…" : "double-click to fit"
@@ -456,7 +507,9 @@ export function Loupe({
         {multiFrame && !cropping && (
           <StackOverlay stacks={stacks} path={image.path} />
         )}
-        {(render.isFetching || !render.data) && (
+        {(render.isFetching ||
+          !render.data ||
+          (comparing && (before.isFetching || !before.data))) && (
           <div className="absolute top-3 right-3 h-2 w-2 animate-pulse rounded-full bg-primary" />
         )}
       </div>
@@ -483,6 +536,95 @@ const ownTap = {
   onPointerDown: (event: React.PointerEvent) => event.stopPropagation(),
   onDoubleClick: (event: React.MouseEvent) => event.stopPropagation(),
 };
+
+function Slice({
+  testId,
+  src,
+  rect,
+  alt,
+}: {
+  testId: string;
+  src: string | undefined;
+  rect: ReturnType<typeof visibleScreenRect> | null;
+  alt: string;
+}) {
+  if (!src || !rect) return null;
+  return (
+    <img
+      data-testid={testId}
+      src={fileSrc(src)}
+      alt={alt}
+      draggable={false}
+      className="pointer-events-none absolute select-none"
+      style={{
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+      }}
+    />
+  );
+}
+
+/// Before on the left, as every editor has it. Grabbing the divider never
+/// starts a pan.
+function SplitDivider({
+  stageRef,
+  at,
+  onMove,
+}: {
+  stageRef: React.RefObject<HTMLDivElement | null>;
+  at: number;
+  onMove: (at: number) => void;
+}) {
+  const dragging = useRef(false);
+  const moveTo = (event: React.PointerEvent) => {
+    const node = stageRef.current;
+    if (!node) return;
+    onMove(Math.min(Math.max(normalizedIn(node, event).x, 0), 1));
+  };
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="split-divider"
+        aria-label="Drag to compare before and after"
+        className="absolute inset-y-0 w-4 -translate-x-1/2 cursor-ew-resize"
+        style={{ left: `${at * 100}%` }}
+        onPointerDown={(event) => {
+          event.stopPropagation();
+          dragging.current = true;
+          capturePointer(event);
+        }}
+        onPointerMove={(event) => {
+          if (dragging.current) moveTo(event);
+        }}
+        onPointerUp={() => {
+          dragging.current = false;
+        }}
+        onDoubleClick={ownTap.onDoubleClick}
+      >
+        <span className="mx-auto block h-full w-0.5 bg-white/90" />
+        <span className="absolute top-1/2 left-1/2 flex h-9 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md border border-white/70 bg-background/85 text-white">
+          <ChevronsLeftRight className="size-3" />
+        </span>
+      </button>
+      <span
+        data-testid="split-before-label"
+        className={`${CHIP} pointer-events-none absolute top-3 font-semibold`}
+        style={{ right: `calc(${(1 - at) * 100}% + 10px)` }}
+      >
+        Before
+      </span>
+      <span
+        className={`${CHIP} pointer-events-none absolute top-3`}
+        style={{ left: `calc(${at * 100}% + 10px)` }}
+      >
+        After
+      </span>
+    </>
+  );
+}
 
 function StackOverlay({ stacks, path }: { stacks: LoupeStacks; path: string }) {
   const { frames } = stacks.current;
