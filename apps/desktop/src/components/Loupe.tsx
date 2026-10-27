@@ -33,6 +33,7 @@ import {
 } from "@/lib/zoom";
 import { CropOverlay } from "./CropTool";
 import { Filmstrip, filmstripPref } from "./Filmstrip";
+import { ratingCounts } from "./RatingFilter";
 
 // Photo pixels, not screen pixels: ten of them stay a fine adjustment on any
 // photo while still showing on screen at a fitted view.
@@ -251,13 +252,13 @@ export function Loupe({
           break;
         case "p":
         case "P":
-          onFlag(image.path, 1);
+          if (!event.repeat) onFlag(image.path, 1);
           break;
         case "x":
-          onFlag(image.path, -1);
-          break;
         case "X":
-          if (multiFrame) stacks.onSweep();
+          if (event.repeat) break;
+          if (!event.shiftKey) onFlag(image.path, -1);
+          else if (multiFrame) stacks.onSweep();
           break;
         case "u":
         case "U":
@@ -524,8 +525,7 @@ function StackOverlay({
 }) {
   const { frames } = stacks.current;
   const label = stackRatingLabel(stacks.current);
-  const picked = frames.filter((frame) => frame.flag === 1).length;
-  const rejected = frames.filter((frame) => frame.flag === -1).length;
+  const { picked, rejected } = ratingCounts(frames);
   const sweepable = sweepStack(stacks.current).size;
   return (
     <>
@@ -566,11 +566,13 @@ function StackOverlay({
             className="flex items-center gap-2.5 rounded-lg border border-primary/60 bg-background/95 py-1.5 pr-1.5 pl-3 text-sm shadow-lg backdrop-blur-sm"
           >
             <span className="font-semibold">
-              {image.flag === 1 ? "⚑ Picked" : "Pick this one"}
+              {image.flag === 1 ? "Unpick" : "Pick this one"}
             </span>
-            <span className="font-mono text-[11px] text-muted-foreground">
-              {image.flag === 1 ? "P again unpicks" : "others stay as they are"}
-            </span>
+            {image.flag !== 1 && (
+              <span className="font-mono text-[11px] text-muted-foreground">
+                others stay as they are
+              </span>
+            )}
             <kbd className="rounded bg-muted px-1.5 font-mono text-xs">P</kbd>
           </button>
         )}

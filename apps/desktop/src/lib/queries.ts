@@ -6,6 +6,7 @@ import {
   type QueryClient,
   queryOptions,
   skipToken,
+  useIsMutating,
   useMutation,
   useQueries,
   useQuery,
@@ -663,6 +664,9 @@ export const useSetRatings = (shoot: string | null) =>
 
 export const useSetFlags = (shoot: string | null) =>
   useBatchWrite(shoot, FLAG_FIELD);
+
+export const useFlagsSaving = () =>
+  useIsMutating({ mutationKey: SET_FLAG_KEY }) > 0;
 
 export function useReveal() {
   return useMutation({

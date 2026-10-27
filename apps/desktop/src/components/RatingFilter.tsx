@@ -43,7 +43,6 @@ function toggled<T>(set: ReadonlySet<T>, value: T): ReadonlySet<T> {
 
 const NONE: ReadonlySet<never> = new Set();
 
-/// Bars of one kind widen each other, the two kinds narrow: ⚑ with 4 and 5 is picks with 4 or 5 stars.
 export function useRatingFilter() {
   const [op, setOpOnly] = useState<RatingOp>("gte");
   const [stars, setStars] = useState<ReadonlySet<number>>(NONE);
@@ -70,7 +69,8 @@ export function useRatingFilter() {
     key: `${[...stars].sort()}|${[...flags].sort()}`,
     setOp: (next: RatingOp) => {
       setOpOnly(next);
-      if (anchor !== null && anchor > 0) setStars(starsFor(next, anchor));
+      if (stars.size === 0) return;
+      setStars(anchor !== null && anchor > 0 ? starsFor(next, anchor) : NONE);
     },
     clickStars: (star: number, { meta, shift }: Modifiers) => {
       if (shift && anchor !== null) {
@@ -78,7 +78,7 @@ export function useRatingFilter() {
         return;
       }
       setAnchor(star);
-      if (meta) setStars(toggled(stars, star));
+      if (meta || shift) setStars(toggled(stars, star));
       else only(starsFor(op, star), NONE);
     },
     clickFlag: (flag: Flag, { meta, shift }: Modifiers) => {

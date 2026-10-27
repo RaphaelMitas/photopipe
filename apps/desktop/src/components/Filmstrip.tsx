@@ -146,10 +146,12 @@ export function Filmstrip({ images, index, mode, stacks, onNavigate }: Props) {
                     rejectedFade(image.flag),
                   )}
                 />
-                <PickMark
-                  flag={image.flag}
-                  className="absolute top-0.5 left-0.5 size-3.5"
-                />
+                {mode !== "ratings" && (
+                  <PickMark
+                    flag={image.flag}
+                    className="absolute top-0.5 left-0.5 size-3.5"
+                  />
+                )}
                 {mode === "ratings" && (
                   <span
                     data-testid="filmstrip-rating"

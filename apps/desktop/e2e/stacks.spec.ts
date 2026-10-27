@@ -23,13 +23,17 @@ test("stacks: rate a whole stack, pick one inside it, undo the pick", async ({
     "others stay as they are",
   );
   await page.keyboard.press("p");
-  await expect(page.getByTestId("stack-pick")).toContainText("Picked");
+  await expect(page.getByTestId("stack-pick")).toContainText("Unpick");
   await expect(page.locator("[data-rating='4']")).toBeVisible();
 
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC01201.ARW");
   await expect(page.getByTestId("stack-chip")).toContainText("⚑ 1");
   await expect(page.getByTestId("stack-chip")).toContainText("all ★4");
+  await expect(page.getByTestId("flag-pick")).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
 
   await page.keyboard.press("Meta+z");
   await expect(page.getByTestId("stack-chip")).not.toContainText("⚑");
@@ -59,7 +63,9 @@ test("stacks: a pick, then ⇧X rejects the frames nobody judged", async ({
   await expect(page.getByTestId("stack-chip")).toContainText("⚑ 1");
   await expect(page.getByTestId("stack-chip")).toContainText("✕ 3");
   await page.keyboard.press("Escape");
-  await expect(page.getByTestId("trash-rejects")).toContainText("3 rejected");
+  await expect(page.getByTestId("trash-rejects")).toContainText(
+    "Trash 3 rejects",
+  );
 });
 
 test("opening a frame that is not its stack's cover starts inside the stack", async ({

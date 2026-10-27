@@ -32,7 +32,6 @@ export function groupStacks(images: ImageFile[]): Stack[] {
 export const stackRating = (stack: Stack) =>
   Math.max(...stack.frames.map((frame) => frame.rating));
 
-/// A pick anywhere keeps the moment; it only counts as rejected once every frame is.
 export function stackFlag(stack: Stack): Flag {
   if (stack.frames.some((frame) => frame.flag === 1)) return 1;
   return stack.frames.every((frame) => frame.flag === -1) ? -1 : 0;
@@ -77,29 +76,39 @@ export const anchorFor = (stack: Stack | undefined, path: string | null) =>
     ? path
     : null;
 
-export const ratedTo = (photos: ImageFile[], rating: number) =>
+const changesTo = <V>(
+  photos: ImageFile[],
+  of: (photo: ImageFile) => V,
+  value: V,
+) =>
   new Map(
     photos
-      .filter((photo) => photo.rating !== rating)
-      .map((photo) => [photo.path, rating]),
+      .filter((photo) => of(photo) !== value)
+      .map((photo) => [photo.path, value]),
   );
 
-/// Like clicking the current star: the flag comes off only when every photo already has it.
-export function toggledFlags(photos: ImageFile[], flag: Flag) {
-  const next = photos.every((photo) => photo.flag === flag) ? 0 : flag;
-  return new Map<string, Flag>(
-    photos
-      .filter((photo) => photo.flag !== next)
-      .map((photo) => [photo.path, next]),
-  );
-}
+export const ratedTo = (photos: ImageFile[], rating: number) =>
+  changesTo(photos, (photo) => photo.rating, rating);
 
-export function sweepStack(stack: Stack) {
-  if (stackFlag(stack) !== 1) return new Map<string, Flag>();
-  return new Map<string, Flag>(
-    stack.frames.filter(undecided).map((frame) => [frame.path, -1]),
+export const sharedFlag = (photos: ImageFile[]): Flag =>
+  photos.every((photo) => photo.flag === photos[0]?.flag)
+    ? (photos[0]?.flag ?? 0)
+    : 0;
+
+// toggles like clicking the current star
+export const toggledFlags = (photos: ImageFile[], flag: Flag) =>
+  changesTo<Flag>(
+    photos,
+    (photo) => photo.flag,
+    sharedFlag(photos) === flag ? 0 : flag,
   );
-}
+
+export const sweepStack = (stack: Stack) =>
+  changesTo<Flag>(
+    stackFlag(stack) === 1 ? stack.frames.filter(undecided) : [],
+    (photo) => photo.flag,
+    -1,
+  );
 
 export function stackedOrder(
   images: ImageFile[],

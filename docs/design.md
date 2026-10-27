@@ -21,7 +21,7 @@ does a DNG, JPEG or PNG on the iPad, which has no exiftool to write into a
 file. The develop exposure uses `crs:Exposure2012`, the tag Lightroom itself
 writes. Nothing you decide is trapped in a database only this app can open.
 
-**Pick and reject are a flag, not a rating.** `P`, `X` and `U` set
+**Pick and reject are a flag, not a rating.** `p`, `x` and `u` set
 `xmpDM:pick` (1, -1, 0), where Lightroom Classic 13.2 and later keeps its
 flag, so a rejected photo keeps its stars. Bridge's older reject, a rating of
 -1, reads as unrated: un-rejecting would otherwise leave it behind to come

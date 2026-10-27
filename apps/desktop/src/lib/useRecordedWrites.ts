@@ -31,7 +31,7 @@ const landed = (batch: Promise<BatchResult>) =>
     }
   });
 
-export const ratingDetail = (rating: number) =>
+const ratingDetail = (rating: number) =>
   rating === 0 ? "cleared" : "★".repeat(rating);
 
 type Judgment<V> = {
@@ -89,9 +89,9 @@ function useRecordedJudgment<V>(
     [queryClient, shoot, judgment, setOne, channel],
   );
 
-  /// `before` has to be read, not placeholder, values: undo writes them back.
+  /// `read` has to be read, not placeholder, photos: undo writes their values back.
   const many = useCallback(
-    (values: Map<string, V>, before: Map<string, V>, detail?: string) => {
+    (values: Map<string, V>, read: ImageFile[], suffix?: string) => {
       const [first] = values.values();
       if (first === undefined) return Promise.resolve();
       const written = landed(setMany(values));
@@ -100,11 +100,11 @@ function useRecordedJudgment<V>(
       void channel.record(
         {
           ...described,
-          detail: detail ?? described.detail,
+          detail: [described.detail, suffix].filter(Boolean).join(" "),
           paths: [...values.keys()],
           written,
         },
-        before,
+        new Map(read.map((photo) => [photo.path, judgment.of(photo)])),
         values,
       );
       return written;

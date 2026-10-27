@@ -620,7 +620,9 @@ test("X and P flag a grid selection; the rejects leave through the Trash after a
     .click({ modifiers: ["ControlOrMeta"] });
   await page.keyboard.press("x");
   await expect(page.getByTestId("hist-rejected")).toContainText("2");
-  await expect(page.getByTestId("trash-rejects")).toContainText("2 rejected");
+  await expect(page.getByTestId("trash-rejects")).toContainText(
+    "Trash 2 rejects",
+  );
 
   await page.keyboard.press("Escape");
   await page

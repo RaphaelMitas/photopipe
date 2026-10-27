@@ -89,6 +89,7 @@ import {
   inStack,
   ratedTo,
   type Stack,
+  sharedFlag,
   stackedOrder,
   stackOf,
   stacksPref,
@@ -97,7 +98,7 @@ import {
 } from "@/lib/stacks";
 import { useCropSession } from "@/lib/useCropSession";
 import { useDebouncedEdit } from "@/lib/useDebouncedEdit";
-import { ratingDetail, useRecordedWrites } from "@/lib/useRecordedWrites";
+import { useRecordedWrites } from "@/lib/useRecordedWrites";
 import { useUpdater } from "@/lib/useUpdater";
 
 const NO_HELD = { key: "", paths: [] };
@@ -408,17 +409,13 @@ export default function App() {
     }
     return live;
   };
-  const ratingsOf = (photos: ImageFile[]) =>
-    new Map(photos.map((photo) => [photo.path, photo.rating]));
-  const flagsOf = (photos: ImageFile[]) =>
-    new Map(photos.map((photo) => [photo.path, photo.flag]));
   const rateWholeStack = (stack: Stack, rating: number) => {
     const frames = readLive(stack.frames);
     if (!frames) return;
     writes.rateMany(
       ratedTo(frames, rating),
-      ratingsOf(frames),
-      `${ratingDetail(rating)} · stack of ${frames.length}`,
+      frames,
+      `· stack of ${frames.length}`,
     );
   };
   const flagWholeStack = (stack: Stack, flag: Flag) => {
@@ -426,7 +423,7 @@ export default function App() {
     if (!frames) return;
     writes.flagMany(
       toggledFlags(frames, flag),
-      flagsOf(frames),
+      frames,
       `· stack of ${frames.length}`,
     );
   };
@@ -435,7 +432,7 @@ export default function App() {
     if (!frames) return;
     const swept = sweepStack({ ...stack, frames });
     if (swept.size === 0) return;
-    void writes.flagMany(swept, flagsOf(frames)).then(
+    void writes.flagMany(swept, frames).then(
       () =>
         toast(`Rejected ${pluralize(swept.size, "undecided frame")}`, {
           id: "sweep",
@@ -456,11 +453,11 @@ export default function App() {
   };
   const rateSelection = (rating: number) => {
     const photos = readLive(selectedImages);
-    if (photos) writes.rateMany(ratedTo(photos, rating), ratingsOf(photos));
+    if (photos) writes.rateMany(ratedTo(photos, rating), photos);
   };
   const flagSelection = (flag: Flag) => {
     const photos = readLive(selectedImages);
-    if (photos) writes.flagMany(toggledFlags(photos, flag), flagsOf(photos));
+    if (photos) writes.flagMany(toggledFlags(photos, flag), photos);
   };
   const visit = (path: string | null, stacks: Stack[] | null) => {
     setCurrentPath(path);
@@ -680,7 +677,7 @@ export default function App() {
       if (!loupeOpen && !selection.isEmpty && !event.altKey) {
         if (/^[0-5]$/.test(event.key)) rateSelection(Number(event.key));
         const flag = GRID_FLAG_KEYS[event.key.toLowerCase()];
-        if (flag !== undefined) flagSelection(flag);
+        if (flag !== undefined && !event.repeat) flagSelection(flag);
       }
       if (event.key === "e" && !event.altKey && loupeOpen && !cropping) {
         toggleEditPanel();
@@ -877,6 +874,9 @@ export default function App() {
             )}
             filter={filter}
             ratingCounts={counts}
+            flag={
+              outsideStack ? sharedFlag(currentStack.frames) : loupeImage.flag
+            }
             onRate={rateShown}
             onFlag={flagShown}
             onBackToGrid={() =>

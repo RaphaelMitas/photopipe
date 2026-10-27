@@ -11,6 +11,7 @@ import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { ImageFile } from "@/lib/core";
 import { pluralize } from "@/lib/plural";
+import { useFlagsSaving } from "@/lib/queries";
 import { Thumbnail } from "./Thumbnail";
 
 const PREVIEWS = 6;
@@ -23,6 +24,8 @@ export function TrashRejects({
   onConfirm: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  // a reject still being written would land on a file already in the Trash
+  const saving = useFlagsSaving();
   if (rejects.length === 0 && !open) return null;
   const count = pluralize(rejects.length, "rejected photo");
   return (
@@ -36,7 +39,7 @@ export function TrashRejects({
         className="text-destructive hover:text-destructive"
       >
         <Trash2 />
-        {rejects.length} rejected…
+        Trash {pluralize(rejects.length, "reject")}…
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent data-testid="trash-rejects-dialog">
@@ -70,13 +73,13 @@ export function TrashRejects({
             <Button
               variant="destructive"
               data-testid="trash-rejects-confirm"
-              disabled={rejects.length === 0}
+              disabled={rejects.length === 0 || saving}
               onClick={() => {
                 setOpen(false);
                 onConfirm();
               }}
             >
-              Move {rejects.length} to Trash
+              {saving ? "Saving flags…" : `Move ${rejects.length} to Trash`}
             </Button>
           </DialogFooter>
         </DialogContent>

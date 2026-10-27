@@ -173,6 +173,13 @@ describe("Loupe with stacks", () => {
     expect(stacks.onSweep).toHaveBeenCalledTimes(2);
   });
 
+  it("a caps-lock X still rejects, and a held key flags once", () => {
+    const { onFlag } = renderLoupe(1);
+    fireEvent.keyDown(window, { key: "X" });
+    fireEvent.keyDown(window, { key: "x", repeat: true });
+    expect(onFlag.mock.calls).toEqual([["/r/s/DSC00002.ARW", -1]]);
+  });
+
   it("goes in and out of a stack by tapping its chip", () => {
     const outside = stackOf(makeImages(), false);
     renderLoupe(0, 0, null, outside);
@@ -392,6 +399,7 @@ describe("LoupeSidebar", () => {
             stacks={noStacks}
             betterThan={null}
             ratingCounts={counts}
+            flag={0}
             filter={filter}
             onRate={onRate}
             onFlag={onFlag}
@@ -419,6 +427,7 @@ describe("LoupeSidebar", () => {
             stacks={noStacks}
             betterThan={betterThan}
             ratingCounts={counts}
+            flag={0}
             filter={filter}
             onRate={vi.fn()}
             onFlag={vi.fn()}

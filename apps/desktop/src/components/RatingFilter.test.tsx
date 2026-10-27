@@ -42,6 +42,21 @@ describe("useRatingFilter", () => {
     expect(result.current.active).toBe(false);
   });
 
+  it("shift adds to a flag instead of replacing it when no star was clicked yet", () => {
+    const { result } = renderHook(() => useRatingFilter());
+    act(() => result.current.clickFlag(1, plain));
+    act(() => result.current.clickStars(5, shift));
+    expect(shown(result.current)).toEqual([photos[4]]);
+  });
+
+  it("a comparator does not bring back a filter that was cleared", () => {
+    const { result } = renderHook(() => useRatingFilter());
+    act(() => result.current.clickStars(3, plain));
+    act(() => result.current.clickStars(3, plain));
+    act(() => result.current.setOp("eq"));
+    expect(result.current.active).toBe(false);
+  });
+
   it("shift spans from the last clicked bar", () => {
     const { result } = renderHook(() => useRatingFilter());
     act(() => result.current.setOp("eq"));

@@ -110,14 +110,14 @@ public enum XMP {
 
     typealias Judgment = (rating: Int?, flag: Int?, edit: Edit)
 
-    // Bridge writes its reject as Rating -1; the reject here is the pick flag, so that reads as unrated
-    private static func validRating(_ text: String?) -> Int? {
-        text.flatMap { Int($0) }.flatMap { (0...5).contains($0) ? $0 : nil }
+    private static func int(_ text: String?, in range: ClosedRange<Int>) -> Int? {
+        text.flatMap { Int($0) }.flatMap { range.contains($0) ? $0 : nil }
     }
 
-    private static func validFlag(_ text: String?) -> Int? {
-        text.flatMap { Int($0) }.flatMap { (-1...1).contains($0) ? $0 : nil }
-    }
+    // Bridge writes its reject as Rating -1; the reject here is the pick flag, so that reads as unrated
+    private static func validRating(_ text: String?) -> Int? { int(text, in: 0...5) }
+
+    private static func validFlag(_ text: String?) -> Int? { int(text, in: -1...1) }
 
     static func parse(
         _ packet: some Collection<UInt8>, isRaw: Bool, baseOrientation: Int = 1

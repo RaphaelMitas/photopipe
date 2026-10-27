@@ -41,7 +41,7 @@ public struct ImageFile: Encodable, Equatable, Sendable {
     public let size: Int64
     public let mtime: Double
     public let rating: Int
-    /// Lightroom's pick flag: 1 picked, -1 rejected, 0 neither. Separate from the stars.
+    /// Lightroom's pick flag: 1 picked, -1 rejected, 0 neither.
     public let flag: Int
     public let edit: Edit
     public let width: Int
