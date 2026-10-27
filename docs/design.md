@@ -117,6 +117,15 @@ name collisions (two `DSC01301.ARW` in different subfolders, or `x.arw` and
 `x.jpg` both becoming `x.jpg`) get deterministic `-1`/`-2` suffixes rather
 than a silent overwrite.
 
+Names can follow a template instead: `{date}`, `{time}`, `{seq}`,
+`{original}`, `{rating}` and `{shoot}`, typed or picked from four presets,
+with the last three custom ones remembered. The drawer builds the names, so
+the preview shows the names the export sends; the core refuses a name that would leave
+the folder or hide the file, and adds the extension and the suffixes. `{seq}`
+counts in the grid's current sort, because the order you see is the order the
+client gets. The date is the capture time, or the file's date for a photo
+without one, the same rule the Date sort uses.
+
 ## Export always acts on the selection
 
 There is no "export the filtered set" mode. The drawer's quick actions

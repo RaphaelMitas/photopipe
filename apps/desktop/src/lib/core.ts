@@ -274,6 +274,7 @@ export type CoreMethods = {
       quality: number;
       longEdge: number | null;
       decoderVersion: number;
+      names: string[] | null;
     };
     result: ExportProgress;
   };

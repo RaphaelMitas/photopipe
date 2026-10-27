@@ -4,6 +4,13 @@ import { pref } from "./pref";
 export const SORT_KEYS = ["name", "date", "rating", "score"] as const;
 export type SortKey = (typeof SORT_KEYS)[number];
 
+export const SORT_LABELS: Record<SortKey, string> = {
+  name: "Name",
+  date: "Date",
+  rating: "Rating",
+  score: "Instinct",
+};
+
 export function isSortKey(value: unknown): value is SortKey {
   return SORT_KEYS.some((key) => key === value);
 }
@@ -15,7 +22,7 @@ export const sortPref = pref(
 );
 
 // captured reads the camera clock as UTC; local wall time is mtime's closest match
-const takenAt = (image: ImageFile) =>
+export const takenAt = (image: ImageFile) =>
   image.captured ??
   image.mtime - new Date(image.mtime * 1000).getTimezoneOffset() * 60;
 

@@ -19,7 +19,14 @@ import {
   X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { ExportFormat } from "@/lib/core";
+import type { ExportFormat, ImageFile } from "@/lib/core";
+import {
+  DEFAULT_TEMPLATE,
+  exportName,
+  NAME_PRESETS,
+  TEMPLATE_LIMIT,
+  templateProblem,
+} from "@/lib/exportNames";
 import { useFeatures } from "@/lib/features";
 import { pluralize } from "@/lib/plural";
 import { pref } from "@/lib/pref";
@@ -35,7 +42,9 @@ import {
   useRawDecoderVersion,
 } from "@/lib/rawDecoder";
 import { pickFolder } from "@/lib/roots";
+import type { SortKey } from "@/lib/sort";
 import { DecoderSegmented } from "./DecoderSegmented";
+import { ExportNames } from "./ExportNames";
 
 const SIZES = ["full", "2048", "1080", "custom"] as const;
 type Size = (typeof SIZES)[number];
@@ -58,6 +67,8 @@ export type ExportOptions = {
   zip: boolean;
   flatten: boolean;
   decoderVersion: RawDecoderVersion;
+  /// One per exported photo, in the order sent; null keeps the files' names.
+  names: string[] | null;
 };
 
 export function exportLabel(count: number, format: ExportFormat): string {
@@ -68,7 +79,9 @@ export function exportLabel(count: number, format: ExportFormat): string {
 
 type Props = {
   shoot: string;
-  rawPaths: string[];
+  /// The selection in grid order, which is the order the names are numbered in.
+  images: ImageFile[];
+  sort: SortKey;
   selectedCount: number;
   editedCount: number;
   filteredCount: number;
@@ -119,16 +132,19 @@ function jobDetail(job: ExportJob, status: JobStatus, settled: number): string {
 
 function Section({
   label,
+  action,
   children,
 }: {
   label?: string;
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-2 border-b border-border px-3 py-2.5">
       {label && (
-        <span className="text-[10px] text-muted-foreground uppercase tracking-wider">
+        <span className="flex items-center justify-between text-[10px] text-muted-foreground uppercase tracking-wider">
           {label}
+          {action}
         </span>
       )}
       {children}
@@ -202,10 +218,18 @@ function CustomLongEdge({
 
 /// The decoder is seeded from culling on every open, so it never persists.
 /// The custom edge lives apart from the pick, so a typed 2048 stays Custom.
-type StoredOptions = Omit<ExportOptions, "decoderVersion" | "longEdge"> & {
+type StoredOptions = Omit<
+  ExportOptions,
+  "decoderVersion" | "longEdge" | "names"
+> & {
   size: Size;
   customLongEdge: number;
+  rename: boolean;
+  template: string;
+  recentTemplates: string[];
 };
+
+const RECENT_LIMIT = 3;
 
 function longEdgeOf({ size, customLongEdge }: StoredOptions): number | null {
   if (size === "full") return null;
@@ -229,6 +253,22 @@ export function decodeOptions(stored: string | null): StoredOptions {
           ) ?? 4096,
         zip: "zip" in parsed && parsed.zip === true,
         flatten: !("flatten" in parsed && parsed.flatten === false),
+        rename: "rename" in parsed && parsed.rename === true,
+        template:
+          "template" in parsed &&
+          typeof parsed.template === "string" &&
+          parsed.template.length <= TEMPLATE_LIMIT
+            ? parsed.template
+            : DEFAULT_TEMPLATE,
+        recentTemplates:
+          "recentTemplates" in parsed && Array.isArray(parsed.recentTemplates)
+            ? parsed.recentTemplates
+                .filter(
+                  (used): used is string =>
+                    typeof used === "string" && templateProblem(used) === null,
+                )
+                .slice(0, RECENT_LIMIT)
+            : [],
       };
     }
   } catch {
@@ -241,6 +281,9 @@ export function decodeOptions(stored: string | null): StoredOptions {
     customLongEdge: 4096,
     zip: false,
     flatten: true,
+    rename: false,
+    template: DEFAULT_TEMPLATE,
+    recentTemplates: [],
   };
 }
 
@@ -248,7 +291,8 @@ const optionsPref = pref("photopipe.export", decodeOptions, JSON.stringify);
 
 export function ExportDrawer({
   shoot,
-  rawPaths,
+  images,
+  sort,
   selectedCount,
   editedCount,
   filteredCount,
@@ -267,6 +311,21 @@ export function ExportDrawer({
   const options = optionsPref.use();
   const { zipExport } = useFeatures();
   const zip = options.zip && zipExport;
+  const rawPaths = useMemo(
+    () => images.filter((image) => image.isRaw).map((image) => image.path),
+    [images],
+  );
+  const names = useMemo(
+    () =>
+      options.rename
+        ? images.map((image, i) =>
+            exportName(options.template, image, i, images.length, shoot),
+          )
+        : null,
+    [images, options.rename, options.template, shoot],
+  );
+  const badTemplate =
+    options.rename && templateProblem(options.template) !== null;
   const [decoderVersion, setDecoderVersion] =
     useState<RawDecoderVersion>(rawDecoderVersion);
   const [dismissed, setDismissed] = useState<string | null>(null);
@@ -349,18 +408,31 @@ export function ExportDrawer({
 
   const runExport = async () => {
     const destination = await pickDestination();
-    if (destination)
-      onExport(
-        {
-          format: options.format,
-          quality: options.quality,
-          longEdge,
-          zip,
-          flatten: options.flatten,
-          decoderVersion: effectiveDecoder,
-        },
-        destination,
-      );
+    if (!destination) return;
+    if (
+      options.rename &&
+      !NAME_PRESETS.some((preset) => preset.template === options.template)
+    )
+      patch({
+        recentTemplates: [
+          options.template,
+          ...options.recentTemplates.filter(
+            (used) => used !== options.template,
+          ),
+        ].slice(0, RECENT_LIMIT),
+      });
+    onExport(
+      {
+        format: options.format,
+        quality: options.quality,
+        longEdge,
+        zip,
+        flatten: options.flatten,
+        decoderVersion: effectiveDecoder,
+        names,
+      },
+      destination,
+    );
   };
 
   return (
@@ -505,6 +577,36 @@ export function ExportDrawer({
         )}
       </Section>
 
+      <Section
+        label="Names"
+        action={
+          <Switch
+            data-testid="rename"
+            aria-label="Rename files"
+            checked={options.rename}
+            onCheckedChange={(rename) => patch({ rename })}
+          />
+        }
+      >
+        {names ? (
+          <ExportNames
+            template={options.template}
+            recent={options.recentTemplates}
+            names={names}
+            images={images}
+            shoot={shoot}
+            sort={sort}
+            format={options.format}
+            flatten={options.flatten}
+            onChange={(template) => patch({ template })}
+          />
+        ) : (
+          <p className="text-[10px] text-muted-foreground">
+            Files keep their names.
+          </p>
+        )}
+      </Section>
+
       <Section label="Destination">
         {zipExport && (
           <Segmented
@@ -527,8 +629,8 @@ export function ExportDrawer({
         </Row>
         {banner && (
           <Alert data-testid="decoder-banner" className="gap-1 px-3 py-2.5">
-            <TriangleAlert className="text-amber-400" />
-            <AlertTitle className="text-[11px] text-amber-400">
+            <TriangleAlert className="text-warning" />
+            <AlertTitle className="text-[11px] text-warning">
               Exporting with RAW {effectiveDecoder}
             </AlertTitle>
             <AlertDescription className="text-[11px]">
@@ -539,7 +641,7 @@ export function ExportDrawer({
                   variant="outline"
                   data-testid="banner-fix"
                   onClick={() => setDecoderVersion(banner.fixTo)}
-                  className="h-5 border-amber-400/45 px-2 text-[10px] text-amber-400"
+                  className="h-5 border-warning/45 px-2 text-[10px] text-warning"
                 >
                   Use RAW {banner.fixTo}
                 </Button>
@@ -558,7 +660,7 @@ export function ExportDrawer({
         <Button
           size="sm"
           data-testid="run-export"
-          disabled={selectedCount === 0 || busy || probing}
+          disabled={selectedCount === 0 || busy || probing || badTemplate}
           onClick={() => void runExport()}
           className="mt-1 w-full text-xs"
         >
@@ -586,13 +688,13 @@ export function ExportDrawer({
                       <span className="size-2 shrink-0 animate-pulse rounded-full bg-primary" />
                     )}
                     {status === "done" && (
-                      <Check className="size-3.5 shrink-0 text-emerald-400" />
+                      <Check className="size-3.5 shrink-0 text-success" />
                     )}
                     {status === "cancelled" && (
                       <X className="size-3.5 shrink-0 text-muted-foreground" />
                     )}
                     {status === "partial" && (
-                      <AlertCircle className="size-3.5 shrink-0 text-amber-400" />
+                      <AlertCircle className="size-3.5 shrink-0 text-warning" />
                     )}
                     {status === "failed" && (
                       <AlertCircle className="size-3.5 shrink-0 text-destructive" />

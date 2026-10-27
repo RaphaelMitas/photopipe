@@ -7,6 +7,8 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ImageFile } from "@/lib/core";
+import { makeImage } from "@/lib/test-image";
 import {
   decodeOptions,
   ExportDrawer,
@@ -33,6 +35,9 @@ function nonCoreAnswer(cmd: string) {
 
 const RAWS = ["/r/s/A.ARW", "/r/s/B.ARW", "/r/s/C.ARW"];
 
+const imagesAt = (paths: string[]): ImageFile[] =>
+  paths.map((path) => makeImage(path.replace("/r/s/", ""), { path }));
+
 function renderDrawer(rawPaths: string[] = RAWS) {
   const onExport =
     vi.fn<(options: ExportOptions, destination: string) => void>();
@@ -43,7 +48,8 @@ function renderDrawer(rawPaths: string[] = RAWS) {
     <QueryClientProvider client={client}>
       <ExportDrawer
         shoot="s"
-        rawPaths={paths}
+        images={imagesAt(paths)}
+        sort="name"
         selectedCount={rawPaths.length || 1}
         editedCount={0}
         filteredCount={3}
@@ -254,6 +260,9 @@ describe("export size", () => {
       customLongEdge: 4096,
       zip: true,
       flatten: true,
+      rename: false,
+      template: "{date}_{shoot}_{seq}",
+      recentTemplates: [],
     });
   });
 
@@ -319,5 +328,48 @@ describe("export size", () => {
     fireEvent.click(screen.getByTestId("run-export"));
     await waitFor(() => expect(onExport).toHaveBeenCalled());
     expect(onExport.mock.calls[0][0].longEdge).toBe(16384);
+  });
+});
+
+describe("export names", () => {
+  it("sends one name per photo in grid order and remembers a custom template", async () => {
+    mockSupport(0, 3);
+    const { onExport } = renderDrawer();
+    fireEvent.click(screen.getByTestId("rename"));
+    fireEvent.change(screen.getByTestId("name-template"), {
+      target: { value: "show_{seq}_{original}" },
+    });
+    expect(screen.getByTestId("name-preview")).toHaveTextContent(
+      "show_001_A.jpg",
+    );
+    await waitFor(() => expect(screen.getByTestId("run-export")).toBeEnabled());
+    fireEvent.click(screen.getByTestId("run-export"));
+    await waitFor(() => expect(onExport).toHaveBeenCalled());
+    expect(onExport.mock.calls[0][0].names).toEqual([
+      "show_001_A",
+      "show_002_B",
+      "show_003_C",
+    ]);
+    expect(
+      decodeOptions(localStorage.getItem("photopipe.export")).recentTemplates,
+    ).toEqual(["show_{seq}_{original}"]);
+  });
+
+  it("blocks the export on a token it does not know", async () => {
+    mockSupport(0, 3);
+    const { onExport } = renderDrawer();
+    fireEvent.click(screen.getByTestId("rename"));
+    fireEvent.change(screen.getByTestId("name-template"), {
+      target: { value: "{stars}_{seq}" },
+    });
+    expect(screen.getByTestId("name-problem")).toHaveTextContent(
+      "{stars} isn't a token",
+    );
+    expect(screen.getByTestId("run-export")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("rename"));
+    await waitFor(() => expect(screen.getByTestId("run-export")).toBeEnabled());
+    fireEvent.click(screen.getByTestId("run-export"));
+    await waitFor(() => expect(onExport).toHaveBeenCalled());
+    expect(onExport.mock.calls[0][0].names).toBeNull();
   });
 });
