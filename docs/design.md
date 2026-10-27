@@ -123,8 +123,8 @@ with the last three custom ones remembered. The drawer builds the names, so
 the preview shows the names the export sends; the core refuses a name that would leave
 the folder or hide the file, and adds the extension and the suffixes. `{seq}`
 counts in the grid's current sort, because the order you see is the order the
-client gets. The date is the capture time where the stacking pass has read
-it and the file's date otherwise, the same rule the Date sort uses.
+client gets. The date is the capture time, or the file's date for a photo
+without one, the same rule the Date sort uses.
 
 ## Export always acts on the selection
 
