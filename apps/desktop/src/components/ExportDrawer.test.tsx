@@ -264,7 +264,7 @@ describe("export size", () => {
       size: "2048",
       customLongEdge: 1600,
     });
-    expect(stored("custom", 1600).customLongEdge).toBe(1600);
+    expect(stored("custom", 1600).size).toBe("custom");
     expect(stored(2048, 1600).size).toBe("full");
     expect(stored("4096", 1600).size).toBe("full");
     for (const junk of [100, 99999, 1600.5, "1600", null]) {
@@ -288,22 +288,27 @@ describe("export size", () => {
     expect(onExport.mock.calls[0][0].longEdge).toBe(2048);
   });
 
-  it("exports the custom edge typed a digit at a time", async () => {
+  it("saves the custom edge once it is left, clamped to what it can export", async () => {
     mockSupport(0, 3);
     const { onExport } = renderDrawer();
     fireEvent.click(screen.getByTestId("format-jpeg"));
     fireEvent.click(screen.getByTestId("size-custom"));
     const field = screen.getByTestId("custom-long-edge");
-    for (const typed of ["", "1", "16", "160", "1600"]) {
+    // backspacing 4096 away passes 409, which must not stick
+    for (const typed of ["409", "40", "", "1", "16", "160", "1600"]) {
       fireEvent.change(field, { target: { value: typed } });
     }
-    expect(field).toHaveValue("1600");
-    fireEvent.change(field, { target: { value: "16000000" } });
     fireEvent.blur(field);
     expect(field).toHaveValue("1600");
+    fireEvent.change(field, { target: { value: "20000" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(field).toHaveValue("16384");
+    fireEvent.change(field, { target: { value: "" } });
+    fireEvent.blur(field);
+    expect(field).toHaveValue("16384");
     await waitFor(() => expect(screen.getByTestId("run-export")).toBeEnabled());
     fireEvent.click(screen.getByTestId("run-export"));
     await waitFor(() => expect(onExport).toHaveBeenCalled());
-    expect(onExport.mock.calls[0][0].longEdge).toBe(1600);
+    expect(onExport.mock.calls[0][0].longEdge).toBe(16384);
   });
 });

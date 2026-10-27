@@ -18,7 +18,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import type { ExportFormat } from "@/lib/core";
 import { useFeatures } from "@/lib/features";
 import { pref } from "@/lib/pref";
@@ -148,7 +148,7 @@ function Row({
   );
 }
 
-/// Saves only values it can export, so typing 1600 is never clamped at its 1.
+/// Commits on blur, so the 409 on the way to retyping 4096 is never saved.
 function CustomLongEdge({
   value,
   onChange,
@@ -157,7 +157,17 @@ function CustomLongEdge({
   onChange: (value: number) => void;
 }) {
   const [draft, setDraft] = useState(String(value));
-  const invalid = toCustomLongEdge(Number(draft)) === null;
+  const hintId = useId();
+  const typed = Number(draft);
+  const valid = toCustomLongEdge(typed) !== null;
+  const commit = () => {
+    const next =
+      draft.trim() === "" || !Number.isFinite(typed)
+        ? value
+        : Math.min(Math.max(Math.round(typed), CUSTOM_MIN), CUSTOM_MAX);
+    setDraft(String(next));
+    if (next !== value) onChange(next);
+  };
   return (
     <>
       <div className="flex items-center gap-2 text-xs">
@@ -166,31 +176,31 @@ function CustomLongEdge({
           Size
         </span>
         <div className="relative flex-1">
-          <span className="absolute inset-y-0 left-3 flex items-center text-muted-foreground">
+          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted-foreground">
             Long edge
           </span>
           <Input
             data-testid="custom-long-edge"
             aria-label="Long edge in pixels"
+            aria-invalid={!valid}
+            aria-describedby={valid ? undefined : hintId}
             inputMode="numeric"
             value={draft}
-            aria-invalid={invalid}
-            onChange={(event) => {
-              setDraft(event.target.value);
-              const next = toCustomLongEdge(Number(event.target.value));
-              if (next !== null) onChange(next);
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={commit}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") commit();
             }}
-            onBlur={() => setDraft(String(value))}
             className="h-8 pr-8 pl-20 text-right text-xs tabular-nums md:text-xs"
           />
-          <span className="absolute inset-y-0 right-3 flex items-center text-muted-foreground">
+          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground">
             px
           </span>
         </div>
       </div>
-      {invalid && (
-        <p className="text-[10px] text-destructive">
-          Between {CUSTOM_MIN} and {CUSTOM_MAX} px.
+      {!valid && (
+        <p id={hintId} className="text-[10px] text-muted-foreground">
+          {CUSTOM_MIN} to {CUSTOM_MAX} px.
         </p>
       )}
     </>
