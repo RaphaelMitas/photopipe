@@ -134,7 +134,7 @@ export function Loupe({
         : deferredEdit,
     [cropping, deferredEdit, draftRotation],
   );
-  // Queries fetch in call order and an idle lane starts on the first, so the edit asks first.
+  // Queries fetch in call order and an idle lane usually starts on the first, so the edit asks first.
   const render = useRender(image, previewEdit);
   const beforeEdit = useMemo(() => unedited(deferredEdit), [deferredEdit]);
   const before = useRender(comparing ? image : undefined, beforeEdit);
