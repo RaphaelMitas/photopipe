@@ -252,21 +252,21 @@ export function ExportNames({
       {!problem && repeats > 0 && (
         <p
           data-testid="name-repeats"
-          className="flex gap-1.5 text-[10px] text-amber-400"
+          className="flex gap-1.5 text-[10px] text-warning"
         >
           <TriangleAlert className="mt-px size-3 shrink-0" />
           Some names repeat and get -1, -2. Add {"{seq}"} to keep them apart.
         </p>
       )}
       {!problem && undated > 0 && (
-        <p data-testid="name-undated" className="text-[10px] text-amber-400">
+        <p data-testid="name-undated" className="text-[10px] text-warning">
           {pluralize(undated, "photo")} {undated === 1 ? "has" : "have"} no
           capture time loaded and {undated === 1 ? "uses" : "use"} the file
           date.
         </p>
       )}
       {!problem && unrated > 0 && (
-        <p data-testid="name-unrated" className="text-[10px] text-amber-400">
+        <p data-testid="name-unrated" className="text-[10px] text-warning">
           {pluralize(unrated, "photo")} {unrated === 1 ? "is" : "are"} still
           being read, so {"{rating}"} may say 0.
         </p>

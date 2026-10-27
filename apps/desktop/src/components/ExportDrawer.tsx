@@ -629,8 +629,8 @@ export function ExportDrawer({
         </Row>
         {banner && (
           <Alert data-testid="decoder-banner" className="gap-1 px-3 py-2.5">
-            <TriangleAlert className="text-amber-400" />
-            <AlertTitle className="text-[11px] text-amber-400">
+            <TriangleAlert className="text-warning" />
+            <AlertTitle className="text-[11px] text-warning">
               Exporting with RAW {effectiveDecoder}
             </AlertTitle>
             <AlertDescription className="text-[11px]">
@@ -641,7 +641,7 @@ export function ExportDrawer({
                   variant="outline"
                   data-testid="banner-fix"
                   onClick={() => setDecoderVersion(banner.fixTo)}
-                  className="h-5 border-amber-400/45 px-2 text-[10px] text-amber-400"
+                  className="h-5 border-warning/45 px-2 text-[10px] text-warning"
                 >
                   Use RAW {banner.fixTo}
                 </Button>
@@ -688,13 +688,13 @@ export function ExportDrawer({
                       <span className="size-2 shrink-0 animate-pulse rounded-full bg-primary" />
                     )}
                     {status === "done" && (
-                      <Check className="size-3.5 shrink-0 text-emerald-400" />
+                      <Check className="size-3.5 shrink-0 text-success" />
                     )}
                     {status === "cancelled" && (
                       <X className="size-3.5 shrink-0 text-muted-foreground" />
                     )}
                     {status === "partial" && (
-                      <AlertCircle className="size-3.5 shrink-0 text-amber-400" />
+                      <AlertCircle className="size-3.5 shrink-0 text-warning" />
                     )}
                     {status === "failed" && (
                       <AlertCircle className="size-3.5 shrink-0 text-destructive" />

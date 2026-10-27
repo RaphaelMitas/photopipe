@@ -902,7 +902,7 @@ export default function App() {
                   </>
                 ) : (
                   <>
-                    <Check className="text-emerald-400" />
+                    <Check className="text-success" />
                     Activity
                   </>
                 )}
