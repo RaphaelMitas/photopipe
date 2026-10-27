@@ -33,7 +33,7 @@ type Props = {
   onView: (view: ViewMode) => void;
   sort: SortKey;
   onSort: (sort: SortKey) => void;
-  scoreReady: boolean;
+  sortReady: Record<SortKey, boolean>;
   scoring: PassProgress | null;
   justRated: boolean;
 };
@@ -44,7 +44,7 @@ export function BrowserToolbar({
   onView,
   sort,
   onSort,
-  scoreReady,
+  sortReady,
   scoring,
   justRated,
 }: Props) {
@@ -93,7 +93,11 @@ export function BrowserToolbar({
             <DropdownMenuRadioItem value="name">
               {SORT_LABELS.name}
             </DropdownMenuRadioItem>
-            <DropdownMenuRadioItem value="date">
+            <DropdownMenuRadioItem
+              value="date"
+              disabled={!sortReady.date}
+              data-testid="sort-date"
+            >
               {SORT_LABELS.date}
             </DropdownMenuRadioItem>
             <DropdownMenuRadioItem value="rating" data-testid="sort-rating">
@@ -101,7 +105,7 @@ export function BrowserToolbar({
             </DropdownMenuRadioItem>
             <DropdownMenuRadioItem
               value="score"
-              disabled={!scoreReady}
+              disabled={!sortReady.score}
               data-testid="sort-score"
             >
               {SORT_LABELS.score}

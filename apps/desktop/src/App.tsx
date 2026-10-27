@@ -80,7 +80,7 @@ import {
   toRootError,
 } from "@/lib/roots";
 import { useSelection } from "@/lib/selection";
-import { browserOrder, sortPref } from "@/lib/sort";
+import { browserOrder, type SortKey, sortPref } from "@/lib/sort";
 import {
   anchorFor,
   coverOf,
@@ -219,8 +219,15 @@ export default function App() {
     ? scoring.total > 0 && !scoring.running && scoring.done >= scoring.total
     : allImages.length > 0 && allImages.every((image) => image.score != null);
   // Sorting a half-rated project would put photos in an order the scores do not
-  // support, so until the pass is done the browser falls back to name.
-  const activeSort = sort === "score" && !scoreReady ? "name" : sort;
+  // support, so until the pass is done the browser falls back to name. Capture
+  // times arrive with the stack pass, so Date waits for it the same way.
+  const sortReady = {
+    name: true,
+    date: !stacksWanted || stacking.ready,
+    rating: true,
+    score: scoreReady,
+  } satisfies Record<SortKey, boolean>;
+  const activeSort = sortReady[sort] ? sort : "name";
   const filteredImages = useMemo(
     () => browserOrder(allImages, filter.matches, activeSort),
     [allImages, filter.matches, activeSort],
@@ -755,7 +762,7 @@ export default function App() {
     <BrowserPane
       images={filteredImages}
       sort={activeSort}
-      scoreReady={scoreReady}
+      sortReady={sortReady}
       scoring={scoring}
       justRated={justRated}
       filterActive={filter.active}

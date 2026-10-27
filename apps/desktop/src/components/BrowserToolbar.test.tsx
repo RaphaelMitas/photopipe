@@ -5,6 +5,8 @@ import { BrowserToolbar } from "./BrowserToolbar";
 
 afterEach(cleanup);
 
+const allReady = { name: true, date: true, rating: true, score: true };
+
 function toolbar(props: Partial<Parameters<typeof BrowserToolbar>[0]> = {}) {
   const onSort = vi.fn();
   render(
@@ -14,7 +16,7 @@ function toolbar(props: Partial<Parameters<typeof BrowserToolbar>[0]> = {}) {
       onView={vi.fn()}
       sort="name"
       onSort={onSort}
-      scoreReady={true}
+      sortReady={allReady}
       scoring={null}
       justRated={false}
       {...props}
@@ -36,7 +38,7 @@ describe("BrowserToolbar", () => {
   });
 
   it("sorts by rating without waiting for a rating pass", () => {
-    const { onSort } = toolbar({ scoreReady: false });
+    const { onSort } = toolbar({ sortReady: { ...allReady, score: false } });
     const option = openSortMenu("rating");
     expect(option).not.toHaveAttribute("data-disabled");
     fireEvent.click(option);
@@ -45,7 +47,7 @@ describe("BrowserToolbar", () => {
 
   it("names the rating pass and keeps Instinct out of reach while it runs", () => {
     const { onSort } = toolbar({
-      scoreReady: false,
+      sortReady: { ...allReady, score: false },
       scoring: { done: 620, total: 2003, running: true },
     });
     expect(screen.getByTestId("rating-now")).toHaveTextContent(

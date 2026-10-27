@@ -64,6 +64,32 @@ describe("sortImages", () => {
     ]);
   });
 
+  it("orders by when the shutter fired, not when the file was written", () => {
+    const images = [
+      makeImage("rated.jpg", { captured: 100, mtime: 900 }),
+      makeImage("b-cam.arw", { captured: 200, mtime: 300 }),
+      makeImage("a-cam.arw", { captured: 300, mtime: 200 }),
+    ];
+    expect(rels(sortImages(images, "date"))).toEqual([
+      "rated.jpg",
+      "b-cam.arw",
+      "a-cam.arw",
+    ]);
+  });
+
+  it("dates a photo without a capture time by its file and keeps ties in name order", () => {
+    const images = [
+      makeImage("a.png", { captured: null, mtime: 150 }),
+      makeImage("b.arw", { captured: 100, mtime: 999 }),
+      makeImage("c.arw", { captured: 150, mtime: 1 }),
+    ];
+    expect(rels(sortImages(images, "date"))).toEqual([
+      "b.arw",
+      "a.png",
+      "c.arw",
+    ]);
+  });
+
   it("does not mutate the list it was given", () => {
     const images = [
       makeImage("a.arw", { score: 0.1 }),
