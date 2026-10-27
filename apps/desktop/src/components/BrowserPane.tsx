@@ -11,7 +11,7 @@ import { ImportButton } from "./ImportButton";
 type Props = {
   images: ImageFile[];
   sort: SortKey;
-  scoreReady: boolean;
+  sortReady: Record<SortKey, boolean>;
   scoring: PassProgress | null;
   justRated: boolean;
   filterActive: boolean;
@@ -26,7 +26,7 @@ type Props = {
 export function BrowserPane({
   images,
   sort,
-  scoreReady,
+  sortReady,
   scoring,
   justRated,
   filterActive,
@@ -47,7 +47,7 @@ export function BrowserPane({
         onView={viewPref.set}
         sort={sort}
         onSort={sortPref.set}
-        scoreReady={scoreReady}
+        sortReady={sortReady}
         scoring={scoring}
         justRated={justRated}
       />

@@ -14,6 +14,11 @@ export const sortPref = pref(
   String,
 );
 
+// captured reads the camera clock as UTC; local wall time is mtime's closest match
+const takenAt = (image: ImageFile) =>
+  image.captured ??
+  image.mtime - new Date(image.mtime * 1000).getTimezoneOffset() * 60;
+
 /// The core lists a shoot by name, so that order is the baseline every other
 /// sort falls back to for ties and for files that have no score.
 export function sortImages(images: ImageFile[], sort: SortKey): ImageFile[] {
@@ -21,7 +26,7 @@ export function sortImages(images: ImageFile[], sort: SortKey): ImageFile[] {
     case "name":
       return images;
     case "date":
-      return [...images].sort((a, b) => a.mtime - b.mtime);
+      return [...images].sort((a, b) => takenAt(a) - takenAt(b));
     case "rating":
       return [...images].sort((a, b) => b.rating - a.rating);
     case "score":

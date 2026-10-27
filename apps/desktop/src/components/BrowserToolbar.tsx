@@ -10,7 +10,7 @@ import {
 import { ArrowUpDown, LayoutGrid, Rows3, Sparkles } from "lucide-react";
 import type { PassProgress } from "@/lib/core";
 import { pref } from "@/lib/pref";
-import { isSortKey, type SortKey } from "@/lib/sort";
+import { isSortKey, SORT_KEYS, type SortKey } from "@/lib/sort";
 
 export type ViewMode = "grid" | "list";
 
@@ -33,7 +33,7 @@ type Props = {
   onView: (view: ViewMode) => void;
   sort: SortKey;
   onSort: (sort: SortKey) => void;
-  scoreReady: boolean;
+  sortReady: Record<SortKey, boolean>;
   scoring: PassProgress | null;
   justRated: boolean;
 };
@@ -44,7 +44,7 @@ export function BrowserToolbar({
   onView,
   sort,
   onSort,
-  scoreReady,
+  sortReady,
   scoring,
   justRated,
 }: Props) {
@@ -90,22 +90,16 @@ export function BrowserToolbar({
               if (isSortKey(value)) onSort(value);
             }}
           >
-            <DropdownMenuRadioItem value="name">
-              {SORT_LABELS.name}
-            </DropdownMenuRadioItem>
-            <DropdownMenuRadioItem value="date">
-              {SORT_LABELS.date}
-            </DropdownMenuRadioItem>
-            <DropdownMenuRadioItem value="rating" data-testid="sort-rating">
-              {SORT_LABELS.rating}
-            </DropdownMenuRadioItem>
-            <DropdownMenuRadioItem
-              value="score"
-              disabled={!scoreReady}
-              data-testid="sort-score"
-            >
-              {SORT_LABELS.score}
-            </DropdownMenuRadioItem>
+            {SORT_KEYS.map((key) => (
+              <DropdownMenuRadioItem
+                key={key}
+                value={key}
+                disabled={!sortReady[key]}
+                data-testid={`sort-${key}`}
+              >
+                {SORT_LABELS[key]}
+              </DropdownMenuRadioItem>
+            ))}
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>

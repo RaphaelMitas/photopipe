@@ -13,6 +13,7 @@ import {
 import { Switch } from "@photopipe/ui/components/switch";
 import { ChevronLeft, FolderOpen, Settings, Settings2 } from "lucide-react";
 import type { Shoot } from "@/lib/core";
+import { pluralize } from "@/lib/plural";
 import { flagPref } from "@/lib/pref";
 import type { PhotoSource } from "@/lib/roots";
 import { ImportButton } from "./ImportButton";
@@ -89,7 +90,7 @@ export function AppSidebar({
                 </span>
               )}
               <span className="text-[10px] text-muted-foreground">
-                {currentShoot.imageCount} photos
+                {pluralize(currentShoot.imageCount, "photo")}
               </span>
               {currentShoot.notes && (
                 <p className="mt-1 text-muted-foreground/70 text-xs">

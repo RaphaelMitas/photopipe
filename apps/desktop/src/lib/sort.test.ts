@@ -1,8 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { browserOrder, sortImages } from "./sort";
 import { makeImage, rels } from "./test-image";
 
 describe("sortImages", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("keeps the core's order for name", () => {
     const images = [makeImage("b.arw"), makeImage("a.arw")];
     expect(sortImages(images, "name")).toBe(images);
@@ -61,6 +65,22 @@ describe("sortImages", () => {
       "tie-b.arw",
       "none-a.arw",
       "none-b.arw",
+    ]);
+  });
+
+  it("sorts by capture time, and a photo without one by its file's local time", () => {
+    vi.stubEnv("TZ", "Europe/Berlin");
+    const wallClock = (hour: number, minute: number) =>
+      Date.UTC(2026, 6, 4, hour, minute) / 1000;
+    const images = [
+      makeImage("export.png", { captured: null, mtime: wallClock(19, 30) }),
+      makeImage("first.arw", { captured: wallClock(21, 0) }),
+      makeImage("second.arw", { captured: wallClock(21, 45) }),
+    ];
+    expect(rels(sortImages(images, "date"))).toEqual([
+      "first.arw",
+      "export.png",
+      "second.arw",
     ]);
   });
 
