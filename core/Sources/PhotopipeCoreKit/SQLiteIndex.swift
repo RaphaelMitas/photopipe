@@ -11,6 +11,8 @@ public final class SQLiteIndex: @unchecked Sendable {
     }
 
     private var db: OpaquePointer?
+    private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
     private let path: String
 
     // bump when a read learns something a cached row lacks, or stale rows get written back over it
@@ -259,7 +261,7 @@ public final class SQLiteIndex: @unchecked Sendable {
         }
     }
 
-    /// NULL for the value nearly every photo carries keeps the index small on a big library.
+    /// NULL for the default keeps the index small; most photos carry no edit.
     private func bindJSON<Value: Encodable & Equatable>(
         _ statement: OpaquePointer?, _ index: Int32, _ value: Value, unless empty: Value
     ) throws {
@@ -267,7 +269,7 @@ public final class SQLiteIndex: @unchecked Sendable {
             sqlite3_bind_null(statement, index)
             return
         }
-        let json = String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
+        let json = String(decoding: try encoder.encode(value), as: UTF8.self)
         sqlite3_bind_text(statement, index, json, -1, transientDestructor)
     }
 
@@ -275,7 +277,7 @@ public final class SQLiteIndex: @unchecked Sendable {
         _ type: Value.Type, _ statement: OpaquePointer?, _ column: Int32
     ) -> Value? {
         sqlite3_column_text(statement, column).flatMap { json in
-            try? JSONDecoder().decode(type, from: Data(String(cString: json).utf8))
+            try? decoder.decode(type, from: Data(String(cString: json).utf8))
         }
     }
 

@@ -117,13 +117,14 @@ public func carryEnrichment(
     for (shoot, images) in walked.imagesByShoot {
         imagesByShoot[shoot] = images.map { image in
             guard let known = cache[image.path], known.enriched,
-                known.mtime == image.mtime, known.size == image.size,
-                known.sidecarMtime == image.sidecarMtime
+                known.mtime == image.mtime, known.size == image.size
             else { return image }
-            return image.with(
-                rating: known.rating, edit: known.edit,
-                dimensions: (known.width, known.height), enriched: true,
-                captured: known.captured, exif: known.exif)
+            // the header is the image's own, so a rewritten sidecar keeps the photo in its stack
+            let header = image.with(
+                dimensions: (known.width, known.height), captured: known.captured,
+                exif: known.exif)
+            guard known.sidecarMtime == image.sidecarMtime else { return header }
+            return header.with(rating: known.rating, edit: known.edit, enriched: true)
         }
     }
     let shoots = walked.shoots.map { shoot in

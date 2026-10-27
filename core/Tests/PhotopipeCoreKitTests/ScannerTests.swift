@@ -167,3 +167,18 @@ func makeTree(_ layout: [String: [String]], at root: URL = scratchDir("tree")) t
         try walkLibrary(root: "/nonexistent/path/\(UUID().uuidString)")
     }
 }
+
+@Test func aRewrittenSidecarRereadsTheRatingButKeepsTheCaptureTime() {
+    let known = ImageFile(
+        path: "/r/s/a.arw", rel: "a.arw", ext: "arw", size: 1, mtime: 1, rating: 3,
+        captured: 12.5, exif: Exif(iso: 6400), enriched: true, sidecarMtime: 1)
+    let walked = ImageFile(
+        path: "/r/s/a.arw", rel: "a.arw", ext: "arw", size: 1, mtime: 1, sidecarMtime: 2)
+    let snapshot = LibrarySnapshot(
+        shoots: [makeShoot(name: "s", path: "/r/s", images: [walked], notes: "", day: nil, cover: nil)],
+        imagesByShoot: ["s": [walked]], fileCount: 1)
+
+    let carried = carryEnrichment(into: snapshot, from: [known.path: known]).imagesByShoot["s"]?[0]
+    #expect(carried?.enriched == false && carried?.rating == 0)
+    #expect(carried?.captured == 12.5 && carried?.exif.iso == 6400)
+}
