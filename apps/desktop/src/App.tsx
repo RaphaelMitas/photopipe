@@ -386,7 +386,6 @@ export default function App() {
   // acting on "the photo you are looking at" has to ask whether it is open.
   const loupePhoto = loupeOpen ? loupeImage : null;
   const [split, setSplit] = useState(false);
-  // stays on while you step through photos, not into the next visit
   if (split && !loupePhoto) setSplit(false);
   const toggleSplit = useCallback(() => setSplit((on) => !on), []);
 

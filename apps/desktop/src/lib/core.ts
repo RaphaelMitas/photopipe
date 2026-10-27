@@ -58,8 +58,7 @@ export const identityEdit: Edit = Object.freeze({
   rotation: 0,
 });
 
-// What stays with a photo when its look is pasted over or compared against:
-// a crop rect is normalized against its own turned frame.
+// A crop rect is normalized against its own turned frame, so it never leaves its photo.
 export function framing(edit: Edit) {
   return {
     crop: edit.crop ?? null,

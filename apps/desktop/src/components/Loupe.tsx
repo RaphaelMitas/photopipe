@@ -566,8 +566,6 @@ function Slice({
   );
 }
 
-/// Before on the left, as every editor has it. Grabbing the divider never
-/// starts a pan.
 function SplitDivider({
   stageRef,
   at,
@@ -592,6 +590,7 @@ function SplitDivider({
         className="absolute inset-y-0 w-4 -translate-x-1/2 cursor-ew-resize"
         style={{ left: `${at * 100}%` }}
         onPointerDown={(event) => {
+          // a zoomed stage would take this press as the start of a pan
           event.stopPropagation();
           dragging.current = true;
           capturePointer(event);
