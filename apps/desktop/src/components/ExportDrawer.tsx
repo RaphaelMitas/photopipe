@@ -429,15 +429,14 @@ export function ExportDrawer({
             onChange={(dest) => patch({ zip: dest === "zip" })}
           />
         )}
-        <div className="flex items-center justify-between gap-2 text-muted-foreground text-xs">
-          <span>Flatten subfolders</span>
+        <Row label="Flatten subfolders">
           <Switch
             data-testid="flatten"
             aria-label="Flatten subfolders"
             checked={options.flatten}
             onCheckedChange={(flatten) => patch({ flatten })}
           />
-        </div>
+        </Row>
         {banner && (
           <Alert data-testid="decoder-banner" className="gap-1 px-3 py-2.5">
             <TriangleAlert className="text-amber-400" />
