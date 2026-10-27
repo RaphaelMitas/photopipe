@@ -57,6 +57,16 @@ describe("useRatingFilter", () => {
     expect(result.current.active).toBe(false);
   });
 
+  it("a bar ⌘-clicked off is not where a comparator expands from", () => {
+    const { result } = renderHook(() => useRatingFilter());
+    act(() => result.current.setOp("eq"));
+    act(() => result.current.clickStars(2, plain));
+    act(() => result.current.clickStars(4, meta));
+    act(() => result.current.clickStars(4, meta));
+    act(() => result.current.setOp("gte"));
+    expect(shown(result.current)).toEqual([photos[2], photos[3], photos[4]]);
+  });
+
   it("shift spans from the last clicked bar", () => {
     const { result } = renderHook(() => useRatingFilter());
     act(() => result.current.setOp("eq"));

@@ -409,24 +409,15 @@ export default function App() {
     }
     return live;
   };
-  const rateWholeStack = (stack: Stack, rating: number) => {
-    const frames = readLive(stack.frames);
-    if (!frames) return;
-    writes.rateMany(
-      ratedTo(frames, rating),
-      frames,
-      `· stack of ${frames.length}`,
-    );
+  const ratePhotos = (photos: ImageFile[], rating: number, suffix?: string) => {
+    const live = readLive(photos);
+    if (live) writes.rateMany(ratedTo(live, rating), live, suffix);
   };
-  const flagWholeStack = (stack: Stack, flag: Flag) => {
-    const frames = readLive(stack.frames);
-    if (!frames) return;
-    writes.flagMany(
-      toggledFlags(frames, flag),
-      frames,
-      `· stack of ${frames.length}`,
-    );
+  const flagPhotos = (photos: ImageFile[], flag: Flag, suffix?: string) => {
+    const live = readLive(photos);
+    if (live) writes.flagMany(toggledFlags(live, flag), live, suffix);
   };
+  const stackSuffix = (stack: Stack) => `· stack of ${stack.frames.length}`;
   const sweep = (stack: Stack) => {
     const frames = readLive(stack.frames);
     if (!frames) return;
@@ -444,20 +435,14 @@ export default function App() {
   const outsideStack = currentStack && multiFrame && !insideStack;
   const rateShown = (path: string, rating: number) =>
     outsideStack
-      ? rateWholeStack(currentStack, rating)
+      ? ratePhotos(currentStack.frames, rating, stackSuffix(currentStack))
       : writes.rate(path, rating);
   const flagShown = (path: string, flag: Flag) => {
-    if (outsideStack) return flagWholeStack(currentStack, flag);
+    if (outsideStack) {
+      return flagPhotos(currentStack.frames, flag, stackSuffix(currentStack));
+    }
     const photo = cachedImage(queryClient, openShoot, path);
     if (photo) writes.flag(path, photo.flag === flag ? 0 : flag);
-  };
-  const rateSelection = (rating: number) => {
-    const photos = readLive(selectedImages);
-    if (photos) writes.rateMany(ratedTo(photos, rating), photos);
-  };
-  const flagSelection = (flag: Flag) => {
-    const photos = readLive(selectedImages);
-    if (photos) writes.flagMany(toggledFlags(photos, flag), photos);
   };
   const visit = (path: string | null, stacks: Stack[] | null) => {
     setCurrentPath(path);
@@ -675,9 +660,13 @@ export default function App() {
         selection.clear();
       }
       if (!loupeOpen && !selection.isEmpty && !event.altKey) {
-        if (/^[0-5]$/.test(event.key)) rateSelection(Number(event.key));
+        if (/^[0-5]$/.test(event.key)) {
+          ratePhotos(selectedImages, Number(event.key));
+        }
         const flag = GRID_FLAG_KEYS[event.key.toLowerCase()];
-        if (flag !== undefined && !event.repeat) flagSelection(flag);
+        if (flag !== undefined && !event.repeat) {
+          flagPhotos(selectedImages, flag);
+        }
       }
       if (event.key === "e" && !event.altKey && loupeOpen && !cropping) {
         toggleEditPanel();
@@ -700,8 +689,9 @@ export default function App() {
     pasteSettings,
     travel,
     toggleStacks,
-    rateSelection,
-    flagSelection,
+    ratePhotos,
+    flagPhotos,
+    selectedImages,
   ]);
 
   const trashPhotos = (paths: string[]) =>

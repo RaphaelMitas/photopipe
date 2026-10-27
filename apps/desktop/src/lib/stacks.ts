@@ -95,7 +95,6 @@ export const sharedFlag = (photos: ImageFile[]): Flag =>
     ? (photos[0]?.flag ?? 0)
     : 0;
 
-// toggles like clicking the current star
 export const toggledFlags = (photos: ImageFile[], flag: Flag) =>
   changesTo<Flag>(
     photos,

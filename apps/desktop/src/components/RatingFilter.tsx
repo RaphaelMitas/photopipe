@@ -70,7 +70,12 @@ export function useRatingFilter() {
     setOp: (next: RatingOp) => {
       setOpOnly(next);
       if (stars.size === 0) return;
-      setStars(anchor !== null && anchor > 0 ? starsFor(next, anchor) : NONE);
+      const starred = [...stars].filter((star) => star > 0);
+      const from =
+        anchor !== null && starred.includes(anchor)
+          ? anchor
+          : Math.min(...starred);
+      setStars(starred.length > 0 ? starsFor(next, from) : NONE);
     },
     clickStars: (star: number, { meta, shift }: Modifiers) => {
       if (shift && anchor !== null) {

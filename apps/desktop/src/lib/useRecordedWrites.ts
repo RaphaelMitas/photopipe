@@ -58,7 +58,7 @@ const FLAG: Judgment<Flag> = {
         : { icon: FlagOff, label: "Flag", detail: "cleared" },
 };
 
-/// `one` and `many` stay stable across renders, so an entry can hold on to them.
+// setOne and setMany must be stable: a history entry holds on to setMany
 function useRecordedJudgment<V>(
   shoot: string | null,
   judgment: Judgment<V>,
@@ -89,9 +89,9 @@ function useRecordedJudgment<V>(
     [queryClient, shoot, judgment, setOne, channel],
   );
 
-  /// `read` has to be read, not placeholder, photos: undo writes their values back.
+  /// `before` must be enriched: undo writes its values back.
   const many = useCallback(
-    (values: Map<string, V>, read: ImageFile[], suffix?: string) => {
+    (values: Map<string, V>, before: ImageFile[], suffix?: string) => {
       const [first] = values.values();
       if (first === undefined) return Promise.resolve();
       const written = landed(setMany(values));
@@ -104,7 +104,7 @@ function useRecordedJudgment<V>(
           paths: [...values.keys()],
           written,
         },
-        new Map(read.map((photo) => [photo.path, judgment.of(photo)])),
+        new Map(before.map((photo) => [photo.path, judgment.of(photo)])),
         values,
       );
       return written;

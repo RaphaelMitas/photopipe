@@ -21,9 +21,9 @@ does a DNG, JPEG or PNG on the iPad, which has no exiftool to write into a
 file. The develop exposure uses `crs:Exposure2012`, the tag Lightroom itself
 writes. Nothing you decide is trapped in a database only this app can open.
 
-**Pick and reject are a flag, not a rating.** `p`, `x` and `u` set
-`xmpDM:pick` (1, -1, 0), where Lightroom Classic 13.2 and later keeps its
-flag, so a rejected photo keeps its stars. Bridge's older reject, a rating of
+**Pick and reject are a flag, not a rating.** `p` and `x` set `xmpDM:pick`
+to 1 or -1 and take it off again, `u` clears it. That is where Lightroom
+Classic 13.2 and later keeps its flag, and a rejected photo keeps its stars. Bridge's older reject, a rating of
 -1, reads as unrated: un-rejecting would otherwise leave it behind to come
 back. Whether Lightroom reads a pick another app wrote is still untested.
 
@@ -103,8 +103,8 @@ shown, not applied.
 
 The sidebar shows the rating spread as six bars (∅ then 1–5) with a count on
 each, between a ✕ bar for rejects and a ⚑ bar for picks. Clicking a bar
-filters to it; comparator chips (≥ = ≤ ∅) refine a star click, and ⌘ or ⇧
-combine bars. Bars of one kind widen each other and the two kinds narrow, so
+filters to it; comparator chips (≥ = ≤ ∅) refine a star click; ⌘ adds a bar
+and ⇧ a range. Bars of one kind widen each other and the two kinds narrow, so
 ⚑ with 4 and 5 is the picks with four or five stars. The flag bars count
 across all stars, so the eight bars no longer add up to the shoot. One
 control answers both "how far am I" and "show me the keepers" — it replaced

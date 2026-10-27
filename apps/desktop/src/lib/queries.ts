@@ -335,6 +335,7 @@ export function useRaw9Availability(enabled: boolean) {
 
 const SET_RATING_KEY = ["setRating"];
 const SET_FLAG_KEY = ["setFlag"];
+const TRASH_KEY = ["write", "trash"];
 const SET_EDIT_KEY = ["setEdit"];
 
 function xmpWritesInFlight(queryClient: QueryClient): number {
@@ -665,8 +666,11 @@ export const useSetRatings = (shoot: string | null) =>
 export const useSetFlags = (shoot: string | null) =>
   useBatchWrite(shoot, FLAG_FIELD);
 
-export const useFlagsSaving = () =>
-  useIsMutating({ mutationKey: SET_FLAG_KEY }) > 0;
+// a reject still being written would land on a file already in the Trash
+export const useTrashBlocked = () =>
+  useIsMutating({ mutationKey: SET_FLAG_KEY }) +
+    useIsMutating({ mutationKey: TRASH_KEY }) >
+  0;
 
 export function useReveal() {
   return useMutation({
@@ -681,7 +685,7 @@ export function useReveal() {
 export function useTrash(shoot: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationKey: ["write", "trash"],
+    mutationKey: TRASH_KEY,
     mutationFn: (paths: string[]) => coreRequest("trash", { shoot, paths }),
     onSuccess: (result, paths) => {
       toast.success(`Moved ${pluralize(paths.length, "photo")} to the Trash`, {

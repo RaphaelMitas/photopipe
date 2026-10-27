@@ -309,6 +309,7 @@ export function Loupe({
     onEditChange,
     onNavigate,
     onRate,
+    onFlag,
   ]);
 
   if (!image) return null;

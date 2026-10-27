@@ -515,7 +515,7 @@ public enum XMP {
     }
 
     /// `read` stops looking inside the file once a sidecar exists, so the sidecar starts
-    /// with the rating and edit the file carried.
+    /// with the rating, flag and edit the file carried.
     static func embeddedTags(_ file: ImageFile) throws -> [TagWrite] {
         let (rating, flag, edit) = embedded(file)
         guard (rating ?? 0) != 0 || (flag ?? 0) != 0 || !edit.isIdentity else { return [] }
