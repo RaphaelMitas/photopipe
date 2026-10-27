@@ -97,11 +97,10 @@ public final class Renderer: @unchecked Sendable {
     ) throws {
         // past any sensor, and doubling it must not overflow
         if let longEdge, !(1...100_000).contains(longEdge) { throw RenderError.encodeFailed }
-        // a raw decoded straight at the target comes out visibly soft; twice
-        // over and down is close to a full decode at half its cost
+        // decoding straight at the target comes out visibly soft
         var image = try sourceImage(
             for: file, edit: edit, maxPixel: longEdge.map { $0 * 2 },
-            decoderVersion: decoderVersion, forExport: true)
+            decoderVersion: decoderVersion, cacheFilter: false)
         if let longEdge { image = Self.fitted(image, longEdge: CGFloat(longEdge)) }
         // A full-resolution render holds on to surfaces the context will happily
         // keep for the next one. Nothing else reuses them, and about a hundred
@@ -141,12 +140,12 @@ public final class Renderer: @unchecked Sendable {
     /// A nil maxPixel renders the full sensor.
     private func sourceImage(
         for file: ImageFile, edit: Edit, maxPixel: Int?, viewport: CropRect? = nil,
-        decoderVersion: Int? = nil, forExport: Bool = false
+        decoderVersion: Int? = nil, cacheFilter: Bool = true
     ) throws -> CIImage {
         var image: CIImage
         if file.isRaw {
             let cached = try rawFilter(
-                for: file, maxPixel: forExport ? nil : maxPixel, decoderVersion: decoderVersion)
+                for: file, maxPixel: cacheFilter ? maxPixel : nil, decoderVersion: decoderVersion)
             let filter = cached.filter
             let output = lock.withLock {
                 let scale = Self.sourceScale(
@@ -184,7 +183,7 @@ public final class Renderer: @unchecked Sendable {
                 for: edit, orientedSize: base.extent.size, maxPixel: maxPixel, viewport: viewport)
             image = Self.fitted(
                 base,
-                longEdge: max(base.extent.width, base.extent.height) * CGFloat(scale))
+                longEdge: base.longEdge * CGFloat(scale))
             if edit.exposure != 0 {
                 image = image.applyingFilter(
                     "CIExposureAdjust", parameters: ["inputEV": edit.exposure])
@@ -291,10 +290,10 @@ public final class Renderer: @unchecked Sendable {
             .transformed(by: .init(translationX: -rect.minX, y: -rect.minY))
     }
 
-    /// Only shrinks, and to whole pixels, or a part-transparent edge row bleeds into a blur.
+    /// Never upscales; clamped and whole pixels, or a part-transparent edge row blurs into a bright band.
     static func fitted(_ image: CIImage, longEdge: CGFloat) -> CIImage {
         let extent = image.extent
-        let scale = longEdge / max(extent.width, extent.height)
+        let scale = longEdge / image.longEdge
         guard scale < 1 else { return image }
         let size = CGSize(
             width: max((extent.width * scale).rounded(), 1),
@@ -480,4 +479,8 @@ public final class Renderer: @unchecked Sendable {
         }
         return entry
     }
+}
+
+extension CIImage {
+    var longEdge: CGFloat { max(extent.width, extent.height) }
 }

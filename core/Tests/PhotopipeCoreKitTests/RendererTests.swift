@@ -899,7 +899,6 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
         #expect(
             try meanLuminance(of: bright) > meanLuminance(of: neutral),
             "the persisted exposure must be baked into the delivery")
-        // Full resolution, not the loupe size.
         let width = try pixelSize(of: neutral).width
         #expect(width > 2000, "export must be full resolution, got width \(width)")
     }
@@ -926,6 +925,21 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
             #expect((size.height > size.width) == portrait, "\(edit): \(size)")
         }
     }
+}
+
+/// The final fit hides a decode budget measured before the crop or the turn.
+@Test func sourceScaleMeasuresTheTurnedCrop() {
+    let size = CGSize(width: 6000, height: 4000)
+    let leftHalf = CropRect(left: 0, top: 0, right: 0.5, bottom: 1)
+    #expect(
+        Renderer.sourceScale(for: Edit(crop: leftHalf), orientedSize: size, maxPixel: 1000)
+            == Float(1000.0 / 4000))
+    #expect(
+        Renderer.sourceScale(
+            for: Edit(crop: leftHalf, rotation: 90), orientedSize: size, maxPixel: 1000)
+            == Float(1000.0 / 6000))
+    #expect(
+        Renderer.sourceScale(for: Edit(crop: leftHalf), orientedSize: size, maxPixel: 8000) == 1)
 }
 
 @Test func aResizedExportNeverUpscales() throws {
