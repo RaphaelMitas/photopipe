@@ -607,3 +607,38 @@ test("the decoder tooltip opens and closes on a real click", async ({
   await info.click();
   await expect(tip).toHaveCount(0);
 });
+
+test("X and P flag a grid selection; the rejects leave through the Trash after a confirm", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page
+    .locator("[data-path='DSC00832.ARW']")
+    .click({ modifiers: ["ControlOrMeta"] });
+  await page
+    .locator("[data-path='DSC00832.jpg']")
+    .click({ modifiers: ["ControlOrMeta"] });
+  await page.keyboard.press("x");
+  await expect(page.getByTestId("hist-rejected")).toContainText("2");
+  await expect(page.getByTestId("trash-rejects")).toContainText("2 rejected");
+
+  await page.keyboard.press("Escape");
+  await page
+    .locator("[data-path='abends/DSC00938.ARW']")
+    .click({ modifiers: ["ControlOrMeta"] });
+  await page.keyboard.press("p");
+  await expect(page.getByTestId("thumb-picked")).toHaveCount(1);
+
+  await page.getByTestId("hist-rejected").click();
+  await expect(page.getByTestId("thumb")).toHaveCount(2);
+  await page.getByTestId("hist-picked").click({ modifiers: ["ControlOrMeta"] });
+  await expect(page.getByTestId("thumb")).toHaveCount(3);
+
+  await page.getByTestId("trash-rejects").click();
+  await expect(page.getByTestId("trash-rejects-dialog")).toBeVisible();
+  await page.keyboard.press("x");
+  await expect(page.getByTestId("hist-rejected")).toContainText("2");
+  await page.getByTestId("trash-rejects-confirm").click();
+  await expect(page.getByTestId("thumb")).toHaveCount(1);
+  await expect(page.getByTestId("trash-rejects")).toHaveCount(0);
+});

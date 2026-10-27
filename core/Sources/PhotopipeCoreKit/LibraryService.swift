@@ -9,6 +9,7 @@ public final class LibraryService: @unchecked Sendable {
         case unknownImage(String)
         case pathOutsideRoot(String)
         case invalidRating(Int)
+        case invalidFlag(Int)
         case invalidProjectName(String)
         case invalidProjectDay(String)
         case projectExists(String)
@@ -411,6 +412,18 @@ public final class LibraryService: @unchecked Sendable {
         return RatingChange(rating: settled.rating)
     }
 
+    public struct FlagChange: Sendable, Encodable {
+        public let flag: Int
+    }
+
+    public func setFlag(shoot shootName: String, path: String, flag: Int) throws -> FlagChange {
+        guard (-1...1).contains(flag) else { throw ServiceError.invalidFlag(flag) }
+        let settled = try write(shoot: shootName, path: path) { image in
+            try XMP.writeFlag(flag, file: image)
+        }
+        return FlagChange(flag: settled.flag)
+    }
+
     public struct EditChange: Sendable, Encodable {
         public let edit: Edit
     }
@@ -656,6 +669,8 @@ extension LibraryService.ServiceError: WireError {
         case .unknownImage(let stem): ResponseError(code: "unknown_image", message: stem)
         case .invalidRating(let rating):
             ResponseError(code: "invalid_rating", message: "rating \(rating) not in 0...5")
+        case .invalidFlag(let flag):
+            ResponseError(code: "invalid_flag", message: "flag \(flag) not in -1...1")
         case .invalidProjectName(let name):
             ResponseError(code: "invalid_project_name", message: "\(name) is not a usable project name")
         case .invalidProjectDay(let day):

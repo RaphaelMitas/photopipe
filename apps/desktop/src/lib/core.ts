@@ -93,6 +93,8 @@ export function editKey(edit: Edit): string {
   ].join("|");
 }
 
+export type Flag = -1 | 0 | 1;
+
 // `enriched` is false while rating, edit and dimensions are still the
 // placeholders the core's directory walk left behind.
 export type ImageFile = {
@@ -101,6 +103,7 @@ export type ImageFile = {
   size: number;
   mtime: number;
   rating: number;
+  flag: Flag;
   edit: Edit;
   width: number;
   height: number;
@@ -227,6 +230,10 @@ export type CoreMethods = {
   setRating: {
     params: { shoot: string | null; path: string; rating: number };
     result: { rating: number };
+  };
+  setFlag: {
+    params: { shoot: string | null; path: string; flag: Flag };
+    result: { flag: Flag };
   };
   setEdit: {
     params: { shoot: string | null; path: string; edit: Edit };

@@ -27,6 +27,7 @@ import {
   type Edit,
   type ExportProgress,
   editKey,
+  type Flag,
   type ImageFile,
   normalizeEdit,
   normalizeImage,
@@ -332,11 +333,13 @@ export function useRaw9Availability(enabled: boolean) {
 }
 
 const SET_RATING_KEY = ["setRating"];
+const SET_FLAG_KEY = ["setFlag"];
 const SET_EDIT_KEY = ["setEdit"];
 
 function xmpWritesInFlight(queryClient: QueryClient): number {
   return (
     queryClient.isMutating({ mutationKey: SET_RATING_KEY }) +
+    queryClient.isMutating({ mutationKey: SET_FLAG_KEY }) +
     queryClient.isMutating({ mutationKey: SET_EDIT_KEY })
   );
 }
@@ -466,6 +469,20 @@ const RATING_FIELD: PhotoField<number> = {
     `${pluralize(count, "photo")} kept the rating they had`,
 };
 
+const FLAG_FIELD: PhotoField<Flag> = {
+  mutationKey: SET_FLAG_KEY,
+  of: (image) => image.flag,
+  same: (a, b) => a === b,
+  patch: (flag) => ({ flag }),
+  write: (shoot, path, flag) =>
+    writeInOrder(
+      path,
+      async () => (await coreRequest("setFlag", { shoot, path, flag })).flag,
+    ),
+  failedOne: (path) => `Flagging ${fileName(path)} failed`,
+  failedMany: (count) => `${pluralize(count, "photo")} kept the flag they had`,
+};
+
 const EDIT_FIELD: PhotoField<Edit> = {
   mutationKey: SET_EDIT_KEY,
   of: (image) => image.edit,
@@ -552,6 +569,9 @@ function useFieldWrite<V>(shoot: string | null, field: PhotoField<V>) {
 
 export const useSetRating = (shoot: string | null) =>
   useFieldWrite(shoot, RATING_FIELD);
+
+export const useSetFlag = (shoot: string | null) =>
+  useFieldWrite(shoot, FLAG_FIELD);
 
 export const useSetEdit = (shoot: string | null) =>
   useFieldWrite(shoot, EDIT_FIELD);
@@ -640,6 +660,9 @@ export const usePasteEdits = (shoot: string | null) =>
 
 export const useSetRatings = (shoot: string | null) =>
   useBatchWrite(shoot, RATING_FIELD);
+
+export const useSetFlags = (shoot: string | null) =>
+  useBatchWrite(shoot, FLAG_FIELD);
 
 export function useReveal() {
   return useMutation({

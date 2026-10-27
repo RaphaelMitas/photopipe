@@ -1,4 +1,6 @@
-import { Star } from "lucide-react";
+import { cn } from "@photopipe/ui/lib/utils";
+import { Flag as FlagIcon, Star, X } from "lucide-react";
+import type { Flag } from "@/lib/core";
 
 type Props = {
   value: number;
@@ -43,6 +45,52 @@ export function Stars({ value, onRate, className }: Props) {
       data-rating={value}
     >
       {stars}
+    </span>
+  );
+}
+
+const FLAG_BUTTONS = [
+  {
+    flag: 1,
+    key: "P",
+    label: "Pick",
+    icon: FlagIcon,
+    on: "bg-foreground text-background",
+  },
+  {
+    flag: -1,
+    key: "X",
+    label: "Reject",
+    icon: X,
+    on: "bg-destructive text-white",
+  },
+] as const;
+
+export function FlagButtons({
+  value,
+  onFlag,
+}: {
+  value: Flag;
+  onFlag: (flag: Flag) => void;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1" data-flag={value}>
+      {FLAG_BUTTONS.map(({ flag, key, label, icon: Icon, on }) => (
+        <button
+          key={flag}
+          type="button"
+          data-testid={`flag-${flag === 1 ? "pick" : "reject"}`}
+          aria-pressed={value === flag}
+          onClick={() => onFlag(flag)}
+          title={value === flag ? `Clear flag (U)` : `${label} (${key})`}
+          className={cn(
+            "flex size-5 items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:text-foreground",
+            value === flag && `border-transparent ${on} hover:text-current`,
+          )}
+        >
+          <Icon className="size-3" />
+        </button>
+      ))}
     </span>
   );
 }

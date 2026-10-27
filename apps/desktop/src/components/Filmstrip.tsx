@@ -1,10 +1,12 @@
+import { cn } from "@photopipe/ui/lib/utils";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Star } from "lucide-react";
+import { Flag as FlagIcon, Star } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 import type { ImageFile } from "@/lib/core";
 import { pref } from "@/lib/pref";
 import type { Stack } from "@/lib/stacks";
 import type { LoupeStacks } from "./Loupe";
+import { PickMark, rejectedFade } from "./PhotoBadges";
 import { aspectRatio, Thumbnail } from "./Thumbnail";
 
 export type FilmstripMode = "off" | "thumbs" | "ratings";
@@ -137,20 +139,38 @@ export function Filmstrip({ images, index, mode, stacks, onNavigate }: Props) {
                         : "opacity-60 hover:opacity-100"
                 }`}
               >
-                <Thumbnail file={image} className="min-h-0 w-full flex-1" />
+                <Thumbnail
+                  file={image}
+                  className={cn(
+                    "min-h-0 w-full flex-1",
+                    rejectedFade(image.flag),
+                  )}
+                />
+                <PickMark
+                  flag={image.flag}
+                  className="absolute top-0.5 left-0.5 size-3.5"
+                />
                 {mode === "ratings" && (
                   <span
                     data-testid="filmstrip-rating"
                     className="flex w-full items-center justify-center gap-0.5 bg-background/90 font-mono text-[10px] text-amber-400"
                     style={{ height: RATING_ROW_HEIGHT }}
                   >
+                    {image.flag === -1 && (
+                      <span className="font-bold text-destructive">✕</span>
+                    )}
+                    {image.flag === 1 && (
+                      <FlagIcon className="size-2.5 fill-foreground text-foreground" />
+                    )}
                     {image.rating > 0 ? (
                       <>
                         <Star className="size-2.5 fill-amber-400" />
                         {image.rating}
                       </>
                     ) : (
-                      <span className="text-muted-foreground/40">·</span>
+                      image.flag === 0 && (
+                        <span className="text-muted-foreground/40">·</span>
+                      )
                     )}
                   </span>
                 )}

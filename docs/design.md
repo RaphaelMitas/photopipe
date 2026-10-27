@@ -21,9 +21,17 @@ does a DNG, JPEG or PNG on the iPad, which has no exiftool to write into a
 file. The develop exposure uses `crs:Exposure2012`, the tag Lightroom itself
 writes. Nothing you decide is trapped in a database only this app can open.
 
+**Pick and reject are a flag, not a rating.** `P`, `X` and `U` set
+`xmpDM:pick` (1, -1, 0), where Lightroom Classic 13.2 and later keeps its
+flag, so a rejected photo keeps its stars. Bridge's older reject, a rating of
+-1, reads as unrated: un-rejecting would otherwise leave it behind to come
+back. Whether Lightroom reads a pick another app wrote is still untested.
+
 **Delete means Trash.** Never an unlink, and it takes the photo's XMP sidecar
 along, because leaving it behind would be a lie about what you asked for. A
 sidecar two raws share, like an ORF and its ORI, goes with the last of them.
+Rejects leave the same way, all at once, behind a confirm: a first pass is
+mostly "no", and that is the one place a keypress turns into a deletion.
 
 ## One surface, not stages
 
@@ -71,9 +79,12 @@ the grid is exactly what is on disk.
 A dance event is mostly bursts: the same couple, the same second, several
 frames. With **Stacks** on, the loupe walks near-identical frames as one stop,
 so the first pass asks "is this moment worth it" once instead of six times.
-A rating there goes to every frame; inside the stack, **Pick** keeps one frame
-with the stack's rating (5★ if it had none) and clears the rest, so what
-Lightroom sees afterwards is one keeper per moment.
+A rating or a flag there goes to every frame. Inside the stack, **Pick** flags
+one frame and touches nothing else; it becomes the cover. Once a stack has a
+pick, `⇧X` rejects the frames nobody judged, no flag and no stars, as a step
+of its own. Pick used to move the stars onto one frame and clear the rest;
+rejecting the rest with it would make one keypress the input to a deletion,
+a second shooter's frame in the burst included.
 
 This is not the grouping that was reversed above. That one hid files in the
 grid; this one never touches the grid, is off until you turn it on, and every
@@ -91,10 +102,13 @@ shown, not applied.
 ## The histogram is the filter
 
 The sidebar shows the rating spread as six bars (∅ then 1–5) with a count on
-each. Clicking a bar filters to it; comparator chips (≥ = ≤ ∅) refine it.
-One control answers both "how far am I" and "show me the keepers" — it
-replaced the stage counts, which answered a question the flat model no
-longer asks.
+each, between a ✕ bar for rejects and a ⚑ bar for picks. Clicking a bar
+filters to it; comparator chips (≥ = ≤ ∅) refine a star click, and ⌘ or ⇧
+combine bars. Bars of one kind widen each other and the two kinds narrow, so
+⚑ with 4 and 5 is the picks with four or five stars. The flag bars count
+across all stars, so the eight bars no longer add up to the shoot. One
+control answers both "how far am I" and "show me the keepers" — it replaced
+the stage counts, which answered a question the flat model no longer asks.
 
 ## Edits persist, export renders
 

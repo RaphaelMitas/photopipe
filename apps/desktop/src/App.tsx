@@ -38,6 +38,7 @@ import { ShowSidebarTrigger } from "@/components/ShowSidebarTrigger";
 import {
   type Edit,
   editKey,
+  type Flag,
   type ImageFile,
   identityEdit,
   isIdentityEdit,
@@ -86,12 +87,13 @@ import {
   coverOf,
   groupStacks,
   inStack,
-  pickInStack,
-  rateStack,
+  ratedTo,
   type Stack,
   stackedOrder,
   stackOf,
   stacksPref,
+  sweepStack,
+  toggledFlags,
 } from "@/lib/stacks";
 import { useCropSession } from "@/lib/useCropSession";
 import { useDebouncedEdit } from "@/lib/useDebouncedEdit";
@@ -113,6 +115,8 @@ type RootState =
   | { kind: "ready"; path: string; generation: number };
 
 const EDIT_COMMIT_MS = 400;
+
+const GRID_FLAG_KEYS: Partial<Record<string, Flag>> = { p: 1, x: -1, u: 0 };
 
 const editPanelPref = flagPref("photopipe.editPanel", "shown", "hidden", true);
 const toggleEditPanel = () => editPanelPref.set(!editPanelPref.get());
@@ -342,7 +346,7 @@ export default function App() {
   // Keyed on the sort you chose, not the one in force: a scoring pass finishing
   // must not re-order the loupe under you mid-visit.
   const held = useRef<{ key: string; paths: string[] }>({ key: "", paths: [] });
-  const heldKey = `${openShoot}|${sort}|${filter.op}|${filter.stars}|${stacksOn}`;
+  const heldKey = `${openShoot}|${sort}|${filter.key}|${stacksOn}`;
   const openImage = currentPath
     ? allImages.find((image) => image.path === currentPath)
     : undefined;
@@ -394,54 +398,70 @@ export default function App() {
     if (!insideStack) setInsideAnchor(anchorFor(currentStack, currentPath));
   }, [membership]);
   // Read at keypress, not render: a rating typed a moment ago may not have re-rendered yet.
-  const readStack = (stack: Stack) => {
-    const frames = stack.frames.map(
-      (frame) => cachedImage(queryClient, openShoot, frame.path) ?? frame,
+  const readLive = (photos: ImageFile[]) => {
+    const live = photos.map(
+      (photo) => cachedImage(queryClient, openShoot, photo.path) ?? photo,
     );
-    if (frames.some((frame) => !frame.enriched)) {
-      toast("Still reading this stack's ratings", { id: "not-indexed" });
+    if (live.some((photo) => !photo.enriched)) {
+      toast("Still reading these photos' ratings", { id: "not-indexed" });
       return null;
     }
-    const before = new Map(frames.map((frame) => [frame.path, frame.rating]));
-    return { live: { ...stack, frames }, before };
+    return live;
   };
+  const ratingsOf = (photos: ImageFile[]) =>
+    new Map(photos.map((photo) => [photo.path, photo.rating]));
+  const flagsOf = (photos: ImageFile[]) =>
+    new Map(photos.map((photo) => [photo.path, photo.flag]));
   const rateWholeStack = (stack: Stack, rating: number) => {
-    const read = readStack(stack);
-    if (!read) return;
+    const frames = readLive(stack.frames);
+    if (!frames) return;
     writes.rateMany(
-      rateStack(read.live, rating),
-      read.before,
-      "Rating",
-      `${ratingDetail(rating)} · stack of ${stack.frames.length}`,
+      ratedTo(frames, rating),
+      ratingsOf(frames),
+      `${ratingDetail(rating)} · stack of ${frames.length}`,
     );
   };
-  const pick = (stack: Stack, path: string) => {
-    const read = readStack(stack);
-    if (!read) return;
-    const { writes: ratings, cleared } = pickInStack(read.live, path);
-    const written = writes.rateMany(
-      ratings,
-      read.before,
-      "Pick",
-      fileName(path),
+  const flagWholeStack = (stack: Stack, flag: Flag) => {
+    const frames = readLive(stack.frames);
+    if (!frames) return;
+    writes.flagMany(
+      toggledFlags(frames, flag),
+      flagsOf(frames),
+      `· stack of ${frames.length}`,
     );
-    setInsideAnchor(null);
-    void written.then(
+  };
+  const sweep = (stack: Stack) => {
+    const frames = readLive(stack.frames);
+    if (!frames) return;
+    const swept = sweepStack({ ...stack, frames });
+    if (swept.size === 0) return;
+    void writes.flagMany(swept, flagsOf(frames)).then(
       () =>
-        toast(`Picked ${fileName(path)}`, {
-          id: "pick",
-          description:
-            cleared > 0
-              ? `${pluralize(cleared, "photo")} cleared · ⌘Z undoes`
-              : undefined,
+        toast(`Rejected ${pluralize(swept.size, "undecided frame")}`, {
+          id: "sweep",
+          description: "⌘Z undoes",
         }),
       () => {},
     );
   };
+  const outsideStack = currentStack && multiFrame && !insideStack;
   const rateShown = (path: string, rating: number) =>
-    currentStack && multiFrame && !insideStack
+    outsideStack
       ? rateWholeStack(currentStack, rating)
       : writes.rate(path, rating);
+  const flagShown = (path: string, flag: Flag) => {
+    if (outsideStack) return flagWholeStack(currentStack, flag);
+    const photo = cachedImage(queryClient, openShoot, path);
+    if (photo) writes.flag(path, photo.flag === flag ? 0 : flag);
+  };
+  const rateSelection = (rating: number) => {
+    const photos = readLive(selectedImages);
+    if (photos) writes.rateMany(ratedTo(photos, rating), ratingsOf(photos));
+  };
+  const flagSelection = (flag: Flag) => {
+    const photos = readLive(selectedImages);
+    if (photos) writes.flagMany(toggledFlags(photos, flag), flagsOf(photos));
+  };
   const visit = (path: string | null, stacks: Stack[] | null) => {
     setCurrentPath(path);
     const stack = path && stacks ? stackOf(stacks, path) : undefined;
@@ -657,6 +677,11 @@ export default function App() {
       if (event.key === "Escape" && !loupeOpen && !selection.isEmpty) {
         selection.clear();
       }
+      if (!loupeOpen && !selection.isEmpty && !event.altKey) {
+        if (/^[0-5]$/.test(event.key)) rateSelection(Number(event.key));
+        const flag = GRID_FLAG_KEYS[event.key.toLowerCase()];
+        if (flag !== undefined) flagSelection(flag);
+      }
       if (event.key === "e" && !event.altKey && loupeOpen && !cropping) {
         toggleEditPanel();
       }
@@ -678,7 +703,20 @@ export default function App() {
     pasteSettings,
     travel,
     toggleStacks,
+    rateSelection,
+    flagSelection,
   ]);
+
+  const trashPhotos = (paths: string[]) =>
+    // even a failed trash may have moved some of them
+    void trash
+      .mutateAsync(paths)
+      .catch(() => {})
+      .finally(() => forgetHistoryPaths(paths));
+  const rejects = useMemo(
+    () => allImages.filter((image) => image.flag === -1),
+    [allImages],
+  );
 
   const enterShoot = (shoot: string | null) => {
     flushEdit();
@@ -750,7 +788,7 @@ export default function App() {
                 setCurrentPath(coverOf(currentStack).path);
                 setInsideAnchor(null);
               },
-              onPick: () => pick(currentStack, loupePhoto.path),
+              onSweep: () => sweep(currentStack),
             }
           : null
       }
@@ -758,6 +796,7 @@ export default function App() {
       onNavigate={(path) => visit(path, loupeStacks)}
       onClose={() => setLoupeOpen(false)}
       onRate={rateShown}
+      onFlag={flagShown}
     />
   ) : (
     <BrowserPane
@@ -771,6 +810,8 @@ export default function App() {
       onSelect={selection.click}
       focusPath={focusPath}
       revealed={revealed}
+      rejects={rejects}
+      onTrashRejects={() => trashPhotos(rejects.map((image) => image.path))}
       onOpen={(index) => {
         // A new visit walks the browser's order as it stands now.
         held.current = NO_HELD;
@@ -837,6 +878,7 @@ export default function App() {
             filter={filter}
             ratingCounts={counts}
             onRate={rateShown}
+            onFlag={flagShown}
             onBackToGrid={() =>
               cropping ? crop.cancel() : setLoupeOpen(false)
             }
@@ -964,14 +1006,9 @@ export default function App() {
               revealPaths &&
               (() => revealPaths(selectedImages.map((image) => image.path)))
             }
-            onDelete={() => {
-              const paths = selectedImages.map((image) => image.path);
-              // even a failed trash may have moved some of them
-              void trash
-                .mutateAsync(paths)
-                .catch(() => {})
-                .finally(() => forgetHistoryPaths(paths));
-            }}
+            onDelete={() =>
+              trashPhotos(selectedImages.map((image) => image.path))
+            }
             onClear={selection.clear}
           />
           <div className="flex min-h-0 flex-1">

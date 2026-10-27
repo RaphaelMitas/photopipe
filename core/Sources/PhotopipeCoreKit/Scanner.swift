@@ -96,10 +96,11 @@ public func walkLibrary(root: String) throws -> LibrarySnapshot {
 /// off the request path. Already-settled files are returned untouched.
 public func enrich(_ file: ImageFile) -> ImageFile {
     guard !file.enriched else { return file }
-    let (rating, edit) = XMP.read(file: file)
+    let read = XMP.read(file: file)
     return file.with(
-        rating: rating,
-        edit: edit,
+        rating: read.rating,
+        flag: read.flag,
+        edit: read.edit,
         dimensions: Dimensions.cached(for: file) ?? Dimensions.fallback,
         enriched: true)
 }
@@ -118,7 +119,7 @@ public func carryEnrichment(
                 known.sidecarMtime == image.sidecarMtime
             else { return image }
             return image.with(
-                rating: known.rating, edit: known.edit,
+                rating: known.rating, flag: known.flag, edit: known.edit,
                 dimensions: (known.width, known.height), enriched: true)
         }
     }

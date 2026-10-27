@@ -5,7 +5,12 @@ import type { ImageFile } from "@/lib/core";
 import { fixedRect } from "@/lib/fixedRect";
 import { clickIntent, type SelectModifiers } from "@/lib/selection";
 import { useVirtualJump } from "@/lib/useVirtualJump";
-import { ExposureBadge, RatingBadge } from "./PhotoBadges";
+import {
+  ExposureBadge,
+  PickMark,
+  RatingBadge,
+  rejectedFade,
+} from "./PhotoBadges";
 import { Thumbnail } from "./Thumbnail";
 
 const ROW_HEIGHT = 44;
@@ -91,7 +96,10 @@ export function ImageList({
               >
                 <Thumbnail
                   file={image}
-                  className="h-8 w-12 shrink-0 rounded-sm"
+                  className={cn(
+                    "h-8 w-12 shrink-0 rounded-sm",
+                    rejectedFade(image.flag),
+                  )}
                 />
                 <span className="min-w-0 flex-1 truncate font-mono text-xs">
                   {image.rel}
@@ -102,6 +110,7 @@ export function ImageList({
                     className="font-mono text-[10px] text-muted-foreground"
                   />
                   <RatingBadge rating={image.rating} />
+                  <PickMark flag={image.flag} />
                 </span>
               </button>
             );

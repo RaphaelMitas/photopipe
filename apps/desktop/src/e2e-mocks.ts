@@ -358,6 +358,12 @@ const E2E_HANDLERS: CoreHandlers = {
     target.rating = params.rating;
     return { rating: target.rating };
   },
+  setFlag: (params) => {
+    const target = allImages().find((entry) => entry.path === params.path);
+    if (!target) throw `unknown_image: ${params.path}`;
+    target.flag = params.flag;
+    return { flag: target.flag };
+  },
   setEdit: (params) => {
     const target = allImages().find((entry) => entry.path === params.path);
     if (!target) throw `unknown_image: ${params.path}`;

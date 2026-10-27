@@ -6,171 +6,270 @@ import {
   SidebarGroupLabel,
 } from "@photopipe/ui/components/sidebar";
 import { type ReactNode, useCallback, useState } from "react";
+import type { Flag } from "@/lib/core";
 import { pluralize } from "@/lib/plural";
 
-type RatingOp = "gte" | "eq" | "lte" | "unrated";
+type RatingOp = "gte" | "eq" | "lte";
 
-const OP_LABEL: Record<RatingOp, string> = {
-  gte: "≥",
-  eq: "=",
-  lte: "≤",
-  unrated: "∅",
-};
+const OP_LABEL: Record<RatingOp, string> = { gte: "≥", eq: "=", lte: "≤" };
 
 const OP_TITLE: Record<RatingOp, string> = {
   gte: "At least this many stars",
   eq: "Exactly this many stars",
   lte: "At most this many stars",
-  unrated: "Unrated only",
 };
 
-function matchesRatingFilter(
-  rating: number,
-  op: RatingOp,
-  stars: number,
-): boolean {
-  if (op === "unrated") return rating === 0;
-  if (stars === 0) return true;
-  switch (op) {
-    case "gte":
-      return rating >= stars;
-    case "eq":
-      return rating === stars;
-    case "lte":
-      return rating <= stars;
-  }
+const STARS = [0, 1, 2, 3, 4, 5];
+
+type Modifiers = { meta: boolean; shift: boolean };
+
+const span = (from: number, to: number) =>
+  new Set(STARS.filter((star) => star >= from && star <= to));
+
+function starsFor(op: RatingOp, stars: number): ReadonlySet<number> {
+  if (stars === 0) return new Set([0]);
+  if (op === "eq") return new Set([stars]);
+  return op === "gte" ? span(stars, 5) : span(0, stars);
 }
 
+const sameSet = <T,>(a: ReadonlySet<T>, b: ReadonlySet<T>) =>
+  a.size === b.size && [...a].every((value) => b.has(value));
+
+function toggled<T>(set: ReadonlySet<T>, value: T): ReadonlySet<T> {
+  const next = new Set(set);
+  if (!next.delete(value)) next.add(value);
+  return next;
+}
+
+const NONE: ReadonlySet<never> = new Set();
+
+/// Bars of one kind widen each other, the two kinds narrow: ⚑ with 4 and 5 is picks with 4 or 5 stars.
 export function useRatingFilter() {
-  const [op, setOp] = useState<RatingOp>("gte");
-  const [stars, setStarsOnly] = useState(0);
+  const [op, setOpOnly] = useState<RatingOp>("gte");
+  const [stars, setStars] = useState<ReadonlySet<number>>(NONE);
+  const [flags, setFlags] = useState<ReadonlySet<Flag>>(NONE);
+  const [anchor, setAnchor] = useState<number | null>(null);
   const matches = useCallback(
-    (image: { rating: number }) => matchesRatingFilter(image.rating, op, stars),
-    [op, stars],
+    (image: { rating: number; flag: Flag }) =>
+      (stars.size === 0 || stars.has(image.rating)) &&
+      (flags.size === 0 || flags.has(image.flag)),
+    [stars, flags],
   );
+  const only = (
+    nextStars: ReadonlySet<number>,
+    nextFlags: ReadonlySet<Flag>,
+  ) => {
+    const again = sameSet(stars, nextStars) && sameSet(flags, nextFlags);
+    setStars(again ? NONE : nextStars);
+    setFlags(again ? NONE : nextFlags);
+  };
   return {
     op,
     stars,
-    setOp,
-    setStars: (next: number) => {
-      setStarsOnly(next);
-      if (next > 0 && op === "unrated") setOp("gte");
+    flags,
+    key: `${[...stars].sort()}|${[...flags].sort()}`,
+    setOp: (next: RatingOp) => {
+      setOpOnly(next);
+      if (anchor !== null && anchor > 0) setStars(starsFor(next, anchor));
+    },
+    clickStars: (star: number, { meta, shift }: Modifiers) => {
+      if (shift && anchor !== null) {
+        setStars(span(Math.min(anchor, star), Math.max(anchor, star)));
+        return;
+      }
+      setAnchor(star);
+      if (meta) setStars(toggled(stars, star));
+      else only(starsFor(op, star), NONE);
+    },
+    clickFlag: (flag: Flag, { meta, shift }: Modifiers) => {
+      if (meta || shift) setFlags(toggled(flags, flag));
+      else only(NONE, new Set([flag]));
     },
     matches,
-    active: op === "unrated" || stars > 0,
+    active: stars.size > 0 || flags.size > 0,
     reset: () => {
-      setStarsOnly(0);
-      setOp("gte");
+      setOpOnly("gte");
+      setStars(NONE);
+      setFlags(NONE);
+      setAnchor(null);
     },
   };
 }
 
 export type RatingFilter = ReturnType<typeof useRatingFilter>;
 
-export function ratingCounts(images: { rating: number }[]): number[] {
-  const counts = [0, 0, 0, 0, 0, 0];
+export type RatingCounts = {
+  stars: number[];
+  picked: number;
+  rejected: number;
+};
+
+export function ratingCounts(
+  images: { rating: number; flag: Flag }[],
+): RatingCounts {
+  const counts = { stars: STARS.map(() => 0), picked: 0, rejected: 0 };
   for (const image of images) {
-    counts[Math.min(Math.max(image.rating, 0), 5)] += 1;
+    counts.stars[image.rating] += 1;
+    if (image.flag === 1) counts.picked += 1;
+    if (image.flag === -1) counts.rejected += 1;
   }
   return counts;
 }
 
 function RatingFilterOps({
-  op,
+  filter,
   disabled,
-  onOp,
 }: {
-  op: RatingOp;
+  filter: RatingFilter;
   disabled?: boolean;
-  onOp: (op: RatingOp) => void;
 }) {
+  const unrated = sameSet(filter.stars, new Set([0]));
+  const chip = (
+    testid: string,
+    label: string,
+    title: string,
+    pressed: boolean,
+    onClick: () => void,
+  ) => (
+    <Button
+      key={testid}
+      size="sm"
+      variant={pressed ? "secondary" : "outline"}
+      aria-pressed={pressed}
+      data-testid={`filter-op-${testid}`}
+      disabled={disabled}
+      onClick={onClick}
+      title={title}
+      className="h-5 min-w-0 px-1.5 font-mono text-[10px]"
+    >
+      {label}
+    </Button>
+  );
   return (
     <ButtonGroup>
-      {(["gte", "eq", "lte", "unrated"] as const).map((candidate) => (
-        <Button
-          key={candidate}
-          size="sm"
-          variant={op === candidate ? "secondary" : "outline"}
-          aria-pressed={op === candidate}
-          data-testid={`filter-op-${candidate}`}
-          disabled={disabled}
-          onClick={() => onOp(candidate)}
-          title={OP_TITLE[candidate]}
-          className="h-5 min-w-0 px-1.5 font-mono text-[10px]"
-        >
-          {OP_LABEL[candidate]}
-        </Button>
-      ))}
+      {(["gte", "eq", "lte"] as const).map((op) =>
+        chip(op, OP_LABEL[op], OP_TITLE[op], filter.op === op && !unrated, () =>
+          filter.setOp(op),
+        ),
+      )}
+      {chip("unrated", "∅", "Unrated only", unrated, () =>
+        filter.clickStars(0, { meta: false, shift: false }),
+      )}
     </ButtonGroup>
   );
 }
 
 const BAR_AREA = 40;
 
+const TONE = {
+  stars: { on: "text-amber-400", bar: "bg-amber-400", off: "bg-border" },
+  rejected: {
+    on: "text-destructive",
+    bar: "bg-destructive",
+    off: "bg-destructive/30",
+  },
+  picked: {
+    on: "text-foreground",
+    bar: "bg-foreground",
+    off: "bg-foreground/25",
+  },
+};
+
+function HistogramBar({
+  testid,
+  count,
+  max,
+  label,
+  title,
+  tone,
+  active,
+  disabled,
+  onClick,
+}: {
+  testid: string;
+  count: number;
+  max: number;
+  label: string;
+  title: string;
+  tone: keyof typeof TONE;
+  active: boolean;
+  disabled?: boolean;
+  onClick: (modifiers: Modifiers) => void;
+}) {
+  const { on, bar, off } = TONE[tone];
+  return (
+    <button
+      type="button"
+      data-testid={testid}
+      disabled={disabled}
+      aria-pressed={active}
+      title={`${title} · ⌘ or ⇧ click to combine`}
+      onClick={(event) =>
+        onClick({ meta: event.metaKey || event.ctrlKey, shift: event.shiftKey })
+      }
+      className="group flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded p-0.5 font-mono text-[9px] transition-colors hover:bg-accent disabled:opacity-30"
+    >
+      <span className={active ? on : "text-muted-foreground"}>{count}</span>
+      <span
+        className={`w-full rounded-t-[2px] ${
+          active ? bar : `${off} group-hover:bg-muted-foreground/40`
+        }`}
+        style={{ height: Math.max(2, (count / max) * BAR_AREA) }}
+      />
+      <span className={active ? on : "text-muted-foreground"}>{label}</span>
+    </button>
+  );
+}
+
+const Divider = () => <span className="w-px self-stretch bg-border" />;
+
 function RatingHistogram({
   counts,
-  op,
-  stars,
+  filter,
   disabled,
-  onOp,
-  onStars,
 }: {
-  counts: number[];
-  op: RatingOp;
-  stars: number;
+  counts: RatingCounts;
+  filter: RatingFilter;
   disabled?: boolean;
-  onOp: (op: RatingOp) => void;
-  onStars: (stars: number) => void;
 }) {
-  const max = Math.max(...counts, 1);
+  const max = Math.max(...counts.stars, counts.picked, counts.rejected, 1);
+  const flagBar = (flag: Flag, tone: "rejected" | "picked", label: string) => (
+    <HistogramBar
+      testid={`hist-${tone}`}
+      count={counts[tone]}
+      max={max}
+      label={label}
+      title={`${counts[tone]} ${tone}`}
+      tone={tone}
+      active={!disabled && filter.flags.has(flag)}
+      disabled={disabled}
+      onClick={(modifiers) => filter.clickFlag(flag, modifiers)}
+    />
+  );
   return (
     <div className="flex items-end gap-1">
-      {counts.map((count, rating) => {
-        const active =
-          !disabled &&
-          (op === "unrated" || stars > 0) &&
-          matchesRatingFilter(rating, op, stars);
-        return (
-          <button
-            // biome-ignore lint/suspicious/noArrayIndexKey: the index IS the rating — a stable identity, not a list position
-            key={rating}
-            type="button"
-            data-testid={`hist-${rating}`}
-            disabled={disabled}
-            aria-pressed={active}
-            title={
-              rating === 0
-                ? `${count} unrated`
-                : `${count} rated ${pluralize(rating, "star")}`
-            }
-            onClick={() =>
-              rating === 0
-                ? onOp(op === "unrated" ? "gte" : "unrated")
-                : onStars(stars === rating && op !== "unrated" ? 0 : rating)
-            }
-            className="group flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded p-0.5 font-mono text-[9px] transition-colors hover:bg-accent disabled:opacity-30"
-          >
-            <span
-              className={active ? "text-amber-400" : "text-muted-foreground"}
-            >
-              {count}
-            </span>
-            <span
-              className={`w-full rounded-t-[2px] ${
-                active
-                  ? "bg-amber-400"
-                  : "bg-border group-hover:bg-muted-foreground/40"
-              }`}
-              style={{ height: Math.max(2, (count / max) * BAR_AREA) }}
-            />
-            <span
-              className={active ? "text-amber-400" : "text-muted-foreground"}
-            >
-              {rating === 0 ? "∅" : rating}
-            </span>
-          </button>
-        );
-      })}
+      {flagBar(-1, "rejected", "✕")}
+      <Divider />
+      {counts.stars.map((count, rating) => (
+        <HistogramBar
+          key={rating}
+          testid={`hist-${rating}`}
+          count={count}
+          max={max}
+          label={rating === 0 ? "∅" : String(rating)}
+          title={
+            rating === 0
+              ? `${count} unrated`
+              : `${count} rated ${pluralize(rating, "star")}`
+          }
+          tone="stars"
+          active={!disabled && filter.stars.has(rating)}
+          disabled={disabled}
+          onClick={(modifiers) => filter.clickStars(rating, modifiers)}
+        />
+      ))}
+      <Divider />
+      {flagBar(1, "picked", "⚑")}
     </div>
   );
 }
@@ -182,7 +281,7 @@ export function RatingFilterGroup({
   children,
 }: {
   filter: RatingFilter;
-  counts: number[];
+  counts: RatingCounts;
   disabled?: boolean;
   children?: ReactNode;
 }) {
@@ -190,21 +289,10 @@ export function RatingFilterGroup({
     <SidebarGroup>
       <SidebarGroupLabel className="justify-between">
         Rating
-        <RatingFilterOps
-          op={filter.op}
-          disabled={disabled}
-          onOp={filter.setOp}
-        />
+        <RatingFilterOps filter={filter} disabled={disabled} />
       </SidebarGroupLabel>
       <SidebarGroupContent className="px-2 py-1">
-        <RatingHistogram
-          counts={counts}
-          op={filter.op}
-          stars={filter.stars}
-          disabled={disabled}
-          onOp={filter.setOp}
-          onStars={filter.setStars}
-        />
+        <RatingHistogram counts={counts} filter={filter} disabled={disabled} />
         {children}
       </SidebarGroupContent>
     </SidebarGroup>

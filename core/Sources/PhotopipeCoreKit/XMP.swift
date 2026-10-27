@@ -108,9 +108,20 @@ public enum XMP {
             rotation: rotation)
     }
 
+    typealias Judgment = (rating: Int?, flag: Int?, edit: Edit)
+
+    // Bridge writes its reject as Rating -1; the reject here is the pick flag, so that reads as unrated
+    private static func validRating(_ text: String?) -> Int? {
+        text.flatMap { Int($0) }.flatMap { (0...5).contains($0) ? $0 : nil }
+    }
+
+    private static func validFlag(_ text: String?) -> Int? {
+        text.flatMap { Int($0) }.flatMap { (-1...1).contains($0) ? $0 : nil }
+    }
+
     static func parse(
         _ packet: some Collection<UInt8>, isRaw: Bool, baseOrientation: Int = 1
-    ) -> (rating: Int?, edit: Edit) {
+    ) -> Judgment {
         let properties = XMPProperties(packet)
         let edit = edit(
             from: Tags(
@@ -119,7 +130,9 @@ public enum XMP {
                 hasCrop: properties.value(.crs, "HasCrop").map { $0.lowercased() == "true" }),
             isRaw: isRaw,
             rotation: rotation(fromXMP: orientation(in: properties), base: baseOrientation))
-        return (properties.value(.xmp, "Rating").flatMap { Int($0) }, edit)
+        return (
+            validRating(properties.value(.xmp, "Rating")), validFlag(properties.value(.xmpDM, "pick")), edit
+        )
     }
 
     // tiff:Orientation is ABSOLUTE, so our additive rotation is its difference
@@ -231,16 +244,17 @@ public enum XMP {
         return nil
     }
 
-    static func embedded(_ file: ImageFile) -> (rating: Int?, edit: Edit) {
+    static func embedded(_ file: ImageFile) -> Judgment {
         let url = URL(fileURLWithPath: file.path)
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
             let metadata = CGImageSourceCopyMetadataAtIndex(source, 0, nil)
-        else { return (nil, .identity) }
-        let rating =
-            (CGImageMetadataCopyStringValueWithPath(metadata, nil, "xmp:Rating" as CFString)
-            as String?).flatMap { Int($0) }
+        else { return (nil, nil, .identity) }
+        let rating = validRating(
+            CGImageMetadataCopyStringValueWithPath(metadata, nil, "xmp:Rating" as CFString)
+                as String?)
         // a sidecar-only raw is never written into, so its XMP holds just what the camera put there
-        guard !file.sidecarOnly else { return (rating, .identity) }
+        guard !file.sidecarOnly else { return (rating, nil, .identity) }
+        var pick: Int?
         var scalars: [String: Double] = [:]
         var curves: [String: [CurvePoint]] = [:]
         var hasCrop: Bool?
@@ -248,6 +262,9 @@ public enum XMP {
             guard let name = CGImageMetadataTagCopyName(tag) as String? else { return true }
             let namespace = CGImageMetadataTagCopyNamespace(tag) as String?
             let value = CGImageMetadataTagCopyValue(tag)
+            if namespace == TagWrite.Namespace.xmpDM.uri && name == "pick" {
+                pick = validFlag(value as? String)
+            }
             guard namespace == TagWrite.Namespace.crs.uri else { return true }
             if name.hasPrefix("ToneCurvePV2012") {
                 curves[name] = curvePoints(fromMetadataValue: value)
@@ -270,7 +287,7 @@ public enum XMP {
             rotation: rotation(
                 fromXMP: embeddedXMPOrientation(at: url),
                 base: baseOrientation(at: url) ?? 1))
-        return (rating, edit)
+        return (rating, pick, edit)
     }
 
     private static func curvePoints(fromMetadataValue value: Any?) -> [CurvePoint] {
@@ -286,23 +303,23 @@ public enum XMP {
         }
     }
 
-    public static func read(file: ImageFile) -> (rating: Int, edit: Edit) {
+    public static func read(file: ImageFile) -> (rating: Int, flag: Int, edit: Edit) {
         let fileURL = URL(fileURLWithPath: file.path)
-        let read: (rating: Int?, edit: Edit)
+        let read: Judgment
         if (try? isOwnSidecar(sidecarURL(forImagePath: file.path))) == true {
             read =
                 sidecarData(forImagePath: file.path).map {
                     parse($0, isRaw: file.isRaw, baseOrientation: baseOrientation(at: fileURL) ?? 1)
-                } ?? (nil, .identity)
+                } ?? (nil, nil, .identity)
         } else {
             read = embedded(file)
         }
-        return (read.rating ?? 0, read.edit)
+        return (read.rating ?? 0, read.flag ?? 0, read.edit)
     }
 
     struct TagWrite {
         enum Namespace: String, CaseIterable {
-            case xmp, crs, tiff
+            case xmp, crs, tiff, xmpDM
 
             var prefix: String { rawValue }
 
@@ -311,6 +328,7 @@ public enum XMP {
                 case .xmp: "http://ns.adobe.com/xap/1.0/"
                 case .crs: "http://ns.adobe.com/camera-raw-settings/1.0/"
                 case .tiff: "http://ns.adobe.com/tiff/1.0/"
+                case .xmpDM: "http://ns.adobe.com/xmp/1.0/DynamicMedia/"
                 }
             }
         }
@@ -360,6 +378,15 @@ public enum XMP {
 
     public static func writeRating(_ rating: Int, file: ImageFile) throws {
         try write(ratingTags(rating), clearing: rating == 0, file: file)
+    }
+
+    // where Lightroom Classic 13.2 and later keeps its flag
+    static func flagTags(_ flag: Int) -> [TagWrite] {
+        [TagWrite(.xmpDM, "pick", flag == 0 ? .remove : .scalar("\(flag)"))]
+    }
+
+    public static func writeFlag(_ flag: Int, file: ImageFile) throws {
+        try write(flagTags(flag), clearing: flag == 0, file: file)
     }
 
     public static func writeEdit(_ edit: Edit, file: ImageFile) throws {
@@ -490,8 +517,8 @@ public enum XMP {
     /// `read` stops looking inside the file once a sidecar exists, so the sidecar starts
     /// with the rating and edit the file carried.
     static func embeddedTags(_ file: ImageFile) throws -> [TagWrite] {
-        let (rating, edit) = embedded(file)
-        guard (rating ?? 0) != 0 || !edit.isIdentity else { return [] }
-        return try ratingTags(rating ?? 0) + editTags(edit, file: file).tags
+        let (rating, flag, edit) = embedded(file)
+        guard (rating ?? 0) != 0 || (flag ?? 0) != 0 || !edit.isIdentity else { return [] }
+        return try ratingTags(rating ?? 0) + flagTags(flag ?? 0) + editTags(edit, file: file).tags
     }
 }

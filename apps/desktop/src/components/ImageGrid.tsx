@@ -1,3 +1,4 @@
+import { cn } from "@photopipe/ui/lib/utils";
 import { type Rect, useVirtualizer } from "@tanstack/react-virtual";
 import { Check } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -5,7 +6,12 @@ import type { ImageFile } from "@/lib/core";
 import { fixedRect } from "@/lib/fixedRect";
 import { clickIntent, type SelectModifiers } from "@/lib/selection";
 import { useVirtualJump } from "@/lib/useVirtualJump";
-import { ExposureBadge, RatingBadge } from "./PhotoBadges";
+import {
+  ExposureBadge,
+  PickMark,
+  RatingBadge,
+  rejectedFade,
+} from "./PhotoBadges";
 import { aspectRatio, Thumbnail } from "./Thumbnail";
 
 const TARGET_ROW_HEIGHT = 220;
@@ -128,12 +134,18 @@ function Thumb({
       }`}
       style={{ width, height }}
     >
-      <Thumbnail file={image} className="h-full w-full" />
-      {selected && (
-        <span className="absolute top-1.5 left-1.5 flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
-          <Check className="size-3" />
-        </span>
-      )}
+      <Thumbnail
+        file={image}
+        className={cn("h-full w-full", rejectedFade(image.flag))}
+      />
+      <span className="absolute top-1.5 left-1.5 flex gap-1">
+        {selected && (
+          <span className="flex size-4 items-center justify-center rounded-full bg-primary text-primary-foreground">
+            <Check className="size-3" />
+          </span>
+        )}
+        <PickMark flag={image.flag} testid="thumb-picked" />
+      </span>
       <ExposureBadge
         exposure={image.edit.exposure}
         unit=" EV"
