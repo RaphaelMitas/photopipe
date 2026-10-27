@@ -257,11 +257,6 @@ export default function App() {
     () => selectedImages.filter((image) => !isIdentityEdit(image.edit)).length,
     [selectedImages],
   );
-  const selectedRawPaths = useMemo(
-    () =>
-      selectedImages.filter((image) => image.isRaw).map((image) => image.path),
-    [selectedImages],
-  );
 
   const {
     draft: editDraft,
@@ -343,6 +338,7 @@ export default function App() {
         quality: options.quality,
         longEdge: options.longEdge,
         decoderVersion: options.decoderVersion,
+        names: options.names,
       },
     });
   };
@@ -941,7 +937,7 @@ export default function App() {
                   </>
                 ) : (
                   <>
-                    <Check className="text-emerald-400" />
+                    <Check className="text-success" />
                     Activity
                   </>
                 )}
@@ -1022,7 +1018,8 @@ export default function App() {
             {drawerOpen && openShoot && !inLoupe && (
               <ExportDrawer
                 shoot={openShoot}
-                rawPaths={selectedRawPaths}
+                images={selectedImages}
+                sort={activeSort}
                 selectedCount={selection.selected.size}
                 editedCount={editedCount}
                 filteredCount={filteredImages.length}

@@ -11,7 +11,7 @@ import { ArrowUpDown, LayoutGrid, Rows3, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 import type { PassProgress } from "@/lib/core";
 import { pref } from "@/lib/pref";
-import { isSortKey, SORT_KEYS, type SortKey } from "@/lib/sort";
+import { isSortKey, SORT_KEYS, SORT_LABELS, type SortKey } from "@/lib/sort";
 
 export type ViewMode = "grid" | "list";
 
@@ -20,13 +20,6 @@ export const viewPref = pref(
   (raw): ViewMode => (raw === "list" ? "list" : "grid"),
   String,
 );
-
-const SORT_LABELS: Record<SortKey, string> = {
-  name: "Name",
-  date: "Date",
-  rating: "Rating",
-  score: "Instinct",
-};
 
 type Props = {
   purpose: string;
