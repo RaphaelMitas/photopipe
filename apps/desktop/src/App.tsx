@@ -61,6 +61,7 @@ import { pluralize } from "@/lib/plural";
 import { flagPref } from "@/lib/pref";
 import {
   cachedImage,
+  cachedImages,
   jobStatus,
   useExportJobs,
   useImages,
@@ -572,7 +573,7 @@ export default function App() {
       const stacks = stacksNow.current;
       // inside a stack, a step on a sibling frame still moves you to it
       const here =
-        current && stacks && !insideNow.current
+        current && stacks && (entry.wholeStack || !insideNow.current)
           ? stackOf(stacks, current)
           : undefined;
       const touchesHere = entry.paths.some((path) =>
@@ -580,11 +581,12 @@ export default function App() {
       );
       const next = touchesHere ? undefined : entry.paths.find(present);
       if (next) {
-        // the cover as rated now: the stack-membership effect anchors any other frame inside
+        // the cover as rated now is the one frame the membership effect leaves outside; the filtered walk may lack the stack
         const stack =
-          entry.wholeStack && stacks ? stackOf(stacks, next) : undefined;
+          entry.wholeStack && stacks
+            ? stackOf(groupStacks(cachedImages(queryClient, openShoot)), next)
+            : undefined;
         setCurrentPath(stack ? coverOf(stack).path : next);
-        // you land on the frame the step changed, inside its stack if it has one
         setInsideAnchor(entry.wholeStack ? null : next);
       }
       setRevealed((count) => count + 1);

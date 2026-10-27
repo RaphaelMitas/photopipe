@@ -105,3 +105,52 @@ test("auto-advance: undo inside a stack returns to the frame, after a whole-stac
   await expect(page.getByTestId("loupe-position")).toHaveText("stack 1/193");
   await expect(page.getByTestId("stack-chip")).toContainText("3 frames");
 });
+
+test("auto-advance: undoing a stack rated out of the filter lands outside it", async ({
+  page,
+}) => {
+  await openShoot(page, "2026-08-01_dolomites");
+  await page.locator("[data-path='DSC01200.ARW']").click();
+  await page.keyboard.press("s");
+  await expect(page.getByTestId("loupe-position")).toHaveText("stack 1/193");
+  await page.keyboard.press("a");
+  await expect(page.getByTestId("auto-advance-toggle")).toBeChecked();
+
+  // a ★5 single after the stack keeps the walk going once the stack leaves the filter
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("5");
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC01204.ARW");
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC01200.ARW");
+
+  // stack 1 at ★3 ★5 ★0: rating it 3 skips its top-score frame, so the first frame written is not its cover
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("3");
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC01201.ARW");
+  await page.keyboard.press("5");
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC01202.ARW");
+  await expect(page.getByTestId("hist-5")).toHaveAttribute(
+    "title",
+    "2 rated 5 stars",
+  );
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC01201.ARW");
+  await page.getByTestId("filter-op-eq").click();
+  await page.getByTestId("hist-5").click();
+  await expect(page.getByTestId("loupe-position")).toHaveText("stack 1/2");
+
+  await page.keyboard.press("3");
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC01203.ARW");
+  await expect(page.getByTestId("hist-3")).toHaveAttribute(
+    "title",
+    "3 rated 3 stars",
+  );
+
+  await page.keyboard.press("Meta+z");
+  await expect(page.getByTestId("hist-3")).toHaveAttribute(
+    "title",
+    "1 rated 3 stars",
+  );
+  await expect(page.getByTestId("stack-chip")).toContainText("3 frames");
+});

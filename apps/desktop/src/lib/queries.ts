@@ -369,14 +369,15 @@ function releaseImages(queryClient: QueryClient) {
   staleLists.delete(queryClient);
 }
 
+export const cachedImages = (queryClient: QueryClient, shoot: string | null) =>
+  queryClient.getQueryData<ImageFile[]>(imagesKey(shoot)) ?? [];
+
 export function cachedImage(
   queryClient: QueryClient,
   shoot: string | null,
   path: string,
 ) {
-  return queryClient
-    .getQueryData<ImageFile[]>(imagesKey(shoot))
-    ?.find((image) => image.path === path);
+  return cachedImages(queryClient, shoot).find((image) => image.path === path);
 }
 
 /// Per path: a whole-list snapshot rolled back would take concurrent writes
@@ -406,8 +407,9 @@ export function currentEdits(
   shoot: string | null,
   paths: string[],
 ): Map<string, Edit> {
-  const images = queryClient.getQueryData<ImageFile[]>(imagesKey(shoot)) ?? [];
-  const byPath = new Map(images.map((image) => [image.path, image.edit]));
+  const byPath = new Map(
+    cachedImages(queryClient, shoot).map((image) => [image.path, image.edit]),
+  );
   const wanted = new Map<string, Edit>();
   for (const path of paths) {
     const edit = byPath.get(path);
