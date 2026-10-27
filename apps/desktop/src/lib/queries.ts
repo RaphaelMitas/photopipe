@@ -166,6 +166,8 @@ type RenderFile = Pick<ImageFile, "path" | "mtime" | "isRaw"> | undefined;
 
 const PREVIEW_MAX_PIXEL = 2560;
 
+const superseded = (error: unknown) => String(error).startsWith("superseded");
+
 function renderDecoderVersion(file: RenderFile, version: number) {
   return file?.isRaw ? version : undefined;
 }
@@ -202,6 +204,10 @@ function renderQueryOptions(
           ).cachePath
       : skipToken,
     staleTime: Number.POSITIVE_INFINITY,
+    // A key no slider moves, like the split's before, would give up while a drag fills the lane.
+    retry: (failures, error) => superseded(error) || failures < 3,
+    retryDelay: (failures, error) =>
+      superseded(error) ? 0 : 1000 * 2 ** failures,
   });
 }
 

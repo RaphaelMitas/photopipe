@@ -1,3 +1,5 @@
+import { type PointerEvent, useRef } from "react";
+
 export function cursorIn(
   node: HTMLElement,
   event: { clientX: number; clientY: number },
@@ -30,4 +32,23 @@ export function capturePointer(event: {
   try {
     event.currentTarget.setPointerCapture(event.pointerId);
   } catch {}
+}
+
+export function useDrag<T extends Element>(
+  onMove: (event: PointerEvent<T>) => void,
+) {
+  const dragging = useRef(false);
+  return {
+    onPointerDown: (event: PointerEvent<T>) => {
+      dragging.current = true;
+      capturePointer(event);
+      onMove(event);
+    },
+    onPointerMove: (event: PointerEvent<T>) => {
+      if (dragging.current) onMove(event);
+    },
+    onPointerUp: () => {
+      dragging.current = false;
+    },
+  };
 }

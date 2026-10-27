@@ -295,6 +295,18 @@ describe("Loupe split", () => {
     expect(edits).toContainEqual({ ...identityEdit, exposure: 1, ...framed });
   });
 
+  it("asks for the edit last, so the newest-first lane renders it first", async () => {
+    invoke.mockClear();
+    renderLoupe(0, 1, null, null, { split: true });
+    await waitFor(() =>
+      expect(screen.getByTestId("loupe-before-image")).toBeInTheDocument(),
+    );
+    const exposures = invoke.mock.calls
+      .filter(([, { method }]) => method === "render")
+      .map(([, { params }]) => params?.edit?.exposure);
+    expect(exposures.slice(0, 2)).toEqual([0, 1]);
+  });
+
   it("steps aside while cropping", () => {
     renderLoupe(0, 1, draftFromEdit(identityEdit, 3000, 2000), null, {
       split: true,

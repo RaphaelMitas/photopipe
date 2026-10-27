@@ -15,10 +15,11 @@ import {
   moveCrop,
   rotatedSize,
 } from "@/lib/crop";
+import { clamp01 } from "@/lib/curve";
 import { EXPOSURE_RANGE, EXPOSURE_STEP } from "@/lib/editSliders";
 import { isModalOpen } from "@/lib/modal";
 import { pluralize } from "@/lib/plural";
-import { capturePointer, cursorIn, normalizedIn } from "@/lib/pointer";
+import { capturePointer, cursorIn, normalizedIn, useDrag } from "@/lib/pointer";
 import {
   useDeferredEdit,
   usePrefetchRender,
@@ -124,9 +125,10 @@ export function Loupe({
         : deferredEdit,
     [cropping, deferredEdit, draftRotation],
   );
-  const render = useRender(image, previewEdit);
   const beforeEdit = useMemo(() => unedited(deferredEdit), [deferredEdit]);
+  // Queries fetch in call order and the lane runs newest first, so the edit asks last.
   const before = useRender(comparing ? image : undefined, beforeEdit);
+  const render = useRender(image, previewEdit);
   const thumb = useThumbnail(image);
   const neighbour = (direction: 1 | -1) =>
     stacks && image
@@ -143,10 +145,10 @@ export function Loupe({
     () => previous && unedited(previous.edit),
     [previous],
   );
-  usePrefetchRender(landed ? next : undefined, next?.edit);
   usePrefetchRender(landed && comparing ? next : undefined, nextBefore);
-  usePrefetchRender(landed ? previous : undefined, previous?.edit);
   usePrefetchRender(landed && comparing ? previous : undefined, previousBefore);
+  usePrefetchRender(landed ? next : undefined, next?.edit);
+  usePrefetchRender(landed ? previous : undefined, previous?.edit);
   const multiFrame = stacks !== null && stacks.current.frames.length > 1;
 
   const stageRef = useRef<HTMLDivElement>(null);
@@ -208,12 +210,12 @@ export function Loupe({
     settled?.zoomKey === zoomKey && viewportKey(wanted) === viewportKey(settled)
       ? settled
       : null;
-  const sharp = useViewportRender(image, previewEdit, current).data;
   const sharpBefore = useViewportRender(
     comparing ? image : undefined,
     beforeEdit,
     current,
   ).data;
+  const sharp = useViewportRender(image, previewEdit, current).data;
   const sharpening = wanted !== null && (!sharp || (comparing && !sharpBefore));
   const [divider, setDivider] = useState(0.5);
 
@@ -575,12 +577,10 @@ function SplitDivider({
   at: number;
   onMove: (at: number) => void;
 }) {
-  const dragging = useRef(false);
-  const moveTo = (event: React.PointerEvent) => {
+  const drag = useDrag((event) => {
     const node = stageRef.current;
-    if (!node) return;
-    onMove(Math.min(Math.max(normalizedIn(node, event).x, 0), 1));
-  };
+    if (node) onMove(clamp01(normalizedIn(node, event).x));
+  });
   return (
     <>
       <button
@@ -589,17 +589,11 @@ function SplitDivider({
         aria-label="Drag to compare before and after"
         className="absolute inset-y-0 w-4 -translate-x-1/2 cursor-ew-resize"
         style={{ left: `${at * 100}%` }}
+        {...drag}
         onPointerDown={(event) => {
           // a zoomed stage would take this press as the start of a pan
           event.stopPropagation();
-          dragging.current = true;
-          capturePointer(event);
-        }}
-        onPointerMove={(event) => {
-          if (dragging.current) moveTo(event);
-        }}
-        onPointerUp={() => {
-          dragging.current = false;
+          drag.onPointerDown(event);
         }}
         onDoubleClick={ownTap.onDoubleClick}
       >
@@ -609,7 +603,6 @@ function SplitDivider({
         </span>
       </button>
       <span
-        data-testid="split-before-label"
         className={`${CHIP} pointer-events-none absolute top-3 font-semibold`}
         style={{ right: `calc(${(1 - at) * 100}% + 10px)` }}
       >
@@ -637,7 +630,7 @@ function StackOverlay({ stacks, path }: { stacks: LoupeStacks; path: string }) {
         data-testid="stack-chip"
         {...ownTap}
         onClick={stacks.inside ? stacks.onLeave : stacks.onEnter}
-        className="absolute top-3 left-3 flex items-center gap-2 rounded-md border border-border bg-background/85 px-2.5 py-1 font-mono text-[11px] backdrop-blur-sm"
+        className={`${CHIP} absolute top-3 left-3 flex items-center gap-2`}
       >
         {stacks.inside ? (
           <>
@@ -856,11 +849,9 @@ function Navigator({
   onCenter: (point: { x: number; y: number }) => void;
 }) {
   const box = fitRect(160, 120, pixelWidth, pixelHeight);
-  const dragging = useRef(false);
-
-  const centerFrom = (event: React.PointerEvent<HTMLDivElement>) => {
-    onCenter(normalizedIn(event.currentTarget, event));
-  };
+  const drag = useDrag((event) =>
+    onCenter(normalizedIn(event.currentTarget, event)),
+  );
 
   if (box.width <= 0) return null;
   return (
@@ -868,17 +859,7 @@ function Navigator({
       data-testid="zoom-navigator"
       className="absolute top-3 right-3 overflow-hidden rounded-lg border border-border shadow-lg"
       style={{ width: box.width, height: box.height }}
-      onPointerDown={(event) => {
-        dragging.current = true;
-        capturePointer(event);
-        centerFrom(event);
-      }}
-      onPointerMove={(event) => {
-        if (dragging.current) centerFrom(event);
-      }}
-      onPointerUp={() => {
-        dragging.current = false;
-      }}
+      {...drag}
     >
       <img
         src={src}

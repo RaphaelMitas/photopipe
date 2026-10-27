@@ -374,6 +374,35 @@ describe("useRender and the RAW decoder", () => {
   });
 });
 
+describe("useRender and a busy lane", () => {
+  it("keeps asking for a render on screen however often the lane drops it", async () => {
+    invoke.mockReset();
+    for (let drop = 0; drop < 5; drop++) {
+      invoke.mockRejectedValueOnce(
+        "superseded: dropped for a newer render request",
+      );
+    }
+    invoke.mockResolvedValue({ cachePath: "/cache/before.jpg" });
+    function Shown() {
+      const before = useRender(
+        { path: "/r/shoot1/A.ARW", mtime: 1, isRaw: true },
+        identityEdit,
+      );
+      return before.data ? <p>{before.data}</p> : null;
+    }
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <Shown />
+      </QueryClientProvider>,
+    );
+    expect(await view.findByText("/cache/before.jpg")).toBeTruthy();
+    expect(invoke).toHaveBeenCalledTimes(6);
+  });
+});
+
 describe("useDeferredEdit", () => {
   it("renders a photo you step to with its own edit, never the last one's", async () => {
     invoke.mockReset();

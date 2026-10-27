@@ -6,10 +6,8 @@ export type EditClipboard = {
   raw: boolean;
 };
 
-// White balance is Kelvin on raw but incremental everywhere else, so it does
-// not survive the trip.
-// Denoise only exists on raw, and null there means the decoder's own per-image
-// amount, so it cannot be carried onto a JPEG either.
+// White balance is Kelvin on raw but incremental elsewhere, so it stays behind.
+// Denoise only exists on raw, where null means the decoder's per-image amount.
 export function pasteEdit(
   target: Edit,
   clipboard: EditClipboard,

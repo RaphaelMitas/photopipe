@@ -140,8 +140,8 @@ everything it can, every time, and ⌘Z takes it back.
 ## Before is the look, not the framing
 
 **Y** splits the loupe: the photo as shot on the left of a divider, the edit
-on the right. "As shot" drops tone, colour, curves, white balance and denoise
-but keeps the crop, straighten and turn, for the same reason paste leaves them
+on the right. "As shot" undoes your tone, colour, curves, white balance and
+denoise but keeps the crop, straighten and turn, for the same reason paste leaves them
 behind. With one framing both halves are the same pixels, so the split holds
 while zoomed and panned, and a raw renders its before off the decode the edit
 already warmed instead of a second one.
