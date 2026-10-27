@@ -69,3 +69,22 @@ test("tapping the stack chip goes in and out, even zoomed in", async ({
   await page.getByTestId("stack-chip").click();
   await expect(page.getByTestId("stack-chip")).toContainText("3 frames");
 });
+
+test("auto-advance moves a rated stack on, and undo lands back outside it", async ({
+  page,
+}) => {
+  await openShoot(page, "2026-08-01_dolomites");
+  await page.locator("[data-path='DSC01200.ARW']").click();
+  await page.keyboard.press("s");
+  await expect(page.getByTestId("loupe-position")).toHaveText("stack 1/193");
+  await page.getByTestId("auto-advance-toggle").click();
+
+  await page.keyboard.press("4");
+  await expect(page.getByTestId("loupe-position")).toHaveText("stack 2/193");
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC01203.ARW");
+
+  await page.keyboard.press("Meta+z");
+  await expect(page.getByTestId("loupe-position")).toHaveText("stack 1/193");
+  await expect(page.getByTestId("stack-chip")).toContainText("3 frames");
+  await expect(page.getByTestId("stack-chip")).not.toContainText("★4");
+});

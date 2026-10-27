@@ -20,6 +20,7 @@ import { instinctScore } from "@/lib/instinct";
 import { sortImages } from "@/lib/sort";
 import type { Stack } from "@/lib/stacks";
 import { filmstripPref } from "./Filmstrip";
+import { autoAdvancePref } from "./Loupe";
 import { type RatingFilter, RatingFilterGroup } from "./RatingFilter";
 import { SidebarBrandHeader } from "./SidebarBrandHeader";
 import { Stars } from "./Stars";
@@ -55,6 +56,8 @@ export function LoupeSidebar({
   onBackToGrid,
 }: Props) {
   const filmstrip = filmstripPref.use();
+  const autoAdvance = autoAdvancePref.use();
+  const andNext = autoAdvance ? " & next" : "";
   const instinct = image.score == null ? null : instinctScore(image.score);
 
   return (
@@ -161,19 +164,37 @@ export function LoupeSidebar({
                   onCheckedChange={stacks.onToggle}
                 />
               </div>
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <Label
+                  htmlFor="auto-advance"
+                  className="flex flex-col items-start gap-0.5 font-normal text-xs"
+                >
+                  <span className="text-foreground">Auto-advance</span>
+                  <span>next after rating · a</span>
+                </Label>
+                <Switch
+                  id="auto-advance"
+                  data-testid="auto-advance-toggle"
+                  checked={autoAdvance}
+                  onCheckedChange={autoAdvancePref.set}
+                />
+              </div>
             </div>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <p className="px-2 py-1 text-[10px] text-muted-foreground">
+        <p
+          data-testid="loupe-hints"
+          className="px-2 py-1 text-[10px] text-muted-foreground"
+        >
           {`${
             !stacks.current
-              ? "←→ navigate · 1–5 rate"
+              ? `←→ navigate · 1–5 rate${andNext}`
               : stacks.current.inside
-                ? "←→ frames · 1–5 rate this frame · p pick"
-                : "←→ stacks · 1–5 rate every frame · enter inside"
-          } · 0 clear · ↑↓ exposure · pinch or double-click zoom · r reset · e edit · ⌘C/⌘V settings · ⌘Z undo · s stacks · ${
+                ? `←→ frames · 1–5 rate this frame${andNext} · p pick${andNext}`
+                : `←→ stacks · 1–5 rate every frame${andNext} · enter inside`
+          } · 0 clear · ↑↓ exposure · pinch or double-click zoom · r reset · e edit · ⌘C/⌘V settings · ⌘Z undo · s stacks · a auto-advance · ${
             stacks.current?.inside ? "esc up" : "esc"
           }`}
         </p>

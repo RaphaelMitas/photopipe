@@ -26,7 +26,7 @@ import {
 } from "@/components/ExportDrawer";
 import { HistoryControls } from "@/components/HistoryControls";
 import { IndexingStatus } from "@/components/IndexingStatus";
-import { Loupe } from "@/components/Loupe";
+import { autoAdvancePref, Loupe } from "@/components/Loupe";
 import { LoupeSidebar } from "@/components/LoupeSidebar";
 import { NewProjectDialog } from "@/components/NewProjectDialog";
 import { ratingCounts, useRatingFilter } from "@/components/RatingFilter";
@@ -407,17 +407,18 @@ export default function App() {
   };
   const rateWholeStack = (stack: Stack, rating: number) => {
     const read = readStack(stack);
-    if (!read) return;
+    if (!read) return false;
     writes.rateMany(
       rateStack(read.live, rating),
       read.before,
       "Rating",
       `${ratingDetail(rating)} · stack of ${stack.frames.length}`,
     );
+    return true;
   };
   const pick = (stack: Stack, path: string) => {
     const read = readStack(stack);
-    if (!read) return;
+    if (!read) return false;
     const { writes: ratings, cleared } = pickInStack(read.live, path);
     const written = writes.rateMany(
       ratings,
@@ -437,11 +438,15 @@ export default function App() {
         }),
       () => {},
     );
+    return true;
   };
-  const rateShown = (path: string, rating: number) =>
-    currentStack && multiFrame && !insideStack
-      ? rateWholeStack(currentStack, rating)
-      : writes.rate(path, rating);
+  const rateShown = (path: string, rating: number) => {
+    if (currentStack && multiFrame && !insideStack) {
+      return rateWholeStack(currentStack, rating);
+    }
+    writes.rate(path, rating);
+    return true;
+  };
   const visit = (path: string | null, stacks: Stack[] | null) => {
     setCurrentPath(path);
     const stack = path && stacks ? stackOf(stacks, path) : undefined;
@@ -570,9 +575,13 @@ export default function App() {
       );
       const next = touchesHere ? undefined : entry.paths.find(present);
       if (next) {
-        setCurrentPath(next);
-        // you land on the frame the step changed, inside its stack if it has one
-        setInsideAnchor(next);
+        const stack = stacks ? stackOf(stacks, next) : undefined;
+        // a step on every frame was taken outside the stack; any other lands inside, on the frame it changed
+        const whole = stack?.frames.every((frame) =>
+          entry.paths.includes(frame.path),
+        );
+        setCurrentPath(stack && whole ? coverOf(stack).path : next);
+        setInsideAnchor(whole ? null : next);
       }
       setRevealed((count) => count + 1);
     },
@@ -662,6 +671,9 @@ export default function App() {
       }
       if (event.key === "s" && !event.altKey && loupeOpen && !cropping) {
         toggleStacks();
+      }
+      if (event.key === "a" && !event.altKey && loupeOpen && !cropping) {
+        autoAdvancePref.set(!autoAdvancePref.get());
       }
     };
     window.addEventListener("keydown", handler);

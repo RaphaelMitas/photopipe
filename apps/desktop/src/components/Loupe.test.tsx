@@ -20,11 +20,12 @@ import { type CropDraft, draftFromEdit } from "@/lib/crop";
 import { makeImage } from "@/lib/test-image";
 import { EditSidebar } from "./EditPanel";
 import { filmstripPref } from "./Filmstrip";
-import { Loupe, type LoupeStacks } from "./Loupe";
+import { autoAdvancePref, Loupe, type LoupeStacks } from "./Loupe";
 import { LoupeSidebar } from "./LoupeSidebar";
 import type { RatingFilter } from "./RatingFilter";
 
 afterEach(cleanup);
+afterEach(() => autoAdvancePref.set(false));
 
 const invoke = vi.hoisted(() =>
   vi.fn<
@@ -65,7 +66,7 @@ function renderLoupe(
 ) {
   const onNavigate = vi.fn();
   const onClose = vi.fn();
-  const onRate = vi.fn();
+  const onRate = vi.fn(() => true);
   const onEditChange = vi.fn();
   const onCropDraft = vi.fn();
   const onApplyCrop = vi.fn();
@@ -113,7 +114,7 @@ function stackOf(images: ImageFile[], inside: boolean): LoupeStacks {
     inside,
     onEnter: vi.fn(),
     onLeave: vi.fn(),
-    onPick: vi.fn(),
+    onPick: vi.fn(() => true),
   };
 }
 
@@ -168,6 +169,74 @@ describe("Loupe with stacks", () => {
     expect(onRate).toHaveBeenCalledWith("/r/s/DSC00001.ARW", 2);
     expect(stacks.onEnter).not.toHaveBeenCalled();
     expect(screen.queryByTestId("stack-chip")).not.toBeInTheDocument();
+  });
+});
+
+describe("Loupe auto-advance", () => {
+  const [one, two, three] = makeImages();
+  const twoStacks = (inside: boolean): LoupeStacks => ({
+    ...stackOf([one, two], inside),
+    list: [
+      { id: one.path, frames: [one, two] },
+      { id: three.path, frames: [three] },
+    ],
+  });
+
+  it("rates and moves on, but stays for 0, a held key and a refused rating", () => {
+    autoAdvancePref.set(true);
+    const { onRate, onNavigate } = renderLoupe(0);
+    fireEvent.keyDown(window, { key: "3" });
+    expect(onRate).toHaveBeenCalledWith("/r/s/DSC00001.ARW", 3);
+    expect(onNavigate).toHaveBeenCalledWith("/r/s/DSC00002.ARW");
+    fireEvent.keyDown(window, { key: "0" });
+    fireEvent.keyDown(window, { key: "4", repeat: true });
+    onRate.mockReturnValueOnce(false);
+    fireEvent.keyDown(window, { key: "2" });
+    expect(onRate).toHaveBeenCalledTimes(3);
+    expect(onNavigate).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays on the last photo", () => {
+    autoAdvancePref.set(true);
+    const { onRate, onNavigate } = renderLoupe(2);
+    fireEvent.keyDown(window, { key: "5" });
+    expect(onRate).toHaveBeenCalledWith("/r/s/DSC00003.ARW", 5);
+    expect(onNavigate).not.toHaveBeenCalled();
+  });
+
+  it("does nothing extra while off", () => {
+    const { onNavigate } = renderLoupe(0);
+    fireEvent.keyDown(window, { key: "3" });
+    expect(onNavigate).not.toHaveBeenCalled();
+  });
+
+  it("moves a whole stack on to the next stack", () => {
+    autoAdvancePref.set(true);
+    const { onNavigate } = renderLoupe(0, 0, null, twoStacks(false));
+    fireEvent.keyDown(window, { key: "3" });
+    expect(onNavigate).toHaveBeenCalledWith(three.path);
+  });
+
+  it("steps frame by frame inside a stack and stops at its last frame", () => {
+    autoAdvancePref.set(true);
+    const { onNavigate } = renderLoupe(0, 0, null, twoStacks(true));
+    fireEvent.keyDown(window, { key: "3" });
+    expect(onNavigate).toHaveBeenCalledWith(two.path);
+    cleanup();
+    const last = renderLoupe(1, 0, null, twoStacks(true));
+    fireEvent.keyDown(window, { key: "3" });
+    expect(last.onNavigate).not.toHaveBeenCalled();
+  });
+
+  it("leaves the stack for the next one after a pick, not after a click on Pick", () => {
+    autoAdvancePref.set(true);
+    const stacks = twoStacks(true);
+    const { onNavigate } = renderLoupe(1, 0, null, stacks);
+    fireEvent.click(screen.getByTestId("stack-pick"));
+    expect(onNavigate).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: "p" });
+    expect(stacks.onPick).toHaveBeenCalledTimes(2);
+    expect(onNavigate).toHaveBeenCalledWith(three.path);
   });
 });
 

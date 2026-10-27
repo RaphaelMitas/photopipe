@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { type Edit, fileSrc, type ImageFile } from "@/lib/core";
 import {
   aspectRatioFor,
@@ -12,6 +13,7 @@ import { EXPOSURE_RANGE, EXPOSURE_STEP } from "@/lib/editSliders";
 import { isModalOpen } from "@/lib/modal";
 import { pluralize } from "@/lib/plural";
 import { capturePointer, cursorIn, normalizedIn } from "@/lib/pointer";
+import { flagPref } from "@/lib/pref";
 import {
   useDeferredEdit,
   usePrefetchRender,
@@ -40,6 +42,13 @@ import {
 import { CropOverlay } from "./CropTool";
 import { Filmstrip, filmstripPref } from "./Filmstrip";
 
+export const autoAdvancePref = flagPref(
+  "photopipe.autoAdvance",
+  "on",
+  "off",
+  false,
+);
+
 // Photo pixels, not screen pixels: ten of them stay a fine adjustment on any
 // photo while still showing on screen at a fitted view.
 const NUDGE_PIXELS = 10;
@@ -66,7 +75,8 @@ export type LoupeStacks = {
   inside: boolean;
   onEnter: () => void;
   onLeave: () => void;
-  onPick: () => void;
+  /// False when nothing was written, so the loupe stays put.
+  onPick: () => boolean;
 };
 
 type Props = {
@@ -78,7 +88,8 @@ type Props = {
   onEditChange: (edit: Edit) => void;
   onNavigate: (path: string) => void;
   onClose: () => void;
-  onRate: (path: string, rating: number) => void;
+  /// False when nothing was written, so the loupe stays put.
+  onRate: (path: string, rating: number) => boolean;
 };
 
 export function Loupe({
@@ -97,6 +108,7 @@ export function Loupe({
   const deferredEdit = useDeferredEdit(image, edit);
   const cropping = cropDraft !== null;
   const filmstrip = filmstripPref.use();
+  const autoAdvance = autoAdvancePref.use();
 
   // While cropping the stage shows the full turned frame, uncropped and
   // unstraightened; the crop and the CSS angle preview sit on top.
@@ -233,6 +245,11 @@ export function Loupe({
         }
         return;
       }
+      const advance = (to: ImageFile | undefined) => {
+        if (!autoAdvance) return;
+        if (to) onNavigate(to.path);
+        else toast("Nothing after this one", { id: "auto-advance" });
+      };
       switch (event.key) {
         case "Escape":
           if (stacks?.inside) stacks.onLeave();
@@ -255,15 +272,22 @@ export function Loupe({
           break;
         case "p":
         case "P":
-          if (multiFrame && stacks.inside) stacks.onPick();
+          if (multiFrame && stacks.inside && stacks.onPick()) {
+            advance(step(stacks.list, image.path, false, 1));
+          }
           break;
         case "0":
+          onRate(image.path, 0);
+          break;
         case "1":
         case "2":
         case "3":
         case "4":
         case "5":
-          onRate(image.path, Number(event.key));
+          // held down, the repeats would rate every photo it advances onto
+          if (!event.repeat && onRate(image.path, Number(event.key))) {
+            advance(next);
+          }
           break;
         case "ArrowUp":
           event.preventDefault();
@@ -296,6 +320,7 @@ export function Loupe({
     session,
     stacks,
     multiFrame,
+    autoAdvance,
     next,
     previous,
     onClose,

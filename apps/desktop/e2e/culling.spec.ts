@@ -607,3 +607,26 @@ test("the decoder tooltip opens and closes on a real click", async ({
   await info.click();
   await expect(tip).toHaveCount(0);
 });
+
+test("auto-advance moves on through the filter, and undo walks back to the rated photo", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("filter-op-unrated").click();
+  await page.getByTestId("thumb").first().click();
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.ARW");
+
+  await page.keyboard.press("a");
+  await expect(page.getByTestId("auto-advance-toggle")).toBeChecked();
+  await expect(page.getByTestId("loupe-hints")).toContainText(
+    "1–5 rate & next",
+  );
+
+  await page.keyboard.press("3");
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.jpg");
+  await expect(page.getByTestId("loupe-position")).toHaveText("1/2");
+
+  await page.keyboard.press("Meta+z");
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.ARW");
+  await expect(page.locator("[data-rating='0']")).toBeVisible();
+});
