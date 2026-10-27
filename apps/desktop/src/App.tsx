@@ -61,7 +61,6 @@ import { pluralize } from "@/lib/plural";
 import { flagPref } from "@/lib/pref";
 import {
   cachedImage,
-  cachedImages,
   jobStatus,
   useExportJobs,
   useImages,
@@ -388,10 +387,17 @@ export default function App() {
 
   // stacks arriving or an import can regroup you onto a non-cover frame, which means inside
   const membership = currentStack?.frames.map((frame) => frame.path).join("\n");
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only a change in who is in the stack re-decides
+  const decided = useRef({ membership, currentPath });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a regroup under the same photo re-decides; a move decided its own anchor
   useEffect(() => {
-    if (!insideStack) setInsideAnchor(anchorFor(currentStack, currentPath));
-  }, [membership]);
+    const regrouped =
+      decided.current.membership !== membership &&
+      decided.current.currentPath === currentPath;
+    decided.current = { membership, currentPath };
+    if (regrouped && !insideStack) {
+      setInsideAnchor(anchorFor(currentStack, currentPath));
+    }
+  }, [membership, currentPath]);
   // Read at keypress, not render: a rating typed a moment ago may not have re-rendered yet.
   const readStack = (stack: Stack) => {
     const frames = stack.frames.map(
@@ -581,12 +587,8 @@ export default function App() {
       );
       const next = touchesHere ? undefined : entry.paths.find(present);
       if (next) {
-        // the cover as rated now is the one frame the membership effect leaves outside; the filtered walk may lack the stack
-        const stack =
-          entry.wholeStack && stacks
-            ? stackOf(groupStacks(cachedImages(queryClient, openShoot)), next)
-            : undefined;
-        setCurrentPath(stack ? coverOf(stack).path : next);
+        setCurrentPath(next);
+        // you land on the frame the step changed, inside its stack unless the step was on the whole stack
         setInsideAnchor(entry.wholeStack ? null : next);
       }
       setRevealed((count) => count + 1);
