@@ -2,6 +2,7 @@ import { Button } from "@photopipe/ui/components/button";
 import { Card, CardContent } from "@photopipe/ui/components/card";
 import { Images, Plus, Settings2 } from "lucide-react";
 import type { Shoot } from "@/lib/core";
+import { pluralize } from "@/lib/plural";
 import { Thumbnail } from "./Thumbnail";
 
 function Cover({ path }: { path: string | null }) {
@@ -75,7 +76,7 @@ export function Dashboard({ shoots, onOpen, onNewProject, onSettings }: Props) {
                 )}
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
-                {shoot.imageCount} photos
+                {pluralize(shoot.imageCount, "photo")}
               </div>
               {shoot.notes && (
                 <p

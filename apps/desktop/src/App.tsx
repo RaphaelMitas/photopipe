@@ -57,11 +57,11 @@ import {
 import { betterThan, scoreRanks } from "@/lib/instinct";
 import { heldOrder } from "@/lib/loupeWalk";
 import { isModalOpen } from "@/lib/modal";
+import { pluralize } from "@/lib/plural";
 import { flagPref } from "@/lib/pref";
 import {
   cachedImage,
   jobStatus,
-  photos,
   useExportJobs,
   useImages,
   useLibrarySync,
@@ -302,7 +302,7 @@ export default function App() {
     if (paths.length === 0) return;
     const job = await exports.start({
       method: "importFiles",
-      label: `Import ${paths.length} ${paths.length === 1 ? "file" : "files"}`,
+      label: `Import ${pluralize(paths.length, "file")}`,
       destination: currentShoot?.path ?? openShoot,
       request: { shoot: openShoot, paths },
     });
@@ -423,7 +423,9 @@ export default function App() {
         toast(`Picked ${fileName(path)}`, {
           id: "pick",
           description:
-            cleared > 0 ? `${photos(cleared)} cleared · ⌘Z undoes` : undefined,
+            cleared > 0
+              ? `${pluralize(cleared, "photo")} cleared · ⌘Z undoes`
+              : undefined,
         }),
       () => {},
     );
@@ -532,9 +534,7 @@ export default function App() {
           : null,
       ].filter(Boolean);
       toast.success(
-        `Pasted settings onto ${result.written} ${
-          result.written === 1 ? "photo" : "photos"
-        }`,
+        `Pasted settings onto ${pluralize(result.written, "photo")}`,
         { description: notes.length > 0 ? notes.join(" · ") : undefined },
       );
     },
@@ -587,7 +587,7 @@ export default function App() {
       if (entry) showPhoto(entry);
       void jumpHistory(entry).then((steps) => {
         if (steps === 0) return;
-        toast(`Moved ${steps} ${steps === 1 ? "step" : "steps"} in history`, {
+        toast(`Moved ${pluralize(steps, "step")} in history`, {
           id: "history",
         });
       });
@@ -860,7 +860,7 @@ export default function App() {
                   {currentShoot.name}
                 </span>
                 <span className="font-mono text-[10px] text-muted-foreground">
-                  {currentShoot.imageCount} photos
+                  {pluralize(currentShoot.imageCount, "photo")}
                 </span>
               </>
             ) : (

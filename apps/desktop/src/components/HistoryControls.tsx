@@ -19,11 +19,12 @@ import { FolderOpen, History, Redo2, Undo2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { fileName } from "@/lib/fileName";
 import { type HistoryEntry, historyLabel, useHistory } from "@/lib/history";
+import { pluralize } from "@/lib/plural";
 
 const target = (entry: HistoryEntry) =>
   entry.paths.length === 1
     ? fileName(entry.paths[0])
-    : `${entry.paths.length} photos`;
+    : pluralize(entry.paths.length, "photo");
 
 const clock = (at: number) =>
   new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -59,9 +60,7 @@ function HistoryRow({
     }
     opening.current = false;
   }, [current]);
-  const hint = `${undone ? "Redo to here" : "Back to here"} · ${steps} ${
-    steps === 1 ? "step" : "steps"
-  }`;
+  const hint = `${undone ? "Redo to here" : "Back to here"} · ${pluralize(steps, "step")}`;
   return (
     <Item
       asChild

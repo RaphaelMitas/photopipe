@@ -10,6 +10,7 @@ import {
 } from "@/lib/crop";
 import { EXPOSURE_RANGE, EXPOSURE_STEP } from "@/lib/editSliders";
 import { isModalOpen } from "@/lib/modal";
+import { pluralize } from "@/lib/plural";
 import { capturePointer, cursorIn, normalizedIn } from "@/lib/pointer";
 import {
   useDeferredEdit,
@@ -526,9 +527,9 @@ function StackOverlay({ stacks, path }: { stacks: LoupeStacks; path: string }) {
             {rating > 0 ? "keeps " : "gets "}
             <span className="text-amber-400">{`★${kept}`}</span>
             {cleared > 0
-              ? ` · clears ${cleared} other${cleared === 1 ? "" : "s"}`
+              ? ` · clears ${pluralize(cleared, "other")}`
               : rating === 0 &&
-                ` · ${frames.length - 1} other${frames.length === 2 ? "" : "s"} stay unrated`}
+                ` · ${pluralize(frames.length - 1, "other")} ${frames.length === 2 ? "stays" : "stay"} unrated`}
           </span>
           <kbd className="rounded bg-muted px-1.5 font-mono text-xs">P</kbd>
         </button>
