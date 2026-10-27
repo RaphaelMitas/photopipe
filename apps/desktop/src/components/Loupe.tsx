@@ -64,6 +64,15 @@ const CHIP =
 // Keeping the framing keeps both halves of the split on the same pixels.
 const unedited = (edit: Edit): Edit => ({ ...identityEdit, ...framing(edit) });
 
+function usePrefetchNeighbour(
+  photo: ImageFile | undefined,
+  comparing: boolean,
+) {
+  const before = useMemo(() => photo && unedited(photo.edit), [photo]);
+  usePrefetchRender(photo, photo?.edit);
+  usePrefetchRender(comparing ? photo : undefined, before);
+}
+
 /// Holds a value back until it has stopped changing for `delayMs`.
 function useSettled<T>(value: T, delayMs: number): T {
   const [settled, setSettled] = useState(value);
@@ -140,15 +149,8 @@ export function Loupe({
   const landed = [render, before].every(
     (query) => !query.isFetching || query.failureCount > 0,
   );
-  const nextBefore = useMemo(() => next && unedited(next.edit), [next]);
-  const previousBefore = useMemo(
-    () => previous && unedited(previous.edit),
-    [previous],
-  );
-  usePrefetchRender(landed ? next : undefined, next?.edit);
-  usePrefetchRender(landed && comparing ? next : undefined, nextBefore);
-  usePrefetchRender(landed ? previous : undefined, previous?.edit);
-  usePrefetchRender(landed && comparing ? previous : undefined, previousBefore);
+  usePrefetchNeighbour(landed ? next : undefined, comparing);
+  usePrefetchNeighbour(landed ? previous : undefined, comparing);
   const multiFrame = stacks !== null && stacks.current.frames.length > 1;
 
   const stageRef = useRef<HTMLDivElement>(null);

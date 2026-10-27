@@ -34,17 +34,15 @@ export function capturePointer(event: {
   } catch {}
 }
 
-export function useDrag<T extends Element>(
-  onMove: (event: PointerEvent<T>) => void,
-) {
+export function useDrag(onMove: (event: PointerEvent) => void) {
   const dragging = useRef(false);
   return {
-    onPointerDown: (event: PointerEvent<T>) => {
+    onPointerDown: (event: PointerEvent) => {
       dragging.current = true;
       capturePointer(event);
       onMove(event);
     },
-    onPointerMove: (event: PointerEvent<T>) => {
+    onPointerMove: (event: PointerEvent) => {
       if (dragging.current) onMove(event);
     },
     onPointerUp: () => {

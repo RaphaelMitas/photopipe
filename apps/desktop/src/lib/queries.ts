@@ -167,7 +167,7 @@ type RenderFile = Pick<ImageFile, "path" | "mtime" | "isRaw"> | undefined;
 const PREVIEW_MAX_PIXEL = 2560;
 
 const superseded = (error: unknown) => String(error).startsWith("superseded");
-// A key no slider moves, like the split's before, would give up while a drag fills the lane.
+// The split's before keeps its key through a slider drag, whose renders can drop it any number of times.
 const renderRetry = (failures: number, error: unknown) =>
   superseded(error) || failures < 3;
 
