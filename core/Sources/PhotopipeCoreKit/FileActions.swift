@@ -73,6 +73,14 @@ public enum FileActions {
         #endif
     }
 
+    /// A leading dot is refused because the scan would hide the file.
+    static func isUsableName(_ name: String) -> Bool {
+        let scalars = name.unicodeScalars
+        return !name.isEmpty && !scalars.contains("/") && !scalars.contains(":")
+            && scalars.first != "."
+            && !scalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F })
+    }
+
     static func uniqueName(_ name: String, isTaken: (String) -> Bool) -> String {
         guard isTaken(name) else { return name }
         let ns = name as NSString

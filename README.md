@@ -73,7 +73,9 @@ or everything for you) and offers two formats: **Original** copies the bytes
 untouched, **JPEG** renders each photo with its edits baked in, at full
 resolution, 2048, 1080 or a custom long edge, quality 90 or 100, to
 a folder or a zip — flat or mirroring your subfolders, never silently
-overwriting on a name collision. Jobs run in the drawer's activity section,
+overwriting on a name collision. Files can keep their names or follow a
+template such as `{date}_{shoot}_{seq}`, with a live preview of the
+result. Jobs run in the drawer's activity section,
 where errors stay visible instead of vanishing with a toast.
 
 ### Culling

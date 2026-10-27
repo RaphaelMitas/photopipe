@@ -50,13 +50,13 @@ private func settled(_ service: LibraryService, _ job: Exporter.Progress) throws
 private func exportNow(
     _ service: LibraryService, shoot: String, paths: [String], destination: String,
     zip: Bool = false, flatten: Bool = true, format: ExportFormat = .original,
-    quality: Int = 90
+    quality: Int = 90, names: [String]? = nil
 ) throws -> Exporter.Progress {
     try settled(
         service,
         try service.startExport(
             shoot: shoot, paths: paths, destination: destination,
-            zip: zip, flatten: flatten, format: format, quality: quality))
+            zip: zip, flatten: flatten, format: format, quality: quality, names: names))
 }
 
 @Test func trashRemovesTheFileAndItsSidecar() throws {
@@ -217,6 +217,57 @@ private func exportNow(
     let fm = FileManager.default
     #expect(fm.fileExists(atPath: out.appendingPathComponent("Tag1/DSC00002.jpg").path))
     #expect(fm.fileExists(atPath: out.appendingPathComponent("Tag2/DSC00002.jpg").path))
+}
+
+@Test func renamedExportKeepsTheFolderAndTheExtension() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let shoot = try makeShoot(in: dir)
+    let service = makeService(in: dir)
+    _ = try service.setRoot(path: dir.path, indexPath: nil)
+    let paths = [
+        shoot.appendingPathComponent("DSC00001.ARW").path,
+        shoot.appendingPathComponent("Tag1/DSC00002.jpg").path,
+        shoot.appendingPathComponent("Tag2/DSC00002.jpg").path,
+    ]
+    let fm = FileManager.default
+
+    let mirrored = dir.appendingPathComponent("mirrored")
+    #expect(
+        try exportNow(
+            service, shoot: shoot.lastPathComponent, paths: paths, destination: mirrored.path,
+            flatten: false, names: ["show_001", "show_002", "show_003"]
+        ).done == 3)
+    for rel in ["show_001.ARW", "Tag1/show_002.jpg", "Tag2/show_003.jpg"] {
+        #expect(fm.fileExists(atPath: mirrored.appendingPathComponent(rel).path), "\(rel)")
+    }
+
+    let flat = dir.appendingPathComponent("flat")
+    #expect(
+        try exportNow(
+            service, shoot: shoot.lastPathComponent, paths: Array(paths.dropFirst()),
+            destination: flat.path, names: ["show", "show"]
+        ).done == 2)
+    #expect(try fm.contentsOfDirectory(atPath: flat.path).sorted() == ["show-1.jpg", "show.jpg"])
+}
+
+@Test func exportRefusesNamesThatLeaveTheFolder() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let shoot = try makeShoot(in: dir)
+    let service = makeService(in: dir)
+    _ = try service.setRoot(path: dir.path, indexPath: nil)
+    let jpg = shoot.appendingPathComponent("DSC00001.jpg").path
+    let out = dir.appendingPathComponent("out").path
+
+    for names in [["../escaped"], [".hidden"], [""], ["a", "b"]] {
+        #expect(throws: LibraryService.ServiceError.self) {
+            try service.startExport(
+                shoot: shoot.lastPathComponent, paths: [jpg], destination: out,
+                zip: false, flatten: true, format: .original, quality: 90, names: names)
+        }
+    }
+    #expect(!FileManager.default.fileExists(atPath: out))
 }
 
 @Test func zipLayoutsFlatAndMirrored() throws {

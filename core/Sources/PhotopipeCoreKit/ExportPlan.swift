@@ -9,7 +9,7 @@ extension Exporter.Plan {
     static func export(
         _ images: [ImageFile], to destination: String, zip: Bool, flatten: Bool,
         format: ExportFormat, quality: Int, longEdge: Int?, decoderVersion: Int?,
-        renderer: Renderer
+        names: [String]?, renderer: Renderer
     ) throws -> Exporter.Plan {
         let fm = FileManager.default
         let staging =
@@ -20,8 +20,13 @@ extension Exporter.Plan {
         let base = staging ?? URL(fileURLWithPath: destination)
 
         var used: Set<String> = []
-        let items = images.map { image in
+        let items = images.enumerated().map { index, image in
             var rel = image.rel
+            if let name = names?[index] {
+                let ext = (rel as NSString).pathExtension
+                rel = ((rel as NSString).deletingLastPathComponent as NSString)
+                    .appendingPathComponent(ext.isEmpty ? name : "\(name).\(ext)")
+            }
             if format == .jpeg {
                 rel = (rel as NSString).deletingPathExtension + ".jpg"
             }
