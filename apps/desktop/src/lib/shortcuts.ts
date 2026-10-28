@@ -9,6 +9,7 @@ import {
   isActionId,
   isChord,
   RATING_ACTIONS,
+  RESERVED,
 } from "@/lib/keymap";
 import { isModalOpen } from "@/lib/modal";
 import { pref } from "@/lib/pref";
@@ -28,7 +29,8 @@ function decodeOverrides(raw: string | null): Overrides {
     if (!isActionId(id) || ACTIONS[id].fixed || !Array.isArray(keys)) continue;
     const list: unknown[] = keys;
     const chords = list.filter(
-      (key): key is string => typeof key === "string" && isChord(key),
+      (key): key is string =>
+        typeof key === "string" && isChord(key) && !RESERVED.has(key),
     );
     if (chords.length === list.length) overrides[id] = chords;
   }

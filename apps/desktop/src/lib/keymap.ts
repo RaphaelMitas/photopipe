@@ -332,13 +332,13 @@ export function chordsOf(event: KeyFields): string[] {
   const letter = /^Key([A-Z])$/.exec(event.code)?.[1];
   const named = NAMED[event.key];
   if (named !== undefined) chords.push(joinChord(event, named, false));
-  // by character, so Z stays Z on a QWERTZ keyboard
-  else if (/^[a-z]$/i.test(event.key)) {
-    chords.push(joinChord(event, event.key.toLowerCase(), false));
-  }
-  // ⌥ turns X into ≈, so its letter only survives as a position
+  // ⌥ turns X into ≈ and O into ø, so its letter only survives as a position
   else if (event.altKey && letter !== undefined) {
     chords.push(joinChord(event, letter.toLowerCase(), false));
+  }
+  // by character, so Z stays Z on a QWERTZ keyboard and ü keeps its ⇧
+  else if (/^\p{L}$/u.test(event.key)) {
+    chords.push(joinChord(event, event.key.toLowerCase(), false));
   } else if ([...event.key].length === 1) {
     chords.push(joinChord(event, event.key, true));
   }

@@ -18,6 +18,11 @@ describe("chordsOf", () => {
     expect(press("P", "KeyP", { shiftKey: true })).toEqual(["shift+p"]);
   });
 
+  it("keeps ⇧ on letters beyond ASCII, so ⇧ü is not ü", () => {
+    expect(press("Ü", "BracketLeft", { shiftKey: true })).toEqual(["shift+ü"]);
+    expect(press("ø", "KeyO", { altKey: true })).toEqual(["alt+o"]);
+  });
+
   it("reads digits by position, so ⇧1 is not !", () => {
     expect(press("!", "Digit1", { shiftKey: true })[0]).toBe("shift+1");
     expect(press("4", "Numpad4")).toEqual(["4"]);

@@ -75,6 +75,11 @@ describe("rebinding", () => {
     );
     expect(bindingsOf("flag.pick")).toEqual(["p"]);
     expect(bindingsOf("app.settings")).toEqual(["meta+,"]);
+    localStorage.setItem(
+      "photopipe.shortcuts",
+      JSON.stringify({ "export.open": ["meta+w"] }),
+    );
+    expect(bindingsOf("export.open")).toEqual(["meta+e"]);
   });
 });
 
