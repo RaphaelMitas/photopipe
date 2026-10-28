@@ -230,7 +230,7 @@ export function Loupe({
   const [divider, setDivider] = useState(0.5);
 
   // Key repeat outruns re-rendering, so a nudge composes on the ref instead of
-  // the draft this listener closed over.
+  // the draft this handler closed over.
   const draftRef = useRef(cropDraft);
   draftRef.current = cropDraft;
 

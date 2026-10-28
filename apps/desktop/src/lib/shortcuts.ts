@@ -232,10 +232,14 @@ function dispatch(event: KeyboardEvent) {
     if (!action.contexts.includes(context)) continue;
     const bindings = bindingsOf(id, overrides);
     if (!chords.some((chord) => bindings.includes(chord))) continue;
-    // held down, a rating would land on every photo it advances onto
-    if (event.repeat && !action.repeat) return;
     const handler = handlerFor(id, context);
-    if (!handler || handler() === false) continue;
+    if (!handler) continue;
+    // held down, a rating would land on every photo it advances onto
+    if (event.repeat && !action.repeat) {
+      event.preventDefault();
+      return;
+    }
+    if (handler() === false) continue;
     event.preventDefault();
     return;
   }

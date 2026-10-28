@@ -134,6 +134,15 @@ describe("dispatch", () => {
     expect(pick).not.toHaveBeenCalled();
   });
 
+  it("swallows a held key so it can't fall through to the menu", () => {
+    const selectAll = vi.fn();
+    mount("browser", { "select.all": selectAll });
+    expect(
+      fireEvent.keyDown(window, { key: "a", metaKey: true, repeat: true }),
+    ).toBe(false);
+    expect(selectAll).not.toHaveBeenCalled();
+  });
+
   it("passes on a key the handler declines", () => {
     mount("browser", { "select.clear": () => false });
     expect(fireEvent.keyDown(window, { key: "Escape" })).toBe(true);

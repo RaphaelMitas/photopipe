@@ -101,9 +101,7 @@ export function KeyboardSettings() {
       )
     );
   });
-  const changedCount = ACTION_IDS.filter((id) =>
-    isChanged(id, overrides),
-  ).length;
+  const changedCount = Object.keys(overrides).length;
 
   const recordingChip = (
     <span className="inline-flex h-5.5 items-center rounded-lg border border-primary border-dashed px-2 text-primary text-xs">
