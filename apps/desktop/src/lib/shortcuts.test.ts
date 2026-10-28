@@ -62,6 +62,22 @@ describe("rebinding", () => {
     expect(localStorage.getItem("photopipe.shortcuts")).toBe("{}");
   });
 
+  it("undoes a swap on reset, giving the other action its key back", () => {
+    assignShortcut("flag.pick", "p", ["x"]);
+    resetShortcut("flag.pick");
+    expect(bindingsOf("flag.pick")).toEqual(["p"]);
+    expect(bindingsOf("flag.reject")).toEqual(["x"]);
+  });
+
+  it("does nothing when a key is recorded over itself", () => {
+    const germanSlash = ["shift+meta+7", "meta+/"];
+    assignShortcut("history.show", "meta+y", germanSlash);
+    resetShortcut("app.shortcuts");
+    assignShortcut("history.show", "shift+meta+7", germanSlash);
+    expect(bindingsOf("history.show")).toEqual(["shift+meta+7"]);
+    expect(bindingsOf("app.shortcuts")).toEqual(["meta+/"]);
+  });
+
   it("takes its keys back on reset", () => {
     assignShortcut("rate.0", null, ["p"]);
     resetShortcut("flag.pick");

@@ -122,6 +122,7 @@ export function assigned(
   replacing: string | null,
   press: readonly string[],
 ): Overrides {
+  if (replacing !== null && press.includes(replacing)) return overrides;
   const own = bindingsOf(id, overrides);
   const chord = press.find((key) => own.includes(key)) ?? press[0];
   if (chord === undefined) return overrides;
@@ -153,10 +154,14 @@ export function unbindShortcut(id: ActionId, chord: string) {
   );
 }
 
+/// Hands the key it gives up to whoever loses one, so resetting one side undoes a swap.
 export function resetShortcut(id: ActionId) {
   const { keys } = ACTIONS[id];
+  const overrides = overridesPref.get();
+  const released =
+    bindingsOf(id, overrides).find((key) => !keys.includes(key)) ?? null;
   overridesPref.set(
-    withBindings(evict(overridesPref.get(), id, keys, null), id, keys),
+    withBindings(evict(overrides, id, keys, released), id, keys),
   );
 }
 
