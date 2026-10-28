@@ -19,6 +19,8 @@ import type { Flag, ImageFile, PassProgress } from "@/lib/core";
 import { exposureParts, takenText } from "@/lib/exif";
 import { fileName } from "@/lib/fileName";
 import { instinctScore } from "@/lib/instinct";
+import { type ActionId, RATING_ACTIONS } from "@/lib/keymap";
+import { shortcutLabel, useOverrides } from "@/lib/shortcuts";
 import { sortImages } from "@/lib/sort";
 import type { Stack } from "@/lib/stacks";
 import { filmstripPref } from "./Filmstrip";
@@ -28,6 +30,7 @@ import {
   type RatingFilter,
   RatingFilterGroup,
 } from "./RatingFilter";
+import { ShortcutTooltip } from "./ShortcutTooltip";
 import { SidebarBrandHeader } from "./SidebarBrandHeader";
 import { FlagButtons, Stars } from "./Stars";
 
@@ -69,6 +72,44 @@ export function LoupeSidebar({
   const filmstrip = filmstripPref.use();
   const autoAdvance = autoAdvancePref.use();
   const andNext = autoAdvance ? " & next" : "";
+  const overrides = useOverrides();
+  const hint = (text: string, ids: ActionId[], separator = "") => {
+    const keys = ids.map((id) => shortcutLabel(id, overrides));
+    return keys.includes(null)
+      ? null
+      : `${keys.join(separator)} ${text}`.trim();
+  };
+  const withKey = (text: string, id: ActionId) =>
+    [text, shortcutLabel(id, overrides)].filter(Boolean).join(" · ");
+  const stars = RATING_ACTIONS.slice(1).map((id) =>
+    shortcutLabel(id, overrides),
+  );
+  const ratingKeys = stars.every((key, index) => key === String(index + 1))
+    ? "1–5"
+    : !stars.includes(null) && stars.join("/");
+  const where = stacks.current;
+  const inside = where?.inside ?? false;
+  const hints = [
+    hint(!where ? "navigate" : inside ? "frames" : "stacks", [
+      "photo.previous",
+      "photo.next",
+    ]),
+    ratingKeys &&
+      `${ratingKeys} rate${!where ? "" : inside ? " this frame" : " every frame"}${andNext}`,
+    inside && hint(`pick${andNext}`, ["flag.pick"]),
+    where && !inside && hint("inside", ["stack.enter"]),
+    hint("clear", ["rate.0"]),
+    hint("exposure", ["exposure.up", "exposure.down"]),
+    "pinch or double-click zoom",
+    hint("reset", ["exposure.reset"]),
+    hint("edit", ["editPanel.toggle"]),
+    hint("before/after", ["split.toggle"]),
+    hint("settings", ["settings.copy", "settings.paste"], "/"),
+    hint("undo", ["history.undo"]),
+    hint("stacks", ["stacks.toggle"]),
+    hint("auto-advance", ["autoAdvance.toggle"]),
+    hint(inside ? "up" : "", ["loupe.close"]),
+  ];
   const instinct = image.score == null ? null : instinctScore(image.score);
 
   return (
@@ -79,14 +120,15 @@ export function LoupeSidebar({
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton
-                  data-testid="back-to-grid"
-                  onClick={onBackToGrid}
-                  title="Back to grid (esc)"
-                >
-                  <ChevronLeft />
-                  <span>Back to grid</span>
-                </SidebarMenuButton>
+                <ShortcutTooltip label="Back to grid" action="loupe.close">
+                  <SidebarMenuButton
+                    data-testid="back-to-grid"
+                    onClick={onBackToGrid}
+                  >
+                    <ChevronLeft />
+                    <span>Back to grid</span>
+                  </SidebarMenuButton>
+                </ShortcutTooltip>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
@@ -170,7 +212,7 @@ export function LoupeSidebar({
                   <span data-testid="stacks-status">
                     {stacks.on && !stacks.ready
                       ? `finding stacks${finding(stacks.progress)}`
-                      : "near-identical photos · s"}
+                      : withKey("near-identical photos", "stacks.toggle")}
                   </span>
                 }
                 checked={stacks.on}
@@ -179,7 +221,7 @@ export function LoupeSidebar({
               <SwitchRow
                 id="auto-advance"
                 title="Auto-advance"
-                hint="next after rating · a"
+                hint={withKey("next after rating", "autoAdvance.toggle")}
                 checked={autoAdvance}
                 onCheckedChange={autoAdvancePref.set}
               />
@@ -192,15 +234,7 @@ export function LoupeSidebar({
           data-testid="loupe-hints"
           className="px-2 py-1 text-[10px] text-muted-foreground"
         >
-          {`${
-            !stacks.current
-              ? `←→ navigate · 1–5 rate${andNext}`
-              : stacks.current.inside
-                ? `←→ frames · 1–5 rate this frame${andNext} · p pick${andNext}`
-                : `←→ stacks · 1–5 rate every frame${andNext} · enter inside`
-          } · 0 clear · ↑↓ exposure · pinch or double-click zoom · r reset · e edit · y before/after · ⌘C/⌘V settings · ⌘Z undo · s stacks · a auto-advance · ${
-            stacks.current?.inside ? "esc up" : "esc"
-          }`}
+          {hints.filter(Boolean).join(" · ")}
         </p>
       </SidebarFooter>
     </Sidebar>

@@ -1,3 +1,4 @@
+import { TooltipProvider } from "@photopipe/ui/components/tooltip";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SelectionBar } from "./SelectionBar";
@@ -13,7 +14,11 @@ function renderBar(count = 2, canPaste = true) {
     onDelete: vi.fn(),
     onClear: vi.fn(),
   };
-  render(<SelectionBar count={count} canPaste={canPaste} {...handlers} />);
+  render(
+    <TooltipProvider>
+      <SelectionBar count={count} canPaste={canPaste} {...handlers} />
+    </TooltipProvider>,
+  );
   return handlers;
 }
 

@@ -20,6 +20,8 @@ import { useEffect, useRef } from "react";
 import { fileName } from "@/lib/fileName";
 import { type HistoryEntry, historyLabel, useHistory } from "@/lib/history";
 import { pluralize } from "@/lib/plural";
+import { useShortcutLabel } from "@/lib/shortcuts";
+import { ShortcutTooltip } from "./ShortcutTooltip";
 
 const target = (entry: HistoryEntry) =>
   entry.paths.length === 1
@@ -116,47 +118,57 @@ export function HistoryControls({
   const { entries, cursor } = useHistory();
   const undoable = entries[cursor - 1];
   const redoable = entries[cursor];
+  const undoKey = useShortcutLabel("history.undo");
+  const redoKey = useShortcutLabel("history.redo");
   return (
     <ButtonGroup>
-      <Button
-        size="icon-sm"
-        variant="secondary"
-        data-testid="history-undo"
-        onClick={onUndo}
-        disabled={disabled || !undoable}
-        title={
-          undoable ? `Undo ${historyLabel(undoable)} (⌘Z)` : "Nothing to undo"
-        }
-        className="size-7"
+      <ShortcutTooltip
+        label={undoable ? `Undo ${historyLabel(undoable)}` : "Nothing to undo"}
+        action="history.undo"
       >
-        <Undo2 />
-      </Button>
-      <Button
-        size="icon-sm"
-        variant="secondary"
-        data-testid="history-redo"
-        onClick={onRedo}
-        disabled={disabled || !redoable}
-        title={
-          redoable ? `Redo ${historyLabel(redoable)} (⇧⌘Z)` : "Nothing to redo"
-        }
-        className="size-7"
+        <Button
+          size="icon-sm"
+          variant="secondary"
+          data-testid="history-undo"
+          aria-label="Undo"
+          onClick={onUndo}
+          disabled={disabled || !undoable}
+          className="size-7"
+        >
+          <Undo2 />
+        </Button>
+      </ShortcutTooltip>
+      <ShortcutTooltip
+        label={redoable ? `Redo ${historyLabel(redoable)}` : "Nothing to redo"}
+        action="history.redo"
       >
-        <Redo2 />
-      </Button>
+        <Button
+          size="icon-sm"
+          variant="secondary"
+          data-testid="history-redo"
+          aria-label="Redo"
+          onClick={onRedo}
+          disabled={disabled || !redoable}
+          className="size-7"
+        >
+          <Redo2 />
+        </Button>
+      </ShortcutTooltip>
       <Popover open={open} onOpenChange={onOpenChange}>
-        <PopoverTrigger asChild>
-          <Button
-            size="icon-sm"
-            variant="secondary"
-            data-testid="history-toggle"
-            disabled={disabled}
-            title="Show history (⌘Y)"
-            className={cn("size-7", open && "text-primary")}
-          >
-            <History />
-          </Button>
-        </PopoverTrigger>
+        <ShortcutTooltip label="Show history" action="history.show">
+          <PopoverTrigger asChild>
+            <Button
+              size="icon-sm"
+              variant="secondary"
+              data-testid="history-toggle"
+              aria-label="Show history"
+              disabled={disabled}
+              className={cn("size-7", open && "text-primary")}
+            >
+              <History />
+            </Button>
+          </PopoverTrigger>
+        </ShortcutTooltip>
         <PopoverContent
           align="end"
           data-testid="history-popover"
@@ -187,7 +199,13 @@ export function HistoryControls({
             />
           </ItemGroup>
           <p className="border-border border-t px-2 pt-2 pb-1 text-[10px] text-muted-foreground">
-            This session only · ⌘Z undo · ⇧⌘Z redo
+            {[
+              "This session only",
+              undoKey && `${undoKey} undo`,
+              redoKey && `${redoKey} redo`,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </p>
         </PopoverContent>
       </Popover>

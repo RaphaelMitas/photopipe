@@ -120,7 +120,7 @@ test("a cancelled zip offers no archive to reveal", async ({ page }) => {
   const stopped = page.getByTestId("job-cancelled");
   await expect(stopped).toContainText("Cancelled · 0 files");
   // The archive was never written, so revealing it would only raise an error.
-  await expect(stopped.getByTitle("Reveal in Finder")).toHaveCount(0);
+  await expect(stopped.getByLabel("Reveal in Finder")).toHaveCount(0);
 });
 
 test("a long export can be cancelled and says so", async ({ page }) => {
@@ -134,7 +134,7 @@ test("a long export can be cancelled and says so", async ({ page }) => {
   await page.getByTestId("job-cancel").click();
   const stopped = page.getByTestId("job-cancelled");
   await expect(stopped).toContainText("Cancelled");
-  await expect(stopped.getByTitle("Reveal in Finder")).toBeVisible();
+  await expect(stopped.getByLabel("Reveal in Finder")).toBeVisible();
 });
 
 test("format choice shows JPEG quality and names the button", async ({

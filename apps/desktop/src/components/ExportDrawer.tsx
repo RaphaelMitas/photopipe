@@ -45,6 +45,7 @@ import { pickFolder } from "@/lib/roots";
 import type { SortKey } from "@/lib/sort";
 import { DecoderSegmented } from "./DecoderSegmented";
 import { ExportNames } from "./ExportNames";
+import { ShortcutTooltip } from "./ShortcutTooltip";
 
 const SIZES = ["full", "2048", "1080", "custom"] as const;
 type Size = (typeof SIZES)[number];
@@ -442,16 +443,18 @@ export function ExportDrawer({
     >
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <span className="font-medium text-sm">Export</span>
-        <Button
-          size="icon"
-          variant="ghost"
-          data-testid="drawer-close"
-          onClick={() => onClose()}
-          title="Close"
-          className="ml-auto size-6 text-muted-foreground"
-        >
-          <X />
-        </Button>
+        <ShortcutTooltip label="Close" action="export.open">
+          <Button
+            aria-label="Close"
+            size="icon"
+            variant="ghost"
+            data-testid="drawer-close"
+            onClick={() => onClose()}
+            className="ml-auto size-6 text-muted-foreground"
+          >
+            <X />
+          </Button>
+        </ShortcutTooltip>
       </div>
 
       <Section>
@@ -701,29 +704,33 @@ export function ExportDrawer({
                     )}
                     <span className="min-w-0 flex-1 truncate">{job.label}</span>
                     {status === "running" && (
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        data-testid="job-cancel"
-                        title="Cancel"
-                        onClick={() => onCancel(job.key)}
-                        className="size-5 shrink-0 text-muted-foreground"
-                      >
-                        <X />
-                      </Button>
+                      <ShortcutTooltip label="Cancel">
+                        <Button
+                          aria-label="Cancel"
+                          size="icon"
+                          variant="ghost"
+                          data-testid="job-cancel"
+                          onClick={() => onCancel(job.key)}
+                          className="size-5 shrink-0 text-muted-foreground"
+                        >
+                          <X />
+                        </Button>
+                      </ShortcutTooltip>
                     )}
                     {/* A cancelled zip deletes its staging, so there is no
                         archive at the path to reveal. */}
                     {onReveal && !job.running && job.done > 0 && (
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        title="Reveal in Finder"
-                        onClick={() => onReveal(job.destination)}
-                        className="size-5 shrink-0 text-muted-foreground"
-                      >
-                        <FolderOpen />
-                      </Button>
+                      <ShortcutTooltip label="Reveal in Finder">
+                        <Button
+                          aria-label="Reveal in Finder"
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => onReveal(job.destination)}
+                          className="size-5 shrink-0 text-muted-foreground"
+                        >
+                          <FolderOpen />
+                        </Button>
+                      </ShortcutTooltip>
                     )}
                   </span>
                   {status === "running" && (

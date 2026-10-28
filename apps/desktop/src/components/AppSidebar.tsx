@@ -22,6 +22,7 @@ import {
   type RatingFilter,
   RatingFilterGroup,
 } from "./RatingFilter";
+import { ShortcutTooltip } from "./ShortcutTooltip";
 import { SidebarBrandHeader } from "./SidebarBrandHeader";
 
 export const showInfoPref = flagPref(
@@ -109,29 +110,31 @@ export function AppSidebar({
                   className="w-full text-xs"
                 />
                 <div className="flex gap-1.5">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    data-testid="shoot-settings"
-                    title="Project settings"
-                    onClick={() => onShootSettings()}
-                    className="min-w-0 flex-1 text-xs"
-                  >
-                    <Settings2 />
-                    Settings
-                  </Button>
-                  {onRevealShoot && (
+                  <ShortcutTooltip label="Project settings">
                     <Button
                       size="sm"
                       variant="outline"
-                      data-testid="reveal-shoot"
-                      title="Reveal project folder in Finder"
-                      onClick={() => onRevealShoot(currentShoot.path)}
+                      data-testid="shoot-settings"
+                      onClick={() => onShootSettings()}
                       className="min-w-0 flex-1 text-xs"
                     >
-                      <FolderOpen />
-                      Reveal
+                      <Settings2 />
+                      Settings
                     </Button>
+                  </ShortcutTooltip>
+                  {onRevealShoot && (
+                    <ShortcutTooltip label="Reveal project folder in Finder">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        data-testid="reveal-shoot"
+                        onClick={() => onRevealShoot(currentShoot.path)}
+                        className="min-w-0 flex-1 text-xs"
+                      >
+                        <FolderOpen />
+                        Reveal
+                      </Button>
+                    </ShortcutTooltip>
                   )}
                 </div>
               </div>
@@ -173,26 +176,30 @@ export function AppSidebar({
           <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">
             {rootPath}
           </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            data-testid="change-root"
-            onClick={onChangeRoot}
-            title="Change photos folder"
-            className="size-7 text-muted-foreground"
-          >
-            <FolderOpen />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            data-testid="open-settings"
-            onClick={onSettings}
-            title="Settings (⌘,)"
-            className="size-7 text-muted-foreground"
-          >
-            <Settings />
-          </Button>
+          <ShortcutTooltip label="Change photos folder">
+            <Button
+              variant="ghost"
+              size="icon"
+              data-testid="change-root"
+              aria-label="Change photos folder"
+              onClick={onChangeRoot}
+              className="size-7 text-muted-foreground"
+            >
+              <FolderOpen />
+            </Button>
+          </ShortcutTooltip>
+          <ShortcutTooltip label="Settings" action="app.settings">
+            <Button
+              variant="ghost"
+              size="icon"
+              data-testid="open-settings"
+              aria-label="Settings"
+              onClick={onSettings}
+              className="size-7 text-muted-foreground"
+            >
+              <Settings />
+            </Button>
+          </ShortcutTooltip>
         </div>
       </SidebarFooter>
     </Sidebar>

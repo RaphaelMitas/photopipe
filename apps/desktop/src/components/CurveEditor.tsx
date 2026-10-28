@@ -12,6 +12,7 @@ import {
   sampleCurve,
 } from "@/lib/curve";
 import { capturePointer, normalizedIn } from "@/lib/pointer";
+import { ShortcutTooltip } from "./ShortcutTooltip";
 
 const W = 200;
 const H = 140;
@@ -172,34 +173,37 @@ export function CurveEditor({ edit, imageSrc, photo, onChange }: Props) {
     <div data-testid="curve-editor" className="flex flex-col gap-1.5">
       <div className="flex items-center gap-1.5">
         {CURVE_CHANNELS.map((entry) => (
-          <button
-            key={entry.channel}
-            type="button"
-            data-testid={`curve-channel-${entry.channel}`}
-            aria-pressed={channel === entry.channel}
-            onClick={() => setChannel(entry.channel)}
-            className={cn(
-              "size-4 rounded-full transition-opacity",
-              entry.dot,
-              channel === entry.channel
-                ? "opacity-100 ring-2 ring-white/40"
-                : "opacity-35 hover:opacity-70",
-            )}
-            title={entry.label}
-          />
+          <ShortcutTooltip key={entry.channel} label={entry.label}>
+            <button
+              type="button"
+              data-testid={`curve-channel-${entry.channel}`}
+              aria-label={entry.label}
+              aria-pressed={channel === entry.channel}
+              onClick={() => setChannel(entry.channel)}
+              className={cn(
+                "size-4 rounded-full transition-opacity",
+                entry.dot,
+                channel === entry.channel
+                  ? "opacity-100 ring-2 ring-white/40"
+                  : "opacity-35 hover:opacity-70",
+              )}
+            />
+          </ShortcutTooltip>
         ))}
         <span className="flex-1" />
-        <Button
-          variant="ghost"
-          size="icon"
-          data-testid="curve-reset"
-          onClick={() => onChange({ [active.key]: [] })}
-          disabled={isIdentityCurve(edit[active.key])}
-          title="Reset curve"
-          className="size-6 text-muted-foreground"
-        >
-          <RotateCcw />
-        </Button>
+        <ShortcutTooltip label="Reset curve">
+          <Button
+            aria-label="Reset curve"
+            variant="ghost"
+            size="icon"
+            data-testid="curve-reset"
+            onClick={() => onChange({ [active.key]: [] })}
+            disabled={isIdentityCurve(edit[active.key])}
+            className="size-6 text-muted-foreground"
+          >
+            <RotateCcw />
+          </Button>
+        </ShortcutTooltip>
       </div>
       <svg
         viewBox={`0 0 ${W} ${H}`}

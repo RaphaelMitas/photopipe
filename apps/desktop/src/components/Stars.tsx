@@ -1,6 +1,8 @@
 import { cn } from "@photopipe/ui/lib/utils";
 import { Check, Star, X } from "lucide-react";
 import type { Flag } from "@/lib/core";
+import { RATING_ACTIONS } from "@/lib/keymap";
+import { ShortcutTooltip } from "./ShortcutTooltip";
 
 type Props = {
   value: number;
@@ -21,24 +23,34 @@ function StarIcon({ filled }: { filled: boolean }) {
 }
 
 export function Stars({ value, onRate, className }: Props) {
-  const stars = [1, 2, 3, 4, 5].map((star) =>
-    onRate ? (
-      <button
+  const stars = [1, 2, 3, 4, 5].map((star) => {
+    if (!onRate) {
+      return (
+        <span key={star}>
+          <StarIcon filled={star <= value} />
+        </span>
+      );
+    }
+    const clears = star === value;
+    const label = clears ? "Clear rating" : `Rate ${star}`;
+    return (
+      <ShortcutTooltip
         key={star}
-        type="button"
-        data-testid={`star-${star}`}
-        onClick={() => onRate(star === value ? 0 : star)}
-        title={star === value ? "Clear rating (0)" : `Rate ${star} (${star})`}
-        className="transition-transform hover:scale-110"
+        label={label}
+        action={RATING_ACTIONS[clears ? 0 : star]}
       >
-        <StarIcon filled={star <= value} />
-      </button>
-    ) : (
-      <span key={star}>
-        <StarIcon filled={star <= value} />
-      </span>
-    ),
-  );
+        <button
+          type="button"
+          data-testid={`star-${star}`}
+          aria-label={label}
+          onClick={() => onRate(clears ? 0 : star)}
+          className="transition-transform hover:scale-110"
+        >
+          <StarIcon filled={star <= value} />
+        </button>
+      </ShortcutTooltip>
+    );
+  });
   return (
     <span
       className={`inline-flex items-center gap-0.5 ${className ?? ""}`}
@@ -52,14 +64,14 @@ export function Stars({ value, onRate, className }: Props) {
 const FLAG_BUTTONS = [
   {
     flag: 1,
-    key: "P",
+    action: "flag.pick",
     label: "Pick",
     icon: Check,
     on: "bg-success text-background",
   },
   {
     flag: -1,
-    key: "X",
+    action: "flag.reject",
     label: "Reject",
     icon: X,
     on: "bg-destructive text-white",
@@ -75,21 +87,26 @@ export function FlagButtons({
 }) {
   return (
     <span className="inline-flex items-center gap-1" data-flag={value}>
-      {FLAG_BUTTONS.map(({ flag, key, label, icon: Icon, on }) => (
-        <button
+      {FLAG_BUTTONS.map(({ flag, action, label, icon: Icon, on }) => (
+        <ShortcutTooltip
           key={flag}
-          type="button"
-          data-testid={`flag-${flag === 1 ? "pick" : "reject"}`}
-          aria-pressed={value === flag}
-          onClick={() => onFlag(flag)}
-          title={value === flag ? `Clear flag (U)` : `${label} (${key})`}
-          className={cn(
-            "flex size-5 items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:text-foreground",
-            value === flag && `border-transparent ${on} hover:text-current`,
-          )}
+          label={value === flag ? "Clear flag" : label}
+          action={value === flag ? "flag.clear" : action}
         >
-          <Icon className="size-3" />
-        </button>
+          <button
+            type="button"
+            data-testid={`flag-${flag === 1 ? "pick" : "reject"}`}
+            aria-label={label}
+            aria-pressed={value === flag}
+            onClick={() => onFlag(flag)}
+            className={cn(
+              "flex size-5 items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:text-foreground",
+              value === flag && `border-transparent ${on} hover:text-current`,
+            )}
+          >
+            <Icon className="size-3" />
+          </button>
+        </ShortcutTooltip>
       ))}
     </span>
   );

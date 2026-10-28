@@ -34,6 +34,7 @@ import {
   signed,
   TONE_SLIDERS,
 } from "@/lib/editSliders";
+import type { ActionId } from "@/lib/keymap";
 import {
   useDeferredEdit,
   useRaw9Availability,
@@ -49,6 +50,7 @@ import type { CropSession } from "@/lib/useCropSession";
 import { CropPanel } from "./CropTool";
 import { CurveEditor } from "./CurveEditor";
 import { DecoderSegmented } from "./DecoderSegmented";
+import { ShortcutTooltip } from "./ShortcutTooltip";
 
 type Props = {
   image: ImageFile;
@@ -65,7 +67,8 @@ function Row({
   max,
   step,
   testid,
-  resetTitle,
+  resetLabel,
+  resetAction,
   trackClassName,
   onValue,
   onReset,
@@ -77,7 +80,8 @@ function Row({
   max: number;
   step: number;
   testid: string;
-  resetTitle: string;
+  resetLabel: string;
+  resetAction?: ActionId;
   trackClassName?: string;
   onValue: (value: number) => void;
   onReset: () => void;
@@ -87,16 +91,18 @@ function Row({
       <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
         <span>{label}</span>
         <span className="flex-1 text-right tabular-nums">{display}</span>
-        <Button
-          variant="ghost"
-          size="icon"
-          data-testid={`${testid}-reset`}
-          onClick={onReset}
-          title={resetTitle}
-          className="size-5 text-muted-foreground"
-        >
-          <RotateCcw />
-        </Button>
+        <ShortcutTooltip label={resetLabel} action={resetAction}>
+          <Button
+            variant="ghost"
+            size="icon"
+            data-testid={`${testid}-reset`}
+            aria-label={resetLabel}
+            onClick={onReset}
+            className="size-5 text-muted-foreground"
+          >
+            <RotateCcw />
+          </Button>
+        </ShortcutTooltip>
       </div>
       <Slider
         data-testid={testid}
@@ -132,7 +138,7 @@ function SliderRows({
       max={100}
       step={1}
       testid={key}
-      resetTitle={`Reset ${label.toLowerCase()}`}
+      resetLabel={`Reset ${label.toLowerCase()}`}
       trackClassName={trackClassName}
       onValue={(value) => set({ [key]: value })}
       onReset={() => set({ [key]: 0 })}
@@ -293,7 +299,8 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
             max={EXPOSURE_RANGE}
             step={0.05}
             testid="exposure"
-            resetTitle="Reset exposure (r)"
+            resetLabel="Reset exposure"
+            resetAction="exposure.reset"
             onValue={(exposure) => set({ exposure })}
             onReset={() => set({ exposure: 0 })}
           />
@@ -318,7 +325,7 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
               max={12000}
               step={50}
               testid="temperature"
-              resetTitle="Reset to as shot"
+              resetLabel="Reset to as shot"
               trackClassName="bg-gradient-to-r from-sky-500/70 via-white/20 to-amber-400/80"
               onValue={(value) => set({ temperature: value })}
               onReset={() => set({ temperature: null })}
@@ -332,7 +339,7 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
               max={100}
               step={1}
               testid="temperature"
-              resetTitle="Reset temperature"
+              resetLabel="Reset temperature"
               trackClassName="bg-gradient-to-r from-sky-500/70 via-white/20 to-amber-400/80"
               onValue={(value) =>
                 set({ temperature: value === 0 ? null : value })
@@ -348,7 +355,7 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
             max={raw ? 150 : 100}
             step={1}
             testid="tint"
-            resetTitle={raw ? "Reset to as shot" : "Reset tint"}
+            resetLabel={raw ? "Reset to as shot" : "Reset tint"}
             trackClassName="bg-gradient-to-r from-green-500/70 via-white/20 to-fuchsia-500/70"
             onValue={(value) =>
               set({ tint: !raw && value === 0 ? null : value })
@@ -369,7 +376,7 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
                 max={100}
                 step={1}
                 testid="denoise"
-                resetTitle="Reset to as decoded"
+                resetLabel="Reset to as decoded"
                 trackClassName="bg-gradient-to-r from-zinc-500/60 to-sky-400/70"
                 onValue={(value) => set({ denoise: value })}
                 onReset={() => set({ denoise: null })}
@@ -483,67 +490,72 @@ export function EditSidebar({
     >
       <div className="flex items-center gap-1 border-border border-b px-3 py-2">
         <span className="font-medium text-sm">Edit</span>
-        <Button
-          variant={split ? "secondary" : "ghost"}
-          size="icon"
-          data-testid="edit-split"
-          aria-pressed={split}
-          onClick={onToggleSplit}
-          disabled={cropping}
-          title="Compare before and after (y)"
-          className="ml-auto size-6 text-muted-foreground"
-        >
-          <SquareSplitHorizontal className="size-3" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          data-testid="edit-copy-settings"
-          onClick={onCopySettings}
-          disabled={cropping}
-          title="Copy settings (⌘C)"
-          className="size-6 text-muted-foreground"
-        >
-          <Copy className="size-3" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          data-testid="edit-paste-settings"
-          onClick={onPasteSettings}
-          disabled={cropping || !canPaste}
-          title={
-            canPaste
-              ? "Paste settings (⌘V)"
-              : "Copy settings from a photo first"
-          }
-          className="size-6 text-muted-foreground"
-        >
-          <ClipboardPaste className="size-3" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          data-testid="edit-reset-all"
-          onClick={() => onChange({ ...identityEdit })}
-          disabled={isIdentityEdit(edit) || cropping}
-          title="Reset all edits"
-          className="h-6 px-1.5 text-[10px] text-muted-foreground"
-        >
-          <RotateCcw className="size-3" />
-          Reset all
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          data-testid="edit-close"
-          onClick={onClose}
-          disabled={cropping}
-          title={cropping ? "Finish the crop first" : "Hide edit panel (e)"}
-          className="size-6 text-muted-foreground"
-        >
-          <X />
-        </Button>
+        <ShortcutTooltip label="Compare before and after" action="split.toggle">
+          <Button
+            variant={split ? "secondary" : "ghost"}
+            size="icon"
+            data-testid="edit-split"
+            aria-label="Compare before and after"
+            aria-pressed={split}
+            onClick={onToggleSplit}
+            disabled={cropping}
+            className="ml-auto size-6 text-muted-foreground"
+          >
+            <SquareSplitHorizontal className="size-3" />
+          </Button>
+        </ShortcutTooltip>
+        <ShortcutTooltip label="Copy settings" action="settings.copy">
+          <Button
+            variant="ghost"
+            size="icon"
+            data-testid="edit-copy-settings"
+            aria-label="Copy settings"
+            onClick={onCopySettings}
+            disabled={cropping}
+            className="size-6 text-muted-foreground"
+          >
+            <Copy className="size-3" />
+          </Button>
+        </ShortcutTooltip>
+        <ShortcutTooltip label="Paste settings" action="settings.paste">
+          <Button
+            variant="ghost"
+            size="icon"
+            data-testid="edit-paste-settings"
+            aria-label="Paste settings"
+            onClick={onPasteSettings}
+            disabled={cropping || !canPaste}
+            className="size-6 text-muted-foreground"
+          >
+            <ClipboardPaste className="size-3" />
+          </Button>
+        </ShortcutTooltip>
+        <ShortcutTooltip label="Reset all edits">
+          <Button
+            variant="ghost"
+            size="sm"
+            data-testid="edit-reset-all"
+            onClick={() => onChange({ ...identityEdit })}
+            disabled={isIdentityEdit(edit) || cropping}
+            className="h-6 px-1.5 text-[10px] text-muted-foreground"
+          >
+            <RotateCcw className="size-3" />
+            Reset all
+          </Button>
+        </ShortcutTooltip>
+        <ShortcutTooltip label="Hide edit panel" action="editPanel.toggle">
+          <Button
+            variant="ghost"
+            size="icon"
+            data-testid="edit-close"
+            aria-label="Hide edit panel"
+            onClick={onClose}
+            disabled={cropping}
+            className="size-6 text-muted-foreground"
+          >
+            <X />
+          </Button>
+        </ShortcutTooltip>
       </div>
       <div className="flex-1 overflow-y-auto p-3">
         {image.enriched ? (

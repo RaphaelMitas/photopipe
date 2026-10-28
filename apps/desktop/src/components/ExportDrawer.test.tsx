@@ -1,3 +1,4 @@
+import { TooltipProvider } from "@photopipe/ui/components/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
@@ -46,25 +47,27 @@ function renderDrawer(rawPaths: string[] = RAWS) {
   });
   const tree = (paths: string[]) => (
     <QueryClientProvider client={client}>
-      <ExportDrawer
-        shoot="s"
-        images={imagesAt(paths)}
-        sort="name"
-        selectedCount={rawPaths.length || 1}
-        editedCount={0}
-        filteredCount={3}
-        totalCount={3}
-        filterActive={false}
-        jobs={[]}
-        busy={false}
-        onSelectFiltered={vi.fn()}
-        onSelectAll={vi.fn()}
-        onClearSelection={vi.fn()}
-        onExport={onExport}
-        onCancel={vi.fn()}
-        onReveal={vi.fn()}
-        onClose={vi.fn()}
-      />
+      <TooltipProvider>
+        <ExportDrawer
+          shoot="s"
+          images={imagesAt(paths)}
+          sort="name"
+          selectedCount={rawPaths.length || 1}
+          editedCount={0}
+          filteredCount={3}
+          totalCount={3}
+          filterActive={false}
+          jobs={[]}
+          busy={false}
+          onSelectFiltered={vi.fn()}
+          onSelectAll={vi.fn()}
+          onClearSelection={vi.fn()}
+          onExport={onExport}
+          onCancel={vi.fn()}
+          onReveal={vi.fn()}
+          onClose={vi.fn()}
+        />
+      </TooltipProvider>
     </QueryClientProvider>
   );
   const view = render(tree(rawPaths));

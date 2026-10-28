@@ -10,6 +10,7 @@ import {
 import { Label } from "@photopipe/ui/components/label";
 import { Switch } from "@photopipe/ui/components/switch";
 import { cn } from "@photopipe/ui/lib/utils";
+import type { ReactNode } from "react";
 import { flagPref } from "@/lib/pref";
 import { useRaw9Availability } from "@/lib/queries";
 import {
@@ -19,10 +20,14 @@ import {
   useRawDecoderQuickSwitch,
   useRawDecoderVersion,
 } from "@/lib/rawDecoder";
+import { KeyboardSettings } from "./KeyboardSettings";
+import { tooltipsPref } from "./ShortcutTooltip";
 
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  section: SettingsSection;
+  onSectionChange: (section: SettingsSection) => void;
   onCheckUpdates?: () => void;
 };
 
@@ -123,74 +128,150 @@ function DecoderCards({ raw9Missing }: { raw9Missing: boolean }) {
   );
 }
 
-export function SettingsDialog({ open, onOpenChange, onCheckUpdates }: Props) {
+function SettingSwitch({
+  id,
+  label,
+  checked,
+  onCheckedChange,
+  children,
+}: {
+  id: string;
+  label: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-6">
+      <div className="flex flex-col gap-1">
+        <Label htmlFor={id}>{label}</Label>
+        <p className="text-muted-foreground text-xs">{children}</p>
+      </div>
+      <Switch
+        id={id}
+        data-testid={id}
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+      />
+    </div>
+  );
+}
+
+export type SettingsSection = "general" | "raw" | "keyboard";
+
+const SECTIONS: readonly [SettingsSection, string][] = [
+  ["general", "General"],
+  ["raw", "RAW decoding"],
+  ["keyboard", "Keyboard"],
+];
+
+export function SettingsDialog({
+  open,
+  onOpenChange,
+  section,
+  onSectionChange,
+  onCheckUpdates,
+}: Props) {
   const autoScore = autoScorePref.use();
   const quickSwitch = useRawDecoderQuickSwitch();
+  const tooltips = tooltipsPref.use();
   const raw9Missing = useRaw9Availability(open).data === false;
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>
-            These stay on this Mac and apply to every project.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex items-start justify-between gap-6">
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="auto-score">Rate photos with Instinct</Label>
-            <p className="text-muted-foreground text-xs">
-              Scores every photo in a project when you open it, so you can sort
-              the likely keepers to the front. Runs on this Mac and takes about
-              a minute per two thousand photos.
-            </p>
+      <DialogContent className="h-[min(36rem,calc(100vh-4rem))] gap-0 overflow-hidden p-0 sm:max-w-3xl">
+        <div className="flex min-h-0">
+          <nav className="flex w-44 shrink-0 flex-col gap-0.5 border-border border-r bg-sidebar p-3 pt-14">
+            {SECTIONS.map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                data-testid={`settings-${value}`}
+                aria-current={section === value ? "page" : undefined}
+                onClick={() => onSectionChange(value)}
+                className={cn(
+                  "rounded-lg px-3 py-1.5 text-left text-sm text-muted-foreground hover:bg-accent/50",
+                  section === value && "bg-accent text-foreground",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-6 overflow-y-auto p-6">
+            <DialogHeader>
+              <DialogTitle>
+                {SECTIONS.find(([value]) => value === section)?.[1]}
+              </DialogTitle>
+              <DialogDescription>
+                {section === "keyboard"
+                  ? "A key can mean something else in the grid, the loupe and while cropping."
+                  : "These stay on this Mac and apply to every project."}
+              </DialogDescription>
+            </DialogHeader>
+            {section === "general" && (
+              <>
+                <SettingSwitch
+                  id="auto-score"
+                  label="Rate photos with Instinct"
+                  checked={autoScore}
+                  onCheckedChange={autoScorePref.set}
+                >
+                  Scores every photo in a project when you open it, so you can
+                  sort the likely keepers to the front. Runs on this Mac and
+                  takes about a minute per two thousand photos.
+                </SettingSwitch>
+                {onCheckUpdates && (
+                  <DialogFooter className="sm:justify-start">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      data-testid="check-updates"
+                      onClick={onCheckUpdates}
+                    >
+                      Check for Updates
+                    </Button>
+                  </DialogFooter>
+                )}
+              </>
+            )}
+            {section === "raw" && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <Label>RAW decoder</Label>
+                  <DecoderCards raw9Missing={raw9Missing} />
+                  <p className="text-muted-foreground/75 text-xs">
+                    {raw9Missing
+                      ? "RAW 9 isn't available for this library. Your choice is kept for when it is."
+                      : "Cameras that don't support RAW 9 always use the best decoder they offer."}
+                  </p>
+                </div>
+                <SettingSwitch
+                  id="decoder-quick-switch"
+                  label="Quick switch in the editor"
+                  checked={quickSwitch}
+                  onCheckedChange={setRawDecoderQuickSwitch}
+                >
+                  Adds a RAW 8/9 control to the editor so you can flip decoders
+                  without opening Settings. It changes every photo, same as the
+                  buttons above.
+                </SettingSwitch>
+              </>
+            )}
+            {section === "keyboard" && (
+              <>
+                <SettingSwitch
+                  id="shortcut-tooltips"
+                  label="Show tooltips"
+                  checked={tooltips}
+                  onCheckedChange={tooltipsPref.set}
+                >
+                  Hovering a button names it and shows its key.
+                </SettingSwitch>
+                <KeyboardSettings />
+              </>
+            )}
           </div>
-          <Switch
-            id="auto-score"
-            data-testid="auto-score"
-            checked={autoScore}
-            onCheckedChange={autoScorePref.set}
-          />
         </div>
-        <div className="flex flex-col gap-2">
-          <Label>RAW decoder</Label>
-          <DecoderCards raw9Missing={raw9Missing} />
-          <p className="text-muted-foreground/75 text-xs">
-            {raw9Missing
-              ? "RAW 9 isn't available for this library. Your choice is kept for when it is."
-              : "Cameras that don't support RAW 9 always use the best decoder they offer."}
-          </p>
-        </div>
-        <div className="flex items-start justify-between gap-6">
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="decoder-quick-switch">
-              Quick switch in the editor
-            </Label>
-            <p className="text-muted-foreground text-xs">
-              Adds a RAW 8/9 control to the editor so you can flip decoders
-              without opening Settings. It changes every photo, same as the
-              buttons above.
-            </p>
-          </div>
-          <Switch
-            id="decoder-quick-switch"
-            data-testid="decoder-quick-switch"
-            checked={quickSwitch}
-            onCheckedChange={setRawDecoderQuickSwitch}
-          />
-        </div>
-        {onCheckUpdates && (
-          <DialogFooter className="sm:justify-start">
-            <Button
-              variant="outline"
-              size="sm"
-              data-testid="check-updates"
-              onClick={onCheckUpdates}
-            >
-              Check for Updates
-            </Button>
-          </DialogFooter>
-        )}
       </DialogContent>
     </Dialog>
   );

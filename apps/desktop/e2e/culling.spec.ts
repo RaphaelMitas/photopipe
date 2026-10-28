@@ -370,7 +370,7 @@ test("a look copied off one photo lands on a selection, and history takes it bac
   await page.getByTestId("thumb").first().click();
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.jpg");
-  await page.keyboard.press("ControlOrMeta+c");
+  await page.keyboard.press("Meta+c");
   await page.keyboard.press("Escape");
 
   await page
@@ -381,7 +381,7 @@ test("a look copied off one photo lands on a selection, and history takes it bac
     .click({ modifiers: ["ControlOrMeta"] });
   await expect(page.getByTestId("selection-count")).toHaveText("2 selected");
 
-  await page.keyboard.press("ControlOrMeta+v");
+  await page.keyboard.press("Meta+v");
   for (const path of ["DSC00832.ARW", "abends/DSC00938.ARW"]) {
     await expect(
       page.locator(`[data-path='${path}']`).getByTestId("thumb-edited"),
@@ -391,10 +391,10 @@ test("a look copied off one photo lands on a selection, and history takes it bac
   const pasted = page
     .locator("[data-path='DSC00832.ARW']")
     .getByTestId("thumb-edited");
-  await page.keyboard.press("ControlOrMeta+z");
+  await page.keyboard.press("Meta+z");
   await expect(pasted).toHaveCount(0);
 
-  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await page.keyboard.press("Meta+Shift+z");
   await expect(pasted).toHaveText("+0.5 EV");
 
   await page.getByTestId("history-toggle").click();
@@ -438,11 +438,11 @@ test("a slider drag is one history entry, and undo walks back to its photo", asy
   await expect(page.getByTestId("history-row-1")).toContainText("Rating ★★★");
   await page.keyboard.press("Escape");
 
-  await page.keyboard.press("ControlOrMeta+z");
+  await page.keyboard.press("Meta+z");
   await expect(page.getByTestId("loupe-name")).toHaveText(
     "abends/DSC00943.ARW",
   );
-  await page.keyboard.press("ControlOrMeta+z");
+  await page.keyboard.press("Meta+z");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.ARW");
   await expect(thumb).toHaveAttribute("aria-valuenow", "0");
 });
@@ -510,7 +510,7 @@ test("the history opens on the state you are in, not at the top", async ({
     await page.keyboard.press("ArrowRight");
   }
   for (let step = 0; step < 15; step++) {
-    await page.keyboard.press("ControlOrMeta+z");
+    await page.keyboard.press("Meta+z");
   }
 
   await page.getByTestId("history-toggle").click();

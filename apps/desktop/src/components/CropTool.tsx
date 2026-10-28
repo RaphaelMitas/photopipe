@@ -20,6 +20,7 @@ import {
   turnCrop,
 } from "@/lib/crop";
 import { capturePointer, cursorIn } from "@/lib/pointer";
+import { ShortcutTooltip } from "./ShortcutTooltip";
 
 type PanelProps = {
   image: ImageFile;
@@ -105,27 +106,29 @@ export function CropPanel({
             </select>
             <ChevronDown className="pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
           </div>
-          <Button
-            variant={draft.flipped ? "secondary" : "outline"}
-            size="icon"
-            data-testid="crop-flip"
-            title="Flip horizontal ↔ vertical"
-            onClick={() =>
-              onDraft({
-                ...draft,
-                flipped: !draft.flipped,
-                crop: transposeCrop(
-                  draft.crop,
-                  draft.angle,
-                  displayWidth,
-                  displayHeight,
-                ),
-              })
-            }
-            className="size-8"
-          >
-            ⇄
-          </Button>
+          <ShortcutTooltip label="Flip horizontal ↔ vertical">
+            <Button
+              variant={draft.flipped ? "secondary" : "outline"}
+              size="icon"
+              data-testid="crop-flip"
+              aria-label="Flip horizontal ↔ vertical"
+              onClick={() =>
+                onDraft({
+                  ...draft,
+                  flipped: !draft.flipped,
+                  crop: transposeCrop(
+                    draft.crop,
+                    draft.angle,
+                    displayWidth,
+                    displayHeight,
+                  ),
+                })
+              }
+              className="size-8"
+            >
+              ⇄
+            </Button>
+          </ShortcutTooltip>
         </div>
       </div>
       <Button
@@ -151,27 +154,29 @@ export function CropPanel({
         Turn 90°
       </Button>
       <div className="flex gap-1.5">
-        <Button
-          variant="outline"
-          size="sm"
-          data-testid="crop-cancel"
-          onClick={onCancel}
-          title="Cancel crop (esc)"
-          className="flex-1 text-xs"
-        >
-          <X />
-          Cancel
-        </Button>
-        <Button
-          size="sm"
-          data-testid="crop-apply"
-          onClick={onApply}
-          title="Apply crop (⏎)"
-          className="flex-1 text-xs"
-        >
-          <Check />
-          Apply
-        </Button>
+        <ShortcutTooltip label="Cancel crop" action="crop.cancel">
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="crop-cancel"
+            onClick={onCancel}
+            className="flex-1 text-xs"
+          >
+            <X />
+            Cancel
+          </Button>
+        </ShortcutTooltip>
+        <ShortcutTooltip label="Apply crop" action="crop.apply">
+          <Button
+            size="sm"
+            data-testid="crop-apply"
+            onClick={onApply}
+            className="flex-1 text-xs"
+          >
+            <Check />
+            Apply
+          </Button>
+        </ShortcutTooltip>
       </div>
       <p className="text-[10px] text-muted-foreground">
         Drag outside a corner to straighten · ⌥-drag along a line to level it ·

@@ -86,6 +86,9 @@ Click a photo to open it full-bleed. Rate with `1`–`5`, clear with `0`,
 navigate with `←`/`→`, adjust exposure with `↑`/`↓`. The exposure is saved
 with the photo and baked into JPEG exports.
 
+`⌘/` lists the shortcuts that work where you are. Rebind them in
+**Settings › Keyboard**, which also turns the hover tooltips off.
+
 Ratings and edits are written as XMP: a `DSC0001.xmp` sidecar next to a raw,
 embedded in a DNG, JPEG or PNG, the exposure as Lightroom's own
 `crs:Exposure2012`. Lightroom, Capture One and Photo Mechanic read the same

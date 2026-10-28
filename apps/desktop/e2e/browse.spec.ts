@@ -71,7 +71,7 @@ test("multi-select in the grid drives the action bar", async ({ page }) => {
   // Esc clears, ⌘A takes everything.
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("selection-bar")).toHaveCount(0);
-  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.press("Meta+a");
   await expect(page.getByTestId("selection-count")).toHaveText("4 selected");
 });
 
