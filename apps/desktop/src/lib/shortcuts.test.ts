@@ -69,6 +69,13 @@ describe("rebinding", () => {
     expect(bindingsOf("flag.reject")).toEqual(["x"]);
   });
 
+  it("puts whoever loses a key on reset back on its own default", () => {
+    assignShortcut("flag.pick", "p", ["k"]);
+    assignShortcut("stacks.toggle", "s", ["p"]);
+    resetShortcut("flag.pick");
+    expect(bindingsOf("stacks.toggle")).toEqual(["s"]);
+  });
+
   it("does nothing when a key is recorded over itself", () => {
     const germanSlash = ["shift+meta+7", "meta+/"];
     assignShortcut("history.show", "meta+y", germanSlash);

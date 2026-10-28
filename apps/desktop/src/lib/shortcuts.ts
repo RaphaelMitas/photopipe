@@ -154,15 +154,18 @@ export function unbindShortcut(id: ActionId, chord: string) {
   );
 }
 
-/// Hands the key it gives up to whoever loses one, so resetting one side undoes a swap.
+/// Whoever loses a key to the reset falls back on its own default where that is free.
 export function resetShortcut(id: ActionId) {
   const { keys } = ACTIONS[id];
   const overrides = overridesPref.get();
-  const released =
-    bindingsOf(id, overrides).find((key) => !keys.includes(key)) ?? null;
-  overridesPref.set(
-    withBindings(evict(overrides, id, keys, released), id, keys),
-  );
+  let next = withBindings(evict(overrides, id, keys, null), id, keys);
+  for (const other of holdersOf(id, keys, overrides)) {
+    const free = ACTIONS[other].keys.filter(
+      (key) => holdersOf(other, [key], next).length === 0,
+    );
+    next = withBindings(next, other, [...bindingsOf(other, next), ...free]);
+  }
+  overridesPref.set(next);
 }
 
 export const resetAllShortcuts = () => overridesPref.set({});
