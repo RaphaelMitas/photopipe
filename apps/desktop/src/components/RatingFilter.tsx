@@ -8,6 +8,7 @@ import {
 import { type ReactNode, useCallback, useState } from "react";
 import type { Flag } from "@/lib/core";
 import { pluralize } from "@/lib/plural";
+import { ShortcutTooltip } from "./ShortcutTooltip";
 
 type RatingOp = "gte" | "eq" | "lte";
 
@@ -136,19 +137,20 @@ function RatingFilterOps({
     pressed: boolean,
     onClick: () => void,
   ) => (
-    <Button
-      key={testid}
-      size="sm"
-      variant={pressed ? "secondary" : "outline"}
-      aria-pressed={pressed}
-      data-testid={`filter-op-${testid}`}
-      disabled={disabled}
-      onClick={onClick}
-      title={title}
-      className="h-5 min-w-0 px-1.5 font-mono text-[10px]"
-    >
-      {label}
-    </Button>
+    <ShortcutTooltip key={testid} label={title}>
+      <Button
+        size="sm"
+        variant={pressed ? "secondary" : "outline"}
+        aria-pressed={pressed}
+        aria-label={title}
+        data-testid={`filter-op-${testid}`}
+        disabled={disabled}
+        onClick={onClick}
+        className="h-5 min-w-0 px-1.5 font-mono text-[10px]"
+      >
+        {label}
+      </Button>
+    </ShortcutTooltip>
   );
   return (
     <ButtonGroup>

@@ -173,21 +173,22 @@ export function CurveEditor({ edit, imageSrc, photo, onChange }: Props) {
     <div data-testid="curve-editor" className="flex flex-col gap-1.5">
       <div className="flex items-center gap-1.5">
         {CURVE_CHANNELS.map((entry) => (
-          <button
-            key={entry.channel}
-            type="button"
-            data-testid={`curve-channel-${entry.channel}`}
-            aria-pressed={channel === entry.channel}
-            onClick={() => setChannel(entry.channel)}
-            className={cn(
-              "size-4 rounded-full transition-opacity",
-              entry.dot,
-              channel === entry.channel
-                ? "opacity-100 ring-2 ring-white/40"
-                : "opacity-35 hover:opacity-70",
-            )}
-            title={entry.label}
-          />
+          <ShortcutTooltip key={entry.channel} label={entry.label}>
+            <button
+              type="button"
+              data-testid={`curve-channel-${entry.channel}`}
+              aria-label={entry.label}
+              aria-pressed={channel === entry.channel}
+              onClick={() => setChannel(entry.channel)}
+              className={cn(
+                "size-4 rounded-full transition-opacity",
+                entry.dot,
+                channel === entry.channel
+                  ? "opacity-100 ring-2 ring-white/40"
+                  : "opacity-35 hover:opacity-70",
+              )}
+            />
+          </ShortcutTooltip>
         ))}
         <span className="flex-1" />
         <ShortcutTooltip label="Reset curve">

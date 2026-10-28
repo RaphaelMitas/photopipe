@@ -67,7 +67,7 @@ function Row({
   max,
   step,
   testid,
-  resetTitle,
+  resetLabel,
   resetAction,
   trackClassName,
   onValue,
@@ -80,7 +80,7 @@ function Row({
   max: number;
   step: number;
   testid: string;
-  resetTitle: string;
+  resetLabel: string;
   resetAction?: ActionId;
   trackClassName?: string;
   onValue: (value: number) => void;
@@ -91,12 +91,12 @@ function Row({
       <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
         <span>{label}</span>
         <span className="flex-1 text-right tabular-nums">{display}</span>
-        <ShortcutTooltip label={resetTitle} action={resetAction}>
+        <ShortcutTooltip label={resetLabel} action={resetAction}>
           <Button
             variant="ghost"
             size="icon"
             data-testid={`${testid}-reset`}
-            aria-label={resetTitle}
+            aria-label={resetLabel}
             onClick={onReset}
             className="size-5 text-muted-foreground"
           >
@@ -138,7 +138,7 @@ function SliderRows({
       max={100}
       step={1}
       testid={key}
-      resetTitle={`Reset ${label.toLowerCase()}`}
+      resetLabel={`Reset ${label.toLowerCase()}`}
       trackClassName={trackClassName}
       onValue={(value) => set({ [key]: value })}
       onReset={() => set({ [key]: 0 })}
@@ -299,7 +299,7 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
             max={EXPOSURE_RANGE}
             step={0.05}
             testid="exposure"
-            resetTitle="Reset exposure"
+            resetLabel="Reset exposure"
             resetAction="exposure.reset"
             onValue={(exposure) => set({ exposure })}
             onReset={() => set({ exposure: 0 })}
@@ -325,7 +325,7 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
               max={12000}
               step={50}
               testid="temperature"
-              resetTitle="Reset to as shot"
+              resetLabel="Reset to as shot"
               trackClassName="bg-gradient-to-r from-sky-500/70 via-white/20 to-amber-400/80"
               onValue={(value) => set({ temperature: value })}
               onReset={() => set({ temperature: null })}
@@ -339,7 +339,7 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
               max={100}
               step={1}
               testid="temperature"
-              resetTitle="Reset temperature"
+              resetLabel="Reset temperature"
               trackClassName="bg-gradient-to-r from-sky-500/70 via-white/20 to-amber-400/80"
               onValue={(value) =>
                 set({ temperature: value === 0 ? null : value })
@@ -355,7 +355,7 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
             max={raw ? 150 : 100}
             step={1}
             testid="tint"
-            resetTitle={raw ? "Reset to as shot" : "Reset tint"}
+            resetLabel={raw ? "Reset to as shot" : "Reset tint"}
             trackClassName="bg-gradient-to-r from-green-500/70 via-white/20 to-fuchsia-500/70"
             onValue={(value) =>
               set({ tint: !raw && value === 0 ? null : value })
@@ -376,7 +376,7 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
                 max={100}
                 step={1}
                 testid="denoise"
-                resetTitle="Reset to as decoded"
+                resetLabel="Reset to as decoded"
                 trackClassName="bg-gradient-to-r from-zinc-500/60 to-sky-400/70"
                 onValue={(value) => set({ denoise: value })}
                 onReset={() => set({ denoise: null })}
