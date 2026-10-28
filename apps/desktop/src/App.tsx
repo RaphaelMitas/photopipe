@@ -96,6 +96,7 @@ import {
   stacksPref,
   sweepStack,
   toggled,
+  toggledFlag,
   toggledFlags,
 } from "@/lib/stacks";
 import { useCropSession } from "@/lib/useCropSession";
@@ -122,7 +123,6 @@ const EDIT_COMMIT_MS = 400;
 const GRID_FLAG_KEYS: Partial<Record<string, Flag>> = { p: 1, x: -1, u: 0 };
 
 const editPanelPref = flagPref("photopipe.editPanel", "shown", "hidden", true);
-const toggleEditPanel = () => editPanelPref.set(!editPanelPref.get());
 
 export default function App() {
   const [rootState, setRootState] = useState<RootState>({
@@ -393,13 +393,19 @@ export default function App() {
   if (split && !loupePhoto) setSplit(false);
   const toggleSplit = useCallback(() => setSplit((on) => !on), []);
 
-  const toggleStacks = useCallback(() => stacksPref.set(!stacksPref.get()), []);
   // stacks arriving or an import can regroup you onto a non-cover frame, which means inside
   const membership = currentStack?.frames.map((frame) => frame.path).join("\n");
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only a change in who is in the stack re-decides
+  const decided = useRef({ membership, currentPath });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a regroup under the same photo re-decides; a move decided its own anchor
   useEffect(() => {
-    if (!insideStack) setInsideAnchor(anchorFor(currentStack, currentPath));
-  }, [membership]);
+    const regrouped =
+      decided.current.membership !== membership &&
+      decided.current.currentPath === currentPath;
+    decided.current = { membership, currentPath };
+    if (regrouped && !insideStack) {
+      setInsideAnchor(anchorFor(currentStack, currentPath));
+    }
+  }, [membership, currentPath]);
   // Read at keypress, not render: a rating typed a moment ago may not have re-rendered yet.
   const readLive = (photos: ImageFile[]) => {
     const live = photos.map(
@@ -411,20 +417,23 @@ export default function App() {
     }
     return live;
   };
-  const ratePhotos = (photos: ImageFile[], rating: number, suffix?: string) => {
+  const ratePhotos = (photos: ImageFile[], rating: number, stack?: Stack) => {
     const live = readLive(photos);
-    if (live) writes.rateMany(ratedTo(live, rating), live, suffix);
+    if (!live) return null;
+    writes.rateMany(ratedTo(live, rating), live, stack);
+    return rating;
   };
-  const flagPhotos = (photos: ImageFile[], flag: Flag, suffix?: string) => {
+  const flagPhotos = (photos: ImageFile[], flag: Flag, stack?: Stack) => {
     const live = readLive(photos);
-    if (live) writes.flagMany(toggledFlags(live, flag), live, suffix);
+    if (!live) return null;
+    writes.flagMany(toggledFlags(live, flag), live, stack);
+    return toggledFlag(live, flag);
   };
-  const stackSuffix = (stack: Stack) => `· stack of ${stack.frames.length}`;
   const sweep = (stack: Stack) => {
     const frames = readLive(stack.frames);
-    if (!frames) return;
+    if (!frames) return false;
     const swept = sweepStack({ ...stack, frames });
-    if (swept.size === 0) return;
+    if (swept.size === 0) return false;
     void writes.flagMany(swept, frames).then(
       () =>
         toast(`Rejected ${pluralize(swept.size, "undecided frame")}`, {
@@ -433,18 +442,23 @@ export default function App() {
         }),
       () => {},
     );
+    return true;
   };
   const outsideStack = currentStack && multiFrame && !insideStack;
-  const rateShown = (path: string, rating: number) =>
-    outsideStack
-      ? ratePhotos(currentStack.frames, rating, stackSuffix(currentStack))
-      : writes.rate(path, rating);
+  const rateShown = (path: string, rating: number) => {
+    if (outsideStack)
+      return ratePhotos(currentStack.frames, rating, currentStack);
+    writes.rate(path, rating);
+    return rating;
+  };
   const flagShown = (path: string, flag: Flag) => {
-    if (outsideStack) {
-      return flagPhotos(currentStack.frames, flag, stackSuffix(currentStack));
-    }
+    if (outsideStack)
+      return flagPhotos(currentStack.frames, flag, currentStack);
     const photo = cachedImage(queryClient, openShoot, path);
-    if (photo) writes.flag(path, toggled(photo.flag, flag));
+    if (!photo) return null;
+    const to = toggled(photo.flag, flag);
+    writes.flag(path, to);
+    return to;
   };
   const visit = (path: string | null, stacks: Stack[] | null) => {
     setCurrentPath(path);
@@ -561,6 +575,8 @@ export default function App() {
   const stacksNow = useRef(loupeStacks);
   // the browser has no stacks, so undo there lands on the photo it changed
   stacksNow.current = loupeOpen ? loupeStacks : null;
+  const insideNow = useRef(insideStack);
+  insideNow.current = insideStack;
   // Before the write, so you are on the photo when the step lands.
   const showPhoto = useCallback(
     (entry: HistoryEntry) => {
@@ -568,15 +584,19 @@ export default function App() {
         cachedImage(queryClient, openShoot, path) !== undefined;
       const current = currentPathNow.current;
       const stacks = stacksNow.current;
-      const here = current && stacks ? stackOf(stacks, current) : undefined;
+      // inside a stack, a step on a sibling frame still moves you to it
+      const here =
+        current && stacks && (entry.wholeStack || !insideNow.current)
+          ? stackOf(stacks, current)
+          : undefined;
       const touchesHere = entry.paths.some((path) =>
         here ? inStack(here, path) : path === current,
       );
       const next = touchesHere ? undefined : entry.paths.find(present);
       if (next) {
         setCurrentPath(next);
-        // you land on the frame the step changed, inside its stack if it has one
-        setInsideAnchor(next);
+        // you land on the frame the step changed, inside its stack unless the step was on the whole stack
+        setInsideAnchor(entry.wholeStack ? null : next);
       }
       setRevealed((count) => count + 1);
     },
@@ -671,10 +691,10 @@ export default function App() {
         }
       }
       if (event.key === "e" && !event.altKey && loupeOpen && !cropping) {
-        toggleEditPanel();
+        editPanelPref.toggle();
       }
       if (event.key === "s" && !event.altKey && loupeOpen && !cropping) {
-        toggleStacks();
+        stacksPref.toggle();
       }
       if (event.key === "y" && !event.altKey && loupeOpen && !cropping) {
         toggleSplit();
@@ -693,7 +713,6 @@ export default function App() {
     pasteTargets,
     pasteSettings,
     travel,
-    toggleStacks,
     ratePhotos,
     flagPhotos,
     selectedImages,
@@ -859,7 +878,7 @@ export default function App() {
               on: stacksWanted,
               ready: stacking.ready,
               progress: stacking.progress,
-              onToggle: toggleStacks,
+              onToggle: stacksPref.toggle,
               current:
                 currentStack && multiFrame
                   ? { stack: currentStack, inside: insideStack }
@@ -967,7 +986,7 @@ export default function App() {
                 size="sm"
                 variant={editOpen ? "secondary" : "ghost"}
                 data-testid="toggle-edit"
-                onClick={toggleEditPanel}
+                onClick={editPanelPref.toggle}
                 disabled={cropping}
                 title={
                   cropping ? "Finish the crop first" : "Toggle edit panel (e)"
@@ -1022,7 +1041,7 @@ export default function App() {
                 canPaste={clipboard !== null}
                 onCopySettings={() => copySettings(loupeImage)}
                 onPasteSettings={() => pasteSettings([loupeImage])}
-                onClose={toggleEditPanel}
+                onClose={editPanelPref.toggle}
               />
             )}
             {drawerOpen && openShoot && !inLoupe && (

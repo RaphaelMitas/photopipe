@@ -14,6 +14,7 @@ import {
 } from "@photopipe/ui/components/sidebar";
 import { Switch } from "@photopipe/ui/components/switch";
 import { ChevronLeft } from "lucide-react";
+import type { ReactNode } from "react";
 import type { Flag, ImageFile, PassProgress } from "@/lib/core";
 import { exposureParts, takenText } from "@/lib/exif";
 import { fileName } from "@/lib/fileName";
@@ -21,6 +22,7 @@ import { instinctScore } from "@/lib/instinct";
 import { sortImages } from "@/lib/sort";
 import type { Stack } from "@/lib/stacks";
 import { filmstripPref } from "./Filmstrip";
+import { autoAdvancePref } from "./Loupe";
 import {
   type RatingCounts,
   type RatingFilter,
@@ -65,6 +67,8 @@ export function LoupeSidebar({
   onBackToGrid,
 }: Props) {
   const filmstrip = filmstripPref.use();
+  const autoAdvance = autoAdvancePref.use();
+  const andNext = autoAdvance ? " & next" : "";
   const instinct = image.score == null ? null : instinctScore(image.score);
 
   return (
@@ -159,43 +163,79 @@ export function LoupeSidebar({
                 testid="filmstrip"
                 onChange={filmstripPref.set}
               />
-              <div className="mt-2 flex items-center justify-between gap-2">
-                <Label
-                  htmlFor="stacks"
-                  className="flex flex-col items-start gap-0.5 font-normal text-xs"
-                >
-                  <span className="text-foreground">Stacks</span>
+              <SwitchRow
+                id="stacks"
+                title="Stacks"
+                hint={
                   <span data-testid="stacks-status">
                     {stacks.on && !stacks.ready
                       ? `finding stacks${finding(stacks.progress)}`
                       : "near-identical photos · s"}
                   </span>
-                </Label>
-                <Switch
-                  id="stacks"
-                  data-testid="stacks-toggle"
-                  checked={stacks.on}
-                  onCheckedChange={stacks.onToggle}
-                />
-              </div>
+                }
+                checked={stacks.on}
+                onCheckedChange={stacks.onToggle}
+              />
+              <SwitchRow
+                id="auto-advance"
+                title="Auto-advance"
+                hint="next after rating · a"
+                checked={autoAdvance}
+                onCheckedChange={autoAdvancePref.set}
+              />
             </div>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <p className="px-2 py-1 text-[10px] text-muted-foreground">
+        <p
+          data-testid="loupe-hints"
+          className="px-2 py-1 text-[10px] text-muted-foreground"
+        >
           {`${
             !stacks.current
-              ? "←→ navigate · 1–5 rate"
+              ? `←→ navigate · 1–5 rate${andNext}`
               : stacks.current.inside
-                ? "←→ frames · 1–5 rate this frame · p pick"
-                : "←→ stacks · 1–5 rate every frame · enter inside"
-          } · 0 clear · ↑↓ exposure · pinch or double-click zoom · r reset · e edit · y before/after · ⌘C/⌘V settings · ⌘Z undo · s stacks · ${
+                ? `←→ frames · 1–5 rate this frame${andNext} · p pick${andNext}`
+                : `←→ stacks · 1–5 rate every frame${andNext} · enter inside`
+          } · 0 clear · ↑↓ exposure · pinch or double-click zoom · r reset · e edit · y before/after · ⌘C/⌘V settings · ⌘Z undo · s stacks · a auto-advance · ${
             stacks.current?.inside ? "esc up" : "esc"
           }`}
         </p>
       </SidebarFooter>
     </Sidebar>
+  );
+}
+
+function SwitchRow({
+  id,
+  title,
+  hint,
+  checked,
+  onCheckedChange,
+}: {
+  id: string;
+  title: string;
+  hint: ReactNode;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="mt-2 flex items-center justify-between gap-2">
+      <Label
+        htmlFor={id}
+        className="flex flex-col items-start gap-0.5 font-normal text-xs"
+      >
+        <span className="text-foreground">{title}</span>
+        <span>{hint}</span>
+      </Label>
+      <Switch
+        id={id}
+        data-testid={`${id}-toggle`}
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+      />
+    </div>
   );
 }
 

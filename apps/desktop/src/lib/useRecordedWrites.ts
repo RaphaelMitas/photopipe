@@ -22,6 +22,7 @@ import {
   useSetRating,
   useSetRatings,
 } from "./queries";
+import type { Stack } from "./stacks";
 
 // a batch resolves even when every write failed; overtaken photos are not failures
 const landed = (batch: Promise<BatchResult>) =>
@@ -91,7 +92,7 @@ function useRecordedJudgment<V>(
 
   /// `before` must be enriched: undo writes its values back.
   const many = useCallback(
-    (values: Map<string, V>, before: ImageFile[], suffix?: string) => {
+    (values: Map<string, V>, before: ImageFile[], stack?: Stack) => {
       const [first] = values.values();
       if (first === undefined) return Promise.resolve();
       const written = landed(setMany(values));
@@ -100,8 +101,14 @@ function useRecordedJudgment<V>(
       void channel.record(
         {
           ...described,
-          detail: [described.detail, suffix].filter(Boolean).join(" "),
+          detail: [
+            described.detail,
+            stack && `· stack of ${stack.frames.length}`,
+          ]
+            .filter(Boolean)
+            .join(" "),
           paths: [...values.keys()],
+          wholeStack: stack !== undefined,
           written,
         },
         new Map(before.map((photo) => [photo.path, judgment.of(photo)])),

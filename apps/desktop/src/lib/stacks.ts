@@ -98,12 +98,11 @@ export const sharedFlag = (photos: ImageFile[]): Flag =>
 export const toggled = (current: Flag, flag: Flag): Flag =>
   current === flag ? 0 : flag;
 
+export const toggledFlag = (photos: ImageFile[], flag: Flag) =>
+  toggled(sharedFlag(photos), flag);
+
 export const toggledFlags = (photos: ImageFile[], flag: Flag) =>
-  changesTo<Flag>(
-    photos,
-    (photo) => photo.flag,
-    toggled(sharedFlag(photos), flag),
-  );
+  changesTo<Flag>(photos, (photo) => photo.flag, toggledFlag(photos, flag));
 
 export const sweepStack = (stack: Stack) =>
   changesTo<Flag>(

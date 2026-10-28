@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   type Edit,
   type Flag,
@@ -20,6 +21,7 @@ import { EXPOSURE_RANGE, EXPOSURE_STEP } from "@/lib/editSliders";
 import { isModalOpen } from "@/lib/modal";
 import { pluralize } from "@/lib/plural";
 import { capturePointer, cursorIn, normalizedIn, useDrag } from "@/lib/pointer";
+import { flagPref } from "@/lib/pref";
 import {
   useDeferredEdit,
   usePrefetchRender,
@@ -42,6 +44,13 @@ import {
 import { CropOverlay } from "./CropTool";
 import { Filmstrip, filmstripPref } from "./Filmstrip";
 import { ratingCounts } from "./RatingFilter";
+
+export const autoAdvancePref = flagPref(
+  "photopipe.autoAdvance",
+  "on",
+  "off",
+  false,
+);
 
 // Photo pixels, not screen pixels: ten of them stay a fine adjustment on any
 // photo while still showing on screen at a fitted view.
@@ -84,7 +93,8 @@ export type LoupeStacks = {
   inside: boolean;
   onEnter: () => void;
   onLeave: () => void;
-  onSweep: () => void;
+  /// False when nothing was swept, so the loupe stays put.
+  onSweep: () => boolean;
 };
 
 type Props = {
@@ -97,8 +107,9 @@ type Props = {
   onEditChange: (edit: Edit) => void;
   onNavigate: (path: string) => void;
   onClose: () => void;
-  onRate: (path: string, rating: number) => void;
-  onFlag: (path: string, flag: Flag) => void;
+  /// What the photo or stack now holds, null when refused: only a verdict moves on.
+  onRate: (path: string, rating: number) => number | null;
+  onFlag: (path: string, flag: Flag) => Flag | null;
 };
 
 export function Loupe({
@@ -267,6 +278,18 @@ export function Loupe({
         }
         return;
       }
+      const advance = (to: ImageFile | undefined, end: string) => {
+        if (!autoAdvancePref.get()) return;
+        if (to) onNavigate(to.path);
+        else toast(end, { id: "auto-advance" });
+      };
+      const judged = (outcome: number | null) => {
+        if (!outcome) return;
+        advance(
+          next,
+          stacks?.inside ? "Last frame of this stack" : "Last photo",
+        );
+      };
       switch (event.key) {
         case "Escape":
           if (stacks?.inside) stacks.onLeave();
@@ -289,17 +312,22 @@ export function Loupe({
           break;
         case "p":
         case "P":
-          if (!event.repeat) onFlag(image.path, 1);
+          if (!event.repeat) judged(onFlag(image.path, 1));
           break;
         case "x":
         case "X":
           if (event.repeat) break;
-          if (!event.shiftKey) onFlag(image.path, -1);
-          else if (multiFrame) stacks.onSweep();
+          if (!event.shiftKey) judged(onFlag(image.path, -1));
+          else if (multiFrame && stacks.onSweep()) {
+            advance(step(stacks.list, image.path, false, 1), "Last photo");
+          }
           break;
         case "u":
         case "U":
           onFlag(image.path, 0);
+          break;
+        case "a":
+          autoAdvancePref.toggle();
           break;
         case "0":
         case "1":
@@ -307,7 +335,8 @@ export function Loupe({
         case "3":
         case "4":
         case "5":
-          onRate(image.path, Number(event.key));
+          // held down, the repeats would rate every photo it advances onto
+          if (!event.repeat) judged(onRate(image.path, Number(event.key)));
           break;
         case "ArrowUp":
           event.preventDefault();

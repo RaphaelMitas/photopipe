@@ -14,17 +14,19 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { Toaster } from "sonner";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type Edit, type ImageFile, identityEdit } from "@/lib/core";
+import { type Edit, type Flag, type ImageFile, identityEdit } from "@/lib/core";
 import { type CropDraft, draftFromEdit } from "@/lib/crop";
 import { makeImage } from "@/lib/test-image";
 import { EditSidebar } from "./EditPanel";
 import { filmstripPref } from "./Filmstrip";
-import { Loupe, type LoupeStacks } from "./Loupe";
+import { autoAdvancePref, Loupe, type LoupeStacks } from "./Loupe";
 import { LoupeSidebar } from "./LoupeSidebar";
 import type { RatingFilter } from "./RatingFilter";
 
 afterEach(cleanup);
+afterEach(() => autoAdvancePref.set(false));
 
 const invoke = vi.hoisted(() =>
   vi.fn<
@@ -66,8 +68,10 @@ function renderLoupe(
 ) {
   const onNavigate = vi.fn();
   const onClose = vi.fn();
-  const onRate = vi.fn();
-  const onFlag = vi.fn();
+  const onRate = vi.fn(
+    (_path: string, rating: number): number | null => rating,
+  );
+  const onFlag = vi.fn((_path: string, flag: Flag): Flag | null => flag);
   const onEditChange = vi.fn();
   const onCropDraft = vi.fn();
   const onApplyCrop = vi.fn();
@@ -118,7 +122,7 @@ function stackOf(images: ImageFile[], inside: boolean): LoupeStacks {
     inside,
     onEnter: vi.fn(),
     onLeave: vi.fn(),
-    onSweep: vi.fn(),
+    onSweep: vi.fn(() => true),
   };
 }
 
@@ -202,6 +206,89 @@ describe("Loupe with stacks", () => {
     expect(onRate).toHaveBeenCalledWith("/r/s/DSC00001.ARW", 2);
     expect(stacks.onEnter).not.toHaveBeenCalled();
     expect(screen.queryByTestId("stack-chip")).not.toBeInTheDocument();
+  });
+});
+
+describe("Loupe auto-advance", () => {
+  const [one, two, three] = makeImages();
+  const twoStacks = (inside: boolean): LoupeStacks => ({
+    ...stackOf([one, two], inside),
+    list: [
+      { id: one.path, frames: [one, two] },
+      { id: three.path, frames: [three] },
+    ],
+  });
+
+  it("rates and moves on, but stays for 0, a held key and a refused rating", () => {
+    autoAdvancePref.set(true);
+    const { onRate, onNavigate } = renderLoupe(0);
+    fireEvent.keyDown(window, { key: "3" });
+    expect(onRate).toHaveBeenCalledWith("/r/s/DSC00001.ARW", 3);
+    expect(onNavigate).toHaveBeenCalledWith("/r/s/DSC00002.ARW");
+    fireEvent.keyDown(window, { key: "0" });
+    fireEvent.keyDown(window, { key: "4", repeat: true });
+    onRate.mockReturnValueOnce(null);
+    fireEvent.keyDown(window, { key: "2" });
+    expect(onRate).toHaveBeenCalledTimes(3);
+    expect(onNavigate).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays on the last photo and says so", async () => {
+    autoAdvancePref.set(true);
+    render(<Toaster />);
+    const { onRate, onNavigate } = renderLoupe(2);
+    fireEvent.keyDown(window, { key: "5" });
+    expect(onRate).toHaveBeenCalledWith("/r/s/DSC00003.ARW", 5);
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(await screen.findByText("Last photo")).toBeInTheDocument();
+  });
+
+  it("only rates while off, and a turns it on", () => {
+    const { onNavigate } = renderLoupe(0);
+    fireEvent.keyDown(window, { key: "3" });
+    expect(onNavigate).not.toHaveBeenCalled();
+    fireEvent.keyDown(window, { key: "a" });
+    fireEvent.keyDown(window, { key: "3" });
+    expect(onNavigate).toHaveBeenCalledWith("/r/s/DSC00002.ARW");
+  });
+
+  it("moves a whole stack on to the next stack", () => {
+    autoAdvancePref.set(true);
+    const { onNavigate } = renderLoupe(0, 0, null, twoStacks(false));
+    fireEvent.keyDown(window, { key: "3" });
+    expect(onNavigate).toHaveBeenCalledWith(three.path);
+  });
+
+  it("steps frame by frame inside a stack and stops at its last frame", async () => {
+    autoAdvancePref.set(true);
+    const { onNavigate } = renderLoupe(0, 0, null, twoStacks(true));
+    fireEvent.keyDown(window, { key: "3" });
+    expect(onNavigate).toHaveBeenCalledWith(two.path);
+    cleanup();
+    render(<Toaster />);
+    const last = renderLoupe(1, 0, null, twoStacks(true));
+    fireEvent.keyDown(window, { key: "3" });
+    expect(last.onNavigate).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText("Last frame of this stack"),
+    ).toBeInTheDocument();
+  });
+
+  it("moves on after a flag but not after U, an unpick or a click, and ⇧X leaves the stack", () => {
+    autoAdvancePref.set(true);
+    const stacks = twoStacks(true);
+    const { onFlag, onNavigate } = renderLoupe(0, 0, null, stacks);
+    fireEvent.keyDown(window, { key: "x" });
+    expect(onFlag).toHaveBeenCalledWith(one.path, -1);
+    expect(onNavigate).toHaveBeenLastCalledWith(two.path);
+    fireEvent.keyDown(window, { key: "u" });
+    onFlag.mockReturnValueOnce(0);
+    fireEvent.keyDown(window, { key: "p" });
+    fireEvent.click(screen.getByTestId("stack-pick"));
+    expect(onNavigate).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(window, { key: "X", shiftKey: true });
+    expect(stacks.onSweep).toHaveBeenCalled();
+    expect(onNavigate).toHaveBeenLastCalledWith(three.path);
   });
 });
 

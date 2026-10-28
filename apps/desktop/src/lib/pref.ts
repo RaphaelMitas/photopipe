@@ -32,14 +32,16 @@ export function pref<T>(
   return { get, set, use: () => useSyncExternalStore(subscribe, get) };
 }
 
-export const flagPref = (
+export function flagPref(
   key: string,
   on: string,
   off: string,
   defaultOn: boolean,
-) =>
-  pref(
+) {
+  const flag = pref(
     key,
     (raw) => (defaultOn ? raw !== off : raw === on),
     (value) => (value ? on : off),
   );
+  return { ...flag, toggle: () => flag.set(!flag.get()) };
+}

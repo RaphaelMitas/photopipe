@@ -8,6 +8,8 @@ type HistoryAction = {
   label: string;
   detail?: string;
   paths: string[];
+  /// Taken outside a stack on all of its frames, so undo lands back outside.
+  wholeStack?: boolean;
   channel: HistoryChannel;
   stage: (direction: HistoryDirection, path: string) => void;
   // the write that made the entry: undo waits for it, its failure drops the entry
