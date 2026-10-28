@@ -53,6 +53,7 @@ describe("chords", () => {
     expect(formatChord("shift+meta+z")).toBe("⇧⌘Z");
     expect(formatChord("arrowleft")).toBe("←");
     expect(formatChord("meta++")).toBe("⌘+");
+    expect(formatChord("ß")).toBe("ß");
   });
 
   it("rejects stored values that are not a key", () => {

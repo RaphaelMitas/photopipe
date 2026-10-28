@@ -78,8 +78,13 @@ export function KeyboardSettings() {
       if (others.length > 0) setConflict({ ...recording, press, others });
       else assignShortcut(recording.id, recording.replacing, press);
     };
+    const cancel = () => setRecording(null);
     window.addEventListener("keydown", capture, true);
-    return () => window.removeEventListener("keydown", capture, true);
+    window.addEventListener("pointerdown", cancel, true);
+    return () => {
+      window.removeEventListener("keydown", capture, true);
+      window.removeEventListener("pointerdown", cancel, true);
+    };
   }, [recording]);
 
   const record = (id: ActionId, replacing: string | null) => {

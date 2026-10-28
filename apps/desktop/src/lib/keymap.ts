@@ -383,9 +383,13 @@ const SYMBOLS = new Map([
   ["delete", "⌦"],
 ]);
 
+// "ß".toUpperCase() is "SS"
+const capital = (key: string) =>
+  key.toUpperCase().length === key.length ? key.toUpperCase() : key;
+
 export function formatChord(chord: string): string {
   const { modifiers, key } = parseChord(chord);
   return [...modifiers, key]
-    .map((part) => SYMBOLS.get(part) ?? part.toUpperCase())
+    .map((part) => SYMBOLS.get(part) ?? capital(part))
     .join("");
 }
