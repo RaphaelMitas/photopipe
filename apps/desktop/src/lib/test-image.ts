@@ -11,6 +11,7 @@ export function makeImage(
     size: 1,
     mtime: 1,
     rating: 0,
+    flag: 0,
     edit: { ...identityEdit },
     width: 3000,
     height: 2000,

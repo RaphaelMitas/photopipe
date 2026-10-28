@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from "@photopipe/ui/components/dropdown-menu";
 import { ArrowUpDown, LayoutGrid, Rows3, Sparkles } from "lucide-react";
+import type { ReactNode } from "react";
 import type { PassProgress } from "@/lib/core";
 import { pref } from "@/lib/pref";
 import { isSortKey, SORT_KEYS, SORT_LABELS, type SortKey } from "@/lib/sort";
@@ -29,6 +30,7 @@ type Props = {
   sortReady: Record<SortKey, boolean>;
   scoring: PassProgress | null;
   justRated: boolean;
+  children?: ReactNode;
 };
 
 export function BrowserToolbar({
@@ -40,6 +42,7 @@ export function BrowserToolbar({
   sortReady,
   scoring,
   justRated,
+  children,
 }: Props) {
   const rating = scoring?.running === true;
   const done = rating && scoring.total > 0 ? scoring.done / scoring.total : 0;
@@ -68,6 +71,7 @@ export function BrowserToolbar({
           Rated · Sort by Instinct
         </Button>
       )}
+      {children}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button size="sm" variant="outline" data-testid="sort">

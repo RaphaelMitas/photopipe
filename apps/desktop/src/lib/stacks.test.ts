@@ -3,10 +3,12 @@ import {
   anchorFor,
   coverOf,
   groupStacks,
-  pickInStack,
-  rateStack,
+  ratedTo,
   stackedOrder,
+  stackFlag,
   step,
+  sweepStack,
+  toggledFlags,
 } from "./stacks";
 import { makeImage, rels } from "./test-image";
 
@@ -45,42 +47,70 @@ describe("coverOf", () => {
     ]);
     expect(coverOf(unrated).rel).toBe("a2.arw");
   });
+
+  it("is the pick over any rating, and never a reject while a frame is not", () => {
+    const [stack] = groupStacks([
+      frame("a1.arw", { rating: 5, flag: -1 }),
+      frame("a2.arw", { rating: 2, flag: 1 }),
+      frame("a3.arw", { rating: 4 }),
+    ]);
+    expect(coverOf(stack).rel).toBe("a2.arw");
+    const [rejected] = groupStacks([
+      frame("a1.arw", { rating: 5, flag: -1 }),
+      frame("a2.arw", { score: -0.9 }),
+    ]);
+    expect(coverOf(rejected).rel).toBe("a2.arw");
+  });
 });
 
-describe("rateStack", () => {
-  it("writes only the frames that change", () => {
-    const [stack] = groupStacks([
+describe("stackFlag", () => {
+  it("is picked by any pick and rejected only when every frame is", () => {
+    const flagged = (...flags: (-1 | 0 | 1)[]) =>
+      stackFlag(
+        groupStacks(flags.map((flag, i) => frame(`a${i}.arw`, { flag })))[0],
+      );
+    expect(flagged(-1, 1, 0)).toBe(1);
+    expect(flagged(-1, 0)).toBe(0);
+    expect(flagged(-1, -1)).toBe(-1);
+  });
+});
+
+describe("ratedTo", () => {
+  it("writes only the photos that change", () => {
+    const photos = [
       frame("a1.arw", { rating: 1 }),
       frame("a2.arw", { rating: 0 }),
-    ]);
-    expect(rateStack(stack, 1)).toEqual(new Map([["/r/s/a2.arw", 1]]));
+    ];
+    expect(ratedTo(photos, 1)).toEqual(new Map([["/r/s/a2.arw", 1]]));
   });
 });
 
-describe("pickInStack", () => {
-  it("keeps the stack's rating on the pick and clears the rest", () => {
-    const [stack] = groupStacks([
-      frame("a1.arw", { rating: 4 }),
-      frame("a2.arw", { rating: 4 }),
-      frame("a3.arw", { rating: 2 }),
-    ]);
-    expect(pickInStack(stack, "/r/s/a2.arw")).toEqual({
-      writes: new Map([
+describe("toggledFlags", () => {
+  it("sets the flag on all, and takes it off only when all have it", () => {
+    const mixed = [frame("a1.arw", { flag: -1 }), frame("a2.arw")];
+    expect(toggledFlags(mixed, -1)).toEqual(new Map([["/r/s/a2.arw", -1]]));
+    const both = [frame("a1.arw", { flag: -1 }), frame("a2.arw", { flag: -1 })];
+    expect(toggledFlags(both, -1)).toEqual(
+      new Map([
         ["/r/s/a1.arw", 0],
-        ["/r/s/a3.arw", 0],
+        ["/r/s/a2.arw", 0],
       ]),
-      kept: 4,
-      cleared: 2,
-    });
+    );
   });
+});
 
-  it("gives the pick five stars when nothing in the stack is rated", () => {
-    const [stack] = groupStacks([frame("a1.arw"), frame("a2.arw")]);
-    expect(pickInStack(stack, "/r/s/a1.arw")).toEqual({
-      writes: new Map([["/r/s/a1.arw", 5]]),
-      kept: 5,
-      cleared: 0,
-    });
+describe("sweepStack", () => {
+  it("rejects only the frames nobody judged, once the stack has a pick", () => {
+    const frames = [
+      frame("a1.arw", { flag: 1 }),
+      frame("a2.arw"),
+      frame("a3.arw", { rating: 3 }),
+      frame("a4.arw", { flag: -1 }),
+    ];
+    expect(sweepStack(groupStacks(frames)[0])).toEqual(
+      new Map([["/r/s/a2.arw", -1]]),
+    );
+    expect(sweepStack(groupStacks(frames.slice(1))[0]).size).toBe(0);
   });
 });
 

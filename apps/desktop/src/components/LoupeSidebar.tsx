@@ -14,16 +14,20 @@ import {
 } from "@photopipe/ui/components/sidebar";
 import { Switch } from "@photopipe/ui/components/switch";
 import { ChevronLeft } from "lucide-react";
-import type { ImageFile, PassProgress } from "@/lib/core";
+import type { Flag, ImageFile, PassProgress } from "@/lib/core";
 import { exposureParts, takenText } from "@/lib/exif";
 import { fileName } from "@/lib/fileName";
 import { instinctScore } from "@/lib/instinct";
 import { sortImages } from "@/lib/sort";
 import type { Stack } from "@/lib/stacks";
 import { filmstripPref } from "./Filmstrip";
-import { type RatingFilter, RatingFilterGroup } from "./RatingFilter";
+import {
+  type RatingCounts,
+  type RatingFilter,
+  RatingFilterGroup,
+} from "./RatingFilter";
 import { SidebarBrandHeader } from "./SidebarBrandHeader";
-import { Stars } from "./Stars";
+import { FlagButtons, Stars } from "./Stars";
 
 export type SidebarStacks = {
   on: boolean;
@@ -40,8 +44,11 @@ type Props = {
   stacks: SidebarStacks;
   betterThan: number | null;
   filter: RatingFilter;
-  ratingCounts: number[];
+  ratingCounts: RatingCounts;
+  /// The stack's shared flag outside it, so the buttons show what a click will toggle.
+  flag: Flag;
   onRate: (path: string, rating: number) => void;
+  onFlag: (path: string, flag: Flag) => void;
   onBackToGrid: () => void;
 };
 
@@ -52,7 +59,9 @@ export function LoupeSidebar({
   betterThan,
   filter,
   ratingCounts,
+  flag,
   onRate,
+  onFlag,
   onBackToGrid,
 }: Props) {
   const filmstrip = filmstripPref.use();
@@ -100,11 +109,17 @@ export function LoupeSidebar({
               {position}
             </span>
             <ShotInfo image={image} />
-            <Stars
-              value={image.rating}
-              onRate={(rating) => onRate(image.path, rating)}
-              className="mt-1 text-base"
-            />
+            <span className="mt-1 flex items-center gap-2">
+              <FlagButtons
+                value={flag}
+                onFlag={(flag) => onFlag(image.path, flag)}
+              />
+              <Stars
+                value={image.rating}
+                onRate={(rating) => onRate(image.path, rating)}
+                className="text-base"
+              />
+            </span>
             {instinct !== null && (
               <div className="mt-2 flex flex-col gap-1" data-testid="instinct">
                 <div className="flex justify-between font-mono text-xs">

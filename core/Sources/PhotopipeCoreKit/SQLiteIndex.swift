@@ -16,7 +16,7 @@ public final class SQLiteIndex: @unchecked Sendable {
     private let path: String
 
     // bump when a read learns something a cached row lacks, or stale rows get written back over it
-    private static let schemaVersion = 8
+    private static let schemaVersion = 9
 
     public init(path: String) throws {
         self.path = path
@@ -69,7 +69,8 @@ public final class SQLiteIndex: @unchecked Sendable {
                 enriched INTEGER NOT NULL DEFAULT 0,
                 sidecar_mtime REAL NOT NULL DEFAULT 0,
                 captured REAL,
-                exif TEXT
+                exif TEXT,
+                flag INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS files_shoot ON files(shoot);
             CREATE TABLE IF NOT EXISTS scores (
@@ -150,8 +151,8 @@ public final class SQLiteIndex: @unchecked Sendable {
         let sql = """
             INSERT OR REPLACE INTO files
             (path, shoot, rel, ext, size, mtime, rating, edit, width, height, enriched,
-             sidecar_mtime, captured, exif)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             sidecar_mtime, captured, exif, flag)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """
         try withStatement(sql) { statement in
             for (shoot, files) in filesByShoot {
@@ -172,6 +173,7 @@ public final class SQLiteIndex: @unchecked Sendable {
                     sqlite3_bind_double(statement, 12, file.sidecarMtime)
                     bindDouble(statement, 13, file.captured)
                     try bindJSON(statement, 14, file.exif, unless: .empty)
+                    sqlite3_bind_int64(statement, 15, Int64(file.flag))
                     guard sqlite3_step(statement) == SQLITE_DONE else {
                         throw IndexError.exec(errorMessage)
                     }
@@ -189,7 +191,7 @@ public final class SQLiteIndex: @unchecked Sendable {
 
         let sql = """
             SELECT path, shoot, rel, ext, size, mtime, rating, edit, width, height, enriched,
-                   sidecar_mtime, captured, exif
+                   sidecar_mtime, captured, exif, flag
             FROM files
             """
         return try withStatement(sql) { statement in
@@ -207,6 +209,7 @@ public final class SQLiteIndex: @unchecked Sendable {
                     size: sqlite3_column_int64(statement, 4),
                     mtime: sqlite3_column_double(statement, 5),
                     rating: Int(sqlite3_column_int64(statement, 6)),
+                    flag: Int(sqlite3_column_int64(statement, 14)),
                     edit: columnJSON(Edit.self, statement, 7) ?? .identity,
                     width: Int(sqlite3_column_int64(statement, 8)),
                     height: Int(sqlite3_column_int64(statement, 9)),

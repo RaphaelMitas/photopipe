@@ -1,11 +1,13 @@
 import {
   type DefaultError,
+  hashKey,
   keepPreviousData,
   MutationObserver,
   type MutationObserverOptions,
   type QueryClient,
   queryOptions,
   skipToken,
+  useIsMutating,
   useMutation,
   useQueries,
   useQuery,
@@ -27,6 +29,7 @@ import {
   type Edit,
   type ExportProgress,
   editKey,
+  type Flag,
   type ImageFile,
   normalizeEdit,
   normalizeImage,
@@ -347,12 +350,16 @@ export function useRaw9Availability(enabled: boolean) {
 }
 
 const SET_RATING_KEY = ["setRating"];
+const SET_FLAG_KEY = ["setFlag"];
+const TRASH_KEY = ["write", "trash"];
 const SET_EDIT_KEY = ["setEdit"];
 
+const XMP_WRITE_KEYS = [SET_RATING_KEY, SET_FLAG_KEY, SET_EDIT_KEY];
+
 function xmpWritesInFlight(queryClient: QueryClient): number {
-  return (
-    queryClient.isMutating({ mutationKey: SET_RATING_KEY }) +
-    queryClient.isMutating({ mutationKey: SET_EDIT_KEY })
+  return XMP_WRITE_KEYS.reduce(
+    (sum, mutationKey) => sum + queryClient.isMutating({ mutationKey }),
+    0,
   );
 }
 
@@ -481,6 +488,20 @@ const RATING_FIELD: PhotoField<number> = {
     `${pluralize(count, "photo")} kept the rating they had`,
 };
 
+const FLAG_FIELD: PhotoField<Flag> = {
+  mutationKey: SET_FLAG_KEY,
+  of: (image) => image.flag,
+  same: (a, b) => a === b,
+  patch: (flag) => ({ flag }),
+  write: (shoot, path, flag) =>
+    writeInOrder(
+      path,
+      async () => (await coreRequest("setFlag", { shoot, path, flag })).flag,
+    ),
+  failedOne: (path) => `Flagging ${fileName(path)} failed`,
+  failedMany: (count) => `${pluralize(count, "photo")} kept the flag they had`,
+};
+
 const EDIT_FIELD: PhotoField<Edit> = {
   mutationKey: SET_EDIT_KEY,
   of: (image) => image.edit,
@@ -567,6 +588,9 @@ function useFieldWrite<V>(shoot: string | null, field: PhotoField<V>) {
 
 export const useSetRating = (shoot: string | null) =>
   useFieldWrite(shoot, RATING_FIELD);
+
+export const useSetFlag = (shoot: string | null) =>
+  useFieldWrite(shoot, FLAG_FIELD);
 
 export const useSetEdit = (shoot: string | null) =>
   useFieldWrite(shoot, EDIT_FIELD);
@@ -656,6 +680,19 @@ export const usePasteEdits = (shoot: string | null) =>
 export const useSetRatings = (shoot: string | null) =>
   useBatchWrite(shoot, RATING_FIELD);
 
+export const useSetFlags = (shoot: string | null) =>
+  useBatchWrite(shoot, FLAG_FIELD);
+
+// an undo still waiting on a write could un-reject a photo already in the Trash
+const TRASH_BLOCKERS = new Set([...XMP_WRITE_KEYS, TRASH_KEY].map(hashKey));
+
+export const useTrashBlocked = () =>
+  useIsMutating({
+    predicate: ({ options }) =>
+      options.mutationKey !== undefined &&
+      TRASH_BLOCKERS.has(hashKey(options.mutationKey)),
+  }) > 0;
+
 export function useReveal() {
   return useMutation({
     mutationKey: ["write", "reveal"],
@@ -669,7 +706,7 @@ export function useReveal() {
 export function useTrash(shoot: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationKey: ["write", "trash"],
+    mutationKey: TRASH_KEY,
     mutationFn: (paths: string[]) => coreRequest("trash", { shoot, paths }),
     onSuccess: (result, paths) => {
       toast.success(`Moved ${pluralize(paths.length, "photo")} to the Trash`, {

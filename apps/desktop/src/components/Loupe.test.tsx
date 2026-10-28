@@ -67,6 +67,7 @@ function renderLoupe(
   const onNavigate = vi.fn();
   const onClose = vi.fn();
   const onRate = vi.fn();
+  const onFlag = vi.fn();
   const onEditChange = vi.fn();
   const onCropDraft = vi.fn();
   const onApplyCrop = vi.fn();
@@ -94,6 +95,7 @@ function renderLoupe(
         onNavigate={onNavigate}
         onClose={onClose}
         onRate={onRate}
+        onFlag={onFlag}
       />
     </QueryClientProvider>,
   );
@@ -101,6 +103,7 @@ function renderLoupe(
     onNavigate,
     onClose,
     onRate,
+    onFlag,
     onEditChange,
     onCropDraft,
     onApplyCrop,
@@ -115,7 +118,7 @@ function stackOf(images: ImageFile[], inside: boolean): LoupeStacks {
     inside,
     onEnter: vi.fn(),
     onLeave: vi.fn(),
-    onPick: vi.fn(),
+    onSweep: vi.fn(),
   };
 }
 
@@ -125,11 +128,9 @@ describe("Loupe with stacks", () => {
     const { onRate, onClose } = renderLoupe(0, 0, null, stacks);
     fireEvent.keyDown(window, { key: "4" });
     fireEvent.keyDown(window, { key: "ArrowRight" });
-    fireEvent.keyDown(window, { key: "p" });
     fireEvent.keyDown(window, { key: "Enter" });
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onRate).toHaveBeenCalledWith("/r/s/DSC00001.ARW", 4);
-    expect(stacks.onPick).not.toHaveBeenCalled();
     expect(stacks.onEnter).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
     expect(screen.getByTestId("stack-chip")).toHaveTextContent("3 frames");
@@ -137,17 +138,48 @@ describe("Loupe with stacks", () => {
 
   it("rates one frame inside, picks with P or the button, and goes up on escape", () => {
     const stacks = stackOf(makeImages(), true);
-    const { onRate, onClose, onNavigate } = renderLoupe(1, 0, null, stacks);
+    const { onRate, onFlag, onClose, onNavigate } = renderLoupe(
+      1,
+      0,
+      null,
+      stacks,
+    );
     fireEvent.keyDown(window, { key: "3" });
     expect(onRate).toHaveBeenCalledWith("/r/s/DSC00002.ARW", 3);
     fireEvent.keyDown(window, { key: "ArrowRight" });
     expect(onNavigate).toHaveBeenCalledWith("/r/s/DSC00003.ARW");
     fireEvent.keyDown(window, { key: "p" });
     fireEvent.click(screen.getByTestId("stack-pick"));
-    expect(stacks.onPick).toHaveBeenCalledTimes(2);
+    fireEvent.keyDown(window, { key: "x" });
+    fireEvent.keyDown(window, { key: "u" });
+    expect(onFlag.mock.calls).toEqual([
+      ["/r/s/DSC00002.ARW", 1],
+      ["/r/s/DSC00002.ARW", 1],
+      ["/r/s/DSC00002.ARW", -1],
+      ["/r/s/DSC00002.ARW", 0],
+    ]);
     fireEvent.keyDown(window, { key: "Escape" });
     expect(stacks.onLeave).toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("offers ⇧X once the stack has a pick, for the frames nobody judged", () => {
+    const [first, ...rest] = makeImages();
+    const stacks = stackOf([{ ...first, flag: 1 }, ...rest], true);
+    renderLoupe(0, 0, null, stacks);
+    expect(screen.getByTestId("stack-sweep")).toHaveTextContent(
+      "Reject 2 undecided frames",
+    );
+    fireEvent.keyDown(window, { key: "X", shiftKey: true });
+    fireEvent.click(screen.getByTestId("stack-sweep"));
+    expect(stacks.onSweep).toHaveBeenCalledTimes(2);
+  });
+
+  it("a caps-lock X still rejects, and a held key flags once", () => {
+    const { onFlag } = renderLoupe(1);
+    fireEvent.keyDown(window, { key: "X" });
+    fireEvent.keyDown(window, { key: "x", repeat: true });
+    expect(onFlag.mock.calls).toEqual([["/r/s/DSC00002.ARW", -1]]);
   });
 
   it("goes in and out of a stack by tapping its chip", () => {
@@ -378,13 +410,17 @@ describe("Loupe crop mode", () => {
 describe("LoupeSidebar", () => {
   const filter: RatingFilter = {
     op: "gte",
-    stars: 0,
+    stars: new Set(),
+    flags: new Set(),
+    key: "",
     setOp: vi.fn(),
-    setStars: vi.fn(),
+    clickStars: vi.fn(),
+    clickFlag: vi.fn(),
     matches: () => true,
     active: false,
     reset: vi.fn(),
   };
+  const counts = { stars: [3, 0, 0, 0, 0, 0], picked: 0, rejected: 0 };
   const noStacks = {
     on: false,
     ready: false,
@@ -393,8 +429,9 @@ describe("LoupeSidebar", () => {
     current: null,
   };
 
-  it("shows name, position and stars; rates", () => {
+  it("shows name, position and stars; rates and flags", () => {
     const onRate = vi.fn();
+    const onFlag = vi.fn();
     render(
       <TooltipProvider>
         <SidebarProvider>
@@ -403,9 +440,11 @@ describe("LoupeSidebar", () => {
             position="2/3"
             stacks={noStacks}
             betterThan={null}
-            ratingCounts={[3, 0, 0, 0, 0, 0]}
+            ratingCounts={counts}
+            flag={0}
             filter={filter}
             onRate={onRate}
+            onFlag={onFlag}
             onBackToGrid={vi.fn()}
           />
         </SidebarProvider>
@@ -416,6 +455,8 @@ describe("LoupeSidebar", () => {
 
     fireEvent.click(screen.getByTestId("star-4"));
     expect(onRate).toHaveBeenCalledWith("/r/s/DSC00002.ARW", 4);
+    fireEvent.click(screen.getByTestId("flag-reject"));
+    expect(onFlag).toHaveBeenCalledWith("/r/s/DSC00002.ARW", -1);
   });
 
   function renderSidebar(image: ImageFile, betterThan: number | null) {
@@ -427,9 +468,11 @@ describe("LoupeSidebar", () => {
             position="2/3"
             stacks={noStacks}
             betterThan={betterThan}
-            ratingCounts={[3, 0, 0, 0, 0, 0]}
+            ratingCounts={counts}
+            flag={0}
             filter={filter}
             onRate={vi.fn()}
+            onFlag={vi.fn()}
             onBackToGrid={vi.fn()}
           />
         </SidebarProvider>

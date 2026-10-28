@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type Edit,
+  type Flag,
   fileSrc,
   framing,
   type ImageFile,
@@ -26,13 +27,7 @@ import {
   useThumbnail,
   useViewportRender,
 } from "@/lib/queries";
-import {
-  pickInStack,
-  type Stack,
-  stackRating,
-  stackRatingLabel,
-  step,
-} from "@/lib/stacks";
+import { type Stack, stackRatingLabel, step, sweepStack } from "@/lib/stacks";
 import type { CropSession } from "@/lib/useCropSession";
 import {
   centerOn,
@@ -46,6 +41,7 @@ import {
 } from "@/lib/zoom";
 import { CropOverlay } from "./CropTool";
 import { Filmstrip, filmstripPref } from "./Filmstrip";
+import { ratingCounts } from "./RatingFilter";
 
 // Photo pixels, not screen pixels: ten of them stay a fine adjustment on any
 // photo while still showing on screen at a fitted view.
@@ -88,7 +84,7 @@ export type LoupeStacks = {
   inside: boolean;
   onEnter: () => void;
   onLeave: () => void;
-  onPick: () => void;
+  onSweep: () => void;
 };
 
 type Props = {
@@ -102,6 +98,7 @@ type Props = {
   onNavigate: (path: string) => void;
   onClose: () => void;
   onRate: (path: string, rating: number) => void;
+  onFlag: (path: string, flag: Flag) => void;
 };
 
 export function Loupe({
@@ -115,6 +112,7 @@ export function Loupe({
   onNavigate,
   onClose,
   onRate,
+  onFlag,
 }: Props) {
   const image = images[index];
   const cropDraft = session.draft;
@@ -291,7 +289,17 @@ export function Loupe({
           break;
         case "p":
         case "P":
-          if (multiFrame && stacks.inside) stacks.onPick();
+          if (!event.repeat) onFlag(image.path, 1);
+          break;
+        case "x":
+        case "X":
+          if (event.repeat) break;
+          if (!event.shiftKey) onFlag(image.path, -1);
+          else if (multiFrame) stacks.onSweep();
+          break;
+        case "u":
+        case "U":
+          onFlag(image.path, 0);
           break;
         case "0":
         case "1":
@@ -338,6 +346,7 @@ export function Loupe({
     onEditChange,
     onNavigate,
     onRate,
+    onFlag,
   ]);
 
   if (!image) return null;
@@ -508,7 +517,14 @@ export function Loupe({
           </>
         )}
         {multiFrame && !cropping && (
-          <StackOverlay stacks={stacks} path={image.path} />
+          <StackOverlay
+            stacks={stacks}
+            image={image}
+            onPick={() => onFlag(image.path, 1)}
+          />
+        )}
+        {!cropping && !(multiFrame && !stacks.inside) && (
+          <FlagPill flag={image.flag} lowered={comparing} />
         )}
         {(render.isFetching ||
           !render.data ||
@@ -539,6 +555,23 @@ const ownTap = {
   onPointerDown: (event: React.PointerEvent) => event.stopPropagation(),
   onDoubleClick: (event: React.MouseEvent) => event.stopPropagation(),
 };
+
+// a split puts its Before and After labels where the pill sits
+function FlagPill({ flag, lowered }: { flag: Flag; lowered: boolean }) {
+  if (flag === 0) return null;
+  return (
+    <div
+      data-testid="loupe-flag"
+      className={`absolute ${lowered ? "top-12" : "top-3"} left-1/2 -translate-x-1/2 rounded-full border bg-background/85 px-2.5 py-0.5 font-medium text-[11px] backdrop-blur-sm ${
+        flag === 1
+          ? "border-success/60 text-success"
+          : "border-destructive/60 text-destructive"
+      }`}
+    >
+      {flag === 1 ? "✓ Picked" : "✕ Rejected"}
+    </div>
+  );
+}
 
 function Slice({
   testId,
@@ -618,11 +651,19 @@ function SplitDivider({
   );
 }
 
-function StackOverlay({ stacks, path }: { stacks: LoupeStacks; path: string }) {
+function StackOverlay({
+  stacks,
+  image,
+  onPick,
+}: {
+  stacks: LoupeStacks;
+  image: ImageFile;
+  onPick: () => void;
+}) {
   const { frames } = stacks.current;
-  const rating = stackRating(stacks.current);
   const label = stackRatingLabel(stacks.current);
-  const { kept, cleared } = pickInStack(stacks.current, path);
+  const { picked, rejected } = ratingCounts(frames);
+  const sweepable = sweepStack(stacks.current).size;
   return (
     <>
       <button
@@ -636,38 +677,57 @@ function StackOverlay({ stacks, path }: { stacks: LoupeStacks; path: string }) {
           <>
             <span className="font-semibold">Inside stack</span>
             <span className="text-muted-foreground">
-              {frames.findIndex((frame) => frame.path === path) + 1} of{" "}
+              {frames.findIndex((frame) => frame.path === image.path) + 1} of{" "}
               {frames.length} · esc to go up
             </span>
           </>
         ) : (
           <>
             <span className="font-semibold">{frames.length} frames</span>
+            {picked > 0 && <span className="text-success">✓ {picked}</span>}
+            {rejected > 0 && (
+              <span className="text-destructive">✕ {rejected}</span>
+            )}
             {label && <span className="text-amber-400">{label}</span>}
             <span className="text-muted-foreground">enter to look inside</span>
           </>
         )}
       </button>
-      {stacks.inside && (
-        <button
-          type="button"
-          data-testid="stack-pick"
-          {...ownTap}
-          onClick={stacks.onPick}
-          className="absolute bottom-4 left-1/2 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2.5 rounded-lg border border-primary/60 bg-background/95 py-1.5 pr-1.5 pl-3 text-sm shadow-lg backdrop-blur-sm"
-        >
-          <span className="font-semibold">Pick this one</span>
-          <span className="font-mono text-[11px] text-muted-foreground">
-            {rating > 0 ? "keeps " : "gets "}
-            <span className="text-amber-400">{`★${kept}`}</span>
-            {cleared > 0
-              ? ` · clears ${pluralize(cleared, "other")}`
-              : rating === 0 &&
-                ` · ${pluralize(frames.length - 1, "other")} ${frames.length === 2 ? "stays" : "stay"} unrated`}
-          </span>
-          <kbd className="rounded bg-muted px-1.5 font-mono text-xs">P</kbd>
-        </button>
-      )}
+      <div className="absolute bottom-4 left-1/2 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2">
+        {stacks.inside && (
+          <button
+            type="button"
+            data-testid="stack-pick"
+            {...ownTap}
+            onClick={onPick}
+            className="flex items-center gap-2.5 rounded-lg border border-success/50 bg-background/95 py-1.5 pr-1.5 pl-3 text-sm shadow-lg backdrop-blur-sm"
+          >
+            <span className="font-semibold text-success">
+              {image.flag === 1 ? "Unpick" : "Pick this one"}
+            </span>
+            {image.flag !== 1 && (
+              <span className="font-mono text-[11px] text-muted-foreground">
+                others stay as they are
+              </span>
+            )}
+            <kbd className="rounded bg-muted px-1.5 font-mono text-xs">P</kbd>
+          </button>
+        )}
+        {sweepable > 0 && (
+          <button
+            type="button"
+            data-testid="stack-sweep"
+            {...ownTap}
+            onClick={stacks.onSweep}
+            className="flex items-center gap-2.5 rounded-lg border border-destructive/50 bg-background/95 py-1.5 pr-1.5 pl-3 text-destructive text-sm shadow-lg backdrop-blur-sm"
+          >
+            Reject {pluralize(sweepable, "undecided frame")}
+            <kbd className="rounded bg-muted px-1.5 font-mono text-foreground text-xs">
+              ⇧X
+            </kbd>
+          </button>
+        )}
+      </div>
     </>
   );
 }

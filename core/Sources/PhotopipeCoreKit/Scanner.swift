@@ -96,18 +96,19 @@ public func walkLibrary(root: String) throws -> LibrarySnapshot {
 /// off the request path. Already-settled files are returned untouched.
 public func enrich(_ file: ImageFile) -> ImageFile {
     guard !file.enriched else { return file }
-    let (rating, edit) = XMP.read(file: file)
+    let read = XMP.read(file: file)
     let header = Dimensions.header(for: file)
     return file.with(
-        rating: rating,
-        edit: edit,
+        rating: read.rating,
+        flag: read.flag,
+        edit: read.edit,
         dimensions: header.dimensions ?? Dimensions.fallback,
         enriched: true,
         captured: header.captured,
         exif: header.exif)
 }
 
-/// A sidecar rewrite rereads rating and edit but keeps the header, so the photo stays in its stack.
+/// A sidecar rewrite rereads rating, flag and edit but keeps the header, so the photo stays in its stack.
 public func carryEnrichment(
     into walked: LibrarySnapshot, from cache: [String: ImageFile]
 ) -> LibrarySnapshot {
@@ -121,7 +122,8 @@ public func carryEnrichment(
                 dimensions: (known.width, known.height), captured: known.captured,
                 exif: known.exif)
             guard known.enriched, known.sidecarMtime == image.sidecarMtime else { return header }
-            return header.with(rating: known.rating, edit: known.edit, enriched: true)
+            return header.with(
+                rating: known.rating, flag: known.flag, edit: known.edit, enriched: true)
         }
     }
     let shoots = walked.shoots.map { shoot in

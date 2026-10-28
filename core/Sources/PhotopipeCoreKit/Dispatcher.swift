@@ -67,6 +67,10 @@ public final class Dispatcher: Sendable {
             return try library.setRating(
                 shoot: request.string("shoot"), path: request.string("path"),
                 rating: request.int("rating"))
+        case "setFlag":
+            return try library.setFlag(
+                shoot: request.string("shoot"), path: request.string("path"),
+                flag: request.int("flag"))
         case "setEdit":
             return try library.setEdit(
                 shoot: request.string("shoot"), path: request.string("path"),

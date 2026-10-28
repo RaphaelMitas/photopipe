@@ -41,6 +41,8 @@ public struct ImageFile: Encodable, Equatable, Sendable {
     public let size: Int64
     public let mtime: Double
     public let rating: Int
+    /// Lightroom's pick flag: 1 picked, -1 rejected, 0 neither.
+    public let flag: Int
     public let edit: Edit
     public let width: Int
     public let height: Int
@@ -66,7 +68,7 @@ public struct ImageFile: Encodable, Equatable, Sendable {
 
     public init(
         path: String, rel: String, ext: String, size: Int64, mtime: Double,
-        rating: Int = 0, edit: Edit = .identity,
+        rating: Int = 0, flag: Int = 0, edit: Edit = .identity,
         width: Int = Dimensions.fallback.width, height: Int = Dimensions.fallback.height,
         score: Double? = nil, captured: Double? = nil, exif: Exif = .empty, stack: String? = nil,
         enriched: Bool = false, sidecarMtime: Double = 0
@@ -77,6 +79,7 @@ public struct ImageFile: Encodable, Equatable, Sendable {
         self.size = size
         self.mtime = mtime
         self.rating = rating
+        self.flag = flag
         self.edit = edit
         self.width = width
         self.height = height
@@ -98,14 +101,14 @@ public struct ImageFile: Encodable, Equatable, Sendable {
     }
 
     public func with(
-        rating: Int? = nil, edit: Edit? = nil,
+        rating: Int? = nil, flag: Int? = nil, edit: Edit? = nil,
         dimensions: (width: Int, height: Int)? = nil, enriched: Bool? = nil,
         sidecarMtime: Double? = nil, score: Double? = nil, captured: Double? = nil,
         exif: Exif? = nil, stack: String? = nil
     ) -> ImageFile {
         ImageFile(
             path: path, rel: rel, ext: ext, size: size, mtime: mtime,
-            rating: rating ?? self.rating, edit: edit ?? self.edit,
+            rating: rating ?? self.rating, flag: flag ?? self.flag, edit: edit ?? self.edit,
             width: dimensions?.width ?? self.width, height: dimensions?.height ?? self.height,
             score: score ?? self.score,
             captured: captured ?? self.captured, exif: exif ?? self.exif,

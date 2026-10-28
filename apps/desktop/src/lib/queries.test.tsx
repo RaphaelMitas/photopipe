@@ -11,9 +11,11 @@ import {
   usePrefetchRender,
   useRender,
   useSetEdit,
+  useSetFlag,
   useSetRating,
   useSetRatings,
   useStacking,
+  useTrashBlocked,
 } from "./queries";
 import { setRawDecoderVersion } from "./rawDecoder";
 import { makeImage } from "./test-image";
@@ -953,5 +955,33 @@ describe("useEnriched", () => {
     await act(() => client.refetchQueries({ queryKey: ["images", "s"] }));
     await waitFor(() => expect(seen).toBe(2));
     expect(enriched).toBe(true);
+  });
+});
+
+describe("useTrashBlocked", () => {
+  it("holds the trash while a flag write is still saving", async () => {
+    const client = new QueryClient();
+    client.setQueryData<ImageFile[]>(["images", "shoot1"], [image("A")]);
+    let saved!: (value: unknown) => void;
+    invoke.mockReturnValue(new Promise((resolve) => (saved = resolve)));
+    let flag!: ReturnType<typeof useSetFlag>;
+    let blocked = false;
+    function Harness() {
+      flag = useSetFlag("shoot1");
+      blocked = useTrashBlocked();
+      return null;
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>,
+    );
+    expect(blocked).toBe(false);
+    act(() => {
+      void flag({ path: "/r/shoot1/A.ARW", value: -1 });
+    });
+    await waitFor(() => expect(blocked).toBe(true));
+    await act(async () => saved({ ok: true, result: { flag: -1 } }));
+    await waitFor(() => expect(blocked).toBe(false));
   });
 });
