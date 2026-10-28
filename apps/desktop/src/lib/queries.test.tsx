@@ -4,15 +4,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type Edit, type ImageFile, identityEdit } from "./core";
 import {
   useDeferredEdit,
+  useEnriched,
   useImages,
   useLibrarySync,
   usePasteEdits,
   usePrefetchRender,
   useRender,
   useSetEdit,
+  useSetFlag,
   useSetRating,
   useSetRatings,
   useStacking,
+  useTrashBlocked,
 } from "./queries";
 import { setRawDecoderVersion } from "./rawDecoder";
 import { makeImage } from "./test-image";
@@ -374,6 +377,35 @@ describe("useRender and the RAW decoder", () => {
   });
 });
 
+describe("useRender and a busy lane", () => {
+  it("keeps asking for a render on screen however often the lane drops it", async () => {
+    invoke.mockReset();
+    for (let drop = 0; drop < 5; drop++) {
+      invoke.mockRejectedValueOnce(
+        "superseded: dropped for a newer render request",
+      );
+    }
+    invoke.mockResolvedValue({ cachePath: "/cache/before.jpg" });
+    function Shown() {
+      const before = useRender(
+        { path: "/r/shoot1/A.ARW", mtime: 1, isRaw: true },
+        identityEdit,
+      );
+      return before.data ? <p>{before.data}</p> : null;
+    }
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = render(
+      <QueryClientProvider client={client}>
+        <Shown />
+      </QueryClientProvider>,
+    );
+    expect(await view.findByText("/cache/before.jpg")).toBeTruthy();
+    expect(invoke).toHaveBeenCalledTimes(6);
+  });
+});
+
 describe("useDeferredEdit", () => {
   it("renders a photo you step to with its own edit, never the last one's", async () => {
     invoke.mockReset();
@@ -418,7 +450,7 @@ describe("usePrefetchRender", () => {
     return render.data ? <p>{render.data}</p> : null;
   }
 
-  async function arrive(landed: boolean) {
+  async function arrive(landed: boolean, drops = 1) {
     invoke.mockReset();
     let reject: (reason: string) => void = () => {};
     invoke.mockReturnValueOnce(
@@ -426,6 +458,11 @@ describe("usePrefetchRender", () => {
         reject = rejectFirst;
       }),
     );
+    for (let drop = 1; drop < drops; drop++) {
+      invoke.mockRejectedValueOnce(
+        "superseded: dropped for a newer render request",
+      );
+    }
     invoke.mockResolvedValue({ cachePath: "/cache/b.jpg" });
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false, retryDelay: 0 } },
@@ -449,6 +486,12 @@ describe("usePrefetchRender", () => {
     const view = await arrive(true);
     expect(await view.findByText("/cache/b.jpg")).toBeTruthy();
     expect(invoke).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps asking for a landed prefetch however often the lane drops it", async () => {
+    const view = await arrive(true, 5);
+    expect(await view.findByText("/cache/b.jpg")).toBeTruthy();
+    expect(invoke).toHaveBeenCalledTimes(6);
   });
 
   it("lets a superseded prefetch nobody landed on go", async () => {
@@ -883,5 +926,62 @@ describe("useStacking", () => {
     listed = [listed[0], { ...image("b"), stack: "/r/shoot1/b.ARW" }];
     await act(() => client.refetchQueries({ queryKey: ["images", "s"] }));
     await waitFor(() => expect(ready).toBe(true));
+  });
+});
+
+describe("useEnriched", () => {
+  it("stays on when a photo arriving mid-visit has not been read yet", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    let listed: ImageFile[] = [image("a")];
+    invoke.mockImplementation(async () => ({ images: listed }));
+
+    let enriched = false;
+    let seen = 0;
+    function Harness() {
+      enriched = useEnriched("s", true);
+      seen = useImages("s").data?.length ?? 0;
+      return null;
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(enriched).toBe(true));
+
+    listed = [...listed, { ...image("b"), enriched: false }];
+    await act(() => client.refetchQueries({ queryKey: ["images", "s"] }));
+    await waitFor(() => expect(seen).toBe(2));
+    expect(enriched).toBe(true);
+  });
+});
+
+describe("useTrashBlocked", () => {
+  it("holds the trash while a flag write is still saving", async () => {
+    const client = new QueryClient();
+    client.setQueryData<ImageFile[]>(["images", "shoot1"], [image("A")]);
+    let saved!: (value: unknown) => void;
+    invoke.mockReturnValue(new Promise((resolve) => (saved = resolve)));
+    let flag!: ReturnType<typeof useSetFlag>;
+    let blocked = false;
+    function Harness() {
+      flag = useSetFlag("shoot1");
+      blocked = useTrashBlocked();
+      return null;
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>,
+    );
+    expect(blocked).toBe(false);
+    act(() => {
+      void flag({ path: "/r/shoot1/A.ARW", value: -1 });
+    });
+    await waitFor(() => expect(blocked).toBe(true));
+    await act(async () => saved({ ok: true, result: { flag: -1 } }));
+    await waitFor(() => expect(blocked).toBe(false));
   });
 });

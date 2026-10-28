@@ -14,6 +14,7 @@ import {
   Crop,
   Info,
   RotateCcw,
+  SquareSplitHorizontal,
   X,
 } from "lucide-react";
 import { type ReactNode, useRef, useState } from "react";
@@ -457,12 +458,16 @@ export function EditSidebar({
   onChange,
   onHold,
   crop,
+  split,
+  onToggleSplit,
   canPaste,
   onCopySettings,
   onPasteSettings,
   onClose,
 }: Props & {
   onHold: () => void;
+  split: boolean;
+  onToggleSplit: () => void;
   canPaste: boolean;
   onCopySettings: () => void;
   onPasteSettings: () => void;
@@ -479,13 +484,25 @@ export function EditSidebar({
       <div className="flex items-center gap-1 border-border border-b px-3 py-2">
         <span className="font-medium text-sm">Edit</span>
         <Button
+          variant={split ? "secondary" : "ghost"}
+          size="icon"
+          data-testid="edit-split"
+          aria-pressed={split}
+          onClick={onToggleSplit}
+          disabled={cropping}
+          title="Compare before and after (y)"
+          className="ml-auto size-6 text-muted-foreground"
+        >
+          <SquareSplitHorizontal className="size-3" />
+        </Button>
+        <Button
           variant="ghost"
           size="icon"
           data-testid="edit-copy-settings"
           onClick={onCopySettings}
           disabled={cropping}
           title="Copy settings (⌘C)"
-          className="ml-auto size-6 text-muted-foreground"
+          className="size-6 text-muted-foreground"
         >
           <Copy className="size-3" />
         </Button>

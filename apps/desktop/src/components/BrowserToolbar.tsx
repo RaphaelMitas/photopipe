@@ -8,9 +8,10 @@ import {
   DropdownMenuTrigger,
 } from "@photopipe/ui/components/dropdown-menu";
 import { ArrowUpDown, LayoutGrid, Rows3, Sparkles } from "lucide-react";
+import type { ReactNode } from "react";
 import type { PassProgress } from "@/lib/core";
 import { pref } from "@/lib/pref";
-import { isSortKey, SORT_KEYS, type SortKey } from "@/lib/sort";
+import { isSortKey, SORT_KEYS, SORT_LABELS, type SortKey } from "@/lib/sort";
 
 export type ViewMode = "grid" | "list";
 
@@ -19,13 +20,6 @@ export const viewPref = pref(
   (raw): ViewMode => (raw === "list" ? "list" : "grid"),
   String,
 );
-
-const SORT_LABELS: Record<SortKey, string> = {
-  name: "Name",
-  date: "Date",
-  rating: "Rating",
-  score: "Instinct",
-};
 
 type Props = {
   purpose: string;
@@ -36,6 +30,7 @@ type Props = {
   sortReady: Record<SortKey, boolean>;
   scoring: PassProgress | null;
   justRated: boolean;
+  children?: ReactNode;
 };
 
 export function BrowserToolbar({
@@ -47,6 +42,7 @@ export function BrowserToolbar({
   sortReady,
   scoring,
   justRated,
+  children,
 }: Props) {
   const rating = scoring?.running === true;
   const done = rating && scoring.total > 0 ? scoring.done / scoring.total : 0;
@@ -75,6 +71,7 @@ export function BrowserToolbar({
           Rated · Sort by Instinct
         </Button>
       )}
+      {children}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button size="sm" variant="outline" data-testid="sort">

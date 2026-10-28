@@ -15,16 +15,21 @@ import {
 import { Switch } from "@photopipe/ui/components/switch";
 import { ChevronLeft } from "lucide-react";
 import type { ReactNode } from "react";
-import type { ImageFile, PassProgress } from "@/lib/core";
+import type { Flag, ImageFile, PassProgress } from "@/lib/core";
+import { exposureParts, takenText } from "@/lib/exif";
 import { fileName } from "@/lib/fileName";
 import { instinctScore } from "@/lib/instinct";
 import { sortImages } from "@/lib/sort";
 import type { Stack } from "@/lib/stacks";
 import { filmstripPref } from "./Filmstrip";
 import { autoAdvancePref } from "./Loupe";
-import { type RatingFilter, RatingFilterGroup } from "./RatingFilter";
+import {
+  type RatingCounts,
+  type RatingFilter,
+  RatingFilterGroup,
+} from "./RatingFilter";
 import { SidebarBrandHeader } from "./SidebarBrandHeader";
-import { Stars } from "./Stars";
+import { FlagButtons, Stars } from "./Stars";
 
 export type SidebarStacks = {
   on: boolean;
@@ -41,8 +46,11 @@ type Props = {
   stacks: SidebarStacks;
   betterThan: number | null;
   filter: RatingFilter;
-  ratingCounts: number[];
+  ratingCounts: RatingCounts;
+  /// The stack's shared flag outside it, so the buttons show what a click will toggle.
+  flag: Flag;
   onRate: (path: string, rating: number) => void;
+  onFlag: (path: string, flag: Flag) => void;
   onBackToGrid: () => void;
 };
 
@@ -53,7 +61,9 @@ export function LoupeSidebar({
   betterThan,
   filter,
   ratingCounts,
+  flag,
   onRate,
+  onFlag,
   onBackToGrid,
 }: Props) {
   const filmstrip = filmstripPref.use();
@@ -102,11 +112,18 @@ export function LoupeSidebar({
             >
               {position}
             </span>
-            <Stars
-              value={image.rating}
-              onRate={(rating) => onRate(image.path, rating)}
-              className="mt-1 text-base"
-            />
+            <ShotInfo image={image} />
+            <span className="mt-1 flex items-center gap-2">
+              <FlagButtons
+                value={flag}
+                onFlag={(flag) => onFlag(image.path, flag)}
+              />
+              <Stars
+                value={image.rating}
+                onRate={(rating) => onRate(image.path, rating)}
+                className="text-base"
+              />
+            </span>
             {instinct !== null && (
               <div className="mt-2 flex flex-col gap-1" data-testid="instinct">
                 <div className="flex justify-between font-mono text-xs">
@@ -181,7 +198,7 @@ export function LoupeSidebar({
               : stacks.current.inside
                 ? `←→ frames · 1–5 rate this frame${andNext} · p pick${andNext}`
                 : `←→ stacks · 1–5 rate every frame${andNext} · enter inside`
-          } · 0 clear · ↑↓ exposure · pinch or double-click zoom · r reset · e edit · ⌘C/⌘V settings · ⌘Z undo · s stacks · a auto-advance · ${
+          } · 0 clear · ↑↓ exposure · pinch or double-click zoom · r reset · e edit · y before/after · ⌘C/⌘V settings · ⌘Z undo · s stacks · a auto-advance · ${
             stacks.current?.inside ? "esc up" : "esc"
           }`}
         </p>
@@ -226,6 +243,41 @@ const finding = (progress: PassProgress | null) =>
   progress && progress.total > 0
     ? ` · ${Math.floor((progress.done / progress.total) * 100)}%`
     : "…";
+
+function ShotInfo({ image }: { image: ImageFile }) {
+  const exposure = exposureParts(image.exif);
+  const gear = [image.exif.lens, image.exif.body].filter(Boolean).join(" · ");
+  return (
+    <>
+      {exposure.length > 0 && (
+        <div
+          data-testid="loupe-exposure"
+          className="mt-1 flex justify-between gap-2 font-mono text-xs"
+        >
+          {exposure.map((part) => (
+            <span key={part}>{part}</span>
+          ))}
+        </div>
+      )}
+      {gear && (
+        <span
+          className="truncate font-mono text-[10px] text-muted-foreground"
+          title={gear}
+        >
+          {gear}
+        </span>
+      )}
+      {image.captured !== null && (
+        <span
+          data-testid="loupe-taken"
+          className="font-mono text-[10px] text-muted-foreground"
+        >
+          {takenText(image.captured)}
+        </span>
+      )}
+    </>
+  );
+}
 
 function InstinctPick({ stack }: { stack: Stack }) {
   const [instinct] = sortImages(stack.frames, "score");

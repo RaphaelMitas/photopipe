@@ -9,7 +9,9 @@ public final class LibraryService: @unchecked Sendable {
         case unknownImage(String)
         case pathOutsideRoot(String)
         case invalidRating(Int)
+        case invalidFlag(Int)
         case invalidProjectName(String)
+        case invalidExportName(String)
         case invalidProjectDay(String)
         case projectExists(String)
         case unreadableProjectFile(String)
@@ -118,11 +120,11 @@ public final class LibraryService: @unchecked Sendable {
         let scores = scorer.values(for: images)
         // one read, so a print landing mid-call cannot be counted without being stacked
         let answers = printer.answers(for: images)
-        let prints = answers.compactMapValues { $0 }
-        let stacks = Stacker.stacks(prints)
+        let captured = images.reduce(into: [String: Double]()) { $0[$1.path] = $1.captured }
+        let stacks = Stacker.stacks(answers.compactMapValues { $0 }, captured: captured)
         return images.map { image in
             image.with(
-                score: scores[image.path], captured: prints[image.path]?.captured,
+                score: scores[image.path],
                 stack: stacks[image.path] ?? (answers.keys.contains(image.path) ? image.path : nil))
         }
     }
@@ -411,6 +413,18 @@ public final class LibraryService: @unchecked Sendable {
         return RatingChange(rating: settled.rating)
     }
 
+    public struct FlagChange: Sendable, Encodable {
+        public let flag: Int
+    }
+
+    public func setFlag(shoot shootName: String, path: String, flag: Int) throws -> FlagChange {
+        guard (-1...1).contains(flag) else { throw ServiceError.invalidFlag(flag) }
+        let settled = try write(shoot: shootName, path: path) { image in
+            try XMP.writeFlag(flag, file: image)
+        }
+        return FlagChange(flag: settled.flag)
+    }
+
     public struct EditChange: Sendable, Encodable {
         public let edit: Edit
     }
@@ -422,15 +436,9 @@ public final class LibraryService: @unchecked Sendable {
         return EditChange(edit: settled.edit)
     }
 
-    /// A leading dot is refused because the scan would hide the folder.
     static func projectFolder(name: String) throws -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let scalars = trimmed.unicodeScalars
-        guard !trimmed.isEmpty, !scalars.contains("/"), !scalars.contains(":"),
-            scalars.first != ".", !scalars.contains(where: { $0.value < 0x20 || $0.value == 0x7F })
-        else {
-            throw ServiceError.invalidProjectName(name)
-        }
+        guard FileActions.isUsableName(trimmed) else { throw ServiceError.invalidProjectName(name) }
         return trimmed
     }
 
@@ -542,15 +550,24 @@ public final class LibraryService: @unchecked Sendable {
     public func startExport(
         shoot shootName: String, paths: [String], destination: String,
         zip: Bool, flatten: Bool, format: ExportFormat, quality: Int,
-        longEdge: Int? = nil, decoderVersion: Int? = nil
+        longEdge: Int? = nil, decoderVersion: Int? = nil, names: [String]? = nil
     ) throws -> Exporter.Progress {
         let images = try images(inShoot: shootName, paths: pathsUnderRoot(paths))
         guard !images.isEmpty else { throw FileActions.ActionError.noFiles }
+        if let names {
+            guard names.count == images.count else {
+                throw ServiceError.invalidExportName(
+                    "\(names.count) names for \(images.count) photos")
+            }
+            if let bad = names.first(where: { !FileActions.isUsableName($0) }) {
+                throw ServiceError.invalidExportName("\(bad) is not a usable file name")
+            }
+        }
         return try exporter.start(
             plan: .export(
                 images, to: destination, zip: zip, flatten: flatten, format: format,
                 quality: quality, longEdge: longEdge, decoderVersion: decoderVersion,
-                renderer: renderer),
+                names: names, renderer: renderer),
             settled: rescanWhenSettled)
     }
 
@@ -656,8 +673,12 @@ extension LibraryService.ServiceError: WireError {
         case .unknownImage(let stem): ResponseError(code: "unknown_image", message: stem)
         case .invalidRating(let rating):
             ResponseError(code: "invalid_rating", message: "rating \(rating) not in 0...5")
+        case .invalidFlag(let flag):
+            ResponseError(code: "invalid_flag", message: "flag \(flag) not in -1...1")
         case .invalidProjectName(let name):
             ResponseError(code: "invalid_project_name", message: "\(name) is not a usable project name")
+        case .invalidExportName(let message):
+            ResponseError(code: "invalid_export_name", message: message)
         case .invalidProjectDay(let day):
             ResponseError(code: "invalid_project_day", message: "\(day) is not a YYYY-MM-DD date")
         case .unknownExport(let id): ResponseError(code: "unknown_export", message: id)

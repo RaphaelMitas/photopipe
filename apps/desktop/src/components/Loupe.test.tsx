@@ -16,7 +16,7 @@ import {
 } from "@testing-library/react";
 import { Toaster } from "sonner";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type Edit, type ImageFile, identityEdit } from "@/lib/core";
+import { type Edit, type Flag, type ImageFile, identityEdit } from "@/lib/core";
 import { type CropDraft, draftFromEdit } from "@/lib/crop";
 import { makeImage } from "@/lib/test-image";
 import { EditSidebar } from "./EditPanel";
@@ -32,7 +32,7 @@ const invoke = vi.hoisted(() =>
   vi.fn<
     (
       cmd: string,
-      args: { method: string; params?: { path?: string } },
+      args: { method: string; params?: { path?: string; edit?: Edit } },
     ) => Promise<unknown>
   >(async () => ({ cachePath: "/fake/render.jpg" })),
 );
@@ -64,10 +64,14 @@ function renderLoupe(
   exposure = 0,
   cropDraft: CropDraft | null = null,
   stacks: LoupeStacks | null = null,
+  { split = false, edit = {} }: { split?: boolean; edit?: Partial<Edit> } = {},
 ) {
   const onNavigate = vi.fn();
   const onClose = vi.fn();
-  const onRate = vi.fn(() => true);
+  const onRate = vi.fn(
+    (_path: string, rating: number): number | null => rating,
+  );
+  const onFlag = vi.fn((_path: string, flag: Flag): Flag | null => flag);
   const onEditChange = vi.fn();
   const onCropDraft = vi.fn();
   const onApplyCrop = vi.fn();
@@ -81,7 +85,7 @@ function renderLoupe(
       <Loupe
         images={makeImages()}
         index={index}
-        edit={editWith(exposure)}
+        edit={{ ...editWith(exposure), ...edit }}
         crop={{
           draft: cropDraft,
           set: onCropDraft,
@@ -90,10 +94,12 @@ function renderLoupe(
           cancel: onCancelCrop,
         }}
         stacks={stacks}
+        split={split}
         onEditChange={onEditChange}
         onNavigate={onNavigate}
         onClose={onClose}
         onRate={onRate}
+        onFlag={onFlag}
       />
     </QueryClientProvider>,
   );
@@ -101,6 +107,7 @@ function renderLoupe(
     onNavigate,
     onClose,
     onRate,
+    onFlag,
     onEditChange,
     onCropDraft,
     onApplyCrop,
@@ -115,7 +122,7 @@ function stackOf(images: ImageFile[], inside: boolean): LoupeStacks {
     inside,
     onEnter: vi.fn(),
     onLeave: vi.fn(),
-    onPick: vi.fn(() => true),
+    onSweep: vi.fn(() => true),
   };
 }
 
@@ -125,11 +132,9 @@ describe("Loupe with stacks", () => {
     const { onRate, onClose } = renderLoupe(0, 0, null, stacks);
     fireEvent.keyDown(window, { key: "4" });
     fireEvent.keyDown(window, { key: "ArrowRight" });
-    fireEvent.keyDown(window, { key: "p" });
     fireEvent.keyDown(window, { key: "Enter" });
     fireEvent.keyDown(window, { key: "Escape" });
     expect(onRate).toHaveBeenCalledWith("/r/s/DSC00001.ARW", 4);
-    expect(stacks.onPick).not.toHaveBeenCalled();
     expect(stacks.onEnter).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
     expect(screen.getByTestId("stack-chip")).toHaveTextContent("3 frames");
@@ -137,17 +142,48 @@ describe("Loupe with stacks", () => {
 
   it("rates one frame inside, picks with P or the button, and goes up on escape", () => {
     const stacks = stackOf(makeImages(), true);
-    const { onRate, onClose, onNavigate } = renderLoupe(1, 0, null, stacks);
+    const { onRate, onFlag, onClose, onNavigate } = renderLoupe(
+      1,
+      0,
+      null,
+      stacks,
+    );
     fireEvent.keyDown(window, { key: "3" });
     expect(onRate).toHaveBeenCalledWith("/r/s/DSC00002.ARW", 3);
     fireEvent.keyDown(window, { key: "ArrowRight" });
     expect(onNavigate).toHaveBeenCalledWith("/r/s/DSC00003.ARW");
     fireEvent.keyDown(window, { key: "p" });
     fireEvent.click(screen.getByTestId("stack-pick"));
-    expect(stacks.onPick).toHaveBeenCalledTimes(2);
+    fireEvent.keyDown(window, { key: "x" });
+    fireEvent.keyDown(window, { key: "u" });
+    expect(onFlag.mock.calls).toEqual([
+      ["/r/s/DSC00002.ARW", 1],
+      ["/r/s/DSC00002.ARW", 1],
+      ["/r/s/DSC00002.ARW", -1],
+      ["/r/s/DSC00002.ARW", 0],
+    ]);
     fireEvent.keyDown(window, { key: "Escape" });
     expect(stacks.onLeave).toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("offers ⇧X once the stack has a pick, for the frames nobody judged", () => {
+    const [first, ...rest] = makeImages();
+    const stacks = stackOf([{ ...first, flag: 1 }, ...rest], true);
+    renderLoupe(0, 0, null, stacks);
+    expect(screen.getByTestId("stack-sweep")).toHaveTextContent(
+      "Reject 2 undecided frames",
+    );
+    fireEvent.keyDown(window, { key: "X", shiftKey: true });
+    fireEvent.click(screen.getByTestId("stack-sweep"));
+    expect(stacks.onSweep).toHaveBeenCalledTimes(2);
+  });
+
+  it("a caps-lock X still rejects, and a held key flags once", () => {
+    const { onFlag } = renderLoupe(1);
+    fireEvent.keyDown(window, { key: "X" });
+    fireEvent.keyDown(window, { key: "x", repeat: true });
+    expect(onFlag.mock.calls).toEqual([["/r/s/DSC00002.ARW", -1]]);
   });
 
   it("goes in and out of a stack by tapping its chip", () => {
@@ -191,7 +227,7 @@ describe("Loupe auto-advance", () => {
     expect(onNavigate).toHaveBeenCalledWith("/r/s/DSC00002.ARW");
     fireEvent.keyDown(window, { key: "0" });
     fireEvent.keyDown(window, { key: "4", repeat: true });
-    onRate.mockReturnValueOnce(false);
+    onRate.mockReturnValueOnce(null);
     fireEvent.keyDown(window, { key: "2" });
     expect(onRate).toHaveBeenCalledTimes(3);
     expect(onNavigate).toHaveBeenCalledTimes(1);
@@ -238,15 +274,21 @@ describe("Loupe auto-advance", () => {
     ).toBeInTheDocument();
   });
 
-  it("leaves the stack for the next one after a pick, not after a click on Pick", () => {
+  it("moves on after a flag but not after U, an unpick or a click, and ⇧X leaves the stack", () => {
     autoAdvancePref.set(true);
     const stacks = twoStacks(true);
-    const { onNavigate } = renderLoupe(1, 0, null, stacks);
-    fireEvent.click(screen.getByTestId("stack-pick"));
-    expect(onNavigate).not.toHaveBeenCalled();
+    const { onFlag, onNavigate } = renderLoupe(0, 0, null, stacks);
+    fireEvent.keyDown(window, { key: "x" });
+    expect(onFlag).toHaveBeenCalledWith(one.path, -1);
+    expect(onNavigate).toHaveBeenLastCalledWith(two.path);
+    fireEvent.keyDown(window, { key: "u" });
+    onFlag.mockReturnValueOnce(0);
     fireEvent.keyDown(window, { key: "p" });
-    expect(stacks.onPick).toHaveBeenCalledTimes(2);
-    expect(onNavigate).toHaveBeenCalledWith(three.path);
+    fireEvent.click(screen.getByTestId("stack-pick"));
+    expect(onNavigate).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(window, { key: "X", shiftKey: true });
+    expect(stacks.onSweep).toHaveBeenCalled();
+    expect(onNavigate).toHaveBeenLastCalledWith(three.path);
   });
 });
 
@@ -353,6 +395,46 @@ describe("Loupe render order", () => {
   });
 });
 
+describe("Loupe split", () => {
+  const framed = {
+    crop: { left: 0.1, top: 0.2, right: 0.9, bottom: 0.8 },
+    cropAngle: 1.5,
+    rotation: 90,
+  };
+
+  it("puts the photo as shot beside the edit, on the same framing", async () => {
+    renderLoupe(0, 1, null, null, { split: true, edit: framed });
+    await waitFor(() =>
+      expect(screen.getByTestId("loupe-before-image")).toBeInTheDocument(),
+    );
+    const edits = invoke.mock.calls
+      .filter(([, { method }]) => method === "render")
+      .map(([, { params }]) => params?.edit);
+    expect(edits).toContainEqual({ ...identityEdit, ...framed });
+    expect(edits).toContainEqual({ ...identityEdit, exposure: 1, ...framed });
+  });
+
+  it("asks for the edit first, so an idle lane renders it first", async () => {
+    invoke.mockClear();
+    renderLoupe(0, 1, null, null, { split: true });
+    await waitFor(() =>
+      expect(screen.getByTestId("loupe-before-image")).toBeInTheDocument(),
+    );
+    const exposures = invoke.mock.calls
+      .filter(([, { method }]) => method === "render")
+      .map(([, { params }]) => params?.edit?.exposure);
+    expect(exposures.slice(0, 2)).toEqual([1, 0]);
+  });
+
+  it("steps aside while cropping", () => {
+    renderLoupe(0, 1, draftFromEdit(identityEdit, 3000, 2000), null, {
+      split: true,
+    });
+    expect(screen.queryByTestId("loupe-before")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("split-divider")).not.toBeInTheDocument();
+  });
+});
+
 describe("Loupe crop mode", () => {
   const draft = () => draftFromEdit(identityEdit, 3000, 2000);
 
@@ -415,13 +497,17 @@ describe("Loupe crop mode", () => {
 describe("LoupeSidebar", () => {
   const filter: RatingFilter = {
     op: "gte",
-    stars: 0,
+    stars: new Set(),
+    flags: new Set(),
+    key: "",
     setOp: vi.fn(),
-    setStars: vi.fn(),
+    clickStars: vi.fn(),
+    clickFlag: vi.fn(),
     matches: () => true,
     active: false,
     reset: vi.fn(),
   };
+  const counts = { stars: [3, 0, 0, 0, 0, 0], picked: 0, rejected: 0 };
   const noStacks = {
     on: false,
     ready: false,
@@ -430,8 +516,9 @@ describe("LoupeSidebar", () => {
     current: null,
   };
 
-  it("shows name, position and stars; rates", () => {
+  it("shows name, position and stars; rates and flags", () => {
     const onRate = vi.fn();
+    const onFlag = vi.fn();
     render(
       <TooltipProvider>
         <SidebarProvider>
@@ -440,9 +527,11 @@ describe("LoupeSidebar", () => {
             position="2/3"
             stacks={noStacks}
             betterThan={null}
-            ratingCounts={[3, 0, 0, 0, 0, 0]}
+            ratingCounts={counts}
+            flag={0}
             filter={filter}
             onRate={onRate}
+            onFlag={onFlag}
             onBackToGrid={vi.fn()}
           />
         </SidebarProvider>
@@ -453,6 +542,8 @@ describe("LoupeSidebar", () => {
 
     fireEvent.click(screen.getByTestId("star-4"));
     expect(onRate).toHaveBeenCalledWith("/r/s/DSC00002.ARW", 4);
+    fireEvent.click(screen.getByTestId("flag-reject"));
+    expect(onFlag).toHaveBeenCalledWith("/r/s/DSC00002.ARW", -1);
   });
 
   function renderSidebar(image: ImageFile, betterThan: number | null) {
@@ -464,9 +555,11 @@ describe("LoupeSidebar", () => {
             position="2/3"
             stacks={noStacks}
             betterThan={betterThan}
-            ratingCounts={[3, 0, 0, 0, 0, 0]}
+            ratingCounts={counts}
+            flag={0}
             filter={filter}
             onRate={vi.fn()}
+            onFlag={vi.fn()}
             onBackToGrid={vi.fn()}
           />
         </SidebarProvider>
@@ -514,6 +607,8 @@ describe("EditSidebar", () => {
               apply: onApplyCrop,
               cancel: onCancelCrop,
             }}
+            split={false}
+            onToggleSplit={vi.fn()}
             canPaste={false}
             onCopySettings={vi.fn()}
             onPasteSettings={vi.fn()}
@@ -637,6 +732,7 @@ describe("EditSidebar", () => {
     expect(screen.queryByTestId("enter-crop")).not.toBeInTheDocument();
     expect(screen.getByTestId("edit-reset-all")).toBeDisabled();
     expect(screen.getByTestId("edit-close")).toBeDisabled();
+    expect(screen.getByTestId("edit-split")).toBeDisabled();
     fireEvent.click(screen.getByTestId("crop-apply"));
     expect(onApplyCrop).toHaveBeenCalled();
     fireEvent.click(screen.getByTestId("crop-cancel"));

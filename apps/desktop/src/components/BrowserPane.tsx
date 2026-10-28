@@ -7,6 +7,7 @@ import { BrowserToolbar, viewPref } from "./BrowserToolbar";
 import { ImageGrid } from "./ImageGrid";
 import { ImageList } from "./ImageList";
 import { ImportButton } from "./ImportButton";
+import { TrashRejects } from "./TrashRejects";
 
 type Props = {
   images: ImageFile[];
@@ -19,6 +20,8 @@ type Props = {
   onSelect: (path: string, modifiers: SelectModifiers) => void;
   focusPath: string | null;
   revealed: number;
+  rejects: ImageFile[];
+  onTrashRejects: () => void;
   onOpen: (index: number) => void;
   onImport: (from: PhotoSource) => void;
 };
@@ -34,6 +37,8 @@ export function BrowserPane({
   onSelect,
   focusPath,
   revealed,
+  rejects,
+  onTrashRejects,
   onOpen,
   onImport,
 }: Props) {
@@ -50,7 +55,9 @@ export function BrowserPane({
         sortReady={sortReady}
         scoring={scoring}
         justRated={justRated}
-      />
+      >
+        <TrashRejects rejects={rejects} onConfirm={onTrashRejects} />
+      </BrowserToolbar>
       {images.length === 0 ? (
         <div className="flex flex-col items-start gap-3 p-8">
           <p

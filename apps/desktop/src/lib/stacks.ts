@@ -1,4 +1,4 @@
-import type { ImageFile } from "./core";
+import type { Flag, ImageFile } from "./core";
 import { flagPref } from "./pref";
 import { type SortKey, sortImages } from "./sort";
 
@@ -32,22 +32,31 @@ export function groupStacks(images: ImageFile[]): Stack[] {
 export const stackRating = (stack: Stack) =>
   Math.max(...stack.frames.map((frame) => frame.rating));
 
+export function stackFlag(stack: Stack): Flag {
+  if (stack.frames.some((frame) => frame.flag === 1)) return 1;
+  return stack.frames.every((frame) => frame.flag === -1) ? -1 : 0;
+}
+
 export function stackRatingLabel(stack: Stack): string | null {
   const rating = stackRating(stack);
   if (rating === 0) return null;
   const rated = stack.frames.filter((frame) => frame.rating === rating).length;
   if (rated === stack.frames.length) return `all ★${rating}`;
-  if (rated === 1) return `★${rating} picked`;
   return `★${rating} on ${rated} of ${stack.frames.length}`;
 }
 
+const undecided = (frame: ImageFile) => frame.flag === 0 && frame.rating === 0;
+
 export function coverOf(stack: Stack): ImageFile {
   const score = (frame: ImageFile) => frame.score ?? Number.NEGATIVE_INFINITY;
+  const better = (a: ImageFile, b: ImageFile) =>
+    a.flag !== b.flag
+      ? a.flag > b.flag
+      : a.rating !== b.rating
+        ? a.rating > b.rating
+        : score(a) > score(b);
   return stack.frames.reduce((best, frame) =>
-    frame.rating > best.rating ||
-    (frame.rating === best.rating && score(frame) > score(best))
-      ? frame
-      : best,
+    better(frame, best) ? frame : best,
   );
 }
 
@@ -67,36 +76,51 @@ export const anchorFor = (stack: Stack | undefined, path: string | null) =>
     ? path
     : null;
 
-const changes = (stack: Stack, ratingOf: (frame: ImageFile) => number) =>
+const changesTo = <V>(
+  photos: ImageFile[],
+  of: (photo: ImageFile) => V,
+  value: V,
+) =>
   new Map(
-    stack.frames
-      .filter((frame) => frame.rating !== ratingOf(frame))
-      .map((frame) => [frame.path, ratingOf(frame)]),
+    photos
+      .filter((photo) => of(photo) !== value)
+      .map((photo) => [photo.path, value]),
   );
 
-export const rateStack = (stack: Stack, rating: number) =>
-  changes(stack, () => rating);
+export const ratedTo = (photos: ImageFile[], rating: number) =>
+  changesTo(photos, (photo) => photo.rating, rating);
 
-export function pickInStack(stack: Stack, path: string) {
-  const kept = stackRating(stack) > 0 ? stackRating(stack) : 5;
-  const writes = changes(stack, (frame) => (frame.path === path ? kept : 0));
-  return {
-    writes,
-    kept,
-    cleared: [...writes.keys()].filter((written) => written !== path).length,
-  };
-}
+export const sharedFlag = (photos: ImageFile[]): Flag =>
+  photos.every((photo) => photo.flag === photos[0]?.flag)
+    ? (photos[0]?.flag ?? 0)
+    : 0;
+
+export const toggled = (current: Flag, flag: Flag): Flag =>
+  current === flag ? 0 : flag;
+
+export const toggledFlag = (photos: ImageFile[], flag: Flag) =>
+  toggled(sharedFlag(photos), flag);
+
+export const toggledFlags = (photos: ImageFile[], flag: Flag) =>
+  changesTo<Flag>(photos, (photo) => photo.flag, toggledFlag(photos, flag));
+
+export const sweepStack = (stack: Stack) =>
+  changesTo<Flag>(
+    stackFlag(stack) === 1 ? stack.frames.filter(undecided) : [],
+    (photo) => photo.flag,
+    -1,
+  );
 
 export function stackedOrder(
   images: ImageFile[],
-  matches: (image: { rating: number }) => boolean,
+  matches: (image: { rating: number; flag: Flag }) => boolean,
   sort: SortKey,
   current?: ImageFile,
 ): ImageFile[] {
   return groupStacks(sortImages(images, sort))
     .filter(
       (stack) =>
-        matches({ rating: stackRating(stack) }) ||
+        matches({ rating: stackRating(stack), flag: stackFlag(stack) }) ||
         (current !== undefined && inStack(stack, current.path)),
     )
     .flatMap((stack) => stack.frames);

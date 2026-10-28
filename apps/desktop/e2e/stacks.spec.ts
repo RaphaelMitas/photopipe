@@ -19,21 +19,53 @@ test("stacks: rate a whole stack, pick one inside it, undo the pick", async ({
   await expect(page.getByTestId("stack-chip")).toContainText("Inside stack");
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC01201.ARW");
-  await expect(page.getByTestId("stack-pick")).toContainText("clears 2 others");
+  await expect(page.getByTestId("stack-pick")).toContainText(
+    "others stay as they are",
+  );
   await page.keyboard.press("p");
-  await expect(page.getByTestId("stack-chip")).toContainText("★4 picked");
+  await expect(page.getByTestId("stack-pick")).toContainText("Unpick");
   await expect(page.locator("[data-rating='4']")).toBeVisible();
 
-  await page.keyboard.press("ArrowRight");
-  await expect(page.getByTestId("loupe-name")).toHaveText("DSC01203.ARW");
-  await expect(page.getByTestId("stack-chip")).toHaveCount(0);
-
-  // undo lands on a frame the pick cleared, inside its stack; Esc shows the restored stack
-  await page.keyboard.press("Meta+z");
-  await expect(page.getByTestId("loupe-name")).toHaveText("DSC01200.ARW");
-  await expect(page.getByTestId("stack-chip")).toContainText("Inside stack");
   await page.keyboard.press("Escape");
+  await expect(page.getByTestId("loupe-name")).toHaveText("DSC01201.ARW");
+  await expect(page.getByTestId("stack-chip")).toContainText("✓ 1");
   await expect(page.getByTestId("stack-chip")).toContainText("all ★4");
+  await expect(page.getByTestId("flag-pick")).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+
+  await page.keyboard.press("Meta+z");
+  await expect(page.getByTestId("stack-chip")).not.toContainText("✓");
+});
+
+test("stacks: a pick, then ⇧X rejects the frames nobody judged", async ({
+  page,
+}) => {
+  await openShoot(page, "2026-08-01_dolomites");
+  await page.locator("[data-path='DSC01206.ARW']").click();
+  await page.keyboard.press("s");
+  await expect(page.getByTestId("stack-chip")).toContainText("5 frames");
+  await expect(page.getByTestId("stack-sweep")).toHaveCount(0);
+
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("3");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("p");
+  await expect(page.getByTestId("stack-sweep")).toContainText(
+    "Reject 3 undecided frames",
+  );
+  await page.keyboard.press("Shift+X");
+  await expect(page.getByTestId("stack-sweep")).toHaveCount(0);
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("stack-chip")).toContainText("✓ 1");
+  await expect(page.getByTestId("stack-chip")).toContainText("✕ 3");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("trash-rejects")).toContainText(
+    "Trash 3 rejects",
+  );
 });
 
 test("opening a frame that is not its stack's cover starts inside the stack", async ({
@@ -93,15 +125,15 @@ test("auto-advance: undo inside a stack returns to the frame, after a whole-stac
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("4");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC01202.ARW");
-  await expect(fours).toHaveAttribute("title", "1 rated 4 stars");
+  await expect(fours).toHaveAttribute("title", /^1 rated 4 stars/);
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC01201.ARW");
   await page.keyboard.press("4");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC01203.ARW");
-  await expect(fours).toHaveAttribute("title", "3 rated 4 stars");
+  await expect(fours).toHaveAttribute("title", /^3 rated 4 stars/);
 
   await page.keyboard.press("Meta+z");
-  await expect(fours).toHaveAttribute("title", "1 rated 4 stars");
+  await expect(fours).toHaveAttribute("title", /^1 rated 4 stars/);
   await expect(page.getByTestId("loupe-position")).toHaveText("stack 1/193");
   await expect(page.getByTestId("stack-chip")).toContainText("3 frames");
 });
@@ -132,7 +164,7 @@ test("auto-advance: undoing a stack rated out of the filter lands outside it", a
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC01202.ARW");
   await expect(page.getByTestId("hist-5")).toHaveAttribute(
     "title",
-    "2 rated 5 stars",
+    /^2 rated 5 stars/,
   );
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC01201.ARW");
@@ -144,13 +176,13 @@ test("auto-advance: undoing a stack rated out of the filter lands outside it", a
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC01203.ARW");
   await expect(page.getByTestId("hist-3")).toHaveAttribute(
     "title",
-    "3 rated 3 stars",
+    /^3 rated 3 stars/,
   );
 
   await page.keyboard.press("Meta+z");
   await expect(page.getByTestId("hist-3")).toHaveAttribute(
     "title",
-    "1 rated 3 stars",
+    /^1 rated 3 stars/,
   );
   await expect(page.getByTestId("stack-chip")).toContainText("3 frames");
 });

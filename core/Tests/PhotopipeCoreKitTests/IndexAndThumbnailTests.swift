@@ -24,7 +24,11 @@ private let sampleFiles: [String: [ImageFile]] = [
             size: 2, mtime: 2),
     ],
     "misc": [
-        ImageFile(path: "/r/misc/x.dng", rel: "x.dng", ext: "dng", size: 5, mtime: 3)
+        ImageFile(
+            path: "/r/misc/x.dng", rel: "x.dng", ext: "dng", size: 5, mtime: 3,
+            captured: 1_786_217_068.5,
+            exif: Exif(shutter: 1 / 40, aperture: 2, iso: 6400, focal: 35, lens: "FE 35mm F1.8"),
+            enriched: true)
     ],
 ]
 
@@ -47,6 +51,7 @@ private let sampleFiles: [String: [ImageFile]] = [
     let dng = try #require(loaded.filesByShoot["misc"]?.first)
     #expect(dng.size == 5)
     #expect(dng.mtime == 3)
+    #expect(dng == sampleFiles["misc"]?.first)
 }
 
 @Test func indexSaveReplacesFully() throws {

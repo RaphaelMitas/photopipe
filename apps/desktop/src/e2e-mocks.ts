@@ -38,6 +38,15 @@ const zellImages: ImageFile[] = [
   image("/fake/2026-07-12_zell", "abends/DSC00938.ARW", {
     rating: 2,
     score: 0.74,
+    captured: 1_783_884_667,
+    exif: {
+      shutter: 1 / 40,
+      aperture: 2,
+      iso: 6400,
+      focal: 35,
+      lens: "FE 35mm F1.8",
+      body: "ILCE-7M4",
+    },
   }),
   image("/fake/2026-07-12_zell", "abends/DSC00943.ARW", {
     width: 4672,
@@ -357,6 +366,12 @@ const E2E_HANDLERS: CoreHandlers = {
     if (!target) throw `unknown_image: ${params.path}`;
     target.rating = params.rating;
     return { rating: target.rating };
+  },
+  setFlag: (params) => {
+    const target = allImages().find((entry) => entry.path === params.path);
+    if (!target) throw `unknown_image: ${params.path}`;
+    target.flag = params.flag;
+    return { flag: target.flag };
   },
   setEdit: (params) => {
     const target = allImages().find((entry) => entry.path === params.path);

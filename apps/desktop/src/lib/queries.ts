@@ -1,11 +1,13 @@
 import {
   type DefaultError,
+  hashKey,
   keepPreviousData,
   MutationObserver,
   type MutationObserverOptions,
   type QueryClient,
   queryOptions,
   skipToken,
+  useIsMutating,
   useMutation,
   useQueries,
   useQuery,
@@ -27,6 +29,7 @@ import {
   type Edit,
   type ExportProgress,
   editKey,
+  type Flag,
   type ImageFile,
   normalizeEdit,
   normalizeImage,
@@ -125,27 +128,34 @@ export function useScoring(shoot: string | null, enabled: boolean) {
   return { progress, justRated };
 }
 
-/// Stacks are trusted once every listed photo carries one, which the core only
-/// gives a photo it has analyzed; until then they would regroup under you.
-export function useStacking(shoot: string | null, enabled: boolean) {
-  const { progress } = usePass("stackShoot", shoot, enabled);
-  const images = useImages(shoot).data;
-  const complete =
-    images !== undefined &&
-    images.length > 0 &&
-    images.every((image) => image.stack !== null);
-  // newly imported photos must not take stacks away mid-visit
+// photos arriving mid-visit must not take a finished pass back
+function useLatch(shoot: string | null, enabled: boolean, complete: boolean) {
   const [readyShoot, setReadyShoot] = useState<string | null>(null);
   useEffect(() => {
     // off, or a library switch, drops the latch: shoot names repeat across libraries
     if (!enabled) setReadyShoot(null);
     else if (complete) setReadyShoot(shoot);
   }, [enabled, complete, shoot]);
-  return {
-    progress,
-    ready:
-      enabled && (complete || (readyShoot !== null && readyShoot === shoot)),
-  };
+  return enabled && (complete || (readyShoot !== null && readyShoot === shoot));
+}
+
+/// Stacks are trusted once every listed photo carries one, which the core only
+/// gives a photo it has analyzed; until then they would regroup under you.
+export function useStacking(shoot: string | null, enabled: boolean) {
+  const { progress } = usePass("stackShoot", shoot, enabled);
+  const images = useImages(shoot).data;
+  // the core cuts stacks by capture time, which only enrichment reads
+  const complete =
+    images !== undefined &&
+    images.length > 0 &&
+    images.every((image) => image.stack !== null && image.enriched);
+  return { progress, ready: useLatch(shoot, enabled, complete) };
+}
+
+export function useEnriched(shoot: string | null, enabled: boolean) {
+  const images = useImages(shoot).data;
+  const complete = images?.every((image) => image.enriched) ?? false;
+  return useLatch(shoot, enabled, complete);
 }
 
 export function useThumbnail(
@@ -165,6 +175,11 @@ export function useThumbnail(
 type RenderFile = Pick<ImageFile, "path" | "mtime" | "isRaw"> | undefined;
 
 const PREVIEW_MAX_PIXEL = 2560;
+
+const superseded = (error: unknown) => String(error).startsWith("superseded");
+// The split's before keeps its key through a slider drag, whose renders can drop it any number of times.
+const renderRetry = (failures: number, error: unknown) =>
+  superseded(error) || failures < 3;
 
 function renderDecoderVersion(file: RenderFile, version: number) {
   return file?.isRaw ? version : undefined;
@@ -202,6 +217,9 @@ function renderQueryOptions(
           ).cachePath
       : skipToken,
     staleTime: Number.POSITIVE_INFINITY,
+    retry: renderRetry,
+    retryDelay: (failures, error) =>
+      superseded(error) ? 0 : 1000 * 2 ** failures,
   });
 }
 
@@ -266,8 +284,8 @@ export function usePrefetchRender(file: RenderFile, edit: Edit | undefined) {
     queryClient.prefetchQuery({
       ...options,
       // the loupe may land on it mid-flight and inherit this fetch's retry
-      retry: (failures) =>
-        failures < 3 &&
+      retry: (failures, error) =>
+        renderRetry(failures, error) &&
         (queryClient
           .getQueryCache()
           .find({ queryKey: options.queryKey })
@@ -332,12 +350,16 @@ export function useRaw9Availability(enabled: boolean) {
 }
 
 const SET_RATING_KEY = ["setRating"];
+const SET_FLAG_KEY = ["setFlag"];
+const TRASH_KEY = ["write", "trash"];
 const SET_EDIT_KEY = ["setEdit"];
 
+const XMP_WRITE_KEYS = [SET_RATING_KEY, SET_FLAG_KEY, SET_EDIT_KEY];
+
 function xmpWritesInFlight(queryClient: QueryClient): number {
-  return (
-    queryClient.isMutating({ mutationKey: SET_RATING_KEY }) +
-    queryClient.isMutating({ mutationKey: SET_EDIT_KEY })
+  return XMP_WRITE_KEYS.reduce(
+    (sum, mutationKey) => sum + queryClient.isMutating({ mutationKey }),
+    0,
   );
 }
 
@@ -466,6 +488,20 @@ const RATING_FIELD: PhotoField<number> = {
     `${pluralize(count, "photo")} kept the rating they had`,
 };
 
+const FLAG_FIELD: PhotoField<Flag> = {
+  mutationKey: SET_FLAG_KEY,
+  of: (image) => image.flag,
+  same: (a, b) => a === b,
+  patch: (flag) => ({ flag }),
+  write: (shoot, path, flag) =>
+    writeInOrder(
+      path,
+      async () => (await coreRequest("setFlag", { shoot, path, flag })).flag,
+    ),
+  failedOne: (path) => `Flagging ${fileName(path)} failed`,
+  failedMany: (count) => `${pluralize(count, "photo")} kept the flag they had`,
+};
+
 const EDIT_FIELD: PhotoField<Edit> = {
   mutationKey: SET_EDIT_KEY,
   of: (image) => image.edit,
@@ -552,6 +588,9 @@ function useFieldWrite<V>(shoot: string | null, field: PhotoField<V>) {
 
 export const useSetRating = (shoot: string | null) =>
   useFieldWrite(shoot, RATING_FIELD);
+
+export const useSetFlag = (shoot: string | null) =>
+  useFieldWrite(shoot, FLAG_FIELD);
 
 export const useSetEdit = (shoot: string | null) =>
   useFieldWrite(shoot, EDIT_FIELD);
@@ -641,6 +680,19 @@ export const usePasteEdits = (shoot: string | null) =>
 export const useSetRatings = (shoot: string | null) =>
   useBatchWrite(shoot, RATING_FIELD);
 
+export const useSetFlags = (shoot: string | null) =>
+  useBatchWrite(shoot, FLAG_FIELD);
+
+// an undo still waiting on a write could un-reject a photo already in the Trash
+const TRASH_BLOCKERS = new Set([...XMP_WRITE_KEYS, TRASH_KEY].map(hashKey));
+
+export const useTrashBlocked = () =>
+  useIsMutating({
+    predicate: ({ options }) =>
+      options.mutationKey !== undefined &&
+      TRASH_BLOCKERS.has(hashKey(options.mutationKey)),
+  }) > 0;
+
 export function useReveal() {
   return useMutation({
     mutationKey: ["write", "reveal"],
@@ -654,7 +706,7 @@ export function useReveal() {
 export function useTrash(shoot: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationKey: ["write", "trash"],
+    mutationKey: TRASH_KEY,
     mutationFn: (paths: string[]) => coreRequest("trash", { shoot, paths }),
     onSuccess: (result, paths) => {
       toast.success(`Moved ${pluralize(paths.length, "photo")} to the Trash`, {

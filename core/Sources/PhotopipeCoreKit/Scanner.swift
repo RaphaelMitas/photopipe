@@ -96,30 +96,34 @@ public func walkLibrary(root: String) throws -> LibrarySnapshot {
 /// off the request path. Already-settled files are returned untouched.
 public func enrich(_ file: ImageFile) -> ImageFile {
     guard !file.enriched else { return file }
-    let (rating, edit) = XMP.read(file: file)
+    let read = XMP.read(file: file)
+    let header = Dimensions.header(for: file)
     return file.with(
-        rating: rating,
-        edit: edit,
-        dimensions: Dimensions.cached(for: file) ?? Dimensions.fallback,
-        enriched: true)
+        rating: read.rating,
+        flag: read.flag,
+        edit: read.edit,
+        dimensions: header.dimensions ?? Dimensions.fallback,
+        enriched: true,
+        captured: header.captured,
+        exif: header.exif)
 }
 
-/// A cached record only counts while both the file and the sidecar it was read
-/// from are the ones still on disk — otherwise a rating written since, by us or
-/// by Lightroom, would stay invisible behind the cache.
+/// A sidecar rewrite rereads rating, flag and edit but keeps the header, so the photo stays in its stack.
 public func carryEnrichment(
     into walked: LibrarySnapshot, from cache: [String: ImageFile]
 ) -> LibrarySnapshot {
     var imagesByShoot: [String: [ImageFile]] = [:]
     for (shoot, images) in walked.imagesByShoot {
         imagesByShoot[shoot] = images.map { image in
-            guard let known = cache[image.path], known.enriched,
-                known.mtime == image.mtime, known.size == image.size,
-                known.sidecarMtime == image.sidecarMtime
+            guard let known = cache[image.path], known.mtime == image.mtime,
+                known.size == image.size
             else { return image }
-            return image.with(
-                rating: known.rating, edit: known.edit,
-                dimensions: (known.width, known.height), enriched: true)
+            let header = image.with(
+                dimensions: (known.width, known.height), captured: known.captured,
+                exif: known.exif)
+            guard known.enriched, known.sidecarMtime == image.sidecarMtime else { return header }
+            return header.with(
+                rating: known.rating, flag: known.flag, edit: known.edit, enriched: true)
         }
     }
     let shoots = walked.shoots.map { shoot in

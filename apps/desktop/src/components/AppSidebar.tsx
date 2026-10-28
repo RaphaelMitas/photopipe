@@ -17,7 +17,11 @@ import { pluralize } from "@/lib/plural";
 import { flagPref } from "@/lib/pref";
 import type { PhotoSource } from "@/lib/roots";
 import { ImportButton } from "./ImportButton";
-import { type RatingFilter, RatingFilterGroup } from "./RatingFilter";
+import {
+  type RatingCounts,
+  type RatingFilter,
+  RatingFilterGroup,
+} from "./RatingFilter";
 import { SidebarBrandHeader } from "./SidebarBrandHeader";
 
 export const showInfoPref = flagPref(
@@ -34,7 +38,7 @@ type Props = {
   onRevealShoot?: (path: string) => void;
   onShootSettings: () => void;
   filter: RatingFilter;
-  ratingCounts: number[];
+  ratingCounts: RatingCounts;
   filterEnabled: boolean;
   rootPath: string;
   onChangeRoot: () => void;

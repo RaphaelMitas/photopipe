@@ -58,6 +58,14 @@ export const identityEdit: Edit = Object.freeze({
   rotation: 0,
 });
 
+export function framing(edit: Edit) {
+  return {
+    crop: edit.crop ?? null,
+    cropAngle: edit.cropAngle ?? 0,
+    rotation: edit.rotation ?? 0,
+  };
+}
+
 export function isIdentityEdit(edit: Edit): boolean {
   return editKey(edit) === editKey(identityEdit);
 }
@@ -93,20 +101,35 @@ export function editKey(edit: Edit): string {
   ].join("|");
 }
 
-// `enriched` is false while rating, edit and dimensions are still the
-// placeholders the core's directory walk left behind.
+export type Flag = -1 | 0 | 1;
+
+// units as in core Exif.swift: shutter in seconds, focal in mm
+export type Exif = {
+  shutter?: number;
+  aperture?: number;
+  iso?: number;
+  focal?: number;
+  lens?: string;
+  body?: string;
+};
+
+// `enriched` is false while rating, edit, dimensions, capture time and exif
+// are still the placeholders the core's directory walk left behind.
 export type ImageFile = {
   path: string;
   rel: string;
   size: number;
   mtime: number;
   rating: number;
+  flag: Flag;
   edit: Edit;
   width: number;
   height: number;
   // Vision's aesthetic score, -1..1, null for a photo it has not rated.
   score: number | null;
+  // seconds, the camera clock read as if it were UTC
   captured: number | null;
+  exif: Exif;
   // path of the first photo in its stack, its own when alone, null until analyzed
   stack: string | null;
   enriched: boolean;
@@ -228,6 +251,10 @@ export type CoreMethods = {
     params: { shoot: string | null; path: string; rating: number };
     result: { rating: number };
   };
+  setFlag: {
+    params: { shoot: string | null; path: string; flag: Flag };
+    result: { flag: Flag };
+  };
   setEdit: {
     params: { shoot: string | null; path: string; edit: Edit };
     result: { edit: Partial<Edit> };
@@ -262,6 +289,7 @@ export type CoreMethods = {
       quality: number;
       longEdge: number | null;
       decoderVersion: number;
+      names: string[] | null;
     };
     result: ExportProgress;
   };

@@ -67,6 +67,10 @@ public final class Dispatcher: Sendable {
             return try library.setRating(
                 shoot: request.string("shoot"), path: request.string("path"),
                 rating: request.int("rating"))
+        case "setFlag":
+            return try library.setFlag(
+                shoot: request.string("shoot"), path: request.string("path"),
+                flag: request.int("flag"))
         case "setEdit":
             return try library.setEdit(
                 shoot: request.string("shoot"), path: request.string("path"),
@@ -96,7 +100,8 @@ public final class Dispatcher: Sendable {
                     ?? .original,
                 quality: request.param("quality")?.intValue ?? 90,
                 longEdge: request.param("longEdge")?.intValue,
-                decoderVersion: request.param("decoderVersion")?.intValue)
+                decoderVersion: request.param("decoderVersion")?.intValue,
+                names: request.param("names")?.stringArrayValue)
         case "exportStatus":
             return try library.exportStatus(id: request.string("id"))
         case "cancelExport":

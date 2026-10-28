@@ -46,11 +46,14 @@ struct RawFormatsTests {
         #expect(upright.width > upright.height && turned.width < turned.height)
 
         try XMP.writeRating(4, file: file)
+        try XMP.writeFlag(-1, file: try image(raw))
         try XMP.writeEdit(Edit(exposure: 0.5, rotation: 90), file: try image(raw))
         let sidecar = dir.appendingPathComponent("IMG_0001.xmp")
         #expect(try exiftoolTag("-XMP:Rating", of: sidecar) == "4")
+        #expect(try exiftoolTag("-XMP-xmpDM:Pick", of: sidecar) == "-1")
         var read = XMP.read(file: try image(raw))
-        #expect(read.rating == 4 && read.edit.exposure == 0.5 && read.edit.rotation == 90)
+        #expect(read.rating == 4 && read.flag == -1)
+        #expect(read.edit.exposure == 0.5 && read.edit.rotation == 90)
 
         try writeTextRating(5, at: raw)
         read = XMP.read(file: try image(raw))
@@ -79,6 +82,14 @@ struct RawFormatsTests {
         #expect(XMP.read(file: try image(raw)).edit.rotation == 90)
         let turned = try renderedSize(try image(raw), Edit(rotation: 90), with: renderer)
         #expect(turned.width > turned.height, "got \(turned)")
+    }
+
+    @Test(arguments: otherBrands + ["sony-a7iii.arw", "sony-a7iv.arw"])
+    func everyBrandShowsTheExposureItWasShotWith(_ name: String) throws {
+        guard let raw = rawFixture(name) else { return }
+        let exif = Exif(try #require(Dimensions.properties(at: raw)))
+        #expect(exif.shutter != nil && exif.aperture != nil && exif.iso != nil, "got \(exif)")
+        #expect(exif.focal != nil && exif.lens != nil && exif.body != nil, "got \(exif)")
     }
 
     // a NEF: the macOS 15 CI runs on does not surface the XMP inside a CR3

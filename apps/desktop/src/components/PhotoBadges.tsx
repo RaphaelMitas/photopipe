@@ -1,4 +1,34 @@
-import { Star } from "lucide-react";
+import { cn } from "@photopipe/ui/lib/utils";
+import { Check, Star } from "lucide-react";
+import type { Flag } from "@/lib/core";
+
+/// Rejects stay in view, just faded, so a change of mind is one look away.
+export const rejectedFade = (flag: Flag) =>
+  flag === -1 && "opacity-30 transition-opacity";
+
+export function PickMark({
+  flag,
+  className,
+  testid,
+}: {
+  flag: Flag;
+  className?: string;
+  testid?: string;
+}) {
+  if (flag !== 1) return null;
+  return (
+    <span
+      data-testid={testid}
+      title="Picked"
+      className={cn(
+        "flex size-4 items-center justify-center rounded-sm bg-success text-background",
+        className,
+      )}
+    >
+      <Check className="size-2.5" strokeWidth={3} />
+    </span>
+  );
+}
 
 export function ExposureBadge({
   exposure,

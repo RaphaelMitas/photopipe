@@ -54,3 +54,13 @@ import Testing
     #expect(enriched.width == 3000)
     #expect(enriched.height == 2000)
 }
+
+@Test func anISOPastWhatISOSpeedRatingsHoldsShowsInFull() {
+    let props: [CFString: Any] = [
+        kCGImagePropertyExifDictionary: [
+            kCGImagePropertyExifISOSpeedRatings: [65535],
+            kCGImagePropertyExifISOSpeed: 102_400,
+        ]
+    ]
+    #expect(Exif(props).iso == 102_400)
+}

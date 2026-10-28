@@ -59,11 +59,12 @@ func writeTextEdit(_ edit: Edit, at url: URL) throws {
     try XMP.writeText(XMP.editTags(edit, file: file).tags, clearing: edit.isIdentity, file: file)
 }
 
-private func parsed(_ description: String, baseOrientation: Int = 1) -> (rating: Int?, edit: Edit) {
+private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judgment {
     let packet = """
         <x:xmpmeta xmlns:x="adobe:ns:meta/">
         <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
           xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+          xmlns:xmpDM="http://ns.adobe.com/xmp/1.0/DynamicMedia/"
           xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
           xmlns:tiff="http://ns.adobe.com/tiff/1.0/">
         \(description)
@@ -678,6 +679,51 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> (rating:
 
     #expect(XMP.read(file: try image(jpg)).rating == 0)
     #expect(try exiftoolTag("-XMP:Rating", of: jpg).isEmpty)
+}
+
+@Test func theFlagSitsBesideTheStarsWhereLightroomKeepsIt() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00006.ARW")
+    try Data("fake".utf8).write(to: arw)
+    let jpg = dir.appendingPathComponent("DSC00006.JPG")
+    try writeGrayJPEG(to: jpg)
+
+    for (url, tagged) in [(arw, XMP.sidecarURL(forImagePath: arw.path)), (jpg, jpg)] {
+        try XMP.writeRating(3, file: try image(url))
+        try XMP.writeFlag(-1, file: try image(url))
+        var read = XMP.read(file: try image(url))
+        #expect(read.rating == 3 && read.flag == -1, "\(url.lastPathComponent)")
+        #expect(try exiftoolTag("-XMP-xmpDM:Pick", of: tagged) == "-1")
+
+        try XMP.writeFlag(1, file: try image(url))
+        #expect(XMP.read(file: try image(url)).flag == 1)
+
+        try XMP.writeFlag(0, file: try image(url))
+        read = XMP.read(file: try image(url))
+        #expect(read.rating == 3 && read.flag == 0, "\(url.lastPathComponent)")
+        #expect(try exiftoolTag("-XMP-xmpDM:Pick", of: tagged).isEmpty)
+    }
+}
+
+@Test func theTextWriterKeepsTheFlagToo() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00007.ARW")
+    try Data("fake".utf8).write(to: arw)
+
+    try writeTextRating(4, at: arw)
+    try XMP.writeText(XMP.flagTags(1), clearing: false, file: try image(arw))
+    let read = XMP.read(file: try image(arw))
+    #expect(read.rating == 4 && read.flag == 1)
+}
+
+@Test func aBridgeRejectReadsAsUnratedAndUnflagged() {
+    let bridge = parsed(#"<rdf:Description xmp:Rating="-1"/>"#)
+    #expect(bridge.rating == nil && bridge.flag == nil)
+    let lightroom = parsed(#"<rdf:Description xmp:Rating="2" xmpDM:pick="-1"/>"#)
+    #expect(lightroom.rating == 2 && lightroom.flag == -1)
 }
 
 @Test func sameStemFilesAreIndependentPhotos() throws {
