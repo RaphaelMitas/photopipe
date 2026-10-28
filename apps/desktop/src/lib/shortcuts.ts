@@ -81,7 +81,6 @@ function withBindings(
 const overlaps = (a: ActionId, b: ActionId) =>
   ACTIONS[a].contexts.some((context) => ACTIONS[b].contexts.includes(context));
 
-/// Every action one key press would also fire, given where both apply.
 const holdersOf = (
   id: ActionId,
   press: readonly string[],
@@ -97,39 +96,48 @@ const holdersOf = (
 export const conflictsOf = (id: ActionId, press: readonly string[]) =>
   holdersOf(id, press, overridesPref.get());
 
-/// Stores the press's first chord. Whoever held the key gets `replacing`
-/// back where it is still free, so a swap loses nothing and clashes nowhere.
-export function assignShortcut(
+/// Whoever held the key gets `replacing` back if it is still free, so a swap loses nothing.
+function evict(
+  overrides: Overrides,
+  id: ActionId,
+  press: readonly string[],
+  replacing: string | null,
+): Overrides {
+  let next = overrides;
+  for (const other of holdersOf(id, press, next)) {
+    const kept = bindingsOf(other, next).filter((key) => !press.includes(key));
+    const free =
+      replacing !== null &&
+      holdersOf(other, [replacing], next).every((holder) => holder === id);
+    next = withBindings(next, other, free ? [...kept, replacing] : kept);
+  }
+  return next;
+}
+
+export function assigned(
+  overrides: Overrides,
   id: ActionId,
   replacing: string | null,
   press: readonly string[],
-) {
+): Overrides {
   const [chord] = press;
-  if (chord === undefined) return;
-  let overrides = overridesPref.get();
-  for (const other of holdersOf(id, press, overrides)) {
-    const kept = bindingsOf(other, overrides).filter(
-      (key) => !press.includes(key),
-    );
-    const free =
-      replacing !== null &&
-      holdersOf(other, [replacing], overrides).every((holder) => holder === id);
-    overrides = withBindings(
-      overrides,
-      other,
-      free ? [...kept, replacing] : kept,
-    );
-  }
-  const mine = bindingsOf(id, overrides);
-  overrides = withBindings(
-    overrides,
+  if (chord === undefined) return overrides;
+  const next = evict(overrides, id, press, replacing);
+  const mine = bindingsOf(id, next);
+  return withBindings(
+    next,
     id,
     replacing && mine.includes(replacing)
       ? mine.map((key) => (key === replacing ? chord : key))
       : [...mine, chord],
   );
-  overridesPref.set(overrides);
 }
+
+export const assignShortcut = (
+  id: ActionId,
+  replacing: string | null,
+  press: readonly string[],
+) => overridesPref.set(assigned(overridesPref.get(), id, replacing, press));
 
 export function unbindShortcut(id: ActionId, chord: string) {
   const overrides = overridesPref.get();
@@ -143,7 +151,10 @@ export function unbindShortcut(id: ActionId, chord: string) {
 }
 
 export function resetShortcut(id: ActionId) {
-  overridesPref.set(withBindings(overridesPref.get(), id, ACTIONS[id].keys));
+  const { keys } = ACTIONS[id];
+  overridesPref.set(
+    withBindings(evict(overridesPref.get(), id, keys, null), id, keys),
+  );
 }
 
 export const resetAllShortcuts = () => overridesPref.set({});
@@ -168,8 +179,7 @@ const SPECIFICITY: readonly Context[] = ["crop", "loupe", "browser"];
 export const activeContext = (): Context =>
   SPECIFICITY.find((context) => claims.includes(context)) ?? "browser";
 
-// A tooltip spends Escape on closing itself; the app should still get it,
-// unless a popover or menu under the tooltip is next in line.
+// A tooltip spends Escape on closing itself; pass it on unless a popover or menu is next in line.
 const released = new WeakSet<Event>();
 export function releaseEscape(event: KeyboardEvent) {
   if (

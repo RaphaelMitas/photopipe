@@ -366,26 +366,26 @@ export function isChord(value: string): boolean {
   );
 }
 
-const SYMBOLS: Partial<Record<string, string>> = {
-  ctrl: "⌃",
-  alt: "⌥",
-  shift: "⇧",
-  meta: "⌘",
-  arrowleft: "←",
-  arrowright: "→",
-  arrowup: "↑",
-  arrowdown: "↓",
-  enter: "↩",
-  escape: "esc",
-  tab: "⇥",
-  space: "Space",
-  backspace: "⌫",
-  delete: "⌦",
-};
+const SYMBOLS = new Map([
+  ["ctrl", "⌃"],
+  ["alt", "⌥"],
+  ["shift", "⇧"],
+  ["meta", "⌘"],
+  ["arrowleft", "←"],
+  ["arrowright", "→"],
+  ["arrowup", "↑"],
+  ["arrowdown", "↓"],
+  ["enter", "↩"],
+  ["escape", "esc"],
+  ["tab", "⇥"],
+  ["space", "Space"],
+  ["backspace", "⌫"],
+  ["delete", "⌦"],
+]);
 
 export function formatChord(chord: string): string {
   const { modifiers, key } = parseChord(chord);
   return [...modifiers, key]
-    .map((part) => SYMBOLS[part] ?? part.toUpperCase())
+    .map((part) => SYMBOLS.get(part) ?? part.toUpperCase())
     .join("");
 }

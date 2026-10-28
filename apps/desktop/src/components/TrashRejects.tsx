@@ -12,6 +12,7 @@ import { useState } from "react";
 import type { ImageFile } from "@/lib/core";
 import { pluralize } from "@/lib/plural";
 import { useTrashBlocked } from "@/lib/queries";
+import { ShortcutTooltip } from "./ShortcutTooltip";
 import { Thumbnail } from "./Thumbnail";
 
 const PREVIEWS = 6;
@@ -29,17 +30,18 @@ export function TrashRejects({
   const count = pluralize(rejects.length, "rejected photo");
   return (
     <>
-      <Button
-        size="sm"
-        variant="ghost"
-        data-testid="trash-rejects"
-        onClick={() => setOpen(true)}
-        title="Move every rejected photo in this project to the Trash"
-        className="text-destructive hover:text-destructive"
-      >
-        <Trash2 />
-        Trash {pluralize(rejects.length, "reject")}…
-      </Button>
+      <ShortcutTooltip label="Move every rejected photo in this project to the Trash">
+        <Button
+          size="sm"
+          variant="ghost"
+          data-testid="trash-rejects"
+          onClick={() => setOpen(true)}
+          className="text-destructive hover:text-destructive"
+        >
+          <Trash2 />
+          Trash {pluralize(rejects.length, "reject")}…
+        </Button>
+      </ShortcutTooltip>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent data-testid="trash-rejects-dialog">
           <DialogHeader>

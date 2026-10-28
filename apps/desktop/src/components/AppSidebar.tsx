@@ -110,29 +110,31 @@ export function AppSidebar({
                   className="w-full text-xs"
                 />
                 <div className="flex gap-1.5">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    data-testid="shoot-settings"
-                    title="Project settings"
-                    onClick={() => onShootSettings()}
-                    className="min-w-0 flex-1 text-xs"
-                  >
-                    <Settings2 />
-                    Settings
-                  </Button>
-                  {onRevealShoot && (
+                  <ShortcutTooltip label="Project settings">
                     <Button
                       size="sm"
                       variant="outline"
-                      data-testid="reveal-shoot"
-                      title="Reveal project folder in Finder"
-                      onClick={() => onRevealShoot(currentShoot.path)}
+                      data-testid="shoot-settings"
+                      onClick={() => onShootSettings()}
                       className="min-w-0 flex-1 text-xs"
                     >
-                      <FolderOpen />
-                      Reveal
+                      <Settings2 />
+                      Settings
                     </Button>
+                  </ShortcutTooltip>
+                  {onRevealShoot && (
+                    <ShortcutTooltip label="Reveal project folder in Finder">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        data-testid="reveal-shoot"
+                        onClick={() => onRevealShoot(currentShoot.path)}
+                        className="min-w-0 flex-1 text-xs"
+                      >
+                        <FolderOpen />
+                        Reveal
+                      </Button>
+                    </ShortcutTooltip>
                   )}
                 </div>
               </div>

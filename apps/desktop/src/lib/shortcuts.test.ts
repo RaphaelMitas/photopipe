@@ -6,6 +6,7 @@ import {
   bindingsOf,
   releaseEscape,
   resetAllShortcuts,
+  resetShortcut,
   useShortcutContext,
   useShortcuts,
 } from "./shortcuts";
@@ -56,6 +57,13 @@ describe("rebinding", () => {
     expect(fired.length).toBe(new Set(fired).size);
   });
 
+  it("takes its keys back on reset", () => {
+    assignShortcut("rate.0", null, ["p"]);
+    resetShortcut("flag.pick");
+    expect(bindingsOf("flag.pick")).toEqual(["p"]);
+    expect(bindingsOf("rate.0")).toEqual(["0"]);
+  });
+
   it("falls back to defaults for stored junk", () => {
     localStorage.setItem(
       "photopipe.shortcuts",
@@ -75,6 +83,16 @@ function mount(context: Context, handlers: Parameters<typeof useShortcuts>[0]) {
     useShortcutContext(context);
     useShortcuts(handlers);
   });
+}
+
+function escapeThroughTooltip() {
+  const tooltip = (event: KeyboardEvent) => {
+    releaseEscape(event);
+    event.preventDefault();
+  };
+  document.addEventListener("keydown", tooltip, { capture: true });
+  fireEvent.keyDown(document.body, { key: "Escape" });
+  document.removeEventListener("keydown", tooltip, { capture: true });
 }
 
 describe("dispatch", () => {
@@ -124,13 +142,7 @@ describe("dispatch", () => {
   it("still gets an Escape a tooltip spent on closing itself", () => {
     const close = vi.fn();
     mount("loupe", { "loupe.close": close });
-    const tooltip = (event: KeyboardEvent) => {
-      releaseEscape(event);
-      event.preventDefault();
-    };
-    document.addEventListener("keydown", tooltip, { capture: true });
-    fireEvent.keyDown(document.body, { key: "Escape" });
-    document.removeEventListener("keydown", tooltip, { capture: true });
+    escapeThroughTooltip();
     expect(close).toHaveBeenCalledOnce();
   });
 
@@ -139,13 +151,7 @@ describe("dispatch", () => {
     mount("loupe", { "loupe.close": close });
     const popover = document.body.appendChild(document.createElement("div"));
     popover.setAttribute("role", "dialog");
-    const tooltip = (event: KeyboardEvent) => {
-      releaseEscape(event);
-      event.preventDefault();
-    };
-    document.addEventListener("keydown", tooltip, { capture: true });
-    fireEvent.keyDown(document.body, { key: "Escape" });
-    document.removeEventListener("keydown", tooltip, { capture: true });
+    escapeThroughTooltip();
     popover.remove();
     expect(close).not.toHaveBeenCalled();
   });

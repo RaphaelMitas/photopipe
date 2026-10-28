@@ -1,16 +1,12 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { openZell } from "./open-shoot";
-
-async function openKeyboardSettings(page: Page) {
-  await page.getByTestId("open-settings").click();
-  await page.getByTestId("settings-keyboard").click();
-}
 
 test("a swapped key flags in the loupe, shows in the tooltip and survives a reload", async ({
   page,
 }) => {
   await openZell(page);
-  await openKeyboardSettings(page);
+  await page.getByTestId("open-settings").click();
+  await page.getByTestId("settings-keyboard").click();
   const pick = page.getByTestId("shortcut-flag.pick");
   const reject = page.getByTestId("shortcut-flag.reject");
   await pick.getByRole("button", { name: "Change P for Pick" }).click();

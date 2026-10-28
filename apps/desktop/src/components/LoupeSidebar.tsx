@@ -19,7 +19,7 @@ import type { Flag, ImageFile, PassProgress } from "@/lib/core";
 import { exposureParts, takenText } from "@/lib/exif";
 import { fileName } from "@/lib/fileName";
 import { instinctScore } from "@/lib/instinct";
-import type { ActionId } from "@/lib/keymap";
+import { type ActionId, RATING_ACTIONS } from "@/lib/keymap";
 import { shortcutLabel, useOverrides } from "@/lib/shortcuts";
 import { sortImages } from "@/lib/sort";
 import type { Stack } from "@/lib/stacks";
@@ -81,6 +81,12 @@ export function LoupeSidebar({
   };
   const withKey = (text: string, id: ActionId) =>
     [text, shortcutLabel(id, overrides)].filter(Boolean).join(" · ");
+  const stars = RATING_ACTIONS.slice(1).map((id) =>
+    shortcutLabel(id, overrides),
+  );
+  const ratingKeys = stars.every((key, index) => key === String(index + 1))
+    ? "1–5"
+    : !stars.includes(null) && stars.join("/");
   const where = stacks.current;
   const inside = where?.inside ?? false;
   const hints = [
@@ -88,11 +94,8 @@ export function LoupeSidebar({
       "photo.previous",
       "photo.next",
     ]),
-    hint(
-      `rate${!where ? "" : inside ? " this frame" : " every frame"}${andNext}`,
-      ["rate.1", "rate.5"],
-      "–",
-    ),
+    ratingKeys &&
+      `${ratingKeys} rate${!where ? "" : inside ? " this frame" : " every frame"}${andNext}`,
     inside && hint(`pick${andNext}`, ["flag.pick"]),
     where && !inside && hint("inside", ["stack.enter"]),
     hint("clear", ["rate.0"]),

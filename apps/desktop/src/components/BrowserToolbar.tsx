@@ -12,6 +12,7 @@ import type { ReactNode } from "react";
 import type { PassProgress } from "@/lib/core";
 import { pref } from "@/lib/pref";
 import { isSortKey, SORT_KEYS, SORT_LABELS, type SortKey } from "@/lib/sort";
+import { ShortcutTooltip } from "./ShortcutTooltip";
 
 export type ViewMode = "grid" | "list";
 
@@ -101,26 +102,30 @@ export function BrowserToolbar({
         </DropdownMenuContent>
       </DropdownMenu>
       <ButtonGroup>
-        <Button
-          size="icon-sm"
-          variant={view === "grid" ? "secondary" : "outline"}
-          data-testid="view-grid"
-          aria-pressed={view === "grid"}
-          title="Grid view"
-          onClick={() => onView("grid")}
-        >
-          <LayoutGrid />
-        </Button>
-        <Button
-          size="icon-sm"
-          variant={view === "list" ? "secondary" : "outline"}
-          data-testid="view-list"
-          aria-pressed={view === "list"}
-          title="List view"
-          onClick={() => onView("list")}
-        >
-          <Rows3 />
-        </Button>
+        <ShortcutTooltip label="Grid view">
+          <Button
+            aria-label="Grid view"
+            size="icon-sm"
+            variant={view === "grid" ? "secondary" : "outline"}
+            data-testid="view-grid"
+            aria-pressed={view === "grid"}
+            onClick={() => onView("grid")}
+          >
+            <LayoutGrid />
+          </Button>
+        </ShortcutTooltip>
+        <ShortcutTooltip label="List view">
+          <Button
+            aria-label="List view"
+            size="icon-sm"
+            variant={view === "list" ? "secondary" : "outline"}
+            data-testid="view-list"
+            aria-pressed={view === "list"}
+            onClick={() => onView("list")}
+          >
+            <Rows3 />
+          </Button>
+        </ShortcutTooltip>
       </ButtonGroup>
       {rating && (
         <div

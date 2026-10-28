@@ -16,6 +16,7 @@ import {
   RESERVED,
 } from "@/lib/keymap";
 import {
+  assigned,
   assignShortcut,
   bindingsOf,
   conflictsOf,
@@ -210,44 +211,10 @@ export function KeyboardSettings() {
                       )}
                     </div>
                     {conflict?.id === id && (
-                      <div
-                        data-testid="shortcut-conflict"
-                        className="my-1 flex items-center gap-2 rounded-lg bg-card px-3 py-2 text-xs"
-                      >
-                        <span className="flex-1">
-                          <Kbd>{formatChord(conflict.press[0])}</Kbd> is already{" "}
-                          <b>
-                            {conflict.others
-                              .map((other) => ACTIONS[other].label)
-                              .join(" and ")}
-                          </b>
-                          .
-                        </span>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          data-testid="shortcut-conflict-take"
-                          onClick={() => {
-                            assignShortcut(
-                              conflict.id,
-                              conflict.replacing,
-                              conflict.press,
-                            );
-                            setConflict(null);
-                          }}
-                          className="h-7 text-xs"
-                        >
-                          {conflict.replacing ? "Swap" : "Take it"}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setConflict(null)}
-                          className="h-7 text-xs"
-                        >
-                          Cancel
-                        </Button>
-                      </div>
+                      <ConflictPrompt
+                        conflict={conflict}
+                        onDone={() => setConflict(null)}
+                      />
                     )}
                   </div>
                 );
@@ -274,6 +241,56 @@ export function KeyboardSettings() {
           Reset all to defaults
         </Button>
       </div>
+    </div>
+  );
+}
+
+function ConflictPrompt({
+  conflict,
+  onDone,
+}: {
+  conflict: Conflict;
+  onDone: () => void;
+}) {
+  const { id, replacing, press, others } = conflict;
+  const after = assigned(useOverrides(), id, replacing, press);
+  const labels = (ids: ActionId[]) =>
+    ids.map((other) => ACTIONS[other].label).join(" and ");
+  const unbound = others.filter(
+    (other) => bindingsOf(other, after).length === 0,
+  );
+  const swaps =
+    replacing !== null &&
+    others.every((other) => bindingsOf(other, after).includes(replacing));
+  return (
+    <div
+      data-testid="shortcut-conflict"
+      className="my-1 flex items-center gap-2 rounded-lg bg-card px-3 py-2 text-xs"
+    >
+      <span className="flex-1">
+        <Kbd>{formatChord(press[0])}</Kbd> is already <b>{labels(others)}</b>.
+        {unbound.length > 0 && ` ${labels(unbound)} will have no key.`}
+      </span>
+      <Button
+        size="sm"
+        variant="secondary"
+        data-testid="shortcut-conflict-take"
+        onClick={() => {
+          assignShortcut(id, replacing, press);
+          onDone();
+        }}
+        className="h-7 text-xs"
+      >
+        {swaps ? "Swap" : "Take it"}
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={onDone}
+        className="h-7 text-xs"
+      >
+        Cancel
+      </Button>
     </div>
   );
 }

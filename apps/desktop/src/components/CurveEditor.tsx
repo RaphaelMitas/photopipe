@@ -12,6 +12,7 @@ import {
   sampleCurve,
 } from "@/lib/curve";
 import { capturePointer, normalizedIn } from "@/lib/pointer";
+import { ShortcutTooltip } from "./ShortcutTooltip";
 
 const W = 200;
 const H = 140;
@@ -189,17 +190,19 @@ export function CurveEditor({ edit, imageSrc, photo, onChange }: Props) {
           />
         ))}
         <span className="flex-1" />
-        <Button
-          variant="ghost"
-          size="icon"
-          data-testid="curve-reset"
-          onClick={() => onChange({ [active.key]: [] })}
-          disabled={isIdentityCurve(edit[active.key])}
-          title="Reset curve"
-          className="size-6 text-muted-foreground"
-        >
-          <RotateCcw />
-        </Button>
+        <ShortcutTooltip label="Reset curve">
+          <Button
+            aria-label="Reset curve"
+            variant="ghost"
+            size="icon"
+            data-testid="curve-reset"
+            onClick={() => onChange({ [active.key]: [] })}
+            disabled={isIdentityCurve(edit[active.key])}
+            className="size-6 text-muted-foreground"
+          >
+            <RotateCcw />
+          </Button>
+        </ShortcutTooltip>
       </div>
       <svg
         viewBox={`0 0 ${W} ${H}`}

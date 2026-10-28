@@ -1,3 +1,4 @@
+import { TooltipProvider } from "@photopipe/ui/components/tooltip";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SortKey } from "@/lib/sort";
@@ -10,17 +11,19 @@ const allReady = { name: true, date: true, rating: true, score: true };
 function toolbar(props: Partial<Parameters<typeof BrowserToolbar>[0]> = {}) {
   const onSort = vi.fn();
   render(
-    <BrowserToolbar
-      purpose="Cull and rate."
-      view="grid"
-      onView={vi.fn()}
-      sort="name"
-      onSort={onSort}
-      sortReady={allReady}
-      scoring={null}
-      justRated={false}
-      {...props}
-    />,
+    <TooltipProvider>
+      <BrowserToolbar
+        purpose="Cull and rate."
+        view="grid"
+        onView={vi.fn()}
+        sort="name"
+        onSort={onSort}
+        sortReady={allReady}
+        scoring={null}
+        justRated={false}
+        {...props}
+      />
+    </TooltipProvider>,
   );
   return { onSort };
 }
