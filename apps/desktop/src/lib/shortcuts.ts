@@ -32,7 +32,7 @@ function decodeOverrides(raw: string | null): Overrides {
       (key): key is string =>
         typeof key === "string" && isChord(key) && !RESERVED.has(key),
     );
-    if (chords.length === list.length) overrides[id] = chords;
+    if (chords.length === list.length) overrides[id] = [...new Set(chords)];
   }
   return overrides;
 }

@@ -45,7 +45,10 @@ export function ShortcutSheet({ context, onClose, onEdit }: Props) {
         className="sm:max-w-3xl"
         onKeyDown={(event) => {
           const toggle = bindingsOf("app.shortcuts", overrides);
-          if (chordsOf(event.nativeEvent).some((c) => toggle.includes(c))) {
+          if (
+            !event.repeat &&
+            chordsOf(event.nativeEvent).some((c) => toggle.includes(c))
+          ) {
             event.preventDefault();
             onClose();
           }
