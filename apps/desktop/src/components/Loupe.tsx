@@ -18,7 +18,6 @@ import {
 } from "@/lib/crop";
 import { clamp01 } from "@/lib/curve";
 import { EXPOSURE_RANGE, EXPOSURE_STEP } from "@/lib/editSliders";
-import { isModalOpen } from "@/lib/modal";
 import { pluralize } from "@/lib/plural";
 import { capturePointer, cursorIn, normalizedIn, useDrag } from "@/lib/pointer";
 import { flagPref } from "@/lib/pref";
@@ -29,6 +28,12 @@ import {
   useThumbnail,
   useViewportRender,
 } from "@/lib/queries";
+import {
+  ratingHandlers,
+  useShortcutContext,
+  useShortcutLabel,
+  useShortcuts,
+} from "@/lib/shortcuts";
 import { type Stack, stackRatingLabel, step, sweepStack } from "@/lib/stacks";
 import type { CropSession } from "@/lib/useCropSession";
 import {
@@ -55,12 +60,6 @@ export const autoAdvancePref = flagPref(
 // Photo pixels, not screen pixels: ten of them stay a fine adjustment on any
 // photo while still showing on screen at a fitted view.
 const NUDGE_PIXELS = 10;
-const NUDGE: Record<string, { x: number; y: number }> = {
-  ArrowLeft: { x: -1, y: 0 },
-  ArrowRight: { x: 1, y: 0 },
-  ArrowUp: { x: 0, y: -1 },
-  ArrowDown: { x: 0, y: 1 },
-};
 
 const CHIP =
   "rounded-md border border-border bg-background/85 px-2.5 py-1 font-mono text-[11px] backdrop-blur-sm";
@@ -234,149 +233,81 @@ export function Loupe({
   const draftRef = useRef(cropDraft);
   draftRef.current = cropDraft;
 
-  useEffect(() => {
-    if (!image) return;
-    const handler = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      // an open popover has already spent this Escape on closing itself
-      if (event.defaultPrevented || isModalOpen()) return;
-      const target = event.target instanceof Element ? event.target : null;
-      if (
-        event.key.startsWith("Arrow") &&
-        target?.closest("[data-slot='slider'], select")
-      ) {
-        return;
-      }
-      const draft = draftRef.current;
-      if (draft) {
-        if (event.key === "Escape") {
-          draftRef.current = null;
-          session.cancel();
-        }
-        // A focused button (Cancel, Reset) or the aspect select acts on
-        // Enter itself.
-        if (event.key === "Enter" && !target?.closest("button, select")) {
-          draftRef.current = null;
-          session.apply();
-        }
-        const nudge = NUDGE[event.key];
-        if (nudge) {
-          event.preventDefault();
-          const nudged = {
-            ...draft,
-            crop: moveCrop(
-              draft.crop,
-              (nudge.x * NUDGE_PIXELS) / displayWidth,
-              (nudge.y * NUDGE_PIXELS) / displayHeight,
-              draft.angle,
-              displayWidth,
-              displayHeight,
-            ),
-          };
-          draftRef.current = nudged;
-          session.set(nudged);
-        }
-        return;
-      }
-      const advance = (to: ImageFile | undefined, end: string) => {
-        if (!autoAdvancePref.get()) return;
-        if (to) onNavigate(to.path);
-        else toast(end, { id: "auto-advance" });
-      };
-      const judged = (outcome: number | null) => {
-        if (!outcome) return;
-        advance(
-          next,
-          stacks?.inside ? "Last frame of this stack" : "Last photo",
-        );
-      };
-      switch (event.key) {
-        case "Escape":
-          if (stacks?.inside) stacks.onLeave();
-          else onClose();
-          break;
-        case "ArrowRight":
-          event.preventDefault();
-          if (next) onNavigate(next.path);
-          break;
-        case "ArrowLeft":
-          event.preventDefault();
-          if (previous) onNavigate(previous.path);
-          break;
-        case "Enter":
-          // a focused button acts on Enter itself
-          if (multiFrame && !stacks.inside && !target?.closest("button")) {
-            event.preventDefault();
-            stacks.onEnter();
-          }
-          break;
-        case "p":
-        case "P":
-          if (!event.repeat) judged(onFlag(image.path, 1));
-          break;
-        case "x":
-        case "X":
-          if (event.repeat) break;
-          if (!event.shiftKey) judged(onFlag(image.path, -1));
-          else if (multiFrame && stacks.onSweep()) {
-            advance(step(stacks.list, image.path, false, 1), "Last photo");
-          }
-          break;
-        case "u":
-        case "U":
-          onFlag(image.path, 0);
-          break;
-        case "a":
-          autoAdvancePref.toggle();
-          break;
-        case "0":
-        case "1":
-        case "2":
-        case "3":
-        case "4":
-        case "5":
-          // held down, the repeats would rate every photo it advances onto
-          if (!event.repeat) judged(onRate(image.path, Number(event.key)));
-          break;
-        case "ArrowUp":
-          event.preventDefault();
-          onEditChange({
-            ...edit,
-            exposure: Math.min(edit.exposure + EXPOSURE_STEP, EXPOSURE_RANGE),
-          });
-          break;
-        case "ArrowDown":
-          event.preventDefault();
-          onEditChange({
-            ...edit,
-            exposure: Math.max(edit.exposure - EXPOSURE_STEP, -EXPOSURE_RANGE),
-          });
-          break;
-        case "r":
-          onEditChange({ ...edit, exposure: 0 });
-          break;
-      }
+  useShortcutContext(cropping ? "crop" : "loupe");
+
+  const nudge = (x: number, y: number) => {
+    const draft = draftRef.current;
+    if (!draft) return false;
+    const nudged = {
+      ...draft,
+      crop: moveCrop(
+        draft.crop,
+        (x * NUDGE_PIXELS) / displayWidth,
+        (y * NUDGE_PIXELS) / displayHeight,
+        draft.angle,
+        displayWidth,
+        displayHeight,
+      ),
     };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [
-    image,
-    images,
-    index,
-    edit,
-    displayWidth,
-    displayHeight,
-    session,
-    stacks,
-    multiFrame,
-    next,
-    previous,
-    onClose,
-    onEditChange,
-    onNavigate,
-    onRate,
-    onFlag,
-  ]);
+    draftRef.current = nudged;
+    session.set(nudged);
+  };
+  useShortcuts({
+    "crop.apply": () => {
+      draftRef.current = null;
+      session.apply();
+    },
+    "crop.cancel": () => {
+      draftRef.current = null;
+      session.cancel();
+    },
+    "crop.left": () => nudge(-1, 0),
+    "crop.right": () => nudge(1, 0),
+    "crop.up": () => nudge(0, -1),
+    "crop.down": () => nudge(0, 1),
+  });
+
+  const advance = (to: ImageFile | undefined, end: string) => {
+    if (!autoAdvancePref.get()) return;
+    if (to) onNavigate(to.path);
+    else toast(end, { id: "auto-advance" });
+  };
+  const judged = (outcome: number | null) => {
+    if (!outcome) return;
+    advance(next, stacks?.inside ? "Last frame of this stack" : "Last photo");
+  };
+  const exposeBy = (by: number) =>
+    onEditChange({
+      ...edit,
+      exposure: Math.max(
+        -EXPOSURE_RANGE,
+        Math.min(edit.exposure + by, EXPOSURE_RANGE),
+      ),
+    });
+  useShortcuts(
+    image
+      ? {
+          "loupe.close": () => (stacks?.inside ? stacks.onLeave() : onClose()),
+          "photo.next": () => next && onNavigate(next.path),
+          "photo.previous": () => previous && onNavigate(previous.path),
+          "stack.enter": () =>
+            multiFrame && !stacks.inside ? stacks.onEnter() : false,
+          ...ratingHandlers((rating) => judged(onRate(image.path, rating))),
+          "flag.pick": () => judged(onFlag(image.path, 1)),
+          "flag.reject": () => judged(onFlag(image.path, -1)),
+          "flag.clear": () => onFlag(image.path, 0),
+          "stack.rejectRest": () => {
+            if (!multiFrame || !stacks.onSweep()) return false;
+            advance(step(stacks.list, image.path, false, 1), "Last photo");
+          },
+          "autoAdvance.toggle": autoAdvancePref.toggle,
+          "exposure.up": () => exposeBy(EXPOSURE_STEP),
+          "exposure.down": () => exposeBy(-EXPOSURE_STEP),
+          "exposure.reset": () => onEditChange({ ...edit, exposure: 0 }),
+        }
+      : {},
+    "loupe",
+  );
 
   if (!image) return null;
 
@@ -693,6 +624,10 @@ function StackOverlay({
   const label = stackRatingLabel(stacks.current);
   const { picked, rejected } = ratingCounts(frames);
   const sweepable = sweepStack(stacks.current).size;
+  const upKey = useShortcutLabel("loupe.close");
+  const enterKey = useShortcutLabel("stack.enter");
+  const pickKey = useShortcutLabel("flag.pick");
+  const sweepKey = useShortcutLabel("stack.rejectRest");
   return (
     <>
       <button
@@ -707,7 +642,8 @@ function StackOverlay({
             <span className="font-semibold">Inside stack</span>
             <span className="text-muted-foreground">
               {frames.findIndex((frame) => frame.path === image.path) + 1} of{" "}
-              {frames.length} · esc to go up
+              {frames.length}
+              {upKey && ` · ${upKey} to go up`}
             </span>
           </>
         ) : (
@@ -718,7 +654,11 @@ function StackOverlay({
               <span className="text-destructive">✕ {rejected}</span>
             )}
             {label && <span className="text-amber-400">{label}</span>}
-            <span className="text-muted-foreground">enter to look inside</span>
+            {enterKey && (
+              <span className="text-muted-foreground">
+                {enterKey} to look inside
+              </span>
+            )}
           </>
         )}
       </button>
@@ -739,7 +679,11 @@ function StackOverlay({
                 others stay as they are
               </span>
             )}
-            <kbd className="rounded bg-muted px-1.5 font-mono text-xs">P</kbd>
+            {pickKey && (
+              <kbd className="rounded bg-muted px-1.5 font-mono text-xs">
+                {pickKey}
+              </kbd>
+            )}
           </button>
         )}
         {sweepable > 0 && (
@@ -751,9 +695,11 @@ function StackOverlay({
             className="flex items-center gap-2.5 rounded-lg border border-destructive/50 bg-background/95 py-1.5 pr-1.5 pl-3 text-destructive text-sm shadow-lg backdrop-blur-sm"
           >
             Reject {pluralize(sweepable, "undecided frame")}
-            <kbd className="rounded bg-muted px-1.5 font-mono text-foreground text-xs">
-              ⇧X
-            </kbd>
+            {sweepKey && (
+              <kbd className="rounded bg-muted px-1.5 font-mono text-foreground text-xs">
+                {sweepKey}
+              </kbd>
+            )}
           </button>
         )}
       </div>

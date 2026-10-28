@@ -7,6 +7,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import { ShortcutTooltip } from "./ShortcutTooltip";
 
 type Props = {
   count: number;
@@ -44,43 +45,46 @@ export function SelectionBar({
         {count} selected
       </span>
       <div className="ml-2 flex items-center gap-1">
-        <Button
-          size="sm"
-          variant="secondary"
-          data-testid="action-export"
-          disabled={busy}
-          onClick={() => onExport()}
-          title="Export selection (⌘E)"
-          className="h-7 text-xs"
-        >
-          <Upload />
-          Export…
-        </Button>
-        {count === 1 && (
+        <ShortcutTooltip label="Export selection" action="export.open">
           <Button
             size="sm"
-            variant="ghost"
-            data-testid="action-copy-settings"
-            onClick={() => onCopySettings()}
-            title="Copy settings (⌘C)"
-            className="h-7 text-xs text-muted-foreground"
+            variant="secondary"
+            data-testid="action-export"
+            disabled={busy}
+            onClick={() => onExport()}
+            className="h-7 text-xs"
           >
-            <Copy />
-            Copy settings
+            <Upload />
+            Export…
           </Button>
+        </ShortcutTooltip>
+        {count === 1 && (
+          <ShortcutTooltip label="Copy settings" action="settings.copy">
+            <Button
+              size="sm"
+              variant="ghost"
+              data-testid="action-copy-settings"
+              onClick={() => onCopySettings()}
+              className="h-7 text-xs text-muted-foreground"
+            >
+              <Copy />
+              Copy settings
+            </Button>
+          </ShortcutTooltip>
         )}
         {canPaste && (
-          <Button
-            size="sm"
-            variant="ghost"
-            data-testid="action-paste-settings"
-            onClick={() => onPasteSettings()}
-            title="Paste settings (⌘V)"
-            className="h-7 text-xs text-muted-foreground"
-          >
-            <ClipboardPaste />
-            Paste settings
-          </Button>
+          <ShortcutTooltip label="Paste settings" action="settings.paste">
+            <Button
+              size="sm"
+              variant="ghost"
+              data-testid="action-paste-settings"
+              onClick={() => onPasteSettings()}
+              className="h-7 text-xs text-muted-foreground"
+            >
+              <ClipboardPaste />
+              Paste settings
+            </Button>
+          </ShortcutTooltip>
         )}
         {onReveal && (
           <Button
@@ -94,28 +98,31 @@ export function SelectionBar({
             Reveal
           </Button>
         )}
-        <Button
-          size="sm"
-          variant="ghost"
-          data-testid="action-delete"
-          onClick={() => onDelete()}
-          title="Move to Trash"
-          className="h-7 text-xs text-muted-foreground hover:text-destructive"
-        >
-          <Trash2 />
-          Delete
-        </Button>
+        <ShortcutTooltip label="Move to Trash">
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="action-delete"
+            onClick={() => onDelete()}
+            className="h-7 text-xs text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 />
+            Delete
+          </Button>
+        </ShortcutTooltip>
       </div>
-      <Button
-        size="icon"
-        variant="ghost"
-        data-testid="action-clear"
-        onClick={() => onClear()}
-        title="Clear selection (esc)"
-        className="ml-auto size-7 text-muted-foreground"
-      >
-        <X />
-      </Button>
+      <ShortcutTooltip label="Clear selection" action="select.clear">
+        <Button
+          size="icon"
+          variant="ghost"
+          data-testid="action-clear"
+          aria-label="Clear selection"
+          onClick={() => onClear()}
+          className="ml-auto size-7 text-muted-foreground"
+        >
+          <X />
+        </Button>
+      </ShortcutTooltip>
     </div>
   );
 }

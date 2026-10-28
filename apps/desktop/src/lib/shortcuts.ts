@@ -1,0 +1,243 @@
+import { useEffect, useRef } from "react";
+import {
+  ACTION_IDS,
+  ACTIONS,
+  type ActionId,
+  type Context,
+  chordsOf,
+  formatChord,
+  isActionId,
+  isChord,
+  RATING_ACTIONS,
+} from "@/lib/keymap";
+import { isModalOpen } from "@/lib/modal";
+import { pref } from "@/lib/pref";
+
+type Overrides = Partial<Record<ActionId, readonly string[]>>;
+
+function decodeOverrides(raw: string | null): Overrides {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw ?? "{}");
+  } catch {
+    return {};
+  }
+  if (typeof parsed !== "object" || parsed === null) return {};
+  const overrides: Overrides = {};
+  for (const [id, keys] of Object.entries(parsed)) {
+    if (!isActionId(id) || ACTIONS[id].fixed || !Array.isArray(keys)) continue;
+    const list: unknown[] = keys;
+    const chords = list.filter(
+      (key): key is string => typeof key === "string" && isChord(key),
+    );
+    if (chords.length === list.length) overrides[id] = chords;
+  }
+  return overrides;
+}
+
+const overridesPref = pref<Overrides>(
+  "photopipe.shortcuts",
+  decodeOverrides,
+  JSON.stringify,
+);
+
+export const bindingsOf = (
+  id: ActionId,
+  overrides: Overrides = overridesPref.get(),
+): readonly string[] => overrides[id] ?? ACTIONS[id].keys;
+
+export function useBindings(id: ActionId): readonly string[] {
+  return bindingsOf(id, overridesPref.use());
+}
+
+export const isChanged = (id: ActionId, overrides: Overrides) =>
+  overrides[id] !== undefined;
+
+export const useOverrides = overridesPref.use;
+
+export function shortcutLabel(id: ActionId): string | null {
+  const [first] = bindingsOf(id);
+  return first === undefined ? null : formatChord(first);
+}
+
+export function useShortcutLabel(id: ActionId | undefined): string | null {
+  const overrides = overridesPref.use();
+  const first = id && bindingsOf(id, overrides)[0];
+  return first ? formatChord(first) : null;
+}
+
+function withBindings(
+  overrides: Overrides,
+  id: ActionId,
+  keys: readonly string[],
+): Overrides {
+  const unique = [...new Set(keys)];
+  const defaults = ACTIONS[id].keys;
+  const { [id]: _, ...rest } = overrides;
+  const isDefault =
+    unique.length === defaults.length &&
+    unique.every((key, index) => key === defaults[index]);
+  return isDefault ? rest : { ...rest, [id]: unique };
+}
+
+const overlaps = (a: ActionId, b: ActionId) =>
+  ACTIONS[a].contexts.some((context) => ACTIONS[b].contexts.includes(context));
+
+export function conflictOf(id: ActionId, chord: string): ActionId | null {
+  return (
+    ACTION_IDS.find(
+      (other) =>
+        other !== id &&
+        overlaps(id, other) &&
+        bindingsOf(other).includes(chord),
+    ) ?? null
+  );
+}
+
+/// Whoever had the chord gets `replacing` back, so a swap loses nothing.
+export function assignShortcut(
+  id: ActionId,
+  replacing: string | null,
+  chord: string,
+) {
+  let overrides = overridesPref.get();
+  const other = conflictOf(id, chord);
+  if (other) {
+    const theirs = bindingsOf(other, overrides).flatMap((key) =>
+      key !== chord ? [key] : replacing ? [replacing] : [],
+    );
+    overrides = withBindings(overrides, other, theirs);
+  }
+  const mine = bindingsOf(id, overrides);
+  overrides = withBindings(
+    overrides,
+    id,
+    replacing && mine.includes(replacing)
+      ? mine.map((key) => (key === replacing ? chord : key))
+      : [...mine, chord],
+  );
+  overridesPref.set(overrides);
+}
+
+export function unbindShortcut(id: ActionId, chord: string) {
+  const overrides = overridesPref.get();
+  overridesPref.set(
+    withBindings(
+      overrides,
+      id,
+      bindingsOf(id, overrides).filter((key) => key !== chord),
+    ),
+  );
+}
+
+export function resetShortcut(id: ActionId) {
+  overridesPref.set(withBindings(overridesPref.get(), id, ACTIONS[id].keys));
+}
+
+export const resetAllShortcuts = () => overridesPref.set({});
+
+/// Returning false leaves the key to whoever else wants it.
+type Handler = () => unknown;
+type Handlers = Partial<Record<ActionId, Handler>>;
+type Registration = {
+  context: Context | undefined;
+  handlers: Handlers;
+};
+
+export const ratingHandlers = (rate: (rating: number) => unknown): Handlers =>
+  Object.fromEntries(
+    RATING_ACTIONS.map((id, rating) => [id, () => rate(rating)]),
+  );
+
+const registrations: { current: Registration }[] = [];
+const claims: Context[] = [];
+const SPECIFICITY: readonly Context[] = ["crop", "loupe", "browser"];
+
+export const activeContext = (): Context =>
+  SPECIFICITY.find((context) => claims.includes(context)) ?? "browser";
+
+// A tooltip spends Escape on closing itself; the app should still get it.
+const released = new WeakSet<Event>();
+export function releaseEscape(event: KeyboardEvent) {
+  released.add(event);
+}
+
+function ignored(event: KeyboardEvent): boolean {
+  if (event.defaultPrevented && !released.has(event)) return true;
+  if (isModalOpen()) return true;
+  const target = event.target instanceof Element ? event.target : null;
+  if (
+    target instanceof HTMLElement &&
+    (target.isContentEditable || target.closest("input, textarea"))
+  ) {
+    return true;
+  }
+  // a focused button acts on these itself
+  if (
+    (event.key === "Enter" || event.key === " ") &&
+    target?.closest("button, select")
+  ) {
+    return true;
+  }
+  return (
+    event.key.startsWith("Arrow") &&
+    target?.closest("[data-slot='slider'], select") != null
+  );
+}
+
+function handlerFor(id: ActionId, context: Context): Handler | undefined {
+  for (let at = registrations.length - 1; at >= 0; at--) {
+    const registration = registrations[at].current;
+    const handler =
+      (registration.context ?? context) === context &&
+      registration.handlers[id];
+    if (handler) return handler;
+  }
+}
+
+function dispatch(event: KeyboardEvent) {
+  if (ignored(event)) return;
+  const chords = chordsOf(event);
+  const context = activeContext();
+  const overrides = overridesPref.get();
+  for (const id of ACTION_IDS) {
+    const action = ACTIONS[id];
+    if (!action.contexts.includes(context)) continue;
+    const bindings = bindingsOf(id, overrides);
+    if (!chords.some((chord) => bindings.includes(chord))) continue;
+    // held down, a rating would land on every photo it advances onto
+    if (event.repeat && !action.repeat) return;
+    const handler = handlerFor(id, context);
+    if (!handler || handler() === false) continue;
+    event.preventDefault();
+    return;
+  }
+}
+
+/// Pass `context` when the same action does something else elsewhere.
+export function useShortcuts(handlers: Handlers, context?: Context) {
+  const latest = useRef<Registration>({ context, handlers });
+  latest.current = { context, handlers };
+  useEffect(() => {
+    const registration = latest;
+    registrations.push(registration);
+    if (registrations.length === 1)
+      window.addEventListener("keydown", dispatch);
+    return () => {
+      registrations.splice(registrations.indexOf(registration), 1);
+      if (registrations.length === 0) {
+        window.removeEventListener("keydown", dispatch);
+      }
+    };
+  }, []);
+}
+
+/// The most specific claimed context wins.
+export function useShortcutContext(context: Context) {
+  useEffect(() => {
+    claims.push(context);
+    return () => {
+      claims.splice(claims.indexOf(context), 1);
+    };
+  }, [context]);
+}

@@ -27,7 +27,13 @@ function Tooltip({
 function TooltipTrigger({
   ...props
 }: ComponentProps<typeof TooltipPrimitive.Trigger>) {
-  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />;
+  return (
+    <TooltipPrimitive.Trigger
+      // wrapping a component, it keeps the child's own data-slot
+      {...(!props.asChild && { "data-slot": "tooltip-trigger" })}
+      {...props}
+    />
+  );
 }
 
 function TooltipContent({

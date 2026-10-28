@@ -32,8 +32,14 @@ import { NewProjectDialog } from "@/components/NewProjectDialog";
 import { ratingCounts, useRatingFilter } from "@/components/RatingFilter";
 import { RootPicker } from "@/components/RootPicker";
 import { SelectionBar } from "@/components/SelectionBar";
-import { autoScorePref, SettingsDialog } from "@/components/SettingsDialog";
+import {
+  autoScorePref,
+  SettingsDialog,
+  type SettingsSection,
+} from "@/components/SettingsDialog";
 import { ShootSettingsDialog } from "@/components/ShootSettingsDialog";
+import { ShortcutSheet } from "@/components/ShortcutSheet";
+import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { ShowSidebarTrigger } from "@/components/ShowSidebarTrigger";
 import {
   type Edit,
@@ -56,8 +62,8 @@ import {
   stepHistory,
 } from "@/lib/history";
 import { betterThan, scoreRanks } from "@/lib/instinct";
+import type { Context } from "@/lib/keymap";
 import { heldOrder } from "@/lib/loupeWalk";
-import { isModalOpen } from "@/lib/modal";
 import { pluralize } from "@/lib/plural";
 import { flagPref } from "@/lib/pref";
 import {
@@ -82,6 +88,12 @@ import {
   toRootError,
 } from "@/lib/roots";
 import { useSelection } from "@/lib/selection";
+import {
+  activeContext,
+  ratingHandlers,
+  shortcutLabel,
+  useShortcuts,
+} from "@/lib/shortcuts";
 import { browserOrder, type SortKey, sortPref } from "@/lib/sort";
 import {
   anchorFor,
@@ -108,19 +120,16 @@ const NO_HELD = { key: "", paths: [] };
 const LEGACY_ROOT_KEY = "photopipe.root";
 const LEGACY_RECENTS_KEY = "photopipe.recentRoots";
 
-const isTyping = (target: EventTarget | null) =>
-  target instanceof HTMLElement &&
-  (target.isContentEditable ||
-    target.tagName === "INPUT" ||
-    target.tagName === "TEXTAREA");
-
 type RootState =
   | { kind: "picking"; error: RootError | null; busy: boolean }
   | { kind: "ready"; path: string; generation: number };
 
 const EDIT_COMMIT_MS = 400;
 
-const GRID_FLAG_KEYS: Partial<Record<string, Flag>> = { p: 1, x: -1, u: 0 };
+const undoHint = () => {
+  const key = shortcutLabel("history.undo");
+  return key ? `${key} undoes` : undefined;
+};
 
 const editPanelPref = flagPref("photopipe.editPanel", "shown", "hidden", true);
 
@@ -133,7 +142,12 @@ export default function App() {
   const [openShoot, setOpenShoot] = useState<string | null>(null);
   const [newProject, setNewProject] = useState(false);
   const [shootSettings, setShootSettings] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState<SettingsSection | null>(null);
+  const [sheet, setSheet] = useState<Context | null>(null);
+  const openSettings = useCallback(
+    () => setSettings((section) => section ?? "general"),
+    [],
+  );
   const sort = sortPref.use();
   const autoScore = autoScorePref.use();
   // outlives the loupe, so closing it lands the browser on the same photo
@@ -293,7 +307,7 @@ export default function App() {
   // check is stable, so this subscribes once and no menu click falls in a gap
   useEffect(() => {
     const subscriptions = [
-      listen("menu:settings", () => setSettingsOpen(true)),
+      listen("menu:settings", openSettings),
       listen("menu:check-updates", () => void checkForUpdates()),
     ];
     for (const subscription of subscriptions) subscription.catch(() => {});
@@ -302,7 +316,7 @@ export default function App() {
         void subscription.then((unlisten) => unlisten()).catch(() => {});
       }
     };
-  }, [checkForUpdates]);
+  }, [checkForUpdates, openSettings]);
 
   const currentShoot = shoots.data?.find((s) => s.name === openShoot);
 
@@ -438,7 +452,7 @@ export default function App() {
       () =>
         toast(`Rejected ${pluralize(swept.size, "undecided frame")}`, {
           id: "sweep",
-          description: "⌘Z undoes",
+          description: undoHint(),
         }),
       () => {},
     );
@@ -644,80 +658,36 @@ export default function App() {
     setDrawerOpen((open) => !open);
   }, [loupePhoto, selection]);
 
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if (isTyping(event.target) || event.defaultPrevented || isModalOpen()) {
-        return;
-      }
-      if (event.metaKey || event.ctrlKey) {
-        // Case-insensitive, so the Lightroom pair ⌘⇧C/⌘⇧V lands here too.
-        const key = event.key.toLowerCase();
-        if (key === "c" && copySource && !cropping) {
-          event.preventDefault();
-          copySettings(copySource);
-        }
-        if (key === "v" && !cropping) {
-          event.preventDefault();
-          pasteSettings(pasteTargets);
-        }
-        if (key === "z" && !cropping) {
-          event.preventDefault();
-          travel(event.shiftKey ? "redo" : "undo");
-        }
-        if (key === "y" && openShoot && !cropping) {
-          event.preventDefault();
-          setHistoryOpen((open) => !open);
-        }
-        if (event.key === "a" && !loupeOpen) {
-          event.preventDefault();
-          selection.selectAll();
-        }
-        if (event.key === "e" && openShoot && !cropping) {
-          event.preventDefault();
-          openExport();
-        }
-        return;
-      }
-      if (event.key === "Escape" && !loupeOpen && !selection.isEmpty) {
-        selection.clear();
-      }
-      if (!loupeOpen && !selection.isEmpty && !event.altKey) {
-        if (/^[0-5]$/.test(event.key)) {
-          ratePhotos(selectedImages, Number(event.key));
-        }
-        const flag = GRID_FLAG_KEYS[event.key.toLowerCase()];
-        if (flag !== undefined && !event.repeat) {
-          flagPhotos(selectedImages, flag);
-        }
-      }
-      if (event.key === "e" && !event.altKey && loupeOpen && !cropping) {
-        editPanelPref.toggle();
-      }
-      if (event.key === "s" && !event.altKey && loupeOpen && !cropping) {
-        stacksPref.toggle();
-      }
-      if (event.key === "y" && !event.altKey && loupeOpen && !cropping) {
-        toggleSplit();
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [
-    selection,
-    loupeOpen,
-    openShoot,
-    cropping,
-    openExport,
-    copySource,
-    copySettings,
-    pasteTargets,
-    pasteSettings,
-    travel,
-    ratePhotos,
-    flagPhotos,
-    selectedImages,
-    toggleSplit,
-  ]);
+  useShortcuts({
+    "app.settings": openSettings,
+    "app.shortcuts": () => setSheet(activeContext()),
+    "history.undo": () => (openShoot ? travel("undo") : false),
+    "history.redo": () => (openShoot ? travel("redo") : false),
+    "history.show": () => (openShoot ? setHistoryOpen((open) => !open) : false),
+    "settings.copy": () => (copySource ? copySettings(copySource) : false),
+    "settings.paste": () => (openShoot ? pasteSettings(pasteTargets) : false),
+    "export.open": () => (openShoot ? openExport() : false),
+  });
+  const withSelection = (act: () => unknown) =>
+    selection.isEmpty ? false : act();
+  useShortcuts(
+    {
+      "select.all": selection.selectAll,
+      "select.clear": () => withSelection(selection.clear),
+      ...ratingHandlers((rating) =>
+        withSelection(() => ratePhotos(selectedImages, rating)),
+      ),
+      "flag.pick": () => withSelection(() => flagPhotos(selectedImages, 1)),
+      "flag.reject": () => withSelection(() => flagPhotos(selectedImages, -1)),
+      "flag.clear": () => withSelection(() => flagPhotos(selectedImages, 0)),
+    },
+    "browser",
+  );
+  useShortcuts({
+    "editPanel.toggle": editPanelPref.toggle,
+    "stacks.toggle": stacksPref.toggle,
+    "split.toggle": toggleSplit,
+  });
 
   const trashPhotos = (paths: string[]) =>
     // even a failed trash may have moved some of them
@@ -744,11 +714,21 @@ export default function App() {
   // Settings is reachable from the menu bar at any time, including before a
   // photos folder is picked, so it lives outside the browser chrome.
   const settingsDialog = (
-    <SettingsDialog
-      open={settingsOpen}
-      onOpenChange={setSettingsOpen}
-      onCheckUpdates={updater.enabled ? checkForUpdates : undefined}
-    />
+    <>
+      <SettingsDialog
+        section={settings}
+        onSectionChange={setSettings}
+        onCheckUpdates={updater.enabled ? checkForUpdates : undefined}
+      />
+      <ShortcutSheet
+        context={sheet}
+        onClose={() => setSheet(null)}
+        onEdit={() => {
+          setSheet(null);
+          setSettings("keyboard");
+        }}
+      />
+    </>
   );
 
   if (!ready) {
@@ -846,7 +826,7 @@ export default function App() {
   );
 
   return (
-    <TooltipProvider>
+    <TooltipProvider delayDuration={400}>
       <ShootSettingsDialog
         open={shootSettings !== null}
         onOpenChange={(next) => !next && setShootSettings(null)}
@@ -914,7 +894,7 @@ export default function App() {
               clearHistory();
               setRootState({ kind: "picking", error: null, busy: false });
             }}
-            onSettings={() => setSettingsOpen(true)}
+            onSettings={openSettings}
           />
         )}
         <SidebarInset className="flex h-screen min-w-0 flex-col bg-background text-foreground">
@@ -934,16 +914,18 @@ export default function App() {
             )}
             <span className="flex-1" />
             <IndexingStatus progress={scan.progress} />
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              data-testid="refresh"
-              title="Look for new photos"
-              disabled={scan.refreshing}
-              onClick={scan.refresh}
-            >
-              <RefreshCw className={scan.refreshing ? "animate-spin" : ""} />
-            </Button>
+            <ShortcutTooltip label="Look for new photos">
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                data-testid="refresh"
+                aria-label="Look for new photos"
+                disabled={scan.refreshing}
+                onClick={scan.refresh}
+              >
+                <RefreshCw className={scan.refreshing ? "animate-spin" : ""} />
+              </Button>
+            </ShortcutTooltip>
             {exports.jobs.length > 0 && (
               <Button
                 size="sm"
@@ -982,33 +964,37 @@ export default function App() {
               />
             )}
             {inLoupe && (
-              <Button
-                size="sm"
-                variant={editOpen ? "secondary" : "ghost"}
-                data-testid="toggle-edit"
-                onClick={editPanelPref.toggle}
-                disabled={cropping}
-                title={
-                  cropping ? "Finish the crop first" : "Toggle edit panel (e)"
-                }
-                className="h-7 text-xs"
+              <ShortcutTooltip
+                label="Toggle edit panel"
+                action="editPanel.toggle"
               >
-                <SlidersHorizontal />
-                Edit
-              </Button>
+                <Button
+                  size="sm"
+                  variant={editOpen ? "secondary" : "ghost"}
+                  data-testid="toggle-edit"
+                  onClick={editPanelPref.toggle}
+                  disabled={cropping}
+                  className="h-7 text-xs"
+                >
+                  <SlidersHorizontal />
+                  Edit
+                </Button>
+              </ShortcutTooltip>
             )}
             {openShoot && (
-              <Button
-                size="sm"
-                data-testid="open-export"
-                onClick={() => openExport()}
-                title="Export (⌘E)"
-                className="h-7 text-xs"
-              >
-                <Upload />
-                Export
-                {selection.selected.size > 0 && ` ${selection.selected.size}`}…
-              </Button>
+              <ShortcutTooltip label="Export" action="export.open">
+                <Button
+                  size="sm"
+                  data-testid="open-export"
+                  onClick={() => openExport()}
+                  className="h-7 text-xs"
+                >
+                  <Upload />
+                  Export
+                  {selection.selected.size > 0 && ` ${selection.selected.size}`}
+                  …
+                </Button>
+              </ShortcutTooltip>
             )}
           </header>
           <SelectionBar

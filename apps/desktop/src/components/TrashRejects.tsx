@@ -47,7 +47,7 @@ export function TrashRejects({
               Move {count} to the Trash?
             </DialogTitle>
             <DialogDescription>
-              Their sidecars go with them. ⌘Z can't bring them back; Finder's
+              Their sidecars go with them. Undo can't bring them back; Finder's
               Put Back can.
             </DialogDescription>
           </DialogHeader>
