@@ -237,7 +237,6 @@ export function KeyboardSettings() {
           data-testid="shortcut-reset-all"
           disabled={changedCount === 0}
           onClick={() => {
-            setRecording(null);
             setConflict(null);
             resetAllShortcuts();
           }}
