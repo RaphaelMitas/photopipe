@@ -110,7 +110,8 @@ export function KeyboardSettings() {
 
   const recordingChip = (
     <span className="inline-flex h-5.5 items-center rounded-lg border border-primary border-dashed px-2 text-primary text-xs">
-      {refused ?? "Press keys… esc cancels, ⌫ unbinds"}
+      {refused ??
+        `Press keys… esc cancels${recording?.replacing ? ", ⌫ unbinds" : ""}`}
     </span>
   );
 

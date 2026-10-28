@@ -194,7 +194,7 @@ test("@store creative", async ({ browser }) => {
     LANDSCAPES,
     async (page) => {
       await loupeOnBlueHour(page);
-      await page.keyboard.press("ControlOrMeta+b");
+      await page.keyboard.press("Meta+b");
       await expect(
         page.locator("[data-slot=sidebar][data-state=collapsed]"),
       ).toBeAttached();
