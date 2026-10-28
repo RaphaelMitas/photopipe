@@ -87,16 +87,18 @@ export function SelectionBar({
           </ShortcutTooltip>
         )}
         {onReveal && (
-          <Button
-            size="sm"
-            variant="ghost"
-            data-testid="action-reveal"
-            onClick={() => onReveal()}
-            className="h-7 text-xs text-muted-foreground"
-          >
-            <FolderOpen />
-            Reveal
-          </Button>
+          <ShortcutTooltip label="Reveal in Finder">
+            <Button
+              size="sm"
+              variant="ghost"
+              data-testid="action-reveal"
+              onClick={() => onReveal()}
+              className="h-7 text-xs text-muted-foreground"
+            >
+              <FolderOpen />
+              Reveal
+            </Button>
+          </ShortcutTooltip>
         )}
         <ShortcutTooltip label="Move to Trash">
           <Button

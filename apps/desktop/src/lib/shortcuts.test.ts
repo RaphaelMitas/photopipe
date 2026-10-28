@@ -7,6 +7,7 @@ import {
   releaseEscape,
   resetAllShortcuts,
   resetShortcut,
+  unbindShortcut,
   useShortcutContext,
   useShortcuts,
 } from "./shortcuts";
@@ -74,6 +75,13 @@ describe("rebinding", () => {
     assignShortcut("stacks.toggle", "s", ["p"]);
     resetShortcut("flag.pick");
     expect(bindingsOf("stacks.toggle")).toEqual(["s"]);
+  });
+
+  it("leaves an action that still has a key alone on reset", () => {
+    unbindShortcut("settings.copy", "shift+meta+c");
+    assignShortcut("settings.copy", null, ["meta+e"]);
+    resetShortcut("export.open");
+    expect(bindingsOf("settings.copy")).toEqual(["meta+c"]);
   });
 
   it("does nothing when a key is recorded over itself", () => {

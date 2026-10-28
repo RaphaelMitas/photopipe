@@ -154,16 +154,17 @@ export function unbindShortcut(id: ActionId, chord: string) {
   );
 }
 
-/// Whoever loses a key to the reset falls back on its own default where that is free.
+/// Whoever is left with no key falls back on its own defaults where they are free.
 export function resetShortcut(id: ActionId) {
   const { keys } = ACTIONS[id];
   const overrides = overridesPref.get();
   let next = withBindings(evict(overrides, id, keys, null), id, keys);
   for (const other of holdersOf(id, keys, overrides)) {
+    if (bindingsOf(other, next).length > 0) continue;
     const free = ACTIONS[other].keys.filter(
       (key) => holdersOf(other, [key], next).length === 0,
     );
-    next = withBindings(next, other, [...bindingsOf(other, next), ...free]);
+    next = withBindings(next, other, free);
   }
   overridesPref.set(next);
 }
