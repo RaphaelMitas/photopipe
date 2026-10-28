@@ -24,8 +24,10 @@ import { KeyboardSettings } from "./KeyboardSettings";
 import { tooltipsPref } from "./ShortcutTooltip";
 
 type Props = {
-  section: SettingsSection | null;
-  onSectionChange: (section: SettingsSection | null) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  section: SettingsSection;
+  onSectionChange: (section: SettingsSection) => void;
   onCheckUpdates?: () => void;
 };
 
@@ -164,6 +166,8 @@ const SECTIONS: readonly [SettingsSection, string][] = [
 ];
 
 export function SettingsDialog({
+  open,
+  onOpenChange,
   section,
   onSectionChange,
   onCheckUpdates,
@@ -171,12 +175,9 @@ export function SettingsDialog({
   const autoScore = autoScorePref.use();
   const quickSwitch = useRawDecoderQuickSwitch();
   const tooltips = tooltipsPref.use();
-  const raw9Missing = useRaw9Availability(section !== null).data === false;
+  const raw9Missing = useRaw9Availability(open).data === false;
   return (
-    <Dialog
-      open={section !== null}
-      onOpenChange={(open) => !open && onSectionChange(null)}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="h-[min(36rem,calc(100vh-4rem))] gap-0 overflow-hidden p-0 sm:max-w-3xl">
         <div className="flex min-h-0">
           <nav className="flex w-44 shrink-0 flex-col gap-0.5 border-border border-r bg-sidebar p-3 pt-14">

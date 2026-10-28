@@ -251,7 +251,12 @@ function ConflictPrompt({
   onDone: () => void;
 }) {
   const { id, replacing, press, others } = conflict;
-  const after = assigned(useOverrides(), id, replacing, press);
+  const overrides = useOverrides();
+  const after = assigned(overrides, id, replacing, press);
+  const taken =
+    press.find((key) =>
+      others.some((other) => bindingsOf(other, overrides).includes(key)),
+    ) ?? press[0];
   const labels = (ids: ActionId[]) =>
     ids.map((other) => ACTIONS[other].label).join(" and ");
   const unbound = others.filter(
@@ -266,7 +271,7 @@ function ConflictPrompt({
       className="my-1 flex items-center gap-2 rounded-lg bg-card px-3 py-2 text-xs"
     >
       <span className="flex-1">
-        <Kbd>{formatChord(press[0])}</Kbd> is already <b>{labels(others)}</b>.
+        <Kbd>{formatChord(taken)}</Kbd> is already <b>{labels(others)}</b>.
         {unbound.length > 0 && ` ${labels(unbound)} will have no key.`}
       </span>
       <Button

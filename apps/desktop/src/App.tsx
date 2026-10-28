@@ -142,12 +142,12 @@ export default function App() {
   const [openShoot, setOpenShoot] = useState<string | null>(null);
   const [newProject, setNewProject] = useState(false);
   const [shootSettings, setShootSettings] = useState<string | null>(null);
-  const [settings, setSettings] = useState<SettingsSection | null>(null);
-  const [sheet, setSheet] = useState<Context | null>(null);
-  const openSettings = useCallback(
-    () => setSettings((section) => section ?? "general"),
-    [],
-  );
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] =
+    useState<SettingsSection>("general");
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetContext, setSheetContext] = useState<Context>("browser");
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
   const sort = sortPref.use();
   const autoScore = autoScorePref.use();
   // outlives the loupe, so closing it lands the browser on the same photo
@@ -660,7 +660,10 @@ export default function App() {
 
   useShortcuts({
     "app.settings": openSettings,
-    "app.shortcuts": () => setSheet(activeContext()),
+    "app.shortcuts": () => {
+      setSheetContext(activeContext());
+      setSheetOpen(true);
+    },
     "history.undo": () => (openShoot ? travel("undo") : false),
     "history.redo": () => (openShoot ? travel("redo") : false),
     "history.show": () => (openShoot ? setHistoryOpen((open) => !open) : false),
@@ -714,16 +717,20 @@ export default function App() {
   const settingsDialog = (
     <>
       <SettingsDialog
-        section={settings}
-        onSectionChange={setSettings}
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        section={settingsSection}
+        onSectionChange={setSettingsSection}
         onCheckUpdates={updater.enabled ? checkForUpdates : undefined}
       />
       <ShortcutSheet
-        context={sheet}
-        onClose={() => setSheet(null)}
+        open={sheetOpen}
+        context={sheetContext}
+        onClose={() => setSheetOpen(false)}
         onEdit={() => {
-          setSheet(null);
-          setSettings("keyboard");
+          setSheetOpen(false);
+          setSettingsSection("keyboard");
+          setSettingsOpen(true);
         }}
       />
     </>

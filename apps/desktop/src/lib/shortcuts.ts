@@ -122,7 +122,8 @@ export function assigned(
   replacing: string | null,
   press: readonly string[],
 ): Overrides {
-  const [chord] = press;
+  const own = bindingsOf(id, overrides);
+  const chord = press.find((key) => own.includes(key)) ?? press[0];
   if (chord === undefined) return overrides;
   const next = evict(overrides, id, press, replacing);
   const mine = bindingsOf(id, next);

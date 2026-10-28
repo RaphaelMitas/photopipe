@@ -57,6 +57,11 @@ describe("rebinding", () => {
     expect(fired.length).toBe(new Set(fired).size);
   });
 
+  it("keeps ⌘/ when a German Mac records it again as ⌘⇧7", () => {
+    assignShortcut("app.shortcuts", "meta+/", ["shift+meta+7", "meta+/"]);
+    expect(localStorage.getItem("photopipe.shortcuts")).toBe("{}");
+  });
+
   it("takes its keys back on reset", () => {
     assignShortcut("rate.0", null, ["p"]);
     resetShortcut("flag.pick");

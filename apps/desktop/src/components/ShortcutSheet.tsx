@@ -24,22 +24,21 @@ const TITLES: Record<Context, string> = {
 };
 
 type Props = {
-  context: Context | null;
+  open: boolean;
+  context: Context;
   onClose: () => void;
   onEdit: () => void;
 };
 
-export function ShortcutSheet({ context, onClose, onEdit }: Props) {
+export function ShortcutSheet({ open, context, onClose, onEdit }: Props) {
   const overrides = useOverrides();
-  const here = context
-    ? ACTION_IDS.filter(
-        (id) =>
-          ACTIONS[id].contexts.includes(context) &&
-          bindingsOf(id, overrides).length > 0,
-      )
-    : [];
+  const here = ACTION_IDS.filter(
+    (id) =>
+      ACTIONS[id].contexts.includes(context) &&
+      bindingsOf(id, overrides).length > 0,
+  );
   return (
-    <Dialog open={context !== null} onOpenChange={(open) => !open && onClose()}>
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent
         data-testid="shortcut-sheet"
         className="sm:max-w-3xl"
@@ -55,7 +54,7 @@ export function ShortcutSheet({ context, onClose, onEdit }: Props) {
         }}
       >
         <DialogHeader>
-          <DialogTitle>{context && TITLES[context]}</DialogTitle>
+          <DialogTitle>{TITLES[context]}</DialogTitle>
           <DialogDescription>
             Only what works here.{" "}
             <Button
