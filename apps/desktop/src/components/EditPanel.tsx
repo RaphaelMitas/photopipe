@@ -34,6 +34,7 @@ import {
   signed,
   TONE_SLIDERS,
 } from "@/lib/editSliders";
+import type { ActionId } from "@/lib/keymap";
 import {
   useDeferredEdit,
   useRaw9Availability,
@@ -67,6 +68,7 @@ function Row({
   step,
   testid,
   resetTitle,
+  resetAction,
   trackClassName,
   onValue,
   onReset,
@@ -79,6 +81,7 @@ function Row({
   step: number;
   testid: string;
   resetTitle: string;
+  resetAction?: ActionId;
   trackClassName?: string;
   onValue: (value: number) => void;
   onReset: () => void;
@@ -88,16 +91,18 @@ function Row({
       <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
         <span>{label}</span>
         <span className="flex-1 text-right tabular-nums">{display}</span>
-        <Button
-          variant="ghost"
-          size="icon"
-          data-testid={`${testid}-reset`}
-          onClick={onReset}
-          title={resetTitle}
-          className="size-5 text-muted-foreground"
-        >
-          <RotateCcw />
-        </Button>
+        <ShortcutTooltip label={resetTitle} action={resetAction}>
+          <Button
+            variant="ghost"
+            size="icon"
+            data-testid={`${testid}-reset`}
+            aria-label={resetTitle}
+            onClick={onReset}
+            className="size-5 text-muted-foreground"
+          >
+            <RotateCcw />
+          </Button>
+        </ShortcutTooltip>
       </div>
       <Slider
         data-testid={testid}
@@ -294,7 +299,8 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
             max={EXPOSURE_RANGE}
             step={0.05}
             testid="exposure"
-            resetTitle="Reset exposure (r)"
+            resetTitle="Reset exposure"
+            resetAction="exposure.reset"
             onValue={(exposure) => set({ exposure })}
             onReset={() => set({ exposure: 0 })}
           />

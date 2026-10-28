@@ -272,7 +272,6 @@ export const isActionId = (id: string): id is ActionId =>
 
 export const ACTION_IDS = Object.keys(DEFINITIONS).filter(isActionId);
 
-/// Indexed by the rating each one sets.
 export const RATING_ACTIONS = [
   "rate.0",
   "rate.1",
@@ -346,7 +345,7 @@ export function chordsOf(event: KeyFields): string[] {
   return [...new Set(chords)];
 }
 
-/// Splits a stored chord, tolerating "+" as the key itself ("meta++").
+/// "+" can be the key itself ("meta++").
 function parseChord(chord: string) {
   const modifiers: string[] = [];
   let rest = chord;

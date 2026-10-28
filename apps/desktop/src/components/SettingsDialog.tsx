@@ -10,6 +10,7 @@ import {
 import { Label } from "@photopipe/ui/components/label";
 import { Switch } from "@photopipe/ui/components/switch";
 import { cn } from "@photopipe/ui/lib/utils";
+import type { ReactNode } from "react";
 import { flagPref } from "@/lib/pref";
 import { useRaw9Availability } from "@/lib/queries";
 import {
@@ -20,6 +21,7 @@ import {
   useRawDecoderVersion,
 } from "@/lib/rawDecoder";
 import { KeyboardSettings } from "./KeyboardSettings";
+import { tooltipsPref } from "./ShortcutTooltip";
 
 type Props = {
   section: SettingsSection | null;
@@ -124,6 +126,35 @@ function DecoderCards({ raw9Missing }: { raw9Missing: boolean }) {
   );
 }
 
+function SettingSwitch({
+  id,
+  label,
+  checked,
+  onCheckedChange,
+  children,
+}: {
+  id: string;
+  label: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-6">
+      <div className="flex flex-col gap-1">
+        <Label htmlFor={id}>{label}</Label>
+        <p className="text-muted-foreground text-xs">{children}</p>
+      </div>
+      <Switch
+        id={id}
+        data-testid={id}
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+      />
+    </div>
+  );
+}
+
 export type SettingsSection = "general" | "raw" | "keyboard";
 
 const SECTIONS: readonly [SettingsSection, string][] = [
@@ -139,6 +170,7 @@ export function SettingsDialog({
 }: Props) {
   const autoScore = autoScorePref.use();
   const quickSwitch = useRawDecoderQuickSwitch();
+  const tooltips = tooltipsPref.use();
   const raw9Missing = useRaw9Availability(section !== null).data === false;
   return (
     <Dialog
@@ -177,24 +209,16 @@ export function SettingsDialog({
             </DialogHeader>
             {section === "general" && (
               <>
-                <div className="flex items-start justify-between gap-6">
-                  <div className="flex flex-col gap-1">
-                    <Label htmlFor="auto-score">
-                      Rate photos with Instinct
-                    </Label>
-                    <p className="text-muted-foreground text-xs">
-                      Scores every photo in a project when you open it, so you
-                      can sort the likely keepers to the front. Runs on this Mac
-                      and takes about a minute per two thousand photos.
-                    </p>
-                  </div>
-                  <Switch
-                    id="auto-score"
-                    data-testid="auto-score"
-                    checked={autoScore}
-                    onCheckedChange={autoScorePref.set}
-                  />
-                </div>
+                <SettingSwitch
+                  id="auto-score"
+                  label="Rate photos with Instinct"
+                  checked={autoScore}
+                  onCheckedChange={autoScorePref.set}
+                >
+                  Scores every photo in a project when you open it, so you can
+                  sort the likely keepers to the front. Runs on this Mac and
+                  takes about a minute per two thousand photos.
+                </SettingSwitch>
                 {onCheckUpdates && (
                   <DialogFooter className="sm:justify-start">
                     <Button
@@ -220,27 +244,31 @@ export function SettingsDialog({
                       : "Cameras that don't support RAW 9 always use the best decoder they offer."}
                   </p>
                 </div>
-                <div className="flex items-start justify-between gap-6">
-                  <div className="flex flex-col gap-1">
-                    <Label htmlFor="decoder-quick-switch">
-                      Quick switch in the editor
-                    </Label>
-                    <p className="text-muted-foreground text-xs">
-                      Adds a RAW 8/9 control to the editor so you can flip
-                      decoders without opening Settings. It changes every photo,
-                      same as the buttons above.
-                    </p>
-                  </div>
-                  <Switch
-                    id="decoder-quick-switch"
-                    data-testid="decoder-quick-switch"
-                    checked={quickSwitch}
-                    onCheckedChange={setRawDecoderQuickSwitch}
-                  />
-                </div>
+                <SettingSwitch
+                  id="decoder-quick-switch"
+                  label="Quick switch in the editor"
+                  checked={quickSwitch}
+                  onCheckedChange={setRawDecoderQuickSwitch}
+                >
+                  Adds a RAW 8/9 control to the editor so you can flip decoders
+                  without opening Settings. It changes every photo, same as the
+                  buttons above.
+                </SettingSwitch>
               </>
             )}
-            {section === "keyboard" && <KeyboardSettings />}
+            {section === "keyboard" && (
+              <>
+                <SettingSwitch
+                  id="shortcut-tooltips"
+                  label="Show tooltips"
+                  checked={tooltips}
+                  onCheckedChange={tooltipsPref.set}
+                >
+                  Hovering a button names it and shows its key.
+                </SettingSwitch>
+                <KeyboardSettings />
+              </>
+            )}
           </div>
         </div>
       </DialogContent>

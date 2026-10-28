@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Context } from "./keymap";
+import { ACTION_IDS, ACTIONS, type Context } from "./keymap";
 import {
   assignShortcut,
   bindingsOf,
@@ -18,16 +18,42 @@ afterEach(() => {
 
 describe("rebinding", () => {
   it("swaps a key with the action that had it, and forgets a return to default", () => {
-    assignShortcut("flag.pick", "p", "x");
+    assignShortcut("flag.pick", "p", ["x"]);
     expect(bindingsOf("flag.pick")).toEqual(["x"]);
     expect(bindingsOf("flag.reject")).toEqual(["p"]);
-    assignShortcut("flag.pick", "x", "p");
+    assignShortcut("flag.pick", "x", ["p"]);
     expect(localStorage.getItem("photopipe.shortcuts")).toBe("{}");
   });
 
   it("only takes a key from actions that can fire in the same place", () => {
-    assignShortcut("select.clear", null, "e");
+    assignShortcut("select.clear", null, ["e"]);
     expect(bindingsOf("editPanel.toggle")).toEqual(["e"]);
+  });
+
+  it("takes a key from every action it would collide with", () => {
+    assignShortcut("flag.clear", "u", ["escape"]);
+    expect(bindingsOf("select.clear")).toEqual(["u"]);
+    expect(bindingsOf("loupe.close")).toEqual(["u"]);
+  });
+
+  it("only hands a key back where it collides with nothing", () => {
+    assignShortcut("crop.cancel", "escape", ["meta+b"]);
+    expect(bindingsOf("sidebar.toggle")).toEqual([]);
+  });
+
+  it("frees every chord the press makes, so ⌘⇧7 on a German Mac takes ⌘/", () => {
+    assignShortcut("export.open", "meta+e", ["shift+meta+7", "meta+/"]);
+    expect(bindingsOf("export.open")).toEqual(["shift+meta+7"]);
+    expect(bindingsOf("app.shortcuts")).toEqual(["meta+e"]);
+  });
+
+  it("ships defaults where no key fires two actions", () => {
+    const fired = ACTION_IDS.flatMap((id) =>
+      ACTIONS[id].contexts.flatMap((context) =>
+        ACTIONS[id].keys.map((key) => `${context} ${key}`),
+      ),
+    );
+    expect(fired.length).toBe(new Set(fired).size);
   });
 
   it("falls back to defaults for stored junk", () => {
@@ -74,7 +100,7 @@ describe("dispatch", () => {
   it("follows a rebind without remounting", () => {
     const pick = vi.fn();
     mount("loupe", { "flag.pick": pick });
-    act(() => assignShortcut("flag.pick", "p", "t"));
+    act(() => assignShortcut("flag.pick", "p", ["t"]));
     fireEvent.keyDown(window, { key: "p" });
     fireEvent.keyDown(window, { key: "t" });
     expect(pick).toHaveBeenCalledOnce();
@@ -106,5 +132,21 @@ describe("dispatch", () => {
     fireEvent.keyDown(document.body, { key: "Escape" });
     document.removeEventListener("keydown", tooltip, { capture: true });
     expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("leaves Escape to a popover the tooltip sat over", () => {
+    const close = vi.fn();
+    mount("loupe", { "loupe.close": close });
+    const popover = document.body.appendChild(document.createElement("div"));
+    popover.setAttribute("role", "dialog");
+    const tooltip = (event: KeyboardEvent) => {
+      releaseEscape(event);
+      event.preventDefault();
+    };
+    document.addEventListener("keydown", tooltip, { capture: true });
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    document.removeEventListener("keydown", tooltip, { capture: true });
+    popover.remove();
+    expect(close).not.toHaveBeenCalled();
   });
 });

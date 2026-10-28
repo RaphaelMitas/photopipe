@@ -1,3 +1,4 @@
+import { Kbd } from "@photopipe/ui/components/kbd";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -679,11 +680,7 @@ function StackOverlay({
                 others stay as they are
               </span>
             )}
-            {pickKey && (
-              <kbd className="rounded bg-muted px-1.5 font-mono text-xs">
-                {pickKey}
-              </kbd>
-            )}
+            {pickKey && <Kbd>{pickKey}</Kbd>}
           </button>
         )}
         {sweepable > 0 && (
@@ -695,11 +692,7 @@ function StackOverlay({
             className="flex items-center gap-2.5 rounded-lg border border-destructive/50 bg-background/95 py-1.5 pr-1.5 pl-3 text-destructive text-sm shadow-lg backdrop-blur-sm"
           >
             Reject {pluralize(sweepable, "undecided frame")}
-            {sweepKey && (
-              <kbd className="rounded bg-muted px-1.5 font-mono text-foreground text-xs">
-                {sweepKey}
-              </kbd>
-            )}
+            {sweepKey && <Kbd>{sweepKey}</Kbd>}
           </button>
         )}
       </div>

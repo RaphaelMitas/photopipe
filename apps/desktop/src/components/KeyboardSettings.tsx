@@ -1,9 +1,7 @@
 import { Button } from "@photopipe/ui/components/button";
 import { Input } from "@photopipe/ui/components/input";
 import { Kbd } from "@photopipe/ui/components/kbd";
-import { Label } from "@photopipe/ui/components/label";
 import { Segmented } from "@photopipe/ui/components/segmented";
-import { Switch } from "@photopipe/ui/components/switch";
 import { cn } from "@photopipe/ui/lib/utils";
 import { Lock, Plus, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -20,17 +18,16 @@ import {
 import {
   assignShortcut,
   bindingsOf,
-  conflictOf,
+  conflictsOf,
   isChanged,
   resetAllShortcuts,
   resetShortcut,
   unbindShortcut,
   useOverrides,
 } from "@/lib/shortcuts";
-import { tooltipsPref } from "./ShortcutTooltip";
 
 type Recording = { id: ActionId; replacing: string | null };
-type Conflict = Recording & { chord: string; other: ActionId };
+type Conflict = Recording & { press: string[]; others: ActionId[] };
 type Show = "all" | Context | "changed";
 
 const SHOW: readonly [Show, string][] = [
@@ -45,7 +42,6 @@ const RESERVED_KEYS = [...RESERVED].map(formatChord).join(" ");
 
 export function KeyboardSettings() {
   const overrides = useOverrides();
-  const tooltips = tooltipsPref.use();
   const [query, setQuery] = useState("");
   const [show, setShow] = useState<Show>("all");
   const [recording, setRecording] = useState<Recording | null>(null);
@@ -69,16 +65,17 @@ export function KeyboardSettings() {
         setRecording(null);
         return;
       }
-      const [chord] = chordsOf(event);
+      const press = chordsOf(event);
+      const [chord] = press;
       if (!chord) return;
       if (RESERVED.has(chord)) {
         setRefused(`${formatChord(chord)} belongs to macOS`);
         return;
       }
       setRecording(null);
-      const other = conflictOf(recording.id, chord);
-      if (other) setConflict({ ...recording, chord, other });
-      else assignShortcut(recording.id, recording.replacing, chord);
+      const others = conflictsOf(recording.id, press);
+      if (others.length > 0) setConflict({ ...recording, press, others });
+      else assignShortcut(recording.id, recording.replacing, press);
     };
     window.addEventListener("keydown", capture, true);
     return () => window.removeEventListener("keydown", capture, true);
@@ -115,20 +112,6 @@ export function KeyboardSettings() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <div className="flex items-start justify-between gap-6">
-        <div className="flex flex-col gap-1">
-          <Label htmlFor="shortcut-tooltips">Show tooltips</Label>
-          <p className="text-muted-foreground text-xs">
-            Hovering a button names it and shows its key.
-          </p>
-        </div>
-        <Switch
-          id="shortcut-tooltips"
-          data-testid="shortcut-tooltips"
-          checked={tooltips}
-          onCheckedChange={tooltipsPref.set}
-        />
-      </div>
       <div className="flex items-center gap-2">
         <Input
           data-testid="shortcut-search"
@@ -232,8 +215,13 @@ export function KeyboardSettings() {
                         className="my-1 flex items-center gap-2 rounded-lg bg-card px-3 py-2 text-xs"
                       >
                         <span className="flex-1">
-                          <Kbd>{formatChord(conflict.chord)}</Kbd> is already{" "}
-                          <b>{ACTIONS[conflict.other].label}</b>.
+                          <Kbd>{formatChord(conflict.press[0])}</Kbd> is already{" "}
+                          <b>
+                            {conflict.others
+                              .map((other) => ACTIONS[other].label)
+                              .join(" and ")}
+                          </b>
+                          .
                         </span>
                         <Button
                           size="sm"
@@ -243,7 +231,7 @@ export function KeyboardSettings() {
                             assignShortcut(
                               conflict.id,
                               conflict.replacing,
-                              conflict.chord,
+                              conflict.press,
                             );
                             setConflict(null);
                           }}

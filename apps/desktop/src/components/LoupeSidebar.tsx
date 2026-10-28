@@ -72,15 +72,15 @@ export function LoupeSidebar({
   const filmstrip = filmstripPref.use();
   const autoAdvance = autoAdvancePref.use();
   const andNext = autoAdvance ? " & next" : "";
-  useOverrides();
+  const overrides = useOverrides();
   const hint = (text: string, ids: ActionId[], separator = "") => {
-    const keys = ids.map(shortcutLabel);
+    const keys = ids.map((id) => shortcutLabel(id, overrides));
     return keys.includes(null)
       ? null
       : `${keys.join(separator)} ${text}`.trim();
   };
   const withKey = (text: string, id: ActionId) =>
-    [text, shortcutLabel(id)].filter(Boolean).join(" · ");
+    [text, shortcutLabel(id, overrides)].filter(Boolean).join(" · ");
   const where = stacks.current;
   const inside = where?.inside ?? false;
   const hints = [

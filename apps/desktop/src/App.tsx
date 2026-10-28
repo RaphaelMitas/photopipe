@@ -667,6 +667,9 @@ export default function App() {
     "settings.copy": () => (copySource ? copySettings(copySource) : false),
     "settings.paste": () => (openShoot ? pasteSettings(pasteTargets) : false),
     "export.open": () => (openShoot ? openExport() : false),
+    "editPanel.toggle": editPanelPref.toggle,
+    "stacks.toggle": stacksPref.toggle,
+    "split.toggle": toggleSplit,
   });
   const withSelection = (act: () => unknown) =>
     selection.isEmpty ? false : act();
@@ -683,11 +686,6 @@ export default function App() {
     },
     "browser",
   );
-  useShortcuts({
-    "editPanel.toggle": editPanelPref.toggle,
-    "stacks.toggle": stacksPref.toggle,
-    "split.toggle": toggleSplit,
-  });
 
   const trashPhotos = (paths: string[]) =>
     // even a failed trash may have moved some of them
