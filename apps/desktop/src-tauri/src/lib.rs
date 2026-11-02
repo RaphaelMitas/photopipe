@@ -5,6 +5,7 @@ mod swift_core;
 use bookmark::Failure;
 use roots::{Listing, Roots};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 
@@ -26,9 +27,13 @@ async fn core_request(
     blocking(move || swift_core::request(&method, params)).await?
 }
 
+const DEFAULT_PROJECT: &str = "Photos";
+
 #[derive(Serialize)]
 struct OpenedRoot {
     path: String,
+    /// A project made for an empty default library, to open straight away.
+    created: Option<String>,
     #[serde(flatten)]
     result: serde_json::Value,
 }
@@ -42,8 +47,13 @@ async fn list_roots(roots: State<'_, Arc<Roots>>) -> Result<Vec<Listing>, Failur
 /// Minting for a bare path only works under the sandbox if the panel granted it
 /// this session.
 #[tauri::command]
-async fn open_root(roots: State<'_, Arc<Roots>>, path: String) -> Result<OpenedRoot, Failure> {
+async fn open_root(
+    app: AppHandle,
+    roots: State<'_, Arc<Roots>>,
+    path: String,
+) -> Result<OpenedRoot, Failure> {
     let roots = Arc::clone(&roots);
+    let library = default_library_dir(&app);
     blocking(move || -> Result<_, Failure> {
         let live = match roots.reopen(&path) {
             Some(Ok(live)) => live,
@@ -54,20 +64,46 @@ async fn open_root(roots: State<'_, Arc<Roots>>, path: String) -> Result<OpenedR
         };
         let path = live.path.clone();
         let result = swift_core::request("setRoot", Some(serde_json::json!({ "path": path })))?;
+        let created = start_default_project(library.as_deref(), &path, &result);
         roots.adopt(live);
-        Ok(OpenedRoot { path, result })
+        Ok(OpenedRoot {
+            path,
+            created,
+            result,
+        })
     })
     .await?
 }
 
 /// The app's own Documents folder, which Files lists as On My iPad > Photopipe.
-#[tauri::command]
-fn default_library(app: AppHandle) -> Option<String> {
+fn default_library_dir(app: &AppHandle) -> Option<PathBuf> {
     if cfg!(desktop) {
         return None;
     }
-    let dir = app.path().document_dir().ok()?;
-    Some(dir.to_string_lossy().into_owned())
+    app.path().document_dir().ok()
+}
+
+#[tauri::command]
+fn default_library(app: AppHandle) -> Option<String> {
+    default_library_dir(&app).map(|dir| dir.to_string_lossy().into_owned())
+}
+
+/// Compared canonical: /var links to /private/var, and the bookmark and HOME need not name the same one.
+fn start_default_project(
+    library: Option<&Path>,
+    root: &str,
+    opened: &serde_json::Value,
+) -> Option<String> {
+    let library = std::fs::canonicalize(library?).ok()?;
+    if opened["shoots"] != 0 || std::fs::canonicalize(root).ok()? != library {
+        return None;
+    }
+    let created = swift_core::request(
+        "createProject",
+        Some(serde_json::json!({ "name": DEFAULT_PROJECT, "notes": "" })),
+    )
+    .ok()?;
+    created["shoot"].as_str().map(str::to_owned)
 }
 
 #[tauri::command]
@@ -324,4 +360,35 @@ pub fn run() {
                 swift_core::shutdown();
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_empty_default_library_gets_a_project_whichever_way_the_container_is_named() {
+        // temp_dir() is under /var on macOS, which canonicalizes to /private/var like the iPad container
+        let named = std::env::temp_dir().join(format!("photopipe-default-{}", std::process::id()));
+        std::fs::create_dir_all(&named).unwrap();
+        let resolved = std::fs::canonicalize(&named).unwrap();
+        assert_ne!(named, resolved);
+        let root = resolved.to_str().unwrap();
+        let opened =
+            swift_core::request("setRoot", Some(serde_json::json!({ "path": root }))).unwrap();
+
+        assert_eq!(start_default_project(None, root, &opened), None);
+        let elsewhere = std::env::temp_dir();
+        assert_eq!(start_default_project(Some(&elsewhere), root, &opened), None);
+        assert_eq!(
+            start_default_project(Some(&named), root, &serde_json::json!({ "shoots": 1 })),
+            None
+        );
+        assert_eq!(
+            start_default_project(Some(&named), root, &opened).as_deref(),
+            Some(DEFAULT_PROJECT)
+        );
+        assert!(resolved.join(DEFAULT_PROJECT).is_dir());
+        let _ = std::fs::remove_dir_all(&named);
+    }
 }

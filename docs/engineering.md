@@ -250,10 +250,10 @@ app and core on an iPad simulator. `tauri.ios.conf.json` gives it the store id
 to iPad. Library and export folders are picked in place by a Swift document
 picker in the core's C ABI, because the dialog plugin cannot pick a folder on
 iOS. A launch with no saved library opens the app's own Documents folder,
-which Files lists as On My iPad > Photopipe, and starts in a new Photos
-project when that folder has none. Import offers Files or Photos, since a card reader shows up only in Files
-and an iPad import from the camera lands only in Photos. Files are picked in
-place by the same picker, because the dialog plugin offers the Photos library
+which Files lists as On My iPad > Photopipe; opening it while it holds no
+project creates a Photos project and starts in it. Import offers Files or
+Photos, since a card reader shows up only in Files and an iPad import from the
+camera lands only in Photos. Files are picked in place by the same picker, because the dialog plugin offers the Photos library
 for image filters and copies whatever it picks into the app's caches. Photos
 lends a file only for a callback, so each pick is copied into the temporary
 folder, the raw when there is one, and anything the library cannot open is

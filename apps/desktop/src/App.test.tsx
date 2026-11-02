@@ -134,25 +134,24 @@ describe("App", () => {
     expect(within(entry).getByText("4 photos")).toBeInTheDocument();
   });
 
-  it("starts the iPad in a new project in its own library", async () => {
-    let shoots: (typeof SHOOT)[] = [];
+  it("starts the iPad in the project the shell made in its own library", async () => {
+    const PHOTOS = { ...SHOOT, name: "Photos", path: "/docs/Photos" };
     invoke.mockImplementation(async (cmd, args) => {
       if (cmd === "list_roots") return [];
       if (cmd === "default_library") return "/docs";
       if (cmd === "open_root")
-        return { path: "/docs", shoots: 0, files: 0, generation: 1 };
+        return {
+          path: "/docs",
+          created: "Photos",
+          shoots: 1,
+          files: 0,
+          generation: 1,
+        };
       if (cmd === "features") return {};
-      const { method, params } = args as {
-        method: string;
-        params?: { name: string };
-      };
-      if (method === "createProject") {
-        shoots = [{ ...SHOOT, name: "Photos", path: "/docs/Photos" }];
-        return { shoot: params?.name, path: "/docs/Photos", generation: 2 };
-      }
-      if (method === "listShoots") return { shoots };
+      const { method } = args as { method: string };
+      if (method === "listShoots") return { shoots: [PHOTOS] };
       if (method === "status")
-        return { generation: 2, root: "/docs", shoots: shoots.length };
+        return { generation: 1, root: "/docs", shoots: 1 };
       if (method === "listImages") return { images: [] };
       return {};
     });
@@ -160,32 +159,7 @@ describe("App", () => {
     renderWithQueries(<App />);
     expect(await screen.findAllByText("Photos")).not.toHaveLength(0);
     expect(screen.queryByTestId("new-project")).not.toBeInTheDocument();
-    expect(invoke).toHaveBeenCalledWith("core_request", {
-      method: "createProject",
-      params: { name: "Photos", notes: "" },
-    });
-  });
-
-  it("leaves an iPad library that has projects on the dashboard", async () => {
-    invoke.mockImplementation(async (cmd, args) => {
-      if (cmd === "list_roots") return [];
-      if (cmd === "default_library") return "/r";
-      if (cmd === "open_root")
-        return { path: "/r", shoots: 1, files: 4, generation: 1 };
-      const { method } = args as { method: string };
-      if (method === "listShoots") return { shoots: [SHOOT] };
-      if (method === "status") return { generation: 1, root: "/r", shoots: 1 };
-      throw new Error(`unexpected ${method}`);
-    });
-
-    renderWithQueries(<App />);
-    expect(
-      await screen.findByTestId("shoot-2026-07-12_zell"),
-    ).toBeInTheDocument();
-    expect(invoke).not.toHaveBeenCalledWith(
-      "core_request",
-      expect.objectContaining({ method: "createProject" }),
-    );
+    expect(invoke).toHaveBeenCalledWith("open_root", { path: "/docs" });
   });
 
   it("opens settings from the menu bar before a folder is picked", async () => {

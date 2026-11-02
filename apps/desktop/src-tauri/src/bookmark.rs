@@ -94,7 +94,9 @@ pub fn activate(bookmark: &[u8]) -> Result<Live, Failure> {
         .map(|path| path.to_string())
         .ok_or_else(|| Failure::Broken("bookmark resolved to no path".into()))?;
     // never stopped: the core reads the folder for as long as the app runs
-    if !unsafe { url.startAccessingSecurityScopedResource() } {
+    let scoped = unsafe { url.startAccessingSecurityScopedResource() };
+    // iOS gives no scope for the app's own Documents, which needs none
+    if !scoped && std::fs::read_dir(&path).is_err() {
         return Err(Failure::Denied(format!(
             "the system refused access to {path}"
         )));

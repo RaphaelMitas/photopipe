@@ -23,7 +23,6 @@ export function pickFolder(title: string): Promise<string | null> {
   return invoke("pick_folder", { title });
 }
 
-/** Where a first launch with no saved library opens; null on the Mac. */
 export function defaultLibrary(): Promise<string | null> {
   return invoke("default_library");
 }
@@ -39,7 +38,7 @@ export function pickPhotos(
 
 export async function openRoot(
   path?: string,
-): Promise<(SetRootResult & { path: string }) | null> {
+): Promise<(SetRootResult & { path: string; created: string | null }) | null> {
   const chosen = path ?? (await pickFolder("Choose your photos folder"));
   return chosen === null ? null : invoke("open_root", { path: chosen });
 }

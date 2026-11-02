@@ -321,7 +321,13 @@ export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
       { path, status: "ok" },
       ...roots.filter((root) => root.path !== path),
     ];
-    return { path, shoots: shoots.length, files: 6, generation: 1 };
+    return {
+      path,
+      created: null,
+      shoots: shoots.length,
+      files: 6,
+      generation: 1,
+    };
   },
   forget_root: (args) => {
     roots = roots.filter((root) => root.path !== stringArg(args, "path"));
