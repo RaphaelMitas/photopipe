@@ -42,7 +42,7 @@ Two earlier shapes were tried and reversed, and both are worth recording
 because they looked reasonable.
 
 The first attempt was a **stepper**: ordered steps with completion states.
-A stepper says *you are here, and this is what remains* — a framing that only
+A stepper says _you are here, and this is what remains_ — a framing that only
 works when the tool owns the whole process, and it didn't.
 
 The second attempt was **pages** (Media / Edit / Export, DaVinci
@@ -147,10 +147,10 @@ without one, the same rule the Date sort uses.
 ## Export always acts on the selection
 
 There is no "export the filtered set" mode. The drawer's quick actions
-(*Select filtered · n*, *All · n*) perform a real selection — the grid lights
+(_Select filtered · n_, _All · n_) perform a real selection — the grid lights
 up, and ⌘-click prunes it before committing. The count on the button and the
 files that leave can never disagree, because there is only the selection.
-*Select all* drops the rating filter first so no part of the selection is
+_Select all_ drops the rating filter first so no part of the selection is
 ever invisible.
 
 ## Pasted settings never carry the framing

@@ -97,7 +97,7 @@ jobs:
     name: Build, sign, notarize
     needs: check
     if: needs.check.outputs.is-release == 'true'
-    runs-on: macos-15
+    runs-on: macos-26
     permissions:
       contents: write
     env:
@@ -317,7 +317,7 @@ jobs:
     name: Capture the App Store screenshots
     needs: [check]
     if: (needs.check.outputs.is-release == 'true' || needs.check.outputs.submit == 'true') && needs.check.outputs.mas == 'true'
-    runs-on: macos-15
+    runs-on: macos-26
     permissions:
       contents: read
     steps:
@@ -349,7 +349,7 @@ jobs:
     name: Build, sign, upload to the App Store
     needs: [check]
     if: (needs.check.outputs.is-release == 'true' || (needs.check.outputs.submit == 'true' && inputs.platform != 'ipad')) && needs.check.outputs.mas == 'true'
-    runs-on: macos-15
+    runs-on: macos-26
     # Pinned so a repo-setting change cannot hand the fastlane gems a write token.
     permissions:
       contents: read
@@ -442,9 +442,9 @@ jobs:
           name: photopipe-mas
           path: ${{ env.PKG }}
 
-      - uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1.329.0
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
         with:
-          ruby-version: "4.0.7"
+          ruby-version: "4.0.9"
           bundler-cache: true
 
       - name: Upload to App Store Connect
@@ -484,7 +484,7 @@ jobs:
     name: Build, sign, upload the iPad app
     needs: [check]
     if: (needs.check.outputs.is-release == 'true' || (needs.check.outputs.submit == 'true' && inputs.platform != 'mac')) && needs.check.outputs.mas == 'true'
-    runs-on: macos-15
+    runs-on: macos-26
     permissions:
       contents: read
     outputs:
@@ -537,9 +537,9 @@ jobs:
           name: photopipe-ipad
           path: ${{ env.IPA }}
 
-      - uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a # v1.329.0
+      - uses: ruby/setup-ruby@7f797815d8adceb1c412e7abefdd1ab4abc47a5f # v1.335.0
         with:
-          ruby-version: "4.0.7"
+          ruby-version: "4.0.9"
           bundler-cache: true
 
       - name: Upload to App Store Connect

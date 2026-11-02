@@ -720,7 +720,6 @@ function useZoom({
   resetKey: string;
 }) {
   const [state, setState] = useState<ZoomState | null>(null);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset when the photo or mode changes
   useEffect(() => setState(null), [resetKey]);
 
   const scale100 = photoBox.width > 0 ? pixelWidth / photoBox.width : 0;

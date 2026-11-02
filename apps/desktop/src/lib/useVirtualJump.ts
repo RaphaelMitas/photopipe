@@ -8,7 +8,6 @@ export function useVirtualJump(
   revealed = 0,
 ) {
   const jumped = useRef(false);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only the mount jumps
   useEffect(() => {
     if (jumped.current || !ready) return;
     // a match arriving later must not yank the scroll out from under the user
@@ -24,7 +23,6 @@ export function useVirtualJump(
     return () => cancelAnimationFrame(frame);
   }, [index, ready]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a reveal is the trigger, the index only says where
   useEffect(() => {
     if (revealed > 0 && index !== -1) {
       virtualizer.scrollToIndex(index, { align: "auto" });

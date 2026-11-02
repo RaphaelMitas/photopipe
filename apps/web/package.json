@@ -15,7 +15,7 @@
   "dependencies": {
     "@photopipe/ui": "workspace:*",
     "lucide-react": "catalog:",
-    "next": "16.4.2",
+    "next": "16.4.3",
     "react": "catalog:",
     "react-dom": "catalog:"
   },

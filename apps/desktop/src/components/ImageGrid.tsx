@@ -238,7 +238,6 @@ export function ImageGrid({
     [rows, focusPath],
   );
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: measure() on rows change is the point
   useEffect(() => {
     virtualizer.measure();
   }, [rows]);

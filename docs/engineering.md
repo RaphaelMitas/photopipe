@@ -45,12 +45,12 @@ photopipe/
 The reason this app is native at all is interactive exposure while culling.
 The Phase 0 spike measured it on a 33MP Sony ARW:
 
-| Measurement | Result |
-|---|---|
-| Cold `CIRAWFilter` init | 122 ms |
-| Cold first render, loupe 2000px | 2317 ms |
-| **Warm re-render, loupe 2000px** | **32 ms median** (~31 fps) |
-| Warm re-render, draft `scaleFactor 0.5` | 5.4 ms median |
+| Measurement                             | Result                     |
+| --------------------------------------- | -------------------------- |
+| Cold `CIRAWFilter` init                 | 122 ms                     |
+| Cold first render, loupe 2000px         | 2317 ms                    |
+| **Warm re-render, loupe 2000px**        | **32 ms median** (~31 fps) |
+| Warm re-render, draft `scaleFactor 0.5` | 5.4 ms median              |
 
 Warm scrubbing is comfortably interactive, and the cold first render is why
 the loupe shows the thumbnail immediately and prefetches neighbours.
@@ -75,13 +75,13 @@ huge frame. Non-raw images load through a `CGImageSource` for that reason.
 
 ## Testing
 
-| Layer | Runner | Covers |
-|---|---|---|
-| Swift core | `swift test` | scanning, stage/lineage, XMP round-trips verified against a real exiftool, renderer, file actions, path containment |
-| Rust shell | `cargo test` | bookmarks, remembered roots, a round trip through the linked core |
-| React | Vitest | selection, browser views, stepper, keyboard |
-| App | Playwright | full flows against a mocked core |
-| Bundle | `scripts/smoke-bundle.sh` | a built `.app` is self-contained |
+| Layer      | Runner                    | Covers                                                                                                              |
+| ---------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Swift core | `swift test`              | scanning, stage/lineage, XMP round-trips verified against a real exiftool, renderer, file actions, path containment |
+| Rust shell | `cargo test`              | bookmarks, remembered roots, a round trip through the linked core                                                   |
+| React      | Vitest                    | selection, browser views, stepper, keyboard                                                                         |
+| App        | Playwright                | full flows against a mocked core                                                                                    |
+| Bundle     | `scripts/smoke-bundle.sh` | a built `.app` is self-contained                                                                                    |
 
 `tauri-driver` does not support macOS — WKWebView exposes no WebDriver
 endpoint — so Playwright drives the React app in a browser with the IPC layer
@@ -140,7 +140,7 @@ notices the version has no tag and:
 2. builds the app
 3. signs the app. exiftool needs no signature: it is a Perl script, not a
    Mach-O, and the app's seal covers it.
-4. notarizes, staples, and builds the DMG *from the stapled app*
+4. notarizes, staples, and builds the DMG _from the stapled app_
 5. signs and notarizes the DMG in its own right
 6. tars the stapled app, signs it with the minisign key and writes
    `latest.json` — the feed the in-app updater reads
@@ -285,7 +285,7 @@ can never be updated again** — a new key means everyone reinstalls by hand.
 `bundle.createUpdaterArtifacts` is deliberately off. It would tar the app
 during `tauri build`, which here happens before the signing and notarization,
 and would demand the signing key from every local and CI bundle build. The
-release workflow tars the *stapled* app instead, with `--no-mac-metadata`:
+release workflow tars the _stapled_ app instead, with `--no-mac-metadata`:
 AppleDouble `._` sidecars would end up inside the extracted bundle and break
 its seal, while the ticket and `_CodeSignature` are ordinary files that
 survive a plain tar.
