@@ -11,8 +11,17 @@ public enum FileActions {
         guard !paths.isEmpty else { throw ActionError.noFiles }
         var trashed: [String] = []
         for path in paths where FileManager.default.fileExists(atPath: path) {
-            try FileManager.default.trashItem(
-                at: URL(fileURLWithPath: path), resultingItemURL: nil)
+            let url = URL(fileURLWithPath: path)
+            do {
+                try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+            } catch {
+                #if os(macOS)
+                    throw error
+                #else
+                    // On My iPad has no Trash; the app asked for a permanent delete first.
+                    try FileManager.default.removeItem(at: url)
+                #endif
+            }
             trashed.append(path)
         }
         return trashed

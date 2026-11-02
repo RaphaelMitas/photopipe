@@ -156,6 +156,7 @@ struct Features {
     zip_export: bool,
     photo_library: bool,
     reveal: bool,
+    trash: bool,
 }
 
 #[tauri::command]
@@ -167,6 +168,8 @@ fn features() -> Features {
         photo_library: cfg!(mobile),
         // the opener plugin's reveal-in-folder is desktop-only
         reveal: cfg!(desktop),
+        // On My iPad has no Trash, so the core deletes there for good
+        trash: cfg!(desktop),
     }
 }
 

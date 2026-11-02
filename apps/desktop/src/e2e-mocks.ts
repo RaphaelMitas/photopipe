@@ -292,6 +292,7 @@ export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
     zipExport: !ipad,
     photoLibrary: ipad,
     reveal: !ipad,
+    trash: !ipad,
   }),
   pick_folder: (args) => {
     picked =
