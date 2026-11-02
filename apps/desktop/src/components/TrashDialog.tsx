@@ -41,9 +41,10 @@ export function TrashDialog({
             {trash ? `Move ${count} to the Trash?` : `Delete ${count}?`}
           </DialogTitle>
           <DialogDescription>
+            Their sidecars go with them.{" "}
             {trash
-              ? "Their sidecars go with them. Undo can't bring them back; Finder's Put Back can."
-              : "Their sidecars go with them. This can't be undone."}
+              ? "Undo can't bring them back; Finder's Put Back can."
+              : "This can't be undone."}
           </DialogDescription>
         </DialogHeader>
         <div className="flex items-center gap-1">

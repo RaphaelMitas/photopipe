@@ -41,7 +41,6 @@ import { ShootSettingsDialog } from "@/components/ShootSettingsDialog";
 import { ShortcutSheet } from "@/components/ShortcutSheet";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { ShowSidebarTrigger } from "@/components/ShowSidebarTrigger";
-import { TrashDialog } from "@/components/TrashDialog";
 import {
   type Edit,
   editKey,
@@ -227,12 +226,10 @@ export default function App() {
   const enriched = useEnriched(openShoot, ready);
   const writes = useRecordedWrites(openShoot);
   const reveal = useReveal();
-  const features = useFeatures();
-  const revealPaths = features.reveal
+  const revealPaths = useFeatures().reveal
     ? (paths: string[]) => reveal.mutate(paths)
     : undefined;
   const trash = useTrash(openShoot);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const exports = useExportJobs();
   const scan = useLibrarySync(ready, ready ? rootState.generation : null);
 
@@ -1006,7 +1003,7 @@ export default function App() {
             )}
           </header>
           <SelectionBar
-            count={selection.selected.size}
+            selected={selectedImages}
             busy={exports.running}
             canPaste={clipboard !== null}
             onCopySettings={() => copySource && copySettings(copySource)}
@@ -1017,21 +1014,9 @@ export default function App() {
               (() => revealPaths(selectedImages.map((image) => image.path)))
             }
             onDelete={() =>
-              features.trash
-                ? trashPhotos(selectedImages.map((image) => image.path))
-                : setConfirmingDelete(true)
-            }
-            onClear={selection.clear}
-          />
-          <TrashDialog
-            photos={selectedImages}
-            noun="photo"
-            open={confirmingDelete}
-            onOpenChange={setConfirmingDelete}
-            onConfirm={() =>
               trashPhotos(selectedImages.map((image) => image.path))
             }
-            testId="trash-selection"
+            onClear={selection.clear}
           />
           <div className="flex min-h-0 flex-1">
             <div className="min-w-0 flex-1">{content}</div>

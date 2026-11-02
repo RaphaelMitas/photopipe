@@ -7,10 +7,14 @@ import {
   Upload,
   X,
 } from "lucide-react";
+import { useState } from "react";
+import type { ImageFile } from "@/lib/core";
+import { useFeatures } from "@/lib/features";
 import { ShortcutTooltip } from "./ShortcutTooltip";
+import { TrashDialog } from "./TrashDialog";
 
 type Props = {
-  count: number;
+  selected: ImageFile[];
   canPaste: boolean;
   onCopySettings: () => void;
   onPasteSettings: () => void;
@@ -22,7 +26,7 @@ type Props = {
 };
 
 export function SelectionBar({
-  count,
+  selected,
   canPaste,
   onCopySettings,
   onPasteSettings,
@@ -32,6 +36,9 @@ export function SelectionBar({
   onClear,
   busy,
 }: Props) {
+  const { trash } = useFeatures();
+  const [confirming, setConfirming] = useState(false);
+  const count = selected.length;
   if (count === 0) return null;
   return (
     <div
@@ -100,12 +107,12 @@ export function SelectionBar({
             </Button>
           </ShortcutTooltip>
         )}
-        <ShortcutTooltip label="Move to Trash">
+        <ShortcutTooltip label={trash ? "Move to Trash" : "Delete for good"}>
           <Button
             size="sm"
             variant="ghost"
             data-testid="action-delete"
-            onClick={() => onDelete()}
+            onClick={() => (trash ? onDelete() : setConfirming(true))}
             className="h-7 text-xs text-muted-foreground hover:text-destructive"
           >
             <Trash2 />
@@ -125,6 +132,14 @@ export function SelectionBar({
           <X />
         </Button>
       </ShortcutTooltip>
+      <TrashDialog
+        photos={selected}
+        noun="photo"
+        open={confirming}
+        onOpenChange={setConfirming}
+        onConfirm={onDelete}
+        testId="trash-selection"
+      />
     </div>
   );
 }
