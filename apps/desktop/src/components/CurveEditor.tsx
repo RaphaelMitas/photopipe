@@ -187,7 +187,7 @@ export function CurveEditor({ edit, imageSrc, photo, onChange }: Props) {
 
   return (
     <div data-testid="curve-editor" className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 pointer-coarse:gap-7">
         {CURVE_CHANNELS.map((entry) => (
           <ShortcutTooltip key={entry.channel} label={entry.label}>
             <button
@@ -197,7 +197,7 @@ export function CurveEditor({ edit, imageSrc, photo, onChange }: Props) {
               aria-pressed={channel === entry.channel}
               onClick={() => setChannel(entry.channel)}
               className={cn(
-                "size-4 rounded-full transition-opacity",
+                "relative finger-target size-4 rounded-full transition-opacity",
                 entry.dot,
                 channel === entry.channel
                   ? "opacity-100 ring-2 ring-white/40"

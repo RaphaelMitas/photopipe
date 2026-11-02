@@ -175,6 +175,7 @@ export function KeyboardSettings() {
                             disabled={action.fixed}
                             aria-label={`Change ${formatChord(chord)} for ${action.label}`}
                             onClick={() => record(id, chord)}
+                            className="relative finger-target"
                           >
                             <Kbd>{formatChord(chord)}</Kbd>
                           </button>

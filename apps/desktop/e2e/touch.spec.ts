@@ -121,3 +121,64 @@ test("a finger on a curve point grabs that point, not a close neighbour", async 
   expect(Number(heights[1])).toBeCloseTo((1 - 0.4) * 140, 0);
   expect(Number(heights[2])).toBeCloseTo((1 - 0.8) * 140, 0);
 });
+
+test("slider rows are finger tall, a tap leaves the value, and a drag scrubs from it", async ({
+  page,
+}) => {
+  await openLoupe(page);
+  const slider = page.getByTestId("exposure");
+  const thumb = slider.getByRole("slider");
+  const bounds = await box(slider);
+  expect(bounds.height).toBeGreaterThanOrEqual(44);
+  expect(
+    await slider.evaluate((node) => getComputedStyle(node).touchAction),
+  ).toBe("pan-y");
+
+  const y = bounds.y + bounds.height / 2;
+  const left = { clientX: bounds.x + bounds.width * 0.25, clientY: y };
+  const before = Number(await thumb.getAttribute("aria-valuenow"));
+  await drag(slider, left, left);
+  await expect(thumb).toHaveAttribute("aria-valuenow", String(before));
+
+  await drag(slider, left, { clientX: left.clientX + 40, clientY: y });
+  expect(Number(await thumb.getAttribute("aria-valuenow"))).toBeGreaterThan(
+    before,
+  );
+});
+
+test("small buttons, stars and flags take a fingertip that lands beside them", async ({
+  page,
+}) => {
+  await openLoupe(page);
+  const reset = await box(page.getByTestId("exposure-reset"));
+  expect(
+    await hitAt(
+      page,
+      reset.x + reset.width / 2 - 18,
+      reset.y + reset.height / 2,
+    ),
+  ).toBe("exposure-reset");
+
+  expect((await box(page.getByTestId("star-3"))).width).toBeGreaterThanOrEqual(
+    40,
+  );
+  expect(
+    (await box(page.getByTestId("flag-pick"))).width,
+  ).toBeGreaterThanOrEqual(36);
+});
+
+test("the crop panel straightens by finger without the corner zones", async ({
+  page,
+}) => {
+  await openLoupe(page);
+  await page.getByTestId("enter-crop").click();
+  const slider = page.getByTestId("crop-angle");
+  const bounds = await box(slider);
+  const start = {
+    clientX: bounds.x + bounds.width / 2,
+    clientY: bounds.y + bounds.height / 2,
+  };
+
+  await drag(slider, start, { ...start, clientX: start.clientX + 30 });
+  await expect(page.getByTestId("crop-angle-hud")).not.toContainText("0.0°");
+});

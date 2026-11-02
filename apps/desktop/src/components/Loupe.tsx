@@ -16,6 +16,7 @@ import {
   fitRect,
   moveCrop,
   rotatedSize,
+  signedAngle,
 } from "@/lib/crop";
 import { clamp01 } from "@/lib/curve";
 import { EXPOSURE_RANGE, EXPOSURE_STEP } from "@/lib/editSliders";
@@ -446,7 +447,7 @@ export function Loupe({
             data-testid="crop-angle-hud"
             className={`${CHIP} pointer-events-none absolute top-3 left-1/2 -translate-x-1/2`}
           >
-            {`∠ ${cropDraft.angle > 0 ? "+" : ""}${cropDraft.angle.toFixed(1)}° · double-click to reset`}
+            {`∠ ${signedAngle(cropDraft.angle)} · double-click to reset`}
           </div>
         )}
         {!cropping && zoom.state !== null && (

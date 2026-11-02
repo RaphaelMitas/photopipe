@@ -146,7 +146,7 @@ function RatingFilterOps({
         data-testid={`filter-op-${testid}`}
         disabled={disabled}
         onClick={onClick}
-        className="h-5 min-w-0 px-1.5 font-mono text-[10px]"
+        className="h-5 min-w-0 px-1.5 font-mono text-[10px] pointer-coarse:h-8 pointer-coarse:px-3"
       >
         {label}
       </Button>

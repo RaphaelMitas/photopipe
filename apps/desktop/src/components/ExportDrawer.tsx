@@ -652,7 +652,7 @@ export function ExportDrawer({
                   type="button"
                   data-testid="banner-keep"
                   onClick={() => setDismissed(dismissKey)}
-                  className="text-[10px] text-muted-foreground underline underline-offset-2"
+                  className="relative finger-target text-[10px] text-muted-foreground underline underline-offset-2"
                 >
                   {banner.keep}
                 </button>
