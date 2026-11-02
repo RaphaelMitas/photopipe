@@ -39,7 +39,7 @@ export function SelectionBar({
   const { trash } = useFeatures();
   const [confirming, setConfirming] = useState(false);
   const count = selected.length;
-  if (count === 0) return null;
+  if (count === 0 && !confirming) return null;
   return (
     <div
       data-testid="selection-bar"

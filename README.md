@@ -99,7 +99,8 @@ PNG. The Mac then uses that sidecar too; other apps do not read it.
 
 Hold, or ⌘-click, to start selecting. Then **Export…**, **Reveal in
 Finder**, or **Delete** — which means the Trash, sidecar included, never an
-unlink.
+unlink. On iPad's own storage there is no Trash, so Delete asks first and
+then deletes for good.
 
 ## Development
 

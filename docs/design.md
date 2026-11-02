@@ -33,6 +33,7 @@ along, because leaving it behind would be a lie about what you asked for. A
 sidecar two raws share, like an ORF and its ORI, goes with the last of them.
 Rejects leave the same way, all at once, behind a confirm: a first pass is
 mostly "no", and that is the one place a keypress turns into a deletion.
+On My iPad has no Trash, so there every Delete asks first and then unlinks.
 
 ## One surface, not stages
 
