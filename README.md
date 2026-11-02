@@ -98,9 +98,9 @@ on iPad, which has no exiftool to write into a file, so does a DNG, JPEG or
 PNG. The Mac then uses that sidecar too; other apps do not read it.
 
 Hold, or ⌘-click, to start selecting. Then **Export…**, **Reveal in
-Finder**, or **Delete** — which means the Trash, sidecar included, never an
-unlink. On iPad's own storage there is no Trash, so Delete asks first and
-then deletes for good.
+Finder**, or **Delete**. On the Mac that means the Trash, sidecar included,
+never an unlink. On iPad, where On My iPad has no Trash, Delete asks first
+and then deletes for good.
 
 ## Development
 

@@ -28,12 +28,13 @@ Bridge's older reject, a rating of -1, reads as unrated: un-rejecting would
 otherwise leave it behind to come back. Whether Lightroom reads a pick
 another app wrote is still untested.
 
-**Delete means Trash.** Never an unlink, and it takes the photo's XMP sidecar
-along, because leaving it behind would be a lie about what you asked for. A
-sidecar two raws share, like an ORF and its ORI, goes with the last of them.
-Rejects leave the same way, all at once, behind a confirm: a first pass is
-mostly "no", and that is the one place a keypress turns into a deletion.
-On My iPad has no Trash, so there every Delete asks first and then unlinks.
+**Delete means Trash on the Mac.** Never an unlink there, and it takes the
+photo's XMP sidecar along, because leaving it behind would be a lie about what
+you asked for. A sidecar two raws share, like an ORF and its ORI, goes with the
+last of them. Rejects leave the same way, all at once, behind a confirm: a
+first pass is mostly "no", and that is the one place a keypress turns into a
+deletion. On iPad every Delete asks first and then unlinks, because On My iPad
+has no Trash.
 
 ## One surface, not stages
 
