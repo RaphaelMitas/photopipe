@@ -160,6 +160,7 @@ export function useRecordedWrites(shoot: string | null) {
         new Map([[path, image.edit]]),
         new Map([[path, edit]]),
       );
+      return written;
     },
     [queryClient, shoot, setEdit, edits],
   );

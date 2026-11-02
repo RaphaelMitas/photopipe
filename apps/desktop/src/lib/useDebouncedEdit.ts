@@ -7,7 +7,7 @@ const RELEASES = ["pointerup", "pointercancel", "contextmenu", "blur"];
 type EditDraft = { path: string; edit: Edit } | null;
 
 export function useDebouncedEdit(
-  commit: (path: string, edit: Edit) => void,
+  commit: (path: string, edit: Edit) => Promise<unknown> | undefined,
   delayMs: number,
 ) {
   const [draft, setDraft] = useState<EditDraft>(null);
@@ -18,22 +18,33 @@ export function useDebouncedEdit(
   const commitRef = useRef(commit);
   commitRef.current = commit;
 
-  // Pasting over the photo being scrubbed cancels rather than flushes: the
-  // pending value would land after the paste.
-  const cancel = useCallback(() => {
+  const takePending = useCallback(() => {
     if (timer.current !== null) {
       clearTimeout(timer.current);
       timer.current = null;
     }
+    const taken = pending.current;
     pending.current = null;
-    setDraft(null);
+    return taken;
   }, []);
 
+  // Pasting over the photo being scrubbed cancels rather than flushes: the
+  // pending value would land after the paste.
+  const cancel = useCallback(() => {
+    takePending();
+    setDraft(null);
+  }, [takePending]);
+
   const flush = useCallback(() => {
-    const next = pending.current;
-    cancel();
-    if (next) commitRef.current(next.path, next.edit);
-  }, [cancel]);
+    const next = takePending();
+    if (!next) return;
+    // The cache only has the edit once the write's async optimistic patch ran.
+    const settled = () => setDraft((draft) => (draft === next ? null : draft));
+    Promise.resolve(commitRef.current(next.path, next.edit)).then(
+      settled,
+      settled,
+    );
+  }, [takePending]);
 
   // A drag saves once, on release; everything else saves at rest.
   const held = useRef(false);
@@ -51,8 +62,9 @@ export function useDebouncedEdit(
   const scrub = useCallback(
     (path: string, edit: Edit) => {
       if (pending.current && pending.current.path !== path) flush();
-      setDraft({ path, edit });
-      pending.current = { path, edit };
+      const next = { path, edit };
+      setDraft(next);
+      pending.current = next;
       if (timer.current !== null) clearTimeout(timer.current);
       timer.current = held.current ? null : window.setTimeout(flush, delayMs);
     },
