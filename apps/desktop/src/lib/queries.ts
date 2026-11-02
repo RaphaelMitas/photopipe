@@ -36,6 +36,7 @@ import {
   normalizeShoot,
   type StatusResult,
 } from "./core";
+import { useFeatures } from "./features";
 import { fileName } from "./fileName";
 import { pluralize } from "./plural";
 import { useRawDecoderVersion } from "./rawDecoder";
@@ -705,13 +706,16 @@ export function useReveal() {
 
 export function useTrash(shoot: string | null) {
   const queryClient = useQueryClient();
+  const { trash } = useFeatures();
   return useMutation({
     mutationKey: TRASH_KEY,
     mutationFn: (paths: string[]) => coreRequest("trash", { shoot, paths }),
     onSuccess: (result, paths) => {
-      toast.success(`Moved ${pluralize(paths.length, "photo")} to the Trash`, {
-        description: pluralize(result.files, "file"),
-      });
+      const photos = pluralize(paths.length, "photo");
+      toast.success(
+        trash ? `Moved ${photos} to the Trash` : `Deleted ${photos}`,
+        { description: pluralize(result.files, "file") },
+      );
       queryClient.invalidateQueries({ queryKey: imagesKey(shoot) });
       invalidateLibrary(queryClient);
     },

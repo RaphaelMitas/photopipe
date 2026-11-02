@@ -115,6 +115,24 @@ test("delete moves the selection to the Trash and the grid follows", async ({
   await expect(page.getByTestId("selection-bar")).toHaveCount(0);
 });
 
+test("on iPad delete is permanent, so it asks first", async ({ page }) => {
+  await openShoot(page, "2026-07-12_zell", { url: "/?ipad" });
+  await expect(page.getByTestId("thumb")).toHaveCount(4);
+
+  await page
+    .locator("[data-path='abends/DSC00943.ARW']")
+    .click({ modifiers: ["ControlOrMeta"] });
+  await page.getByTestId("action-delete").click();
+  await expect(page.getByTestId("trash-selection-dialog")).toContainText(
+    "can't be undone",
+  );
+  await expect(page.getByTestId("thumb")).toHaveCount(4);
+
+  await page.getByTestId("trash-selection-confirm").click();
+  await expect(page.getByText(/Deleted 1 photo/)).toBeVisible();
+  await expect(page.getByTestId("thumb")).toHaveCount(3);
+});
+
 async function walkTo40th(page: import("@playwright/test").Page) {
   await expect(page.getByTestId("loupe")).toBeVisible();
   for (let step = 0; step < 40; step++) {

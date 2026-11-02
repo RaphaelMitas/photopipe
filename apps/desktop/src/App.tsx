@@ -1003,7 +1003,7 @@ export default function App() {
             )}
           </header>
           <SelectionBar
-            count={selection.selected.size}
+            selected={selectedImages}
             busy={exports.running}
             canPaste={clipboard !== null}
             onCopySettings={() => copySource && copySettings(copySource)}
