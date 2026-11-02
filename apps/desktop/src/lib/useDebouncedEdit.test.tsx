@@ -61,6 +61,21 @@ describe("useDebouncedEdit", () => {
     vi.useRealTimers();
   });
 
+  it("shows the draft until its write settles", async () => {
+    let land = () => {};
+    const commit = vi.fn(
+      () => new Promise<void>((resolve) => (land = resolve)),
+    );
+    const { result } = renderHook(() => useDebouncedEdit(commit, 400));
+
+    act(() => result.current.scrub("/r/a.arw", editWith(1)));
+    act(() => result.current.flush());
+    expect(result.current.draft?.edit).toEqual(editWith(1));
+
+    await act(async () => land());
+    expect(result.current.draft).toBeNull();
+  });
+
   it("flushes the pending edit on unmount", () => {
     vi.useFakeTimers();
     const commit = vi.fn();
