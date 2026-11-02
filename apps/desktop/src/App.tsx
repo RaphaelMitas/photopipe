@@ -199,13 +199,16 @@ export default function App() {
           connectRoot(roots[0].path);
           return;
         }
+        if (roots.length > 0) return;
         // A failed migration keeps the keys, so an unplugged drive gets another try.
         const legacy = localStorage.getItem(LEGACY_ROOT_KEY);
-        if (roots.length === 0 && legacy && (await connectRoot(legacy))) {
-          localStorage.removeItem(LEGACY_ROOT_KEY);
-          localStorage.removeItem(LEGACY_RECENTS_KEY);
+        if (legacy) {
+          if (await connectRoot(legacy)) {
+            localStorage.removeItem(LEGACY_ROOT_KEY);
+            localStorage.removeItem(LEGACY_RECENTS_KEY);
+          }
+          return;
         }
-        if (roots.length > 0 || legacy) return;
         const library = await defaultLibrary();
         if (library !== null) connectRoot(library);
       })
@@ -901,7 +904,7 @@ export default function App() {
             filterEnabled={openShoot !== null}
             rootPath={rootState.path}
             onChangeRoot={() => {
-              clearHistory();
+              enterShoot(null);
               setRootState({ kind: "picking", error: null, busy: false });
             }}
             onSettings={openSettings}

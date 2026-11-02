@@ -219,7 +219,8 @@ The Rust shell owns sandbox consent: it shows the
 folder panel, mints a security-scoped bookmark from the grant, keeps it in
 `NSUserDefaults` and starts access. Access is never stopped for the life of
 the process, because a scope stopped would vanish from under a running
-export.
+export. A folder in the app's own container, where the iPad's default library
+lives, needs no grant and gets no scope.
 Before every listing the shell re-checks each folder, so an ejected drive
 shows as unplugged and a renamed folder follows its bookmark. The old
 localStorage root migrates into the list on first launch; the old recent
@@ -253,9 +254,10 @@ iOS. A launch with no saved library opens the app's own Documents folder,
 which Files lists as On My iPad > Photopipe; opening it while it holds no
 project creates a Photos project and starts in it. Import offers Files or
 Photos, since a card reader shows up only in Files and an iPad import from the
-camera lands only in Photos. Files are picked in place by the same picker, because the dialog plugin offers the Photos library
-for image filters and copies whatever it picks into the app's caches. Photos
-lends a file only for a callback, so each pick is copied into the temporary
+camera lands only in Photos. Files are picked in place by the same picker,
+because the dialog plugin offers the Photos library for image filters and
+copies whatever it picks into the app's caches. Photos lends a file only for a
+callback, so each pick is copied into the temporary
 folder, the raw when there is one, and anything the library cannot open is
 written as a JPEG. Nothing watches the folder, so the library is walked
 again when a shoot opens, when the app comes back to the front, after an
