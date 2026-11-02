@@ -63,6 +63,7 @@ describe("App", () => {
   it("asks for a root folder when the shell remembers none", async () => {
     invoke.mockImplementation(async (cmd) => {
       if (cmd === "list_roots") return [];
+      if (cmd === "default_library") return null;
       throw new Error(`unexpected ${cmd}`);
     });
     renderWithQueries(<App />);
@@ -133,8 +134,44 @@ describe("App", () => {
     expect(within(entry).getByText("4 photos")).toBeInTheDocument();
   });
 
+  it("starts the iPad in the project the shell made, and leaves it for another library", async () => {
+    const PHOTOS = { ...SHOOT, name: "Photos", path: "/docs/Photos" };
+    let root = "/docs";
+    invoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "list_roots") return [];
+      if (cmd === "default_library") return "/docs";
+      if (cmd === "open_root") {
+        root = (args as { path: string }).path;
+        const created = root === "/docs" ? "Photos" : null;
+        return { path: root, created, shoots: 1, files: 0, generation: 1 };
+      }
+      if (cmd === "features") return {};
+      const { method } = args as { method: string };
+      if (method === "listShoots")
+        return { shoots: [root === "/docs" ? PHOTOS : SHOOT] };
+      if (method === "status") return { generation: 1, root, shoots: 1 };
+      if (method === "listImages") return { images: [] };
+      return {};
+    });
+
+    renderWithQueries(<App />);
+    expect(await screen.findAllByText("Photos")).not.toHaveLength(0);
+    expect(screen.queryByTestId("new-project")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("change-root"));
+    fireEvent.change(screen.getByTestId("root-input"), {
+      target: { value: "/r" },
+    });
+    fireEvent.click(screen.getByTestId("root-submit"));
+    expect(
+      await screen.findByTestId("shoot-2026-07-12_zell"),
+    ).toBeInTheDocument();
+  });
+
   it("opens settings from the menu bar before a folder is picked", async () => {
-    invoke.mockResolvedValue([]);
+    invoke.mockImplementation(async (cmd) =>
+      cmd === "default_library" ? null : [],
+    );
     renderWithQueries(<App />);
     expect(screen.getByTestId("root-input")).toBeInTheDocument();
 

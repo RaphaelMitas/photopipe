@@ -1,11 +1,15 @@
 import { TooltipProvider } from "@photopipe/ui/components/tooltip";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { makeImage } from "@/lib/test-image";
 import { SelectionBar } from "./SelectionBar";
 
 afterEach(cleanup);
 
 function renderBar(count = 2, canPaste = true) {
+  const client = new QueryClient();
+  client.setQueryData(["features"], { trash: true });
   const handlers = {
     onCopySettings: vi.fn(),
     onPasteSettings: vi.fn(),
@@ -14,10 +18,15 @@ function renderBar(count = 2, canPaste = true) {
     onDelete: vi.fn(),
     onClear: vi.fn(),
   };
+  const selected = Array.from({ length: count }, (_, i) =>
+    makeImage(`DSC${i}.ARW`),
+  );
   render(
-    <TooltipProvider>
-      <SelectionBar count={count} canPaste={canPaste} {...handlers} />
-    </TooltipProvider>,
+    <QueryClientProvider client={client}>
+      <TooltipProvider>
+        <SelectionBar selected={selected} canPaste={canPaste} {...handlers} />
+      </TooltipProvider>
+    </QueryClientProvider>,
   );
   return handlers;
 }
