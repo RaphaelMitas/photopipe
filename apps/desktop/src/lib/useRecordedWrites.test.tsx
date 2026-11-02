@@ -77,8 +77,12 @@ describe("useRecordedWrites", () => {
 
   it("names an edit after the setting that moved", async () => {
     const { result } = setup();
-    act(() =>
-      result.current.writeEdit(PATH, { ...identityEdit, exposure: 0.5 }),
+    act(
+      () =>
+        void result.current.writeEdit(PATH, {
+          ...identityEdit,
+          exposure: 0.5,
+        }),
     );
     await waitFor(() => expect(historyState().cursor).toBe(1));
     expect(historyState().entries[0]).toMatchObject({
