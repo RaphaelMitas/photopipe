@@ -26,9 +26,12 @@ async fn core_request(
     blocking(move || swift_core::request(&method, params)).await?
 }
 
+const DEFAULT_PROJECT: &str = "Photos";
+
 #[derive(Serialize)]
 struct OpenedRoot {
     path: String,
+    created: Option<String>,
     #[serde(flatten)]
     result: serde_json::Value,
 }
@@ -42,8 +45,13 @@ async fn list_roots(roots: State<'_, Arc<Roots>>) -> Result<Vec<Listing>, Failur
 /// Minting for a bare path only works under the sandbox if the panel granted it
 /// this session.
 #[tauri::command]
-async fn open_root(roots: State<'_, Arc<Roots>>, path: String) -> Result<OpenedRoot, Failure> {
+async fn open_root(
+    app: AppHandle,
+    roots: State<'_, Arc<Roots>>,
+    path: String,
+) -> Result<OpenedRoot, Failure> {
     let roots = Arc::clone(&roots);
+    let library = default_library(app);
     blocking(move || -> Result<_, Failure> {
         let live = match roots.reopen(&path) {
             Some(Ok(live)) => live,
@@ -54,10 +62,43 @@ async fn open_root(roots: State<'_, Arc<Roots>>, path: String) -> Result<OpenedR
         };
         let path = live.path.clone();
         let result = swift_core::request("setRoot", Some(serde_json::json!({ "path": path })))?;
+        let created = start_default_project(library.as_deref(), &path, &result);
         roots.adopt(live);
-        Ok(OpenedRoot { path, result })
+        Ok(OpenedRoot {
+            path,
+            created,
+            result,
+        })
     })
     .await?
+}
+
+/// The app's Documents, which Files lists as On My iPad > Photopipe.
+#[tauri::command]
+fn default_library(app: AppHandle) -> Option<String> {
+    if cfg!(desktop) {
+        return None;
+    }
+    let dir = app.path().document_dir().ok()?;
+    Some(dir.to_string_lossy().into_owned())
+}
+
+fn start_default_project(
+    library: Option<&str>,
+    root: &str,
+    opened: &serde_json::Value,
+) -> Option<String> {
+    let library = std::fs::canonicalize(library?).ok()?;
+    // /var links to /private/var, and the bookmark and document_dir may name either
+    if opened["shoots"] != 0 || std::fs::canonicalize(root).ok()? != library {
+        return None;
+    }
+    let created = swift_core::request(
+        "createProject",
+        Some(serde_json::json!({ "name": DEFAULT_PROJECT, "notes": "" })),
+    )
+    .ok()?;
+    created["shoot"].as_str().map(str::to_owned)
 }
 
 #[tauri::command]
@@ -305,6 +346,7 @@ pub fn run() {
             list_roots,
             open_root,
             forget_root,
+            default_library,
             pick_folder,
             pick_photos,
             features
@@ -316,4 +358,45 @@ pub fn run() {
                 swift_core::shutdown();
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_empty_default_library_gets_a_project_whichever_way_the_container_is_named() {
+        // TMPDIR sits under /var, the same /private/var alias the iPad container has
+        let named = std::env::temp_dir().join(format!("photopipe-default-{}", std::process::id()));
+        let index =
+            std::env::temp_dir().join(format!("photopipe-default-{}.sqlite", std::process::id()));
+        std::fs::create_dir_all(&named).unwrap();
+        let resolved = std::fs::canonicalize(&named).unwrap();
+        assert_ne!(named, resolved);
+        let (named, root) = (named.to_str().unwrap(), resolved.to_str().unwrap());
+        // without indexPath the core would overwrite the installed app's index
+        let opened = swift_core::request(
+            "setRoot",
+            Some(serde_json::json!({ "path": root, "indexPath": index })),
+        )
+        .unwrap();
+
+        let elsewhere = std::env::temp_dir();
+        assert_eq!(
+            start_default_project(elsewhere.to_str(), root, &opened),
+            None
+        );
+        assert_eq!(
+            start_default_project(Some(named), root, &serde_json::json!({ "shoots": 1 })),
+            None
+        );
+        assert_eq!(
+            start_default_project(Some(named), root, &opened).as_deref(),
+            Some(DEFAULT_PROJECT)
+        );
+        let _ = std::fs::remove_dir_all(named);
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{suffix}", index.display()));
+        }
+    }
 }
