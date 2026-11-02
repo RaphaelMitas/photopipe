@@ -38,7 +38,7 @@ export function useDebouncedEdit(
   const flush = useCallback(() => {
     const next = takePending();
     if (!next) return;
-    // The cache only has the edit once the write's async optimistic patch ran.
+    // The optimistic patch lands async, so the draft stays until the write settles.
     const settled = () => setDraft((draft) => (draft === next ? null : draft));
     Promise.resolve(commitRef.current(next.path, next.edit)).then(
       settled,
