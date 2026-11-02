@@ -582,7 +582,7 @@ function SplitDivider({
         type="button"
         data-testid="split-divider"
         aria-label="Drag to compare before and after"
-        className="group absolute inset-y-0 w-4 -translate-x-1/2 cursor-ew-resize"
+        className="group absolute inset-y-0 w-4 -translate-x-1/2 cursor-ew-resize pointer-coarse:w-11"
         style={{ left: `${at * 100}%` }}
         {...drag}
         onPointerDown={(event) => {

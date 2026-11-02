@@ -17,6 +17,7 @@ import { ShortcutTooltip } from "./ShortcutTooltip";
 const W = 200;
 const H = 140;
 const HIT_RADIUS = 10;
+const TOUCH_HIT_RADIUS_PX = 22;
 const MIN_GAP = 0.01;
 
 const toSvg = (point: CurvePoint) => ({
@@ -111,6 +112,7 @@ type Props = {
 export function CurveEditor({ edit, imageSrc, photo, onChange }: Props) {
   const [channel, setChannel] = useState<CurveChannel>("rgb");
   const dragIndex = useRef<number | null>(null);
+  const pointerType = useRef("mouse");
   const active =
     CURVE_CHANNELS.find((entry) => entry.channel === channel) ??
     CURVE_CHANNELS[0];
@@ -126,17 +128,24 @@ export function CurveEditor({ edit, imageSrc, photo, onChange }: Props) {
     return { x: clamp01(at.x), y: clamp01(1 - at.y) };
   };
 
-  const hitIndex = (at: CurvePoint) => {
-    const c = toSvg(at);
+  const hitIndex = (event: React.MouseEvent<SVGSVGElement>) => {
+    const c = toSvg(eventPoint(event));
+    // A finger needs about 44pt on screen, however wide the panel draws the curve.
+    const radius =
+      pointerType.current === "touch"
+        ? (TOUCH_HIT_RADIUS_PX * W) /
+          event.currentTarget.getBoundingClientRect().width
+        : HIT_RADIUS;
     return points.findIndex((point) => {
       const p = toSvg(point);
-      return Math.hypot(p.x - c.x, p.y - c.y) <= HIT_RADIUS;
+      return Math.hypot(p.x - c.x, p.y - c.y) <= radius;
     });
   };
 
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
+    pointerType.current = event.pointerType;
     const at = eventPoint(event);
-    let index = hitIndex(at);
+    let index = hitIndex(event);
     if (index === -1) {
       const insertAt = points.findIndex((point) => point.x > at.x);
       index = insertAt === -1 ? points.length : insertAt;
@@ -163,7 +172,7 @@ export function CurveEditor({ edit, imageSrc, photo, onChange }: Props) {
 
   const onDoubleClick = (event: React.MouseEvent<SVGSVGElement>) => {
     if (points.length <= 2) return;
-    const index = hitIndex(eventPoint(event));
+    const index = hitIndex(event);
     if (index === -1) return;
     dragIndex.current = null;
     emit(points.filter((_, i) => i !== index));

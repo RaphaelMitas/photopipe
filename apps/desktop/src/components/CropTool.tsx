@@ -384,6 +384,12 @@ export function CropOverlay({
     );
   };
 
+  // The system took the touch, so a half-drawn level line is not applied.
+  const onPointerCancel = () => {
+    drag.current = null;
+    setAlignLine(null);
+  };
+
   const { crop } = draft;
   const percent = (value: number) => `${value * 100}%`;
   const rect = {
@@ -394,10 +400,10 @@ export function CropOverlay({
   };
 
   // The drawn handles are thin, so the pseudo-element widens what you can
-  // grab without changing what you see.
+  // grab without changing what you see. A finger needs about 44pt.
   const hitArea = "before:absolute before:-inset-2 before:content-['']";
-  const corner = `absolute size-3.5 border-2 border-white ${hitArea}`;
-  const edge = `absolute bg-white ${hitArea}`;
+  const corner = `absolute size-3.5 border-2 border-white ${hitArea} pointer-coarse:before:-inset-[15px]`;
+  const edge = `absolute bg-white ${hitArea} pointer-coarse:before:-inset-5`;
   // Corners last: on a crop small enough for the grab areas to overlap, the
   // later element wins the click, and a corner has nowhere else to grab from.
   const handles: [Handle, string][] = [
@@ -435,10 +441,10 @@ export function CropOverlay({
     ],
   ];
   const rotateZones = [
-    "-top-7 -left-7",
-    "-top-7 -right-7",
-    "-bottom-7 -left-7",
-    "-bottom-7 -right-7",
+    "-top-7 -left-7 pointer-coarse:-top-11 pointer-coarse:-left-11",
+    "-top-7 -right-7 pointer-coarse:-top-11 pointer-coarse:-right-11",
+    "-bottom-7 -left-7 pointer-coarse:-bottom-11 pointer-coarse:-left-11",
+    "-bottom-7 -right-7 pointer-coarse:-bottom-11 pointer-coarse:-right-11",
   ];
 
   return (
@@ -455,6 +461,7 @@ export function CropOverlay({
       onPointerDown={onRootPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
     >
       <div
         className="absolute cursor-move outline outline-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]"
@@ -481,7 +488,7 @@ export function CropOverlay({
           <div
             key={position}
             data-testid="crop-rotate-zone"
-            className={`absolute size-7 ${position}`}
+            className={`absolute size-7 pointer-coarse:size-11 ${position}`}
             style={{ cursor: rotateCursor }}
             onPointerDown={onRotateDown}
           />
