@@ -23,6 +23,10 @@ export function pickFolder(title: string): Promise<string | null> {
   return invoke("pick_folder", { title });
 }
 
+export function defaultLibrary(): Promise<string | null> {
+  return invoke("default_library");
+}
+
 export type PhotoSource = "files" | "library";
 
 export function pickPhotos(
@@ -34,7 +38,7 @@ export function pickPhotos(
 
 export async function openRoot(
   path?: string,
-): Promise<(SetRootResult & { path: string }) | null> {
+): Promise<(SetRootResult & { path: string; created: string | null }) | null> {
   const chosen = path ?? (await pickFolder("Choose your photos folder"));
   return chosen === null ? null : invoke("open_root", { path: chosen });
 }

@@ -94,7 +94,8 @@ pub fn activate(bookmark: &[u8]) -> Result<Live, Failure> {
         .map(|path| path.to_string())
         .ok_or_else(|| Failure::Broken("bookmark resolved to no path".into()))?;
     // never stopped: the core reads the folder for as long as the app runs
-    if !unsafe { url.startAccessingSecurityScopedResource() } {
+    let scoped = unsafe { url.startAccessingSecurityScopedResource() };
+    if !scoped && !(cfg!(target_os = "ios") && in_own_container(&path)) {
         return Err(Failure::Denied(format!(
             "the system refused access to {path}"
         )));
@@ -105,6 +106,13 @@ pub fn activate(bookmark: &[u8]) -> Result<Live, Failure> {
         bookmark.to_vec()
     };
     Ok(Live { path, bookmark })
+}
+
+/// iOS gives no scope for a folder in the app's own container, which needs none.
+fn in_own_container(path: &str) -> bool {
+    let home = std::env::var_os("HOME").and_then(|home| std::fs::canonicalize(home).ok());
+    let path = std::fs::canonicalize(path).ok();
+    matches!((home, path), (Some(home), Some(path)) if path.starts_with(&home))
 }
 
 #[cfg(test)]

@@ -52,5 +52,9 @@
 	<string>Photopipe reads and organizes the photos on your network drive and writes edits and ratings next to them.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 </dict>
 </plist>
