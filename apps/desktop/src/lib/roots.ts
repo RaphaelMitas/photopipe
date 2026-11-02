@@ -23,6 +23,11 @@ export function pickFolder(title: string): Promise<string | null> {
   return invoke("pick_folder", { title });
 }
 
+/** Where a first launch with no saved library opens; null on the Mac. */
+export function defaultLibrary(): Promise<string | null> {
+  return invoke("default_library");
+}
+
 export type PhotoSource = "files" | "library";
 
 export function pickPhotos(

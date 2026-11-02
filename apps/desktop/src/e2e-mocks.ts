@@ -304,6 +304,7 @@ export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
     ...Array.from({ length: 5 }, (_, i) => `/fake/card/DSC0900${i + 1}.ARW`),
     "/fake/card/notes.txt",
   ],
+  default_library: () => null,
   list_roots: () => roots,
   open_root: (args) => {
     const path = stringArg(args, "path");

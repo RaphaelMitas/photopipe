@@ -69,6 +69,7 @@ import { flagPref } from "@/lib/pref";
 import {
   cachedImage,
   jobStatus,
+  useCreateProject,
   useEnriched,
   useExportJobs,
   useImages,
@@ -80,6 +81,7 @@ import {
   useTrash,
 } from "@/lib/queries";
 import {
+  defaultLibrary,
   openRoot,
   type PhotoSource,
   pickPhotos,
@@ -119,6 +121,7 @@ import { useUpdater } from "@/lib/useUpdater";
 const NO_HELD = { key: "", paths: [] };
 const LEGACY_ROOT_KEY = "photopipe.root";
 const LEGACY_RECENTS_KEY = "photopipe.recentRoots";
+const DEFAULT_PROJECT = "Photos";
 
 type RootState =
   | { kind: "picking"; error: RootError | null; busy: boolean }
@@ -160,6 +163,7 @@ export default function App() {
   const editOpen = editPanelPref.use();
   const [clipboard, setClipboard] = useState<EditClipboard | null>(null);
   const queryClient = useQueryClient();
+  const { mutate: createProject } = useCreateProject();
 
   const connectRoot = useCallback(
     async (path?: string) => {
@@ -175,7 +179,7 @@ export default function App() {
               }
             : { kind: "picking", error: null, busy: false },
         );
-        return opened !== null;
+        return opened;
       } catch (error) {
         setRootState({
           kind: "picking",
@@ -183,13 +187,15 @@ export default function App() {
           busy: false,
         });
         void queryClient.invalidateQueries(rootsQuery);
-        return false;
+        return null;
       }
     },
     [queryClient],
   );
 
   useEffect(() => {
+    // StrictMode runs this twice, and both runs would find the library empty
+    let superseded = false;
     queryClient
       .fetchQuery(rootsQuery)
       .then(async (roots) => {
@@ -197,11 +203,24 @@ export default function App() {
           connectRoot(roots[0].path);
           return;
         }
+        if (roots.length > 0) return;
         // A failed migration keeps the keys, so an unplugged drive gets another try.
         const legacy = localStorage.getItem(LEGACY_ROOT_KEY);
-        if (roots.length === 0 && legacy && (await connectRoot(legacy))) {
-          localStorage.removeItem(LEGACY_ROOT_KEY);
-          localStorage.removeItem(LEGACY_RECENTS_KEY);
+        if (legacy) {
+          if (await connectRoot(legacy)) {
+            localStorage.removeItem(LEGACY_ROOT_KEY);
+            localStorage.removeItem(LEGACY_RECENTS_KEY);
+          }
+          return;
+        }
+        const library = await defaultLibrary();
+        if (library === null) return;
+        const opened = await connectRoot(library);
+        if (!superseded && opened?.shoots === 0) {
+          createProject(
+            { name: DEFAULT_PROJECT, notes: "" },
+            { onSuccess: (created) => setOpenShoot(created.shoot) },
+          );
         }
       })
       .catch((error) => {
@@ -211,7 +230,10 @@ export default function App() {
           busy: false,
         });
       });
-  }, [connectRoot, queryClient]);
+    return () => {
+      superseded = true;
+    };
+  }, [connectRoot, createProject, queryClient]);
 
   const ready = rootState.kind === "ready";
   const shoots = useShoots(ready);

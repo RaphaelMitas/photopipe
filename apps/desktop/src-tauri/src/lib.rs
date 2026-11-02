@@ -60,6 +60,16 @@ async fn open_root(roots: State<'_, Arc<Roots>>, path: String) -> Result<OpenedR
     .await?
 }
 
+/// The app's own Documents folder, which Files lists as On My iPad > Photopipe.
+#[tauri::command]
+fn default_library(app: AppHandle) -> Option<String> {
+    if cfg!(desktop) {
+        return None;
+    }
+    let dir = app.path().document_dir().ok()?;
+    Some(dir.to_string_lossy().into_owned())
+}
+
 #[tauri::command]
 async fn pick_folder(app: AppHandle, title: String) -> Result<Option<String>, Failure> {
     blocking(move || choose_folder(&app, &title)).await?
@@ -302,6 +312,7 @@ pub fn run() {
             list_roots,
             open_root,
             forget_root,
+            default_library,
             pick_folder,
             pick_photos,
             features
