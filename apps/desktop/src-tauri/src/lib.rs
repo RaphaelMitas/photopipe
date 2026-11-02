@@ -73,7 +73,7 @@ async fn open_root(
     .await?
 }
 
-/// Files lists it as On My iPad > Photopipe.
+/// The app's Documents, which Files lists as On My iPad > Photopipe.
 #[tauri::command]
 fn default_library(app: AppHandle) -> Option<String> {
     if cfg!(desktop) {
@@ -89,7 +89,7 @@ fn start_default_project(
     opened: &serde_json::Value,
 ) -> Option<String> {
     let library = std::fs::canonicalize(library?).ok()?;
-    // /var links to /private/var, and the bookmark and HOME may name either
+    // /var links to /private/var, and the bookmark and document_dir may name either
     if opened["shoots"] != 0 || std::fs::canonicalize(root).ok()? != library {
         return None;
     }
@@ -363,7 +363,7 @@ mod tests {
 
     #[test]
     fn an_empty_default_library_gets_a_project_whichever_way_the_container_is_named() {
-        // temp_dir() is under /var on macOS, which canonicalizes to /private/var like the iPad container
+        // TMPDIR sits under /var, the same /private/var alias the iPad container has
         let named = std::env::temp_dir().join(format!("photopipe-default-{}", std::process::id()));
         let index =
             std::env::temp_dir().join(format!("photopipe-default-{}.sqlite", std::process::id()));

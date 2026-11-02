@@ -95,7 +95,7 @@ pub fn activate(bookmark: &[u8]) -> Result<Live, Failure> {
         .ok_or_else(|| Failure::Broken("bookmark resolved to no path".into()))?;
     // never stopped: the core reads the folder for as long as the app runs
     let scoped = unsafe { url.startAccessingSecurityScopedResource() };
-    if !scoped && !in_own_container(&path) {
+    if !scoped && !(cfg!(target_os = "ios") && in_own_container(&path)) {
         return Err(Failure::Denied(format!(
             "the system refused access to {path}"
         )));
