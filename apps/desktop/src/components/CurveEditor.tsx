@@ -136,10 +136,17 @@ export function CurveEditor({ edit, imageSrc, photo, onChange }: Props) {
         ? (TOUCH_HIT_RADIUS_PX * W) /
           event.currentTarget.getBoundingClientRect().width
         : HIT_RADIUS;
-    return points.findIndex((point) => {
+    let nearest = -1;
+    let nearestDistance = radius;
+    points.forEach((point, index) => {
       const p = toSvg(point);
-      return Math.hypot(p.x - c.x, p.y - c.y) <= radius;
+      const distance = Math.hypot(p.x - c.x, p.y - c.y);
+      if (distance <= nearestDistance) {
+        nearest = index;
+        nearestDistance = distance;
+      }
     });
+    return nearest;
   };
 
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {

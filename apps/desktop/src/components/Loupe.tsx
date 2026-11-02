@@ -444,7 +444,7 @@ export function Loupe({
         {cropDraft && (
           <div
             data-testid="crop-angle-hud"
-            className={`${CHIP} absolute top-3 left-1/2 -translate-x-1/2`}
+            className={`${CHIP} pointer-events-none absolute top-3 left-1/2 -translate-x-1/2`}
           >
             {`∠ ${cropDraft.angle > 0 ? "+" : ""}${cropDraft.angle.toFixed(1)}° · double-click to reset`}
           </div>

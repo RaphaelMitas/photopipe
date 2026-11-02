@@ -402,7 +402,7 @@ export function CropOverlay({
   // The drawn handles are thin, so the pseudo-element widens what you can
   // grab without changing what you see. A finger needs about 44pt.
   const hitArea = "before:absolute before:-inset-2 before:content-['']";
-  const corner = `absolute size-3.5 border-2 border-white ${hitArea} pointer-coarse:before:-inset-[15px]`;
+  const corner = `absolute size-3.5 border-2 border-white ${hitArea} pointer-coarse:before:-inset-4`;
   const edge = `absolute bg-white ${hitArea} pointer-coarse:before:-inset-5`;
   // Corners last: on a crop small enough for the grab areas to overlap, the
   // later element wins the click, and a corner has nowhere else to grab from.
@@ -441,10 +441,10 @@ export function CropOverlay({
     ],
   ];
   const rotateZones = [
-    "-top-7 -left-7 pointer-coarse:-top-11 pointer-coarse:-left-11",
-    "-top-7 -right-7 pointer-coarse:-top-11 pointer-coarse:-right-11",
-    "-bottom-7 -left-7 pointer-coarse:-bottom-11 pointer-coarse:-left-11",
-    "-bottom-7 -right-7 pointer-coarse:-bottom-11 pointer-coarse:-right-11",
+    "bottom-full right-full",
+    "bottom-full left-full",
+    "top-full right-full",
+    "top-full left-full",
   ];
 
   return (
