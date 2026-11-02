@@ -102,7 +102,7 @@ launches from the store.
 ## CI
 
 Two jobs. `quick` on Ubuntu does lint, typecheck, Vitest and Playwright.
-`native` on macOS 15 does swift-format, `swift test`, clippy for macOS and the
+`native` on macOS 26 does swift-format, `swift test`, clippy for macOS and the
 iPad simulator, a simulator build of the iPad app, `cargo test`, then builds a
 real `.app` and smoke tests it. Caches: pnpm, cargo, SwiftPM,
 raw fixtures, vendored exiftool.
