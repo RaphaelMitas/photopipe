@@ -44,7 +44,7 @@ export function Stars({ value, onRate, className }: Props) {
           data-testid={`star-${star}`}
           aria-label={label}
           onClick={() => onRate(clears ? 0 : star)}
-          className="transition-transform hover:scale-110"
+          className="relative finger-target transition-transform hover:scale-110 pointer-coarse:p-3"
         >
           <StarIcon filled={star <= value} />
         </button>
@@ -86,7 +86,10 @@ export function FlagButtons({
   onFlag: (flag: Flag) => void;
 }) {
   return (
-    <span className="inline-flex items-center gap-1" data-flag={value}>
+    <span
+      className="inline-flex items-center gap-1 pointer-coarse:gap-2"
+      data-flag={value}
+    >
       {FLAG_BUTTONS.map(({ flag, action, label, icon: Icon, on }) => (
         <ShortcutTooltip
           key={flag}
@@ -100,7 +103,7 @@ export function FlagButtons({
             aria-pressed={value === flag}
             onClick={() => onFlag(flag)}
             className={cn(
-              "flex size-5 items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:text-foreground",
+              "relative finger-target flex size-5 items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:text-foreground pointer-coarse:size-9",
               value === flag && `border-transparent ${on} hover:text-current`,
             )}
           >

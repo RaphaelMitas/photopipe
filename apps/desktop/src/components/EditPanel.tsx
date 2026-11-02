@@ -1,6 +1,5 @@
 import { Button } from "@photopipe/ui/components/button";
 import { Separator } from "@photopipe/ui/components/separator";
-import { Slider } from "@photopipe/ui/components/slider";
 import {
   Tooltip,
   TooltipContent,
@@ -34,7 +33,6 @@ import {
   signed,
   TONE_SLIDERS,
 } from "@/lib/editSliders";
-import type { ActionId } from "@/lib/keymap";
 import {
   useDeferredEdit,
   useRaw9Availability,
@@ -51,6 +49,7 @@ import { CropPanel } from "./CropTool";
 import { CurveEditor } from "./CurveEditor";
 import { DecoderSegmented } from "./DecoderSegmented";
 import { ShortcutTooltip } from "./ShortcutTooltip";
+import { SliderRow } from "./SliderRow";
 
 type Props = {
   image: ImageFile;
@@ -58,66 +57,6 @@ type Props = {
   onChange: (edit: Edit) => void;
   crop: CropSession;
 };
-
-function Row({
-  label,
-  value,
-  display,
-  min,
-  max,
-  step,
-  testid,
-  resetLabel,
-  resetAction,
-  trackClassName,
-  onValue,
-  onReset,
-}: {
-  label: string;
-  value: number;
-  display: string;
-  min: number;
-  max: number;
-  step: number;
-  testid: string;
-  resetLabel: string;
-  resetAction?: ActionId;
-  trackClassName?: string;
-  onValue: (value: number) => void;
-  onReset: () => void;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
-        <span>{label}</span>
-        <span className="flex-1 text-right tabular-nums">{display}</span>
-        <ShortcutTooltip label={resetLabel} action={resetAction}>
-          <Button
-            variant="ghost"
-            size="icon"
-            data-testid={`${testid}-reset`}
-            aria-label={resetLabel}
-            onClick={onReset}
-            className="size-5 text-muted-foreground"
-          >
-            <RotateCcw />
-          </Button>
-        </ShortcutTooltip>
-      </div>
-      <Slider
-        data-testid={testid}
-        min={min}
-        max={max}
-        step={step}
-        value={[value]}
-        onValueChange={([next]) => onValue(next)}
-        trackClassName={cn("data-horizontal:h-1.5", trackClassName)}
-        rangeClassName="bg-transparent"
-        className="**:data-[slot=slider-thumb]:h-3 **:data-[slot=slider-thumb]:w-3"
-      />
-    </div>
-  );
-}
 
 function SliderRows({
   sliders,
@@ -129,7 +68,7 @@ function SliderRows({
   set: (partial: Partial<Edit>) => void;
 }) {
   return sliders.map(({ key, label, trackClassName }) => (
-    <Row
+    <SliderRow
       key={key}
       label={label}
       value={edit[key]}
@@ -291,7 +230,7 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
             photo={image.path}
             onChange={set}
           />
-          <Row
+          <SliderRow
             label="Exposure"
             value={edit.exposure}
             display={signed(edit.exposure, 2)}
@@ -317,7 +256,7 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
         <Separator />
         <Group id="color" title="Color" summary={colorSummary(edit, raw)}>
           {raw ? (
-            <Row
+            <SliderRow
               label="Temp"
               value={temperature}
               display={kelvin(temperature)}
@@ -331,7 +270,7 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
               onReset={() => set({ temperature: null })}
             />
           ) : (
-            <Row
+            <SliderRow
               label="Temp"
               value={temperature}
               display={signed(temperature)}
@@ -347,7 +286,7 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
               onReset={() => set({ temperature: null })}
             />
           )}
-          <Row
+          <SliderRow
             label="Tint"
             value={tint}
             display={signed(tint)}
@@ -368,7 +307,7 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
           <>
             <Separator />
             <Group id="detail" title="Detail" summary={detailSummary(edit)}>
-              <Row
+              <SliderRow
                 label="Denoise"
                 value={denoise}
                 display={`${Math.round(denoise)}`}
@@ -427,7 +366,7 @@ function DecoderStrip() {
                 event.preventDefault();
                 setOpen(intentRef.current === "open");
               }}
-              className="hover:text-foreground"
+              className="relative finger-target hover:text-foreground"
             >
               <Info className="size-3" />
             </button>

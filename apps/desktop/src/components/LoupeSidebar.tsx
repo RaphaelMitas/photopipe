@@ -155,7 +155,7 @@ export function LoupeSidebar({
               {position}
             </span>
             <ShotInfo image={image} />
-            <span className="mt-1 flex items-center gap-2">
+            <span className="mt-1 flex items-center gap-2 pointer-coarse:flex-wrap">
               <FlagButtons
                 value={flag}
                 onFlag={(flag) => onFlag(image.path, flag)}

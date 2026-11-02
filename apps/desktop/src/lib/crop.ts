@@ -458,6 +458,9 @@ export type CropDraft = {
 // wrap-safe accumulation.
 export const STRAIGHTEN_RANGE = 180;
 
+export const signedAngle = (angle: number) =>
+  `${angle > 0 ? "+" : ""}${angle.toFixed(1)}°`;
+
 export const ASPECTS: [string, string][] = [
   ["free", "Free"],
   ["original", "Original"],

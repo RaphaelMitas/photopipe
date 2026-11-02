@@ -16,6 +16,7 @@ import {
   fitRect,
   moveCrop,
   rotatedSize,
+  signedAngle,
 } from "@/lib/crop";
 import { clamp01 } from "@/lib/curve";
 import { EXPOSURE_RANGE, EXPOSURE_STEP } from "@/lib/editSliders";
@@ -444,9 +445,9 @@ export function Loupe({
         {cropDraft && (
           <div
             data-testid="crop-angle-hud"
-            className={`${CHIP} absolute top-3 left-1/2 -translate-x-1/2`}
+            className={`${CHIP} pointer-events-none absolute top-3 left-1/2 -translate-x-1/2`}
           >
-            {`∠ ${cropDraft.angle > 0 ? "+" : ""}${cropDraft.angle.toFixed(1)}° · double-click to reset`}
+            {`∠ ${signedAngle(cropDraft.angle)} · double-click to reset`}
           </div>
         )}
         {!cropping && zoom.state !== null && (
@@ -582,7 +583,7 @@ function SplitDivider({
         type="button"
         data-testid="split-divider"
         aria-label="Drag to compare before and after"
-        className="group absolute inset-y-0 w-4 -translate-x-1/2 cursor-ew-resize"
+        className="group absolute inset-y-0 w-4 -translate-x-1/2 cursor-ew-resize pointer-coarse:w-11"
         style={{ left: `${at * 100}%` }}
         {...drag}
         onPointerDown={(event) => {

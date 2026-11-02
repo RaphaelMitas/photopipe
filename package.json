@@ -5,6 +5,7 @@
   "packageManager": "pnpm@12.14.0",
   "scripts": {
     "dev": "./scripts/fetch-exiftool.sh && pnpm --filter desktop tauri dev",
+    "dev:ios": "pnpm --filter desktop tauri ios dev",
     "check": "biome check .",
     "typecheck": "pnpm -r typecheck",
     "check:fix": "biome check --write .",

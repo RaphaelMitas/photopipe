@@ -17,6 +17,8 @@ import { ShortcutTooltip } from "./ShortcutTooltip";
 const W = 200;
 const H = 140;
 const HIT_RADIUS = 10;
+// Half a 44pt fingertip, in screen pixels whatever width the panel draws.
+const TOUCH_HIT_RADIUS_PX = 22;
 const MIN_GAP = 0.01;
 
 const toSvg = (point: CurvePoint) => ({
@@ -110,7 +112,8 @@ type Props = {
 
 export function CurveEditor({ edit, imageSrc, photo, onChange }: Props) {
   const [channel, setChannel] = useState<CurveChannel>("rgb");
-  const dragIndex = useRef<number | null>(null);
+  const drag = useRef<{ index: number; dx: number; dy: number } | null>(null);
+  const pointerType = useRef("mouse");
   const active =
     CURVE_CHANNELS.find((entry) => entry.channel === channel) ??
     CURVE_CHANNELS[0];
@@ -126,52 +129,65 @@ export function CurveEditor({ edit, imageSrc, photo, onChange }: Props) {
     return { x: clamp01(at.x), y: clamp01(1 - at.y) };
   };
 
-  const hitIndex = (at: CurvePoint) => {
+  const hitIndex = (at: CurvePoint, svg: SVGSVGElement) => {
     const c = toSvg(at);
-    return points.findIndex((point) => {
+    const radius =
+      pointerType.current === "touch"
+        ? (TOUCH_HIT_RADIUS_PX * W) / svg.getBoundingClientRect().width
+        : HIT_RADIUS;
+    const distances = points.map((point) => {
       const p = toSvg(point);
-      return Math.hypot(p.x - c.x, p.y - c.y) <= HIT_RADIUS;
+      return Math.hypot(p.x - c.x, p.y - c.y);
     });
+    const nearest = distances.indexOf(Math.min(...distances));
+    return distances[nearest] <= radius ? nearest : -1;
   };
 
   const onPointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
+    pointerType.current = event.pointerType;
     const at = eventPoint(event);
-    let index = hitIndex(at);
+    let index = hitIndex(at, event.currentTarget);
+    const grabbed = index === -1 ? at : points[index];
     if (index === -1) {
       const insertAt = points.findIndex((point) => point.x > at.x);
       index = insertAt === -1 ? points.length : insertAt;
       emit([...points.slice(0, index), at, ...points.slice(index)]);
     }
-    dragIndex.current = index;
+    // Keeps a point grabbed off-centre from jumping under the pointer.
+    drag.current = { index, dx: grabbed.x - at.x, dy: grabbed.y - at.y };
     capturePointer(event);
   };
 
   const onPointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
-    const index = dragIndex.current;
-    if (index === null) return;
-    const at = eventPoint(event);
+    const grab = drag.current;
+    if (grab === null) return;
+    const { index } = grab;
+    const at = normalizedIn(event.currentTarget, event);
     const lower = index === 0 ? 0 : points[index - 1].x + MIN_GAP;
     const upper =
       index === points.length - 1 ? 1 : points[index + 1].x - MIN_GAP;
-    const moved = { x: Math.min(Math.max(at.x, lower), upper), y: at.y };
+    const moved = {
+      x: Math.min(Math.max(at.x + grab.dx, lower), upper),
+      y: clamp01(1 - at.y + grab.dy),
+    };
     emit(points.map((point, i) => (i === index ? moved : point)));
   };
 
   const onPointerUp = () => {
-    dragIndex.current = null;
+    drag.current = null;
   };
 
   const onDoubleClick = (event: React.MouseEvent<SVGSVGElement>) => {
     if (points.length <= 2) return;
-    const index = hitIndex(eventPoint(event));
+    const index = hitIndex(eventPoint(event), event.currentTarget);
     if (index === -1) return;
-    dragIndex.current = null;
+    drag.current = null;
     emit(points.filter((_, i) => i !== index));
   };
 
   return (
     <div data-testid="curve-editor" className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 pointer-coarse:gap-7">
         {CURVE_CHANNELS.map((entry) => (
           <ShortcutTooltip key={entry.channel} label={entry.label}>
             <button
@@ -181,7 +197,7 @@ export function CurveEditor({ edit, imageSrc, photo, onChange }: Props) {
               aria-pressed={channel === entry.channel}
               onClick={() => setChannel(entry.channel)}
               className={cn(
-                "size-4 rounded-full transition-opacity",
+                "relative finger-target size-4 rounded-full transition-opacity",
                 entry.dot,
                 channel === entry.channel
                   ? "opacity-100 ring-2 ring-white/40"

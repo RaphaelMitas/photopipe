@@ -16,11 +16,16 @@ import {
   resizeCrop,
   rotatedSize,
   STRAIGHTEN_RANGE,
+  signedAngle,
   transposeCrop,
   turnCrop,
 } from "@/lib/crop";
 import { capturePointer, cursorIn } from "@/lib/pointer";
 import { ShortcutTooltip } from "./ShortcutTooltip";
+import { SliderRow } from "./SliderRow";
+
+// Fine enough to level a horizon by finger; Turn 90° covers larger turns.
+const ANGLE_SLIDER_RANGE = 45;
 
 type PanelProps = {
   image: ImageFile;
@@ -131,6 +136,22 @@ export function CropPanel({
           </ShortcutTooltip>
         </div>
       </div>
+      <SliderRow
+        label="Angle"
+        value={draft.angle}
+        display={signedAngle(draft.angle)}
+        min={-ANGLE_SLIDER_RANGE}
+        max={ANGLE_SLIDER_RANGE}
+        step={0.1}
+        testid="crop-angle"
+        resetLabel="Reset angle"
+        onValue={(angle) =>
+          onDraft(draftWithAngle(draft, angle, displayWidth, displayHeight))
+        }
+        onReset={() =>
+          onDraft(draftWithAngle(draft, 0, displayWidth, displayHeight))
+        }
+      />
       <Button
         variant="outline"
         size="sm"
@@ -384,6 +405,12 @@ export function CropOverlay({
     );
   };
 
+  // The system took the touch, so a half-drawn level line is not applied.
+  const onPointerCancel = () => {
+    drag.current = null;
+    setAlignLine(null);
+  };
+
   const { crop } = draft;
   const percent = (value: number) => `${value * 100}%`;
   const rect = {
@@ -394,10 +421,10 @@ export function CropOverlay({
   };
 
   // The drawn handles are thin, so the pseudo-element widens what you can
-  // grab without changing what you see.
+  // grab without changing what you see. A finger needs about 44pt.
   const hitArea = "before:absolute before:-inset-2 before:content-['']";
-  const corner = `absolute size-3.5 border-2 border-white ${hitArea}`;
-  const edge = `absolute bg-white ${hitArea}`;
+  const corner = `absolute size-3.5 border-2 border-white ${hitArea} pointer-coarse:before:-inset-4`;
+  const edge = `absolute bg-white ${hitArea} pointer-coarse:before:-inset-5`;
   // Corners last: on a crop small enough for the grab areas to overlap, the
   // later element wins the click, and a corner has nowhere else to grab from.
   const handles: [Handle, string][] = [
@@ -435,10 +462,10 @@ export function CropOverlay({
     ],
   ];
   const rotateZones = [
-    "-top-7 -left-7",
-    "-top-7 -right-7",
-    "-bottom-7 -left-7",
-    "-bottom-7 -right-7",
+    "bottom-full right-full",
+    "bottom-full left-full",
+    "top-full right-full",
+    "top-full left-full",
   ];
 
   return (
@@ -455,6 +482,7 @@ export function CropOverlay({
       onPointerDown={onRootPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
     >
       <div
         className="absolute cursor-move outline outline-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]"
@@ -481,7 +509,7 @@ export function CropOverlay({
           <div
             key={position}
             data-testid="crop-rotate-zone"
-            className={`absolute size-7 ${position}`}
+            className={`absolute size-7 pointer-coarse:size-11 ${position}`}
             style={{ cursor: rotateCursor }}
             onPointerDown={onRotateDown}
           />
