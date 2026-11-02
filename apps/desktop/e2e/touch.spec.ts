@@ -3,6 +3,8 @@ import { openZell } from "./open-shoot";
 
 test.use({ hasTouch: true });
 
+const touch = { pointerType: "touch", pointerId: 7, bubbles: true };
+
 const hitAt = (page: Page, x: number, y: number) =>
   page.evaluate(
     ([x, y]) =>
@@ -64,15 +66,26 @@ test("the split divider is finger wide on a touch screen", async ({ page }) => {
   ).toBeGreaterThanOrEqual(44);
 });
 
-test("a tap a fingertip off a curve point grabs it instead of adding one", async ({
+test("a finger a tip off a curve point grabs it, and its wobble does not yank it", async ({
   page,
 }) => {
   await openLoupe(page);
   const curve = page.getByRole("img", { name: "Tone curve" });
   const bounds = await box(curve);
+  const clientX = bounds.x + 13;
+  const clientY = bounds.y + bounds.height - 13;
 
-  await page.touchscreen.tap(bounds.x + 13, bounds.y + bounds.height - 13);
+  await curve.dispatchEvent("pointerdown", { ...touch, clientX, clientY });
+  await curve.dispatchEvent("pointermove", {
+    ...touch,
+    clientX: clientX + 1,
+    clientY,
+  });
+  await curve.dispatchEvent("pointerup", { ...touch, clientX, clientY });
   await expect(curve.locator("circle")).toHaveCount(2);
+  expect(
+    Number(await curve.locator("circle").first().getAttribute("cx")),
+  ).toBeLessThan(2);
 });
 
 test("a finger on a curve point grabs that point, not a close neighbour", async ({
@@ -90,7 +103,6 @@ test("a finger on a curve point grabs that point, not a close neighbour", async 
   await page.mouse.click(at(0.46, 0.46).clientX, at(0.46, 0.46).clientY);
   await expect(curve.locator("circle")).toHaveCount(4);
 
-  const touch = { pointerType: "touch", pointerId: 7, bubbles: true };
   await curve.dispatchEvent("pointerdown", { ...touch, ...at(0.46, 0.46) });
   await curve.dispatchEvent("pointermove", { ...touch, ...at(0.46, 0.8) });
   await curve.dispatchEvent("pointerup", { ...touch, ...at(0.46, 0.8) });
