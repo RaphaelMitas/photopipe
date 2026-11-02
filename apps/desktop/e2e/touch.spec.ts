@@ -3,7 +3,14 @@ import { openZell } from "./open-shoot";
 
 test.use({ hasTouch: true });
 
-const touch = { pointerType: "touch", pointerId: 7, bubbles: true };
+type Point = { clientX: number; clientY: number };
+
+async function drag(target: Locator, from: Point, to: Point) {
+  const touch = { pointerType: "touch", pointerId: 7, bubbles: true };
+  await target.dispatchEvent("pointerdown", { ...touch, ...from });
+  await target.dispatchEvent("pointermove", { ...touch, ...to });
+  await target.dispatchEvent("pointerup", { ...touch, ...to });
+}
 
 const hitAt = (page: Page, x: number, y: number) =>
   page.evaluate(
@@ -35,6 +42,15 @@ test("crop handles and straighten zones are finger sized on a touch screen", asy
 }) => {
   await openLoupe(page);
   await page.getByTestId("enter-crop").click();
+
+  const fullFrameTop = await box(page.getByTestId("crop-handle-t"));
+  expect(
+    await hitAt(
+      page,
+      fullFrameTop.x + fullFrameTop.width / 2,
+      fullFrameTop.y - 15,
+    ),
+  ).toBe("crop-handle-t");
 
   // Pull the crop in so the zones outside its corners lie on the stage.
   const start = await box(page.getByTestId("crop-handle-tl"));
@@ -75,13 +91,7 @@ test("a finger a tip off a curve point grabs it, and its wobble does not yank it
   const clientX = bounds.x + 13;
   const clientY = bounds.y + bounds.height - 13;
 
-  await curve.dispatchEvent("pointerdown", { ...touch, clientX, clientY });
-  await curve.dispatchEvent("pointermove", {
-    ...touch,
-    clientX: clientX + 1,
-    clientY,
-  });
-  await curve.dispatchEvent("pointerup", { ...touch, clientX, clientY });
+  await drag(curve, { clientX, clientY }, { clientX: clientX + 1, clientY });
   await expect(curve.locator("circle")).toHaveCount(2);
   expect(
     Number(await curve.locator("circle").first().getAttribute("cx")),
@@ -103,9 +113,7 @@ test("a finger on a curve point grabs that point, not a close neighbour", async 
   await page.mouse.click(at(0.46, 0.46).clientX, at(0.46, 0.46).clientY);
   await expect(curve.locator("circle")).toHaveCount(4);
 
-  await curve.dispatchEvent("pointerdown", { ...touch, ...at(0.46, 0.46) });
-  await curve.dispatchEvent("pointermove", { ...touch, ...at(0.46, 0.8) });
-  await curve.dispatchEvent("pointerup", { ...touch, ...at(0.46, 0.8) });
+  await drag(curve, at(0.46, 0.46), at(0.46, 0.8));
 
   const heights = await curve
     .locator("circle")
