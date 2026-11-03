@@ -418,7 +418,6 @@ export default function App() {
   // stacks arriving or an import can regroup you onto a non-cover frame, which means inside
   const membership = currentStack?.frames.map((frame) => frame.path).join("\n");
   const decided = useRef({ membership, currentPath });
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only a regroup under the same photo re-decides; a move decided its own anchor
   useEffect(() => {
     const regrouped =
       decided.current.membership !== membership &&

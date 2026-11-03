@@ -110,6 +110,7 @@ test("a finger on a curve point grabs that point, not a close neighbour", async 
   });
 
   await page.mouse.click(at(0.4, 0.4).clientX, at(0.4, 0.4).clientY);
+  await expect(curve.locator("circle")).toHaveCount(3);
   await page.mouse.click(at(0.46, 0.46).clientX, at(0.46, 0.46).clientY);
   await expect(curve.locator("circle")).toHaveCount(4);
 
