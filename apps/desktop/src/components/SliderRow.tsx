@@ -84,9 +84,11 @@ export function SliderRow({
   const scrub = useTouchScrub({ value, min, max, step }, onValue);
   return (
     <div className="flex flex-col gap-1">
-      <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <span>{label}</span>
-        <span className="flex-1 text-right tabular-nums">{display}</span>
+        <span className="flex-1 text-right font-mono text-foreground/90 tabular-nums">
+          {display}
+        </span>
         <ShortcutTooltip label={resetLabel} action={resetAction}>
           <Button
             variant="ghost"

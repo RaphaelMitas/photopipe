@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { hitAtCenter } from "./hit-at";
 import { openShoot, openZell } from "./open-shoot";
 
 test("the export drawer acts on the selection, with quick actions", async ({
@@ -25,7 +26,7 @@ test("the export drawer acts on the selection, with quick actions", async ({
     .click({ modifiers: ["ControlOrMeta"] });
   await expect(page.getByTestId("drawer-count")).toHaveText("3");
 
-  await page.getByTestId("drawer-clear").click();
+  await page.getByTestId("action-clear").click();
   await expect(page.getByTestId("drawer-count")).toHaveText("0");
   await page.getByTestId("drawer-close").click();
   await expect(page.getByTestId("export-drawer")).toHaveCount(0);
@@ -69,6 +70,7 @@ test("export from the loupe returns to the grid with that photo selected", async
 test("a running export reports how far it got, and finishes", async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 900, height: 600 });
   await openZell(page);
   await page.getByTestId("open-export").click();
   await page.getByTestId("select-all").click();
@@ -83,6 +85,11 @@ test("a running export reports how far it got, and finishes", async ({
   await expect(done).toBeVisible();
   await expect(done).toContainText("4 files");
   await expect(page.getByTestId("job-running")).toHaveCount(0);
+  expect(await hitAtCenter(done)).toBe("job-done");
+
+  await page.getByTestId("drawer-close").click();
+  await page.getByTestId("open-export").click();
+  await expect(page.getByTestId("drawer-count")).toBeInViewport();
 });
 
 test("an export that lost most of its files does not read as a success", async ({
@@ -163,6 +170,7 @@ test("format choice shows JPEG quality and names the button", async ({
 test("the decoder row warns before a RAW 8 export and knows what RAW 9 can reach", async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 900, height: 600 });
   await openZell(page);
   await page.getByTestId("open-export").click();
   await page.getByTestId("select-all").click();
@@ -194,14 +202,17 @@ test("the decoder row warns before a RAW 8 export and knows what RAW 9 can reach
 
   // the same photos are the same decision, so it stays dismissed; dropping one
   // makes it a different set and the question is worth asking again
-  await page.getByTestId("drawer-clear").click();
+  await page.getByTestId("action-clear").click();
   await page.getByTestId("select-all").click();
   await expect(page.getByTestId("decoder-banner")).toHaveCount(0);
   await page
     .getByTestId("thumb")
     .first()
     .click({ modifiers: ["ControlOrMeta"] });
-  await expect(page.getByTestId("decoder-banner")).toBeVisible();
+  expect(await hitAtCenter(page.getByTestId("banner-fix"))).toBe("banner-fix");
+
+  await page.getByTestId("flatten").focus();
+  expect(await hitAtCenter(page.getByTestId("flatten"))).toBe("flatten");
 });
 
 test("a camera without RAW 9 disables the option instead of promising it", async ({

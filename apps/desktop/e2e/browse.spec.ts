@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
+import { hitAt } from "./hit-at";
 import { openShoot, openZell } from "./open-shoot";
 
 test("one surface: grid, shoot in the top bar, export at hand", async ({
@@ -150,6 +151,9 @@ async function expectInView(
   const cell = viewport.locator(`[data-path='${path}']`);
   await expect(cell).toBeVisible();
   await expect(cell).toHaveAttribute("data-current", "true");
+  if (container === "grid") {
+    await expect(cell).toHaveCSS("outline-style", "solid");
+  }
   const box = await cell.boundingBox();
   const bounds = await viewport.boundingBox();
   if (!box || !bounds) throw new Error(`${container} has no box`);
@@ -393,4 +397,60 @@ test("a library that is still indexing says so and holds edits back", async ({
   await expect(page.getByTestId("loupe")).toBeVisible();
   await expect(page.getByTestId("edit-not-indexed")).toBeVisible();
   await expect(page.getByTestId("exposure")).toHaveCount(0);
+});
+
+async function expectToolbarClearOfDrawer(
+  page: Page,
+  width: number,
+  url = "/",
+) {
+  await page.setViewportSize({ width, height: 1180 });
+  await openShoot(page, "2026-07-12_zell", { url });
+  await page
+    .getByTestId("thumb")
+    .first()
+    .click({ modifiers: ["ControlOrMeta"] });
+  await page.keyboard.press("x");
+  await page.keyboard.press("Meta+c");
+  await expect(page.getByTestId("action-paste-settings")).toBeVisible();
+  await expect(page.getByTestId("trash-rejects")).toBeVisible();
+  await page.getByTestId("open-export").click();
+  await expect(page.getByTestId("export-drawer")).toBeVisible();
+
+  const drawer = await page.getByTestId("export-drawer").boundingBox();
+  if (!drawer) throw new Error("no drawer");
+  for (const id of ["action-clear", "trash-rejects", "sort", "view-list"]) {
+    const box = await page.getByTestId(id).boundingBox();
+    if (!box) throw new Error(`no ${id}`);
+    expect(box.x + box.width).toBeLessThanOrEqual(drawer.x);
+  }
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(width);
+  const clear = await page.getByTestId("action-clear").boundingBox();
+  const remove = await page.getByTestId("action-delete").boundingBox();
+  if (!clear || !remove) throw new Error("no selection actions");
+  expect(clear.y).toBe(remove.y);
+  const nearBottom = remove.y + remove.height - 2;
+  expect(await hitAt(page, remove.x + remove.width / 2, nearBottom)).toBe(
+    "action-delete",
+  );
+}
+
+test("at iPad portrait width the toolbar stays clear of the open drawer", async ({
+  page,
+}) => {
+  await expectToolbarClearOfDrawer(page, 820);
+  await page.setViewportSize({ width: 900, height: 600 });
+  await expect(page.getByTestId("run-export")).toBeInViewport();
+});
+
+test.describe("on a touch screen", () => {
+  test.use({ hasTouch: true });
+
+  test("the wider touch spacing still keeps the toolbar clear of the drawer", async ({
+    page,
+  }) => {
+    await expectToolbarClearOfDrawer(page, 768, "/?ipad");
+  });
 });

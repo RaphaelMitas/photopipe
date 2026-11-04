@@ -9,6 +9,7 @@ import { listen } from "@tauri-apps/api/event";
 import {
   AlertCircle,
   Check,
+  Plus,
   RefreshCw,
   SlidersHorizontal,
   Upload,
@@ -757,8 +758,21 @@ export default function App() {
   }
 
   const inLoupe = openShoot !== null && loupePhoto !== null;
+  const exportShown = drawerOpen && openShoot !== null && !inLoupe;
 
   const latestJob = exports.jobs[0];
+
+  const selectionBarProps = {
+    selected: selectedImages,
+    canPaste: clipboard !== null,
+    onCopySettings: () => copySource && copySettings(copySource),
+    onPasteSettings: () => pasteSettings(pasteTargets),
+    onReveal:
+      revealPaths &&
+      (() => revealPaths(selectedImages.map((image) => image.path))),
+    onDelete: () => trashPhotos(selectedImages.map((image) => image.path)),
+    onClear: selection.clear,
+  };
 
   const content = !openShoot ? (
     shoots.data ? (
@@ -766,7 +780,6 @@ export default function App() {
         <Dashboard
           shoots={shoots.data}
           onOpen={enterShoot}
-          onNewProject={() => setNewProject(true)}
           onSettings={setShootSettings}
         />
       </div>
@@ -805,6 +818,7 @@ export default function App() {
     />
   ) : (
     <BrowserPane
+      selection={<SelectionBar {...selectionBarProps} />}
       images={filteredImages}
       sort={activeSort}
       sortReady={sortReady}
@@ -893,6 +907,7 @@ export default function App() {
           />
         ) : (
           <AppSidebar
+            inShoot={openShoot !== null}
             currentShoot={currentShoot}
             onBack={() => enterShoot(null)}
             onImport={runImport}
@@ -900,7 +915,6 @@ export default function App() {
             onShootSettings={() => setShootSettings(openShoot)}
             filter={filter}
             ratingCounts={counts}
-            filterEnabled={openShoot !== null}
             rootPath={rootState.path}
             onChangeRoot={() => {
               enterShoot(null);
@@ -914,10 +928,18 @@ export default function App() {
             <ShowSidebarTrigger />
             {currentShoot ? (
               <>
-                <span className="truncate font-medium text-sm">
+                <span
+                  data-testid="current-shoot"
+                  title={currentShoot.name}
+                  className="truncate font-medium text-sm"
+                >
                   {currentShoot.name}
                 </span>
-                <span className="font-mono text-[10px] text-muted-foreground">
+                <span
+                  data-testid="shoot-count"
+                  className="shrink-0 text-muted-foreground text-xs tabular-nums"
+                >
+                  {filter.active && `${filteredImages.length} of `}
                   {pluralize(currentShoot.imageCount, "photo")}
                 </span>
               </>
@@ -926,6 +948,18 @@ export default function App() {
             )}
             <span className="flex-1" />
             <IndexingStatus progress={scan.progress} />
+            {!openShoot && shoots.data && (
+              <Button
+                size="sm"
+                variant="outline"
+                data-testid="new-project"
+                onClick={() => setNewProject(true)}
+                className="h-7 text-xs"
+              >
+                <Plus />
+                New project
+              </Button>
+            )}
             <ShortcutTooltip label="Look for new photos">
               <Button
                 size="icon-sm"
@@ -997,34 +1031,29 @@ export default function App() {
               <ShortcutTooltip label="Export" action="export.open">
                 <Button
                   size="sm"
+                  variant={exportShown ? "secondary" : "default"}
                   data-testid="open-export"
+                  aria-pressed={exportShown}
                   onClick={() => openExport()}
                   className="h-7 text-xs"
                 >
                   <Upload />
                   Export
-                  {selection.selected.size > 0 && ` ${selection.selected.size}`}
-                  …
+                  {selection.selected.size > 0 && (
+                    <span className="rounded-sm bg-black/20 px-1 tabular-nums">
+                      {selection.selected.size}
+                    </span>
+                  )}
                 </Button>
               </ShortcutTooltip>
             )}
           </header>
-          <SelectionBar
-            selected={selectedImages}
-            busy={exports.running}
-            canPaste={clipboard !== null}
-            onCopySettings={() => copySource && copySettings(copySource)}
-            onPasteSettings={() => pasteSettings(pasteTargets)}
-            onExport={() => setDrawerOpen(true)}
-            onReveal={
-              revealPaths &&
-              (() => revealPaths(selectedImages.map((image) => image.path)))
-            }
-            onDelete={() =>
-              trashPhotos(selectedImages.map((image) => image.path))
-            }
-            onClear={selection.clear}
-          />
+          {inLoupe && (
+            <SelectionBar
+              {...selectionBarProps}
+              className="border-b border-border bg-card px-3 py-1"
+            />
+          )}
           <div className="flex min-h-0 flex-1">
             <div className="min-w-0 flex-1">{content}</div>
             {inLoupe && loupeImage && editOpen && (
@@ -1042,7 +1071,7 @@ export default function App() {
                 onClose={editPanelPref.toggle}
               />
             )}
-            {drawerOpen && openShoot && !inLoupe && (
+            {exportShown && (
               <ExportDrawer
                 shoot={openShoot}
                 images={selectedImages}
@@ -1059,7 +1088,6 @@ export default function App() {
                   filter.reset();
                   selection.select(allImages.map((image) => image.path));
                 }}
-                onClearSelection={selection.clear}
                 onExport={runExport}
                 onCancel={exports.cancel}
                 onReveal={revealPaths && ((path) => revealPaths([path]))}

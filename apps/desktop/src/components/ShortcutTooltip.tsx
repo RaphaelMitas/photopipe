@@ -27,7 +27,7 @@ export function ShortcutTooltip({ label, action, children }: Props) {
       <TooltipTrigger asChild onFocus={(event) => event.preventDefault()}>
         {children}
       </TooltipTrigger>
-      <TooltipContent onEscapeKeyDown={releaseEscape}>
+      <TooltipContent collisionPadding={8} onEscapeKeyDown={releaseEscape}>
         {label}
         {key && <Kbd>{key}</Kbd>}
       </TooltipContent>

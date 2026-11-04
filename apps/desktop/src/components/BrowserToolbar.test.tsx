@@ -13,7 +13,6 @@ function toolbar(props: Partial<Parameters<typeof BrowserToolbar>[0]> = {}) {
   render(
     <TooltipProvider>
       <BrowserToolbar
-        purpose="Cull and rate."
         view="grid"
         onView={vi.fn()}
         sort="name"
@@ -57,7 +56,6 @@ describe("BrowserToolbar", () => {
       "Instinct is rating · 620 of 2,003",
     );
     expect(screen.getByTestId("rating-progress")).toBeInTheDocument();
-    expect(screen.queryByText("Cull and rate.")).not.toBeInTheDocument();
 
     const option = openSortMenu();
     expect(option).toHaveAttribute("data-disabled");
@@ -69,7 +67,6 @@ describe("BrowserToolbar", () => {
     toolbar();
     expect(screen.queryByTestId("rating-now")).not.toBeInTheDocument();
     expect(screen.queryByTestId("rating-progress")).not.toBeInTheDocument();
-    expect(screen.getByText("Cull and rate.")).toBeInTheDocument();
   });
 
   it("hands the new sort over when the pass has just finished", () => {

@@ -172,6 +172,9 @@ export type Shoot = {
   indexed: boolean;
 };
 
+export const dayOutsideName = (shoot: Shoot) =>
+  shoot.day !== null && !shoot.name.startsWith(shoot.day);
+
 type WireShoot = Omit<Shoot, "day" | "cover" | "coverPath"> &
   Partial<Pick<Shoot, "day" | "cover" | "coverPath">>;
 

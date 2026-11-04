@@ -73,7 +73,7 @@ export function ShortcutSheet({ open, context, onClose, onEdit }: Props) {
             if (rows.length === 0) return null;
             return (
               <section key={group} className="mb-4 break-inside-avoid">
-                <h3 className="mb-1 font-medium text-[11px] text-primary uppercase tracking-wide">
+                <h3 className="mb-1 font-medium text-primary text-xs">
                   {group}
                 </h3>
                 {rows.map((id) => (

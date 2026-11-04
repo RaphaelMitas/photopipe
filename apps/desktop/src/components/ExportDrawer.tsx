@@ -18,7 +18,7 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ExportFormat, ImageFile } from "@/lib/core";
 import {
   DEFAULT_TEMPLATE,
@@ -92,7 +92,6 @@ type Props = {
   busy: boolean;
   onSelectFiltered: () => void;
   onSelectAll: () => void;
-  onClearSelection: () => void;
   onExport: (options: ExportOptions, destination: string) => void;
   onCancel: (id: string) => void;
   onReveal?: (path: string) => void;
@@ -143,7 +142,7 @@ function Section({
   return (
     <div className="flex flex-col gap-2 border-b border-border px-3 py-2.5">
       {label && (
-        <span className="flex items-center justify-between text-[10px] text-muted-foreground uppercase tracking-wider">
+        <span className="flex items-center justify-between font-medium text-muted-foreground text-xs">
           {label}
           {action}
         </span>
@@ -157,13 +156,15 @@ function Row({
   label,
   children,
 }: {
-  label: string;
+  label?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="flex-1 text-muted-foreground text-xs">{label}</span>
-      {children}
+      <span className="w-14 shrink-0 text-muted-foreground text-xs">
+        {label}
+      </span>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
 }
@@ -187,32 +188,26 @@ function CustomLongEdge({
     if (next !== value) onChange(next);
   };
   return (
-    <div className="flex items-center gap-2 text-xs">
-      {/* the Size label's invisible twin keeps the field under its buttons */}
-      <span aria-hidden className="invisible">
-        Size
+    <div className="relative text-xs">
+      <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted-foreground">
+        Long edge
       </span>
-      <div className="relative flex-1">
-        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-muted-foreground">
-          Long edge
-        </span>
-        <Input
-          data-testid="custom-long-edge"
-          aria-label="Long edge in pixels"
-          title={`${CUSTOM_MIN} to ${CUSTOM_MAX} px`}
-          inputMode="numeric"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={commit}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") commit();
-          }}
-          className="h-8 pr-8 pl-20 text-right text-xs tabular-nums md:text-xs"
-        />
-        <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground">
-          px
-        </span>
-      </div>
+      <Input
+        data-testid="custom-long-edge"
+        aria-label="Long edge in pixels"
+        title={`${CUSTOM_MIN} to ${CUSTOM_MAX} px`}
+        inputMode="numeric"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") commit();
+        }}
+        className="h-8 pr-8 pl-20 text-right text-xs tabular-nums md:text-xs"
+      />
+      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-muted-foreground">
+        px
+      </span>
     </div>
   );
 }
@@ -303,7 +298,6 @@ export function ExportDrawer({
   busy,
   onSelectFiltered,
   onSelectAll,
-  onClearSelection,
   onExport,
   onCancel,
   onReveal,
@@ -436,10 +430,19 @@ export function ExportDrawer({
     );
   };
 
+  const newestJob = useRef<HTMLLIElement>(null);
+  const newestKey = jobs[0]?.key;
+  const seenKey = useRef(newestKey);
+  useEffect(() => {
+    if (newestKey === seenKey.current) return;
+    seenKey.current = newestKey;
+    newestJob.current?.scrollIntoView({ block: "nearest" });
+  }, [newestKey]);
+
   return (
     <div
       data-testid="export-drawer"
-      className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-border bg-sidebar"
+      className="flex w-72 shrink-0 scroll-pb-52 flex-col overflow-y-auto border-l border-border bg-sidebar"
     >
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <span className="font-medium text-sm">Export</span>
@@ -466,41 +469,31 @@ export function ExportDrawer({
             selected{editedCount > 0 && ` · ${editedCount} edited`}
           </span>
         </div>
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap items-center gap-0.5">
+          <span className="mr-1 text-muted-foreground text-xs">Select</span>
           {filterActive && (
             <Button
               size="sm"
               variant="outline"
               data-testid="select-filtered"
               onClick={() => onSelectFiltered()}
-              className="h-6 text-xs"
+              className="h-6 px-2 text-xs tabular-nums"
             >
-              Select filtered · {filteredCount}
+              Filtered · {filteredCount}
             </Button>
           )}
           <Button
             size="sm"
-            variant="ghost"
+            variant="outline"
             data-testid="select-all"
             onClick={() => onSelectAll()}
-            className="h-6 text-xs text-muted-foreground"
+            className="h-6 px-2 text-xs tabular-nums"
           >
             All · {totalCount}
           </Button>
-          {selectedCount > 0 && (
-            <Button
-              size="sm"
-              variant="ghost"
-              data-testid="drawer-clear"
-              onClick={() => onClearSelection()}
-              className="h-6 text-xs text-muted-foreground"
-            >
-              Clear
-            </Button>
-          )}
         </div>
         {selectedCount === 0 && (
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-2xs text-muted-foreground">
             Pick photos in the grid, or start from a quick action. ⌘-click
             fine-tunes afterwards.
           </p>
@@ -546,14 +539,16 @@ export function ExportDrawer({
               />
             </Row>
             {options.size === "custom" && (
-              <CustomLongEdge
-                value={options.customLongEdge}
-                onChange={(customLongEdge) => patch({ customLongEdge })}
-              />
+              <Row>
+                <CustomLongEdge
+                  value={options.customLongEdge}
+                  onChange={(customLongEdge) => patch({ customLongEdge })}
+                />
+              </Row>
             )}
           </>
         ) : null}
-        <p className="text-[10px] text-muted-foreground">
+        <p className="text-2xs text-muted-foreground">
           {options.format === "original"
             ? "Copies the files untouched; edits are ignored."
             : longEdge === null
@@ -572,7 +567,7 @@ export function ExportDrawer({
             </Row>
             <p
               data-testid="export-decoder-help"
-              className="text-[10px] text-muted-foreground"
+              className="text-2xs text-muted-foreground"
             >
               {decoderHelp()}
             </p>
@@ -604,7 +599,7 @@ export function ExportDrawer({
             onChange={(template) => patch({ template })}
           />
         ) : (
-          <p className="text-[10px] text-muted-foreground">
+          <p className="text-2xs text-muted-foreground">
             Files keep their names.
           </p>
         )}
@@ -622,67 +617,29 @@ export function ExportDrawer({
             onChange={(dest) => patch({ zip: dest === "zip" })}
           />
         )}
-        <Row label="Flatten subfolders">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-muted-foreground text-xs">
+            Flatten subfolders
+          </span>
           <Switch
             data-testid="flatten"
             aria-label="Flatten subfolders"
             checked={options.flatten}
             onCheckedChange={(flatten) => patch({ flatten })}
           />
-        </Row>
-        {banner && (
-          <Alert data-testid="decoder-banner" className="gap-1 px-3 py-2.5">
-            <TriangleAlert className="text-warning" />
-            <AlertTitle className="text-[11px] text-warning">
-              Exporting with RAW {effectiveDecoder}
-            </AlertTitle>
-            <AlertDescription className="text-[11px]">
-              {banner.body}
-              <span className="mt-1 flex items-center gap-2.5">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  data-testid="banner-fix"
-                  onClick={() => setDecoderVersion(banner.fixTo)}
-                  className="h-5 border-warning/45 px-2 text-[10px] text-warning"
-                >
-                  Use RAW {banner.fixTo}
-                </Button>
-                <button
-                  type="button"
-                  data-testid="banner-keep"
-                  onClick={() => setDismissed(dismissKey)}
-                  className="relative finger-target text-[10px] text-muted-foreground underline underline-offset-2"
-                >
-                  {banner.keep}
-                </button>
-              </span>
-            </AlertDescription>
-          </Alert>
-        )}
-        <Button
-          size="sm"
-          data-testid="run-export"
-          disabled={selectedCount === 0 || busy || probing || badTemplate}
-          onClick={() => void runExport()}
-          className="mt-1 w-full text-xs"
-        >
-          <Upload />
-          {selectedCount === 0
-            ? "Export"
-            : exportLabel(selectedCount, options.format)}
-        </Button>
+        </div>
       </Section>
 
       {jobs.length > 0 && (
         <Section label="Activity">
           <ul className="flex flex-col gap-2">
-            {jobs.map((job) => {
+            {jobs.map((job, index) => {
               const status = jobStatus(job);
               const settled = job.done + job.failed;
               return (
                 <li
                   key={job.key}
+                  ref={index === 0 ? newestJob : undefined}
                   data-testid={`job-${status}`}
                   className="flex flex-col gap-0.5 text-xs"
                 >
@@ -745,12 +702,12 @@ export function ExportDrawer({
                   )}
                   <span
                     title={jobDetail(job, status, settled)}
-                    className="truncate pl-5 font-mono text-[10px] text-muted-foreground"
+                    className="truncate pl-5 font-mono text-2xs text-muted-foreground"
                   >
                     {jobDetail(job, status, settled)}
                   </span>
                   {job.failures.length > 0 && (
-                    <details className="pl-5 text-[10px] text-muted-foreground">
+                    <details className="pl-5 text-2xs text-muted-foreground">
                       <summary className="cursor-pointer">
                         Which {job.failures.length === 1 ? "file" : "files"}?
                       </summary>
@@ -776,6 +733,52 @@ export function ExportDrawer({
           </ul>
         </Section>
       )}
+      <div className="sticky bottom-0 mt-auto flex shrink-0 flex-col gap-2 border-t border-border bg-sidebar p-3">
+        {banner && (
+          <Alert data-testid="decoder-banner" className="gap-1 px-3 py-2.5">
+            <TriangleAlert className="text-warning" />
+            <AlertTitle className="text-2xs text-warning">
+              Exporting with RAW {effectiveDecoder}
+            </AlertTitle>
+            <AlertDescription className="text-2xs">
+              {banner.body}
+              <span className="mt-1 flex items-center gap-2.5">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  data-testid="banner-fix"
+                  onClick={() => setDecoderVersion(banner.fixTo)}
+                  className="h-5 border-warning/45 px-2 text-2xs text-warning"
+                >
+                  Use RAW {banner.fixTo}
+                </Button>
+                <button
+                  type="button"
+                  data-testid="banner-keep"
+                  onClick={() => setDismissed(dismissKey)}
+                  className="relative finger-target text-2xs text-muted-foreground underline underline-offset-2"
+                >
+                  {banner.keep}
+                </button>
+              </span>
+            </AlertDescription>
+          </Alert>
+        )}
+        <Button
+          size="sm"
+          data-testid="run-export"
+          disabled={selectedCount === 0 || busy || probing || badTemplate}
+          onClick={() => void runExport()}
+          className="w-full text-xs"
+        >
+          <Upload />
+          {busy
+            ? "Exporting…"
+            : selectedCount === 0
+              ? "Export"
+              : exportLabel(selectedCount, options.format)}
+        </Button>
+      </div>
     </div>
   );
 }

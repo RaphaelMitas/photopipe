@@ -154,7 +154,7 @@ export function Filmstrip({ images, index, mode, stacks, onNavigate }: Props) {
                 {mode === "ratings" && (
                   <span
                     data-testid="filmstrip-rating"
-                    className="flex w-full items-center justify-center gap-0.5 bg-background/90 font-mono text-[10px] text-amber-400"
+                    className="flex w-full items-center justify-center gap-0.5 bg-background/90 font-mono text-2xs text-amber-400"
                     style={{ height: RATING_ROW_HEIGHT }}
                   >
                     {image.flag === -1 && (

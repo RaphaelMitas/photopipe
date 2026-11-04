@@ -64,7 +64,7 @@ export const autoAdvancePref = flagPref(
 const NUDGE_PIXELS = 10;
 
 const CHIP =
-  "rounded-md border border-border bg-background/85 px-2.5 py-1 font-mono text-[11px] backdrop-blur-sm";
+  "rounded-md border border-border bg-background/85 px-2.5 py-1 font-mono text-2xs backdrop-blur-sm";
 
 // Keeping the framing keeps both halves of the split on the same pixels.
 const unedited = (edit: Edit): Edit => ({ ...identityEdit, ...framing(edit) });
@@ -524,7 +524,7 @@ function FlagPill({ flag, lowered }: { flag: Flag; lowered: boolean }) {
   return (
     <div
       data-testid="loupe-flag"
-      className={`absolute ${lowered ? "top-12" : "top-3"} left-1/2 -translate-x-1/2 rounded-full border bg-background/85 px-2.5 py-0.5 font-medium text-[11px] backdrop-blur-sm ${
+      className={`absolute ${lowered ? "top-12" : "top-3"} left-1/2 -translate-x-1/2 rounded-full border bg-background/85 px-2.5 py-0.5 font-medium text-2xs backdrop-blur-sm ${
         flag === 1
           ? "border-success/60 text-success"
           : "border-destructive/60 text-destructive"
@@ -677,7 +677,7 @@ function StackOverlay({
               {image.flag === 1 ? "Unpick" : "Pick this one"}
             </span>
             {image.flag !== 1 && (
-              <span className="font-mono text-[11px] text-muted-foreground">
+              <span className="font-mono text-2xs text-muted-foreground">
                 others stay as they are
               </span>
             )}

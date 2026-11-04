@@ -122,13 +122,7 @@ export function ratingCounts(
   return counts;
 }
 
-function RatingFilterOps({
-  filter,
-  disabled,
-}: {
-  filter: RatingFilter;
-  disabled?: boolean;
-}) {
+function RatingFilterOps({ filter }: { filter: RatingFilter }) {
   const unrated = sameSet(filter.stars, new Set([0]));
   const chip = (
     testid: string,
@@ -144,9 +138,8 @@ function RatingFilterOps({
         aria-pressed={pressed}
         aria-label={title}
         data-testid={`filter-op-${testid}`}
-        disabled={disabled}
         onClick={onClick}
-        className="h-5 min-w-0 px-1.5 font-mono text-[10px] pointer-coarse:h-8 pointer-coarse:px-3"
+        className="h-5 min-w-0 px-1.5 font-mono text-2xs pointer-coarse:h-8 pointer-coarse:px-3"
       >
         {label}
       </Button>
@@ -190,7 +183,6 @@ function HistogramBar({
   title,
   tone,
   active,
-  disabled,
   onClick,
 }: {
   testid: string;
@@ -200,7 +192,6 @@ function HistogramBar({
   title: string;
   tone: keyof typeof TONE;
   active: boolean;
-  disabled?: boolean;
   onClick: (modifiers: Modifiers) => void;
 }) {
   const { on, bar, off } = TONE[tone];
@@ -208,13 +199,12 @@ function HistogramBar({
     <button
       type="button"
       data-testid={testid}
-      disabled={disabled}
       aria-pressed={active}
       title={`${title} · ⌘ or ⇧ click to combine`}
       onClick={(event) =>
         onClick({ meta: event.metaKey || event.ctrlKey, shift: event.shiftKey })
       }
-      className="group flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded p-0.5 font-mono text-[9px] transition-colors hover:bg-accent disabled:opacity-30"
+      className="group flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded p-0.5 font-mono text-[10px] tabular-nums transition-colors hover:bg-accent"
     >
       <span className={active ? on : "text-muted-foreground"}>{count}</span>
       <span
@@ -233,11 +223,9 @@ const Divider = () => <span className="w-px self-stretch bg-border" />;
 function RatingHistogram({
   counts,
   filter,
-  disabled,
 }: {
   counts: RatingCounts;
   filter: RatingFilter;
-  disabled?: boolean;
 }) {
   const max = Math.max(...counts.stars, counts.picked, counts.rejected, 1);
   const flagBar = (flag: Flag, tone: "rejected" | "picked", label: string) => (
@@ -248,8 +236,7 @@ function RatingHistogram({
       label={label}
       title={`${counts[tone]} ${tone}`}
       tone={tone}
-      active={!disabled && filter.flags.has(flag)}
-      disabled={disabled}
+      active={filter.flags.has(flag)}
       onClick={(modifiers) => filter.clickFlag(flag, modifiers)}
     />
   );
@@ -270,8 +257,7 @@ function RatingHistogram({
               : `${count} rated ${pluralize(rating, "star")}`
           }
           tone="stars"
-          active={!disabled && filter.stars.has(rating)}
-          disabled={disabled}
+          active={filter.stars.has(rating)}
           onClick={(modifiers) => filter.clickStars(rating, modifiers)}
         />
       ))}
@@ -284,22 +270,20 @@ function RatingHistogram({
 export function RatingFilterGroup({
   filter,
   counts,
-  disabled,
   children,
 }: {
   filter: RatingFilter;
   counts: RatingCounts;
-  disabled?: boolean;
   children?: ReactNode;
 }) {
   return (
     <SidebarGroup>
       <SidebarGroupLabel className="justify-between">
         Rating
-        <RatingFilterOps filter={filter} disabled={disabled} />
+        <RatingFilterOps filter={filter} />
       </SidebarGroupLabel>
       <SidebarGroupContent className="px-2 py-1">
-        <RatingHistogram counts={counts} filter={filter} disabled={disabled} />
+        <RatingHistogram counts={counts} filter={filter} />
         {children}
       </SidebarGroupContent>
     </SidebarGroup>

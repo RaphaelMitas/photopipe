@@ -61,7 +61,6 @@ function renderDrawer(rawPaths: string[] = RAWS) {
           busy={false}
           onSelectFiltered={vi.fn()}
           onSelectAll={vi.fn()}
-          onClearSelection={vi.fn()}
           onExport={onExport}
           onCancel={vi.fn()}
           onReveal={vi.fn()}

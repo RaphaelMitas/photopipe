@@ -198,7 +198,7 @@ export function HistoryControls({
               onJump={() => onJump(null)}
             />
           </ItemGroup>
-          <p className="border-border border-t px-2 pt-2 pb-1 text-[10px] text-muted-foreground">
+          <p className="border-border border-t px-2 pt-2 pb-1 text-2xs text-muted-foreground">
             {[
               "This session only",
               undoKey && `${undoKey} undo`,

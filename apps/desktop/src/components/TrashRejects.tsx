@@ -32,7 +32,7 @@ export function TrashRejects({
           variant="ghost"
           data-testid="trash-rejects"
           onClick={() => setOpen(true)}
-          className="text-destructive hover:text-destructive"
+          className="h-7 text-destructive text-xs hover:text-destructive"
         >
           <Trash2 />
           {trash ? "Trash" : "Delete"} {count}…
