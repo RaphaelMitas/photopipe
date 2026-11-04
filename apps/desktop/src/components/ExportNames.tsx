@@ -57,7 +57,7 @@ function PresetMenu({
           size="xs"
           variant="ghost"
           data-testid="name-presets"
-          className="absolute inset-y-1 right-1 h-auto rounded-full text-[11px] text-muted-foreground"
+          className="absolute inset-y-1 right-1 h-auto rounded-full text-2xs text-muted-foreground"
         >
           Presets
           <ChevronDown />
@@ -66,7 +66,7 @@ function PresetMenu({
       <DropdownMenuContent align="end" className="w-64">
         {recent.length > 0 && (
           <>
-            <DropdownMenuLabel className="py-1.5 text-[10px] uppercase tracking-wider">
+            <DropdownMenuLabel className="py-1.5 font-medium">
               Recent
             </DropdownMenuLabel>
             {recent.map((used) => (
@@ -81,7 +81,7 @@ function PresetMenu({
               </DropdownMenuItem>
             ))}
             <DropdownMenuSeparator />
-            <DropdownMenuLabel className="py-1.5 text-[10px] uppercase tracking-wider">
+            <DropdownMenuLabel className="py-1.5 font-medium">
               Presets
             </DropdownMenuLabel>
           </>
@@ -98,7 +98,7 @@ function PresetMenu({
               {mark(preset.template)}
             </span>
             {sample && (
-              <span className="truncate font-mono text-[10px] text-muted-foreground">
+              <span className="truncate font-mono text-2xs text-muted-foreground">
                 {exportName(preset.template, sample, 0, images.length, shoot)}
               </span>
             )}
@@ -210,21 +210,21 @@ export function ExportNames({
             variant="outline"
             data-testid={`name-token-${token}`}
             onClick={() => insert(token)}
-            className="h-5 rounded-md px-1.5 font-mono text-[10px] text-muted-foreground"
+            className="h-5 rounded-md px-1.5 font-mono text-2xs text-muted-foreground"
           >
             {token}
           </Button>
         ))}
       </div>
       {problem ? (
-        <p data-testid="name-problem" className="text-[10px] text-destructive">
+        <p data-testid="name-problem" className="text-2xs text-destructive">
           {problem}
         </p>
       ) : (
         images.length > 0 && (
           <div
             data-testid="name-preview"
-            className="flex flex-col gap-0.5 font-mono text-[10px] text-muted-foreground"
+            className="flex flex-col gap-0.5 font-mono text-2xs text-muted-foreground"
           >
             <div className="grid grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-1.5 gap-y-0.5">
               {images.slice(0, PREVIEW_COUNT).map((image, i) => (
@@ -252,21 +252,21 @@ export function ExportNames({
       {!problem && repeats > 0 && (
         <p
           data-testid="name-repeats"
-          className="flex gap-1.5 text-[10px] text-warning"
+          className="flex gap-1.5 text-2xs text-warning"
         >
           <TriangleAlert className="mt-px size-3 shrink-0" />
           Some names repeat and get -1, -2. Add {"{seq}"} to keep them apart.
         </p>
       )}
       {!problem && undated > 0 && (
-        <p data-testid="name-undated" className="text-[10px] text-warning">
+        <p data-testid="name-undated" className="text-2xs text-warning">
           {pluralize(undated, "photo")} {undated === 1 ? "has" : "have"} no
           capture time loaded and {undated === 1 ? "uses" : "use"} the file
           date.
         </p>
       )}
       {!problem && unrated > 0 && (
-        <p data-testid="name-unrated" className="text-[10px] text-warning">
+        <p data-testid="name-unrated" className="text-2xs text-warning">
           {pluralize(unrated, "photo")} {unrated === 1 ? "is" : "are"} still
           being read, so {"{rating}"} may say 0.
         </p>

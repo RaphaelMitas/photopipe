@@ -1,15 +1,10 @@
 import { Button } from "@photopipe/ui/components/button";
-import {
-  ClipboardPaste,
-  Copy,
-  FolderOpen,
-  Trash2,
-  Upload,
-  X,
-} from "lucide-react";
-import { useState } from "react";
+import { cn } from "@photopipe/ui/lib/utils";
+import { ClipboardPaste, Copy, FolderOpen, Trash2, X } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import type { ImageFile } from "@/lib/core";
 import { useFeatures } from "@/lib/features";
+import type { ActionId } from "@/lib/keymap";
 import { ShortcutTooltip } from "./ShortcutTooltip";
 import { TrashDialog } from "./TrashDialog";
 
@@ -18,11 +13,10 @@ type Props = {
   canPaste: boolean;
   onCopySettings: () => void;
   onPasteSettings: () => void;
-  onExport: () => void;
   onReveal?: () => void;
   onDelete: () => void;
   onClear: () => void;
-  busy?: boolean;
+  className?: string;
 };
 
 export function SelectionBar({
@@ -30,11 +24,10 @@ export function SelectionBar({
   canPaste,
   onCopySettings,
   onPasteSettings,
-  onExport,
   onReveal,
   onDelete,
   onClear,
-  busy,
+  className,
 }: Props) {
   const { trash } = useFeatures();
   const [confirming, setConfirming] = useState(false);
@@ -43,95 +36,64 @@ export function SelectionBar({
   return (
     <div
       data-testid="selection-bar"
-      className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-1.5"
+      className={cn(
+        "flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 pointer-coarse:gap-y-4",
+        className,
+      )}
     >
       <span
         data-testid="selection-count"
-        className="font-mono text-xs text-muted-foreground"
+        className="font-medium text-xs tabular-nums"
       >
         {count} selected
       </span>
-      <div className="ml-2 flex items-center gap-1">
-        <ShortcutTooltip label="Export selection" action="export.open">
-          <Button
-            size="sm"
-            variant="secondary"
-            data-testid="action-export"
-            disabled={busy}
-            onClick={() => onExport()}
-            className="h-7 text-xs"
-          >
-            <Upload />
-            Export…
-          </Button>
-        </ShortcutTooltip>
+      <div className="flex shrink-0 items-center gap-1 pointer-coarse:gap-4">
         {count === 1 && (
-          <ShortcutTooltip label="Copy settings" action="settings.copy">
-            <Button
-              size="sm"
-              variant="ghost"
-              data-testid="action-copy-settings"
-              onClick={() => onCopySettings()}
-              className="h-7 text-xs text-muted-foreground"
-            >
-              <Copy />
-              Copy settings
-            </Button>
-          </ShortcutTooltip>
+          <IconAction
+            label="Copy settings"
+            action="settings.copy"
+            testid="action-copy-settings"
+            onClick={onCopySettings}
+          >
+            <Copy />
+          </IconAction>
         )}
         {canPaste && (
-          <ShortcutTooltip label="Paste settings" action="settings.paste">
-            <Button
-              size="sm"
-              variant="ghost"
-              data-testid="action-paste-settings"
-              onClick={() => onPasteSettings()}
-              className="h-7 text-xs text-muted-foreground"
-            >
-              <ClipboardPaste />
-              Paste settings
-            </Button>
-          </ShortcutTooltip>
+          <IconAction
+            label="Paste settings"
+            action="settings.paste"
+            testid="action-paste-settings"
+            onClick={onPasteSettings}
+          >
+            <ClipboardPaste />
+          </IconAction>
         )}
         {onReveal && (
-          <ShortcutTooltip label="Reveal in Finder">
-            <Button
-              size="sm"
-              variant="ghost"
-              data-testid="action-reveal"
-              onClick={() => onReveal()}
-              className="h-7 text-xs text-muted-foreground"
-            >
-              <FolderOpen />
-              Reveal
-            </Button>
-          </ShortcutTooltip>
-        )}
-        <ShortcutTooltip label={trash ? "Move to Trash" : "Delete for good"}>
-          <Button
-            size="sm"
-            variant="ghost"
-            data-testid="action-delete"
-            onClick={() => (trash ? onDelete() : setConfirming(true))}
-            className="h-7 text-xs text-muted-foreground hover:text-destructive"
+          <IconAction
+            label="Reveal in Finder"
+            testid="action-reveal"
+            onClick={onReveal}
           >
-            <Trash2 />
-            Delete
-          </Button>
-        </ShortcutTooltip>
-      </div>
-      <ShortcutTooltip label="Clear selection" action="select.clear">
-        <Button
-          size="icon"
-          variant="ghost"
-          data-testid="action-clear"
-          aria-label="Clear selection"
-          onClick={() => onClear()}
-          className="ml-auto size-7 text-muted-foreground"
+            <FolderOpen />
+          </IconAction>
+        )}
+        <IconAction
+          label={trash ? "Move to Trash" : "Delete for good"}
+          testid="action-delete"
+          onClick={() => (trash ? onDelete() : setConfirming(true))}
+          className="hover:text-destructive"
+        >
+          <Trash2 />
+        </IconAction>
+        <IconAction
+          label="Clear selection"
+          action="select.clear"
+          testid="action-clear"
+          onClick={onClear}
         >
           <X />
-        </Button>
-      </ShortcutTooltip>
+        </IconAction>
+      </div>
       <TrashDialog
         photos={selected}
         noun="photo"
@@ -141,5 +103,36 @@ export function SelectionBar({
         testId="trash-selection"
       />
     </div>
+  );
+}
+
+function IconAction({
+  label,
+  action,
+  testid,
+  onClick,
+  className,
+  children,
+}: {
+  label: string;
+  action?: ActionId;
+  testid: string;
+  onClick: () => void;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <ShortcutTooltip label={label} action={action}>
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        data-testid={testid}
+        aria-label={label}
+        onClick={() => onClick()}
+        className={cn("size-7 text-muted-foreground", className)}
+      >
+        {children}
+      </Button>
+    </ShortcutTooltip>
   );
 }

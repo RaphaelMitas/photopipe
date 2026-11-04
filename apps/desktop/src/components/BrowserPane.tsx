@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { ImageFile, PassProgress } from "@/lib/core";
 import type { PhotoSource } from "@/lib/roots";
 import type { SelectModifiers } from "@/lib/selection";
@@ -10,6 +11,7 @@ import { ImportButton } from "./ImportButton";
 import { TrashRejects } from "./TrashRejects";
 
 type Props = {
+  selection?: ReactNode;
   images: ImageFile[];
   sort: SortKey;
   sortReady: Record<SortKey, boolean>;
@@ -27,6 +29,7 @@ type Props = {
 };
 
 export function BrowserPane({
+  selection,
   images,
   sort,
   sortReady,
@@ -47,7 +50,7 @@ export function BrowserPane({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <BrowserToolbar
-        purpose="Cull and rate. Click a photo for the loupe; Export takes the selection."
+        selection={selection}
         view={view}
         onView={viewPref.set}
         sort={sort}

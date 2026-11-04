@@ -144,7 +144,7 @@ export function KeyboardSettings() {
           if (rows.length === 0) return null;
           return (
             <section key={group}>
-              <h3 className="px-2 pt-3 pb-1 font-medium text-[11px] text-muted-foreground uppercase tracking-wide">
+              <h3 className="px-2 pt-3 pb-1 font-medium text-muted-foreground text-xs">
                 {group}
               </h3>
               {rows.map((id) => {
@@ -229,7 +229,7 @@ export function KeyboardSettings() {
         })}
       </div>
       <div className="flex items-center gap-3 border-border border-t pt-3">
-        <span className="flex-1 text-[11px] text-muted-foreground">
+        <span className="flex-1 text-2xs text-muted-foreground">
           {RESERVED_KEYS} belong to macOS and can't be changed
         </span>
         <Button

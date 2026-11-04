@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { hitAt } from "./hit-at";
 import { openZell } from "./open-shoot";
 
 test.use({ hasTouch: true });
@@ -11,16 +12,6 @@ async function drag(target: Locator, from: Point, to: Point) {
   await target.dispatchEvent("pointermove", { ...touch, ...to });
   await target.dispatchEvent("pointerup", { ...touch, ...to });
 }
-
-const hitAt = (page: Page, x: number, y: number) =>
-  page.evaluate(
-    ([x, y]) =>
-      document
-        .elementFromPoint(x, y)
-        ?.closest("[data-testid]")
-        ?.getAttribute("data-testid") ?? null,
-    [x, y],
-  );
 
 async function box(locator: Locator) {
   const found = await locator.first().boundingBox();

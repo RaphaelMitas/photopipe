@@ -1,7 +1,7 @@
 import { Button } from "@photopipe/ui/components/button";
 import { Card, CardContent } from "@photopipe/ui/components/card";
-import { Images, Plus, Settings2 } from "lucide-react";
-import type { Shoot } from "@/lib/core";
+import { Images, Settings2 } from "lucide-react";
+import { dayOutsideName, type Shoot } from "@/lib/core";
 import { pluralize } from "@/lib/plural";
 import { ShortcutTooltip } from "./ShortcutTooltip";
 import { Thumbnail } from "./Thumbnail";
@@ -9,7 +9,7 @@ import { Thumbnail } from "./Thumbnail";
 function Cover({ path }: { path: string | null }) {
   if (!path) {
     return (
-      <div className="flex aspect-[3/2] w-full items-center justify-center rounded-t-xl bg-muted/40">
+      <div className="flex aspect-[3/2] w-full items-center justify-center bg-muted/40">
         <Images className="size-6 text-muted-foreground/40" />
       </div>
     );
@@ -19,7 +19,7 @@ function Cover({ path }: { path: string | null }) {
       file={{ path, mtime: 0 }}
       alt=""
       data-testid="shoot-cover"
-      className="aspect-[3/2] w-full rounded-t-xl"
+      className="aspect-[3/2] w-full"
     />
   );
 }
@@ -27,22 +27,19 @@ function Cover({ path }: { path: string | null }) {
 type Props = {
   shoots: Shoot[];
   onOpen: (shoot: string) => void;
-  onNewProject: () => void;
   onSettings: (shoot: string) => void;
 };
 
-export function Dashboard({ shoots, onOpen, onNewProject, onSettings }: Props) {
+export function Dashboard({ shoots, onOpen, onSettings }: Props) {
+  if (shoots.length === 0) {
+    return (
+      <p className="p-6 text-muted-foreground text-sm">
+        No projects yet. Start one with New project.
+      </p>
+    );
+  }
   return (
     <div className="grid grid-cols-1 gap-3 p-6 sm:grid-cols-2 lg:grid-cols-3">
-      <button
-        type="button"
-        data-testid="new-project"
-        onClick={onNewProject}
-        className="flex min-h-24 items-center justify-center gap-2 rounded-xl border border-dashed text-muted-foreground text-sm transition-colors hover:border-ring hover:text-foreground"
-      >
-        <Plus className="size-4" />
-        New project
-      </button>
       {shoots.map((shoot) => (
         <Card
           key={shoot.name}
@@ -72,7 +69,7 @@ export function Dashboard({ shoots, onOpen, onNewProject, onSettings }: Props) {
                 <span className="truncate font-heading font-medium">
                   {shoot.name}
                 </span>
-                {shoot.day && (
+                {dayOutsideName(shoot) && (
                   <span className="shrink-0 font-mono text-xs text-muted-foreground">
                     {shoot.day}
                   </span>

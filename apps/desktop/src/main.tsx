@@ -38,7 +38,7 @@ prepare().then(() => {
     <React.StrictMode>
       <QueryClientProvider client={queryClient}>
         <App />
-        <Toaster richColors position="bottom-right" />
+        <Toaster richColors position="bottom-left" offset={{ bottom: 56 }} />
       </QueryClientProvider>
     </React.StrictMode>,
   );

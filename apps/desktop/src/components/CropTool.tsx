@@ -82,7 +82,7 @@ export function CropPanel({
           onClick={() =>
             onDraft(draftFromEdit(identityEdit, image.width, image.height))
           }
-          className="ml-auto h-6 px-1.5 text-[10px] text-muted-foreground"
+          className="ml-auto h-6 px-1.5 text-2xs text-muted-foreground"
         >
           Reset
         </Button>
@@ -199,7 +199,7 @@ export function CropPanel({
           </Button>
         </ShortcutTooltip>
       </div>
-      <p className="text-[10px] text-muted-foreground">
+      <p className="text-2xs text-muted-foreground">
         Drag outside a corner to straighten · ⌥-drag along a line to level it ·
         double-click resets the angle
       </p>

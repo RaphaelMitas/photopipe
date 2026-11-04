@@ -125,9 +125,11 @@ function Thumb({
         if (intent === "open") onOpen?.();
         else onSelect?.(intent);
       }}
-      className={`group relative shrink-0 overflow-hidden rounded-md bg-card transition-shadow focus-visible:ring-2 focus-visible:ring-ring hover:shadow-lg ${
-        selected || current ? "ring-2 ring-primary" : ""
-      }`}
+      className={cn(
+        "group relative shrink-0 overflow-hidden rounded-md bg-card transition-shadow hover:shadow-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+        selected && "ring-2 ring-primary",
+        current && "outline-2 outline-offset-2 outline-foreground/80",
+      )}
       style={{ width, height }}
     >
       <Thumbnail
@@ -146,15 +148,16 @@ function Thumb({
         exposure={image.edit.exposure}
         unit=" EV"
         testid="thumb-edited"
-        className="absolute top-1.5 right-1.5 rounded-full bg-background/70 px-1.5 py-0.5 font-mono text-[9px] text-foreground/80 backdrop-blur"
+        className="absolute top-1.5 right-1.5 rounded-sm bg-background/70 px-1.5 py-0.5 font-mono text-2xs text-foreground/80 tabular-nums backdrop-blur"
       />
       <span
         data-testid="thumb-info"
-        className={`absolute inset-x-0 bottom-0 flex items-center gap-1 bg-background/70 px-2 py-1 font-mono text-[10px] text-foreground/80 transition-opacity ${
+        className={cn(
+          "absolute inset-x-0 bottom-0 flex items-center gap-1 bg-linear-to-t from-black/70 to-transparent px-2 pt-4 pb-1 font-mono text-2xs text-white/90 transition-opacity",
           showInfo
             ? "opacity-100"
-            : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
-        }`}
+            : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100",
+        )}
       >
         <span className="truncate">
           {dir && <span className="text-muted-foreground/70">{dir}</span>}

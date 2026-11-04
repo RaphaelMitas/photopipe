@@ -247,7 +247,7 @@ function ShootSettingsForm({
               size="sm"
               data-testid="cover-clear"
               onClick={() => setCover(null)}
-              className="h-6 text-[10px] text-muted-foreground"
+              className="h-6 text-2xs text-muted-foreground"
             >
               Use the first photo
             </Button>

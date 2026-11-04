@@ -1,5 +1,4 @@
-import { Button } from "./button";
-import { ButtonGroup } from "./button-group";
+import { cn } from "../lib/utils";
 
 export function Segmented<T extends string>({
   value,
@@ -15,21 +14,28 @@ export function Segmented<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
-    <ButtonGroup className="w-full">
+    <div
+      role="group"
+      className="flex w-full gap-0.5 rounded-4xl bg-muted p-0.5 dark:bg-black/25 ring-1 ring-border"
+    >
       {options.map(([option, label]) => (
-        <Button
+        <button
           key={option}
-          size="sm"
-          variant={value === option ? "secondary" : "outline"}
+          type="button"
           aria-pressed={value === option}
           disabled={disabled?.includes(option)}
           data-testid={`${testid}-${option}`}
           onClick={() => onChange(option)}
-          className="flex-1 text-xs"
+          className={cn(
+            "relative finger-target h-7 flex-1 rounded-3xl px-2 font-medium text-xs whitespace-nowrap transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/30 disabled:pointer-events-none disabled:opacity-50",
+            value === option
+              ? "bg-foreground/15 text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground",
+          )}
         >
           {label}
-        </Button>
+        </button>
       ))}
-    </ButtonGroup>
+    </div>
   );
 }

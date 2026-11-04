@@ -13,7 +13,6 @@ function renderBar(count = 2, canPaste = true) {
   const handlers = {
     onCopySettings: vi.fn(),
     onPasteSettings: vi.fn(),
-    onExport: vi.fn(),
     onReveal: vi.fn(),
     onDelete: vi.fn(),
     onClear: vi.fn(),
@@ -35,7 +34,6 @@ describe("SelectionBar", () => {
   it("calls handlers with no arguments", () => {
     const handlers = renderBar();
     for (const [id, handler] of [
-      ["action-export", handlers.onExport],
       ["action-paste-settings", handlers.onPasteSettings],
       ["action-reveal", handlers.onReveal],
       ["action-delete", handlers.onDelete],

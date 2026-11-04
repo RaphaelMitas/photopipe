@@ -162,7 +162,7 @@ function Group({
         />
         {title}
         {!open && summary && (
-          <span className="ml-auto overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[10px] text-muted-foreground">
+          <span className="ml-auto overflow-hidden text-ellipsis whitespace-nowrap font-mono text-2xs text-muted-foreground">
             {summary}
           </span>
         )}
@@ -209,7 +209,7 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
             <Crop />
             Crop & straighten
             {summary && (
-              <span className="ml-auto min-w-0 truncate font-mono text-[10px] text-muted-foreground">
+              <span className="ml-auto min-w-0 truncate font-mono text-2xs text-muted-foreground">
                 {summary}
               </span>
             )}
@@ -348,7 +348,7 @@ function DecoderStrip() {
       data-testid="decoder-strip"
       className="flex shrink-0 items-center gap-2 border-border border-t bg-foreground/3 px-3 py-2"
     >
-      <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-input px-2.5 py-1 font-medium text-[10px] text-muted-foreground">
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-muted-foreground text-xs">
         RAW decoder
         <Tooltip open={tipOpen} onOpenChange={setOpen}>
           <TooltipTrigger asChild>
@@ -384,7 +384,7 @@ function DecoderStrip() {
           </TooltipContent>
         </Tooltip>
       </span>
-      <div className="ml-auto w-34">
+      <div className="ml-auto w-32">
         <DecoderSegmented
           value={version}
           testid="decoder-quick"
@@ -476,7 +476,7 @@ export function EditSidebar({
             data-testid="edit-reset-all"
             onClick={() => onChange({ ...identityEdit })}
             disabled={isIdentityEdit(edit) || cropping}
-            className="h-6 px-1.5 text-[10px] text-muted-foreground"
+            className="h-6 px-1.5 text-2xs text-muted-foreground"
           >
             <RotateCcw className="size-3" />
             Reset all

@@ -84,7 +84,7 @@ export function ImageList({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-3 border-b border-border px-3 py-1.5 font-mono text-[10px] text-muted-foreground uppercase">
+      <div className="flex shrink-0 items-center gap-3 border-b border-border px-3 py-1.5 font-medium text-2xs text-muted-foreground">
         <span className="w-12 shrink-0" />
         <span className="min-w-0 flex-1">Photo</span>
         {COLUMNS.map((column) => (
@@ -125,8 +125,10 @@ export function ImageList({
                 }}
                 className={cn(
                   "absolute top-0 left-0 flex w-full items-center gap-3 px-3 text-left",
-                  isSelected ? "bg-secondary" : "hover:bg-accent",
-                  isCurrent && "ring-2 ring-primary ring-inset",
+                  isSelected
+                    ? "bg-primary/15 shadow-[inset_2px_0_0_var(--primary)]"
+                    : "hover:bg-accent/50",
+                  isCurrent && "ring-2 ring-foreground/80 ring-inset",
                 )}
                 style={{
                   height: ROW_HEIGHT,
@@ -157,7 +159,7 @@ export function ImageList({
                 <span className="flex w-24 shrink-0 items-center justify-end gap-1.5 text-xs">
                   <ExposureBadge
                     exposure={image.edit.exposure}
-                    className="font-mono text-[10px] text-muted-foreground"
+                    className="font-mono text-2xs text-muted-foreground"
                   />
                   <RatingBadge rating={image.rating} />
                   <PickMark flag={image.flag} />

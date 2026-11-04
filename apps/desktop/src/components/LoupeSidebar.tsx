@@ -73,11 +73,9 @@ export function LoupeSidebar({
   const autoAdvance = autoAdvancePref.use();
   const andNext = autoAdvance ? " & next" : "";
   const overrides = useOverrides();
-  const hint = (text: string, ids: ActionId[], separator = "") => {
+  const hint = (text: string, ids: ActionId[]) => {
     const keys = ids.map((id) => shortcutLabel(id, overrides));
-    return keys.includes(null)
-      ? null
-      : `${keys.join(separator)} ${text}`.trim();
+    return keys.includes(null) ? null : `${keys.join("")} ${text}`;
   };
   const withKey = (text: string, id: ActionId) =>
     [text, shortcutLabel(id, overrides)].filter(Boolean).join(" · ");
@@ -98,17 +96,9 @@ export function LoupeSidebar({
       `${ratingKeys} rate${!where ? "" : inside ? " this frame" : " every frame"}${andNext}`,
     inside && hint(`pick${andNext}`, ["flag.pick"]),
     where && !inside && hint("inside", ["stack.enter"]),
-    hint("clear", ["rate.0"]),
-    hint("exposure", ["exposure.up", "exposure.down"]),
     "pinch or double-click zoom",
-    hint("reset", ["exposure.reset"]),
-    hint("edit", ["editPanel.toggle"]),
-    hint("before/after", ["split.toggle"]),
-    hint("settings", ["settings.copy", "settings.paste"], "/"),
-    hint("undo", ["history.undo"]),
-    hint("stacks", ["stacks.toggle"]),
-    hint("auto-advance", ["autoAdvance.toggle"]),
-    hint(inside ? "up" : "", ["loupe.close"]),
+    inside && hint("up", ["loupe.close"]),
+    hint("all shortcuts", ["app.shortcuts"]),
   ];
   const instinct = image.score == null ? null : instinctScore(image.score);
 
@@ -150,7 +140,7 @@ export function LoupeSidebar({
             </span>
             <span
               data-testid="loupe-position"
-              className="font-mono text-xs text-muted-foreground"
+              className="text-xs text-muted-foreground tabular-nums"
             >
               {position}
             </span>
@@ -168,9 +158,9 @@ export function LoupeSidebar({
             </span>
             {instinct !== null && (
               <div className="mt-2 flex flex-col gap-1" data-testid="instinct">
-                <div className="flex justify-between font-mono text-xs">
+                <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">Instinct</span>
-                  <span>{instinct}</span>
+                  <span className="font-mono tabular-nums">{instinct}</span>
                 </div>
                 <div className="h-1 rounded-sm bg-foreground/10">
                   <div
@@ -179,7 +169,7 @@ export function LoupeSidebar({
                   />
                 </div>
                 {betterThan !== null && (
-                  <span className="font-mono text-[10px] text-muted-foreground">
+                  <span className="text-2xs text-muted-foreground">
                     higher than {betterThan}% of this project
                   </span>
                 )}
@@ -232,7 +222,7 @@ export function LoupeSidebar({
       <SidebarFooter>
         <p
           data-testid="loupe-hints"
-          className="px-2 py-1 text-[10px] text-muted-foreground"
+          className="px-2 py-1 text-2xs text-muted-foreground"
         >
           {hints.filter(Boolean).join(" · ")}
         </p>
@@ -294,17 +284,14 @@ function ShotInfo({ image }: { image: ImageFile }) {
         </div>
       )}
       {gear && (
-        <span
-          className="truncate font-mono text-[10px] text-muted-foreground"
-          title={gear}
-        >
+        <span className="truncate text-2xs text-muted-foreground" title={gear}>
           {gear}
         </span>
       )}
       {image.captured !== null && (
         <span
           data-testid="loupe-taken"
-          className="font-mono text-[10px] text-muted-foreground"
+          className="text-2xs text-muted-foreground tabular-nums"
         >
           {takenText(image.captured)}
         </span>
@@ -319,9 +306,9 @@ function InstinctPick({ stack }: { stack: Stack }) {
   return (
     <SidebarGroup data-testid="stack-group">
       <SidebarGroupLabel>Stack</SidebarGroupLabel>
-      <SidebarGroupContent className="flex justify-between gap-2 px-2 py-1 font-mono text-xs">
+      <SidebarGroupContent className="flex justify-between gap-2 px-2 py-1 text-xs">
         <span className="text-muted-foreground">Instinct's pick</span>
-        <span className="truncate">{fileName(instinct.path)}</span>
+        <span className="truncate font-mono">{fileName(instinct.path)}</span>
       </SidebarGroupContent>
     </SidebarGroup>
   );

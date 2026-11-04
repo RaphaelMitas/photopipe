@@ -14,7 +14,7 @@ export function IndexingStatus({ progress }: { progress: ScanProgress }) {
   return (
     <div
       data-testid="indexing-status"
-      className="flex items-center gap-2 text-[10px] text-muted-foreground"
+      className="flex items-center gap-2 text-2xs text-muted-foreground"
       title="Reading ratings, edits and dimensions"
     >
       <span className="font-mono">
