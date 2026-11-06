@@ -33,6 +33,8 @@ public final class Renderer: @unchecked Sendable {
         let orientedSizeBeforeScaling: CGSize
         let defaults: RawDefaults
         var lastUsed: Date
+        // a shared context gets ~55ms slower per distinct RAW 9 image it has drawn
+        let context = CIContext(options: [.cacheIntermediates: true])
     }
 
     private let lock = NSLock()
@@ -74,14 +76,16 @@ public final class Renderer: @unchecked Sendable {
             for: file, edit: edit, maxPixel: maxPixel, viewport: viewport,
             decoderVersion: decoderVersion)
         return try cache.cachedFile(at: dest) { temp in
+            let raw =
+                try file.isRaw
+                ? rawFilter(for: file, maxPixel: maxPixel, decoderVersion: decoderVersion) : nil
             let image = Self.fitted(
                 try sourceImage(
-                    for: file, edit: edit, maxPixel: maxPixel, viewport: viewport,
-                    decoderVersion: decoderVersion),
+                    for: file, raw: raw, edit: edit, maxPixel: maxPixel, viewport: viewport),
                 longEdge: CGFloat(maxPixel))
 
             guard
-                let jpeg = context.jpegRepresentation(
+                let jpeg = (raw?.context ?? context).jpegRepresentation(
                     of: image, colorSpace: jpegColorSpace,
                     options: [
                         kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.85
@@ -97,10 +101,11 @@ public final class Renderer: @unchecked Sendable {
     ) throws {
         // past any sensor, and doubling it must not overflow
         if let longEdge, !(1...100_000).contains(longEdge) { throw RenderError.encodeFailed }
+        // an export is decoded once; caching it would evict the loupe's warm filters
+        let raw = try file.isRaw ? makeFilter(for: file, decoderVersion: decoderVersion) : nil
         // decoding straight at the target comes out visibly soft
         var image = try sourceImage(
-            for: file, edit: edit, maxPixel: longEdge.map { $0 * 2 },
-            decoderVersion: decoderVersion, cacheFilter: false)
+            for: file, raw: raw, edit: edit, maxPixel: longEdge.map { $0 * 2 })
         if let longEdge { image = Self.fitted(image, longEdge: CGFloat(longEdge)) }
         // An export render holds on to surfaces the context will happily
         // keep for the next one. Nothing else reuses them, and about a hundred
@@ -139,13 +144,11 @@ public final class Renderer: @unchecked Sendable {
 
     /// A nil maxPixel renders the full sensor.
     private func sourceImage(
-        for file: ImageFile, edit: Edit, maxPixel: Int?, viewport: CropRect? = nil,
-        decoderVersion: Int? = nil, cacheFilter: Bool = true
+        for file: ImageFile, raw cached: CachedFilter?, edit: Edit, maxPixel: Int?,
+        viewport: CropRect? = nil
     ) throws -> CIImage {
         var image: CIImage
-        if file.isRaw {
-            let cached = try rawFilter(
-                for: file, maxPixel: cacheFilter ? maxPixel : nil, decoderVersion: decoderVersion)
+        if let cached {
             let filter = cached.filter
             let output = lock.withLock {
                 let scale = Self.sourceScale(
@@ -328,10 +331,8 @@ public final class Renderer: @unchecked Sendable {
     }
 
     private func rawFilter(
-        for file: ImageFile, maxPixel: Int?, decoderVersion: Int?
+        for file: ImageFile, maxPixel: Int, decoderVersion: Int?
     ) throws -> CachedFilter {
-        // an export is decoded once; caching it would evict the loupe's warm filters
-        guard let maxPixel else { return try makeFilter(for: file, decoderVersion: decoderVersion) }
         let key = "\(file.path)|\(maxPixel)\(Self.decoderTag(decoderVersion))"
         let warm = lock.withLock { () -> CachedFilter? in
             guard let cached = filtersByPathAndSize[key], cached.mtime == file.mtime else {
