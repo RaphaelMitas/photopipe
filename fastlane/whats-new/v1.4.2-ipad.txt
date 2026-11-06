@@ -1,0 +1,2 @@
+• Calmer, photo-first UI chrome
+• RAW 9 photos stay fast through a long editing session instead of slowing down with every photo you open
