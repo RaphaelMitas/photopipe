@@ -33,7 +33,7 @@ public final class Renderer: @unchecked Sendable {
         let orientedSizeBeforeScaling: CGSize
         let defaults: RawDefaults
         var lastUsed: Date
-        // a shared context slows ~55ms for every RAW 9 image it has ever drawn
+        // a shared context gets ~55ms slower per distinct RAW 9 image it has drawn
         let context = CIContext(options: [.cacheIntermediates: true])
     }
 
