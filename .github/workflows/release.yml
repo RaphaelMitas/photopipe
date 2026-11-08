@@ -282,7 +282,7 @@ jobs:
           echo "MANIFEST=$MANIFEST" >> $GITHUB_OUTPUT
 
       - name: Publish the release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3
         with:
           tag_name: ${{ needs.check.outputs.tag }}
           files: |
@@ -331,7 +331,7 @@ jobs:
             git fetch --depth=1 origin "$GITHUB_SHA"
             git checkout FETCH_HEAD
           fi
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 26
