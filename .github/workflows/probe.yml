@@ -1,0 +1,16 @@
+name: Probe RW2 decode on macOS 26
+on: pull_request
+jobs:
+  probe:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Cache raw fixtures
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: fixtures/raw
+          key: fixtures-${{ hashFiles('fixtures/fetch.sh') }}
+      - run: ./fixtures/fetch.sh
+      - run: sw_vers; xcodebuild -version; ls -la /System/Library/CoreServices/RawCamera.bundle/Contents/Info.plist 2>/dev/null; defaults read /System/Library/CoreServices/RawCamera.bundle/Contents/Info.plist CFBundleShortVersionString 2>/dev/null || true
+      - run: swiftc -O probe/rw2.swift -o rw2probe && ./rw2probe fixtures/raw/panasonic-s5.rw2 fixtures/raw/olympus-em1iii.orf fixtures/raw/sony-a7iii.arw
+      - run: sips -g pixelWidth -g pixelHeight fixtures/raw/panasonic-s5.rw2 || true
