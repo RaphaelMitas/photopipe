@@ -10,7 +10,7 @@ import Synchronization
         }
 
         public static let shared = ExifTool()
-        // its own daemon, so a rating never queues behind every enrichment lane's read
+        // its own daemon, so sidecar writes never queue behind enrichment's reads
         static let reader = ExifTool()
 
         private let lock = NSLock()

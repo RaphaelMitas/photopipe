@@ -22,8 +22,8 @@ Stack, testing strategy, CI and releases.
   the one inside a CR3. A raw other than a DNG gets Lightroom's
   `DSC0001.xmp`; anything else keeps its extension
   (`DSC0001.HEIC.photopipe.xmp`), and from then on the Mac uses it too.
-  A second exiftool reads a photo's pixel size when ImageIO reads its EXIF
-  but not its size, as macOS 26 does for a Panasonic S5 RW2.
+  It also reads a photo's pixel size when ImageIO reads its EXIF but no
+  size, as macOS 26 does for a Panasonic S5 RW2.
 - **Formats** come from ImageIO at runtime: every extension whose type it
   reads and calls a camera raw, plus JPEG, PNG, TIFF, HEIC/HEIF, AVIF, JPEG XL
   and WebP. A camera a new OS learns needs no release.
@@ -111,6 +111,8 @@ raw fixtures, vendored exiftool.
 
 CI and every release job use the runner image's default Xcode, a 26.x, so the
 shipped apps link the 26 SDKs and get Liquid Glass on macOS and iPadOS 26.
+The core needs Xcode 26 or later to build: it relies on Core Image types
+being Sendable.
 
 Real raw fixtures, two Sony bodies and one per other major raw format, are
 fetched by `fixtures/fetch.sh` (CC0, from raw.pixls.us) rather than committed
