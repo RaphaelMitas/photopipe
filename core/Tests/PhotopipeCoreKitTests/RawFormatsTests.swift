@@ -100,7 +100,7 @@ struct RawFormatsTests {
         }
     }
 
-    @Test func exiftoolSizesARawWhenImageIOGivesNoPixelSize() throws {
+    @Test func aRawWhoseImageHasNoSizeTakesTheFiles() throws {
         guard requireExifTool() else { return }
         let dir = scratchDir("no-pixel-size")
         defer { try? FileManager.default.removeItem(at: dir) }

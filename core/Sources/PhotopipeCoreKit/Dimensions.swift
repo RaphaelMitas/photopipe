@@ -14,34 +14,30 @@ public enum Dimensions {
     }
 
     static func dimensions(_ props: [CFString: Any], of url: URL) -> (width: Int, height: Int)? {
-        if let width = props[kCGImagePropertyPixelWidth] as? Int,
-            let height = props[kCGImagePropertyPixelHeight] as? Int,
-            let size = upright(width, height, props[kCGImagePropertyOrientation] as? UInt32)
-        {
-            return size
-        }
-        // nothing ImageIO can read: not worth an exiftool round trip
-        guard !props.isEmpty else { return nil }
-        // macOS 26 ImageIO reads a Panasonic S5 RW2's EXIF but not its pixel size
-        #if os(macOS)
-            let fields =
-                (try? ExifTool.reader.execute([
-                    "-T", "-n", "-Composite:ImageSize", "-IFD0:Orientation", url.path,
-                ]))?
-                .split(whereSeparator: \.isWhitespace) ?? []
-            guard fields.count == 3, let width = Int(fields[0]), let height = Int(fields[1])
-            else { return nil }
-            return upright(width, height, UInt32(fields[2]))
-        #else
-            return nil
-        #endif
+        guard let size = pixelSize(props) ?? fileContentsSize(at: url),
+            size.width > 0, size.height > 0
+        else { return nil }
+        let orientation = props[kCGImagePropertyOrientation] as? UInt32 ?? 1
+        return orientation >= 5 ? (size.height, size.width) : (size.width, size.height)
     }
 
-    private static func upright(_ width: Int, _ height: Int, _ orientation: UInt32?) -> (
-        width: Int, height: Int
-    )? {
-        guard width > 0, height > 0 else { return nil }
-        return (orientation ?? 1) >= 5 ? (height, width) : (width, height)
+    private static func pixelSize(_ props: [CFString: Any]) -> (width: Int, height: Int)? {
+        guard let width = props[kCGImagePropertyPixelWidth] as? Int,
+            let height = props[kCGImagePropertyPixelHeight] as? Int
+        else { return nil }
+        return (width, height)
+    }
+
+    // macOS 26 leaves a Panasonic S5 RW2's size out of the image's properties, not the file's
+    private static func fileContentsSize(at url: URL) -> (width: Int, height: Int)? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+            let file = CGImageSourceCopyProperties(source, nil) as? [CFString: Any],
+            let contents = file[kCGImagePropertyFileContentsDictionary] as? [CFString: Any],
+            let image = (contents[kCGImagePropertyImages] as? [[CFString: Any]])?.first,
+            let width = image[kCGImagePropertyWidth] as? Int,
+            let height = image[kCGImagePropertyHeight] as? Int
+        else { return nil }
+        return (width, height)
     }
 
     public static func captureDay(at url: URL) -> String? {
