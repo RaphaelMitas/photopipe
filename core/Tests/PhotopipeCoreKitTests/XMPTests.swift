@@ -30,11 +30,8 @@ func exiftoolTag(_ tag: String, of url: URL) throws -> String {
         .trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
-// computed: CIImage is not Sendable on the macOS 15 SDK CI builds with
-private var gray: CIImage {
-    CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5))
-        .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 32))
-}
+private let gray = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5))
+    .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 32))
 
 private func writeGrayJPEG(to url: URL) throws {
     try CIContext().writeJPEGRepresentation(

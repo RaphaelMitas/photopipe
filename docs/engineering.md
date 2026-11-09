@@ -104,10 +104,13 @@ launches from the store.
 ## CI
 
 Two jobs. `quick` on Ubuntu does lint, typecheck, Vitest and Playwright.
-`native` on macOS 15 does swift-format, `swift test`, clippy for macOS and the
+`native` on macOS 26 does swift-format, `swift test`, clippy for macOS and the
 iPad simulator, a simulator build of the iPad app, `cargo test`, then builds a
 real `.app` and smoke tests it. Caches: pnpm, cargo, SwiftPM,
 raw fixtures, vendored exiftool.
+
+CI and every release job use the runner image's default Xcode, a 26.x, so the
+shipped apps link the 26 SDKs and get Liquid Glass on macOS and iPadOS 26.
 
 Real raw fixtures, two Sony bodies and one per other major raw format, are
 fetched by `fixtures/fetch.sh` (CC0, from raw.pixls.us) rather than committed

@@ -31,8 +31,7 @@ enum Presence {
         }
         """
 
-    // CIKernel predates Sendable; these are compiled once and never mutated
-    nonisolated(unsafe) private static let kernels: [String: CIColorKernel] = {
+    private static let kernels: [String: CIColorKernel] = {
         let compiled = (try? CIKernel.kernels(withMetalString: source)) ?? []
         return Dictionary(
             uniqueKeysWithValues: compiled.compactMap { kernel in
