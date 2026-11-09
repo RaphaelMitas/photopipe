@@ -84,6 +84,23 @@ struct RawFormatsTests {
         #expect(turned.width > turned.height, "got \(turned)")
     }
 
+    @Test func exiftoolSizesARawWhenImageIOGivesNoPixelSize() throws {
+        guard requireExifTool() else { return }
+        let dir = scratchDir("no-pixel-size")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        guard let raw = try copyOfFixture("panasonic-s5.rw2", into: dir) else { return }
+        func withoutPixelSize() throws -> [CFString: Any] {
+            var props = try #require(Dimensions.properties(at: raw))
+            props[kCGImagePropertyPixelWidth] = nil
+            props[kCGImagePropertyPixelHeight] = nil
+            return props
+        }
+        #expect(try #require(Dimensions.dimensions(withoutPixelSize(), of: raw)) == (6000, 4000))
+
+        try ExifTool.shared.write(["-overwrite_original", "-Orientation#=6", raw.path])
+        #expect(try #require(Dimensions.dimensions(withoutPixelSize(), of: raw)) == (4000, 6000))
+    }
+
     @Test(arguments: otherBrands + ["sony-a7iii.arw", "sony-a7iv.arw"])
     func everyBrandShowsTheExposureItWasShotWith(_ name: String) throws {
         guard let raw = rawFixture(name) else { return }
@@ -92,7 +109,7 @@ struct RawFormatsTests {
         #expect(exif.focal != nil && exif.lens != nil && exif.body != nil, "got \(exif)")
     }
 
-    // a NEF: the macOS 15 CI runs on does not surface the XMP inside a CR3
+    // a NEF: macOS 15 does not surface the XMP inside a CR3
     @Test func aStarRatedInCameraShowsAndStaysOnceTheRawHasASidecar() throws {
         let name = "nikon-z6ii.nef"
         guard requireExifTool() else { return }

@@ -10,16 +10,38 @@ public enum Dimensions {
     }
 
     public static func read(at url: URL) -> (width: Int, height: Int)? {
-        properties(at: url).flatMap(dimensions)
+        dimensions(properties(at: url) ?? [:], of: url)
     }
 
-    static func dimensions(_ props: [CFString: Any]) -> (width: Int, height: Int)? {
-        guard let width = props[kCGImagePropertyPixelWidth] as? Int,
+    static func dimensions(_ props: [CFString: Any], of url: URL) -> (width: Int, height: Int)? {
+        if let width = props[kCGImagePropertyPixelWidth] as? Int,
             let height = props[kCGImagePropertyPixelHeight] as? Int,
-            width > 0, height > 0
-        else { return nil }
-        let orientation = props[kCGImagePropertyOrientation] as? UInt32 ?? 1
-        return orientation >= 5 ? (height, width) : (width, height)
+            let size = upright(width, height, props[kCGImagePropertyOrientation] as? UInt32)
+        {
+            return size
+        }
+        // nothing ImageIO can read: not worth an exiftool round trip
+        guard !props.isEmpty else { return nil }
+        // macOS 26 ImageIO reads a Panasonic S5 RW2's EXIF but not its pixel size
+        #if os(macOS)
+            let fields =
+                (try? ExifTool.reader.execute([
+                    "-T", "-n", "-Composite:ImageSize", "-IFD0:Orientation", url.path,
+                ]))?
+                .split(whereSeparator: \.isWhitespace) ?? []
+            guard fields.count == 3, let width = Int(fields[0]), let height = Int(fields[1])
+            else { return nil }
+            return upright(width, height, UInt32(fields[2]))
+        #else
+            return nil
+        #endif
+    }
+
+    private static func upright(_ width: Int, _ height: Int, _ orientation: UInt32?) -> (
+        width: Int, height: Int
+    )? {
+        guard width > 0, height > 0 else { return nil }
+        return (orientation ?? 1) >= 5 ? (height, width) : (width, height)
     }
 
     public static func captureDay(at url: URL) -> String? {
@@ -86,9 +108,10 @@ public enum Dimensions {
             return entry.header
         }
 
-        let props = properties(at: URL(fileURLWithPath: file.path)) ?? [:]
+        let url = URL(fileURLWithPath: file.path)
+        let props = properties(at: url) ?? [:]
         let header = Header(
-            dimensions: dimensions(props), captured: captureTime(props), exif: Exif(props))
+            dimensions: dimensions(props, of: url), captured: captureTime(props), exif: Exif(props))
         cacheLock.withLock { cache[file.path] = (file.mtime, file.size, header) }
         return header
     }

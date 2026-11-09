@@ -10,6 +10,8 @@ import Synchronization
         }
 
         public static let shared = ExifTool()
+        // its own daemon, so a rating never queues behind every enrichment lane's read
+        static let reader = ExifTool()
 
         private let lock = NSLock()
         private var process: Process?
@@ -128,8 +130,10 @@ import Synchronization
         // SIGINT, because only that one makes it delete a half-written temp file
         private static let exitHook: Void = {
             atexit {
-                let pid = ExifTool.shared.pid.load(ordering: .relaxed)
-                if pid > 0 { kill(pid, SIGINT) }
+                for tool in [ExifTool.shared, ExifTool.reader] {
+                    let pid = tool.pid.load(ordering: .relaxed)
+                    if pid > 0 { kill(pid, SIGINT) }
+                }
             }
         }()
 
