@@ -30,7 +30,7 @@ jobs:
 
   native:
     name: Swift, Rust & app build (macOS)
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/setup-desktop
@@ -40,8 +40,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: core/.build
-          key: swiftpm-${{ runner.os }}-${{ hashFiles('core/Package.swift') }}
-          restore-keys: swiftpm-${{ runner.os }}-
+          key: swiftpm-macos-26-${{ hashFiles('core/Package.swift') }}
+          restore-keys: swiftpm-macos-26-
       - name: Cache raw fixtures
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -79,9 +79,6 @@ jobs:
         run: pnpm --filter desktop tauri build --bundles app
       - name: Smoke test the bundle
         run: ./scripts/smoke-bundle.sh
-      # The release's iPad SDK, switched last so the Mac steps above keep the image default like the release.
-      - name: Make Xcode 26 the default
-        run: sudo xcode-select -s /Applications/Xcode_26.2.app
       - name: Clippy, iPad simulator (deny warnings)
         working-directory: apps/desktop/src-tauri
         run: |

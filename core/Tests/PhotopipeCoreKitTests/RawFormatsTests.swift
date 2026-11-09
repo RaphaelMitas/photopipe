@@ -23,6 +23,14 @@ private func renderedSize(_ file: ImageFile, _ edit: Edit, with renderer: Render
     return try #require(CIImage(contentsOf: url)).extent.size
 }
 
+// macOS 26.7 lists no decoder for a Panasonic S5 RW2, which macOS 27 decodes again
+private func osHasNoDecoder(for raw: URL) -> Bool {
+    CIRAWFilter(imageURL: raw)?.supportedDecoderVersions.allSatisfy { $0.rawValue == "None" }
+        ?? true
+}
+
+private let noDecoder: Comment = "this macOS has no raw decoder for the camera"
+
 // one camera at a time: in parallel with the rest, they stalled the CI virtual machine for hours
 @Suite(.serialized)
 struct RawFormatsTests {
@@ -39,11 +47,15 @@ struct RawFormatsTests {
         let size = try #require(Dimensions.read(at: raw))
         #expect(size.width > size.height && size.height > 1000, "got \(size)")
         #expect(Dimensions.properties(at: raw).flatMap(Dimensions.captureTime) != nil)
-        let renderer = Renderer(cacheDir: dir.appendingPathComponent("cache"))
-        #expect(try renderer.rawDefaults(for: file) != nil)
-        let upright = try renderedSize(file, .identity, with: renderer)
-        let turned = try renderedSize(file, Edit(rotation: 90), with: renderer)
-        #expect(upright.width > upright.height && turned.width < turned.height)
+        try withKnownIssue(noDecoder) {
+            let renderer = Renderer(cacheDir: dir.appendingPathComponent("cache"))
+            #expect(try renderer.rawDefaults(for: file) != nil)
+            let upright = try renderedSize(file, .identity, with: renderer)
+            let turned = try renderedSize(file, Edit(rotation: 90), with: renderer)
+            #expect(upright.width > upright.height && turned.width < turned.height)
+        } when: {
+            osHasNoDecoder(for: raw)
+        }
 
         try XMP.writeRating(4, file: file)
         try XMP.writeFlag(-1, file: try image(raw))
@@ -74,14 +86,35 @@ struct RawFormatsTests {
 
         let size = try #require(Dimensions.read(at: raw))
         #expect(size.width < size.height, "got \(size)")
-        let renderer = Renderer(cacheDir: dir.appendingPathComponent("cache"))
-        let upright = try renderedSize(file, .identity, with: renderer)
-        #expect(upright.width < upright.height, "got \(upright)")
-
         try XMP.writeEdit(Edit(rotation: 90), file: file)
         #expect(XMP.read(file: try image(raw)).edit.rotation == 90)
-        let turned = try renderedSize(try image(raw), Edit(rotation: 90), with: renderer)
-        #expect(turned.width > turned.height, "got \(turned)")
+
+        try withKnownIssue(noDecoder) {
+            let renderer = Renderer(cacheDir: dir.appendingPathComponent("cache"))
+            let upright = try renderedSize(file, .identity, with: renderer)
+            #expect(upright.width < upright.height, "got \(upright)")
+            let turned = try renderedSize(try image(raw), Edit(rotation: 90), with: renderer)
+            #expect(turned.width > turned.height, "got \(turned)")
+        } when: {
+            osHasNoDecoder(for: raw)
+        }
+    }
+
+    @Test func aRawWhoseImageHasNoSizeTakesTheFiles() throws {
+        guard requireExifTool() else { return }
+        let dir = scratchDir("no-pixel-size")
+        defer { try? FileManager.default.removeItem(at: dir) }
+        guard let raw = try copyOfFixture("panasonic-s5.rw2", into: dir) else { return }
+        func withoutPixelSize() throws -> [CFString: Any] {
+            var props = try #require(Dimensions.properties(at: raw))
+            props[kCGImagePropertyPixelWidth] = nil
+            props[kCGImagePropertyPixelHeight] = nil
+            return props
+        }
+        #expect(try #require(Dimensions.dimensions(withoutPixelSize(), of: raw)) == (6000, 4000))
+
+        try ExifTool.shared.write(["-overwrite_original", "-Orientation#=6", raw.path])
+        #expect(try #require(Dimensions.dimensions(withoutPixelSize(), of: raw)) == (4000, 6000))
     }
 
     @Test(arguments: otherBrands + ["sony-a7iii.arw", "sony-a7iv.arw"])
@@ -92,7 +125,7 @@ struct RawFormatsTests {
         #expect(exif.focal != nil && exif.lens != nil && exif.body != nil, "got \(exif)")
     }
 
-    // a NEF: the macOS 15 CI runs on does not surface the XMP inside a CR3
+    // a NEF: macOS 15 does not surface the XMP inside a CR3
     @Test func aStarRatedInCameraShowsAndStaysOnceTheRawHasASidecar() throws {
         let name = "nikon-z6ii.nef"
         guard requireExifTool() else { return }

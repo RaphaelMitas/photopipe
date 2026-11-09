@@ -10,16 +10,34 @@ public enum Dimensions {
     }
 
     public static func read(at url: URL) -> (width: Int, height: Int)? {
-        properties(at: url).flatMap(dimensions)
+        dimensions(properties(at: url) ?? [:], of: url)
     }
 
-    static func dimensions(_ props: [CFString: Any]) -> (width: Int, height: Int)? {
-        guard let width = props[kCGImagePropertyPixelWidth] as? Int,
-            let height = props[kCGImagePropertyPixelHeight] as? Int,
-            width > 0, height > 0
+    static func dimensions(_ props: [CFString: Any], of url: URL) -> (width: Int, height: Int)? {
+        guard let size = pixelSize(props) ?? fileContentsSize(at: url),
+            size.width > 0, size.height > 0
         else { return nil }
         let orientation = props[kCGImagePropertyOrientation] as? UInt32 ?? 1
-        return orientation >= 5 ? (height, width) : (width, height)
+        return orientation >= 5 ? (size.height, size.width) : (size.width, size.height)
+    }
+
+    private static func pixelSize(_ props: [CFString: Any]) -> (width: Int, height: Int)? {
+        guard let width = props[kCGImagePropertyPixelWidth] as? Int,
+            let height = props[kCGImagePropertyPixelHeight] as? Int
+        else { return nil }
+        return (width, height)
+    }
+
+    // macOS 26 leaves a Panasonic S5 RW2's size out of the image's properties, not the file's
+    private static func fileContentsSize(at url: URL) -> (width: Int, height: Int)? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+            let file = CGImageSourceCopyProperties(source, nil) as? [CFString: Any],
+            let contents = file[kCGImagePropertyFileContentsDictionary] as? [CFString: Any],
+            let image = (contents[kCGImagePropertyImages] as? [[CFString: Any]])?.first,
+            let width = image[kCGImagePropertyWidth] as? Int,
+            let height = image[kCGImagePropertyHeight] as? Int
+        else { return nil }
+        return (width, height)
     }
 
     public static func captureDay(at url: URL) -> String? {
@@ -86,9 +104,10 @@ public enum Dimensions {
             return entry.header
         }
 
-        let props = properties(at: URL(fileURLWithPath: file.path)) ?? [:]
+        let url = URL(fileURLWithPath: file.path)
+        let props = properties(at: url) ?? [:]
         let header = Header(
-            dimensions: dimensions(props), captured: captureTime(props), exif: Exif(props))
+            dimensions: dimensions(props, of: url), captured: captureTime(props), exif: Exif(props))
         cacheLock.withLock { cache[file.path] = (file.mtime, file.size, header) }
         return header
     }
