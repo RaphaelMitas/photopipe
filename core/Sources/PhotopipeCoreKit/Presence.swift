@@ -30,7 +30,8 @@ enum Presence {
         }
 
         float hazeGuide(float3 rgb) {
-            return sqrt(max(lumaOf(rgb), 0.0));
+            // bounded, or one infinite pixel spreads through the fit's blur
+            return sqrt(clamp(lumaOf(rgb), 0.0, 16.0));
         }
 
         [[ stitchable ]] float4 airlightWeight(

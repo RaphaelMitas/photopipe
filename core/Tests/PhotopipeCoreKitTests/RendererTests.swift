@@ -495,6 +495,25 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
     #expect(abs(zoomed - away) < 2, "a viewport must match the whole frame, got \(zoomed) vs \(away)")
 }
 
+@Test func dehazeLeavesNoRimInTheSkyBesideASilhouette() {
+    let frame = CGRect(x: 0, y: 0, width: 1500, height: 1000)
+    let sky = CGRect(x: 0, y: 0, width: 1500, height: 700)
+    let silhouette = CGRect(x: 0, y: 0, width: 750, height: 700)
+    // the bright band above takes the airlight, so the sky is haze that clears
+    let scene = CIImage(color: gray(0.2)).cropped(to: silhouette)
+        .composited(over: CIImage(color: gray(0.6)).cropped(to: sky))
+        .composited(over: CIImage(color: gray(0.8)).cropped(to: frame))
+    let dehazed = Presence.dehaze(scene, amount: 100)
+    let cleared = { (x: CGFloat) in
+        linearPixels(of: dehazed, in: CGRect(x: x, y: 300, width: 1, height: 1))[0]
+    }
+    let beside = cleared(758)
+    let away = cleared(1250)
+    #expect(
+        beside - away < 0.04,
+        "the sky must clear as far at the silhouette as away from it, got \(beside) vs \(away)")
+}
+
 @Test func dehazeTakesNoCastFromABrightColour() throws {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
