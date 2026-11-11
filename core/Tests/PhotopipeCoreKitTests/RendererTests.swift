@@ -492,8 +492,8 @@ private func seamContrast(of url: URL) throws -> Double {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let jpegURL = try writeHalvesJPEG(
-        left: CIColor(red: 0.2, green: 0.3, blue: 0.6),
-        right: CIColor(red: 0.35, green: 0.8, blue: 0.8), width: 256, height: 256)
+        left: CIColor(red: 0.2, green: 0.25, blue: 0.35),
+        right: CIColor(red: 0.9, green: 0.95, blue: 1), width: 256, height: 256)
     defer { try? FileManager.default.removeItem(at: jpegURL) }
     let renderer = Renderer(cacheDir: cacheDir)
     let file = try imageFile(for: jpegURL)
@@ -504,7 +504,7 @@ private func seamContrast(of url: URL) throws -> Double {
         let neutral = try meanChannels(of: render(.identity), region: halo)
         let punchy = try meanChannels(of: render(Edit(clarity: 100)), region: halo)
         #expect(
-            punchy.red > neutral.red * 0.4,
+            punchy.red > neutral.red * 0.5,
             "the \(side) side must not crush, got red \(neutral.red) → \(punchy.red)")
         let hueShift = (punchy.red / punchy.blue) / (neutral.red / neutral.blue)
         #expect(
