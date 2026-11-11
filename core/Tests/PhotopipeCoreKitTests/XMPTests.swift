@@ -224,18 +224,13 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
         <rdf:Description crs:Version="15.2" crs:WhiteBalance="As Shot"
         crs:Temperature="5271" crs:Tint="16" crs:LuminanceSmoothing="0"/>
         """
-    let untouched = parsed(defaults).edit
-    #expect(untouched.temperature == nil)
-    #expect(untouched.tint == nil)
-    #expect(untouched.denoise == nil)
+    #expect(parsed(defaults).edit == .identity)
 
     let edited = parsed(
         defaults.replacingOccurrences(of: "As Shot", with: "Custom")
             .replacingOccurrences(of: "Smoothing=\"0\"", with: "Smoothing=\"25\"")
     ).edit
-    #expect(edited.temperature == 5271)
-    #expect(edited.tint == 16)
-    #expect(edited.denoise == 25)
+    #expect(edited == Edit(temperature: 5271, tint: 16, denoise: 25))
 
     #expect(
         parsed(#"<rdf:Description crs:LuminanceSmoothing="0"/>"#).edit.denoise == 0,
