@@ -15,10 +15,10 @@ public final class Renderer: @unchecked Sendable {
     // an export renders each photo once, so there is nothing to reuse
     private let exportContext = CIContext(options: [.cacheIntermediates: false])
     private let jpegColorSpace = CGColorSpace(name: CGColorSpace.displayP3)!
-    private let curveColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+    private let curveColorSpace = CGColorSpace(name: CGColorSpace.displayP3)!
 
     // bump when the pixels change for an unchanged key
-    private static let pipelineVersion = 3
+    private static let pipelineVersion = 4
 
     /// None of these are zero, so a slider left alone has to reach for them.
     public struct RawDefaults: Sendable {
