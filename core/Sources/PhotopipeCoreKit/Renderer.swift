@@ -19,7 +19,7 @@ public final class Renderer: @unchecked Sendable {
     private let curveColorSpace = CGColorSpace(name: CGColorSpace.displayP3)!
 
     // bump when the pixels change for an unchanged key
-    private static let pipelineVersion = 6
+    private static let pipelineVersion = 7
 
     /// None of these are zero, so a slider left alone has to reach for them.
     public struct RawDefaults: Sendable {
