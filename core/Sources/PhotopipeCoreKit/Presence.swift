@@ -19,6 +19,19 @@ enum Presence {
             return p;
         }
 
+        [[ stitchable ]] float4 shoulder(coreimage::sample_t p, float gain) {
+            float knee = 0.5;
+            float peak = max(max(p.r, p.g), p.b);
+            float over = peak - knee;
+            if (over <= 0.0) { return p; }
+            // leaves the knee at slope 1 and lands the source's white, now at gain, on 1
+            float rolled = knee + 1.0 / (1.0 / over + (gain - 1.0) / ((1.0 - knee) * (gain - knee)));
+            float kept = rolled / peak;
+            // scaling by the peak holds the hue; fading to white is what a raw's tone curve does
+            p.rgb = mix(float3(rolled), p.rgb * kept, kept);
+            return p;
+        }
+
         float encodedLuma(float3 rgb) {
             return pow(saturate(dot(rgb, float3(0.2126, 0.7152, 0.0722))), 1.0 / 2.2);
         }
@@ -95,6 +108,10 @@ enum Presence {
     ) -> CIImage {
         guard let kernel = kernels[kernel] else { return image }
         return kernel.apply(extent: image.extent, arguments: [image] + arguments) ?? image
+    }
+
+    static func shoulder(_ image: CIImage, afterExposure exposure: Double) -> CIImage {
+        apply("shoulder", to: image, arguments: [Float(pow(2, exposure))])
     }
 
     static func dehaze(_ image: CIImage, amount: Double) -> CIImage {
