@@ -13,8 +13,8 @@ enum Straighten {
             float4 centerBounds = float4(extent.xy + 0.5, extent.xy + extent.zw - 0.5);
             float3 at = float3(dest.coord(), 1.0);
             float2 p = float2(dot(toSourceX, at), dot(toSourceY, at));
-            float2 first = floor(p - 0.5) + 0.5;
-            float2 t = p - first;
+            float2 centerBelow = floor(p - 0.5) + 0.5;
+            float2 t = p - centerBelow;
             float2 catmullRom[4] = {
                 t * (-0.5 + t * (1.0 - 0.5 * t)),
                 1.0 + t * t * (1.5 * t - 2.5),
@@ -27,7 +27,7 @@ enum Straighten {
             for (int j = 0; j < 4; j++) {
                 for (int i = 0; i < 4; i++) {
                     float2 tap = clamp(
-                        first + float2(i - 1, j - 1), centerBounds.xy, centerBounds.zw);
+                        centerBelow + float2(i - 1, j - 1), centerBounds.xy, centerBounds.zw);
                     float4 pixel = src.sample(src.transform(tap));
                     sum += catmullRom[i].x * catmullRom[j].y * pixel;
                     if ((i == 1 || i == 2) && (j == 1 || j == 2)) {
