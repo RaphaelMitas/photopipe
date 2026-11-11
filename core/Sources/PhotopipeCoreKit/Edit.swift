@@ -43,8 +43,7 @@ public struct CropRect: Codable, Equatable, Sendable {
     var height: Double { bottom - top }
 }
 
-/// A mask's own sliders. Temperature and tint are relative on every file:
-/// a region has no as-shot neutral of its own.
+/// Temperature and tint are relative on every file: a region has no as-shot neutral of its own.
 public struct LocalAdjust: Codable, Equatable, Sendable {
     public var exposure: Double
     public var highlights: Double
@@ -117,8 +116,7 @@ public struct LocalAdjust: Codable, Equatable, Sendable {
     }
 }
 
-/// A region of the photo with its own sliders. Only what to look for is stored;
-/// the pixels are found again per photo, so a pasted mask fits its new photo.
+/// Only what to look for is stored; the pixels are found again per photo, so a pasted mask fits.
 public struct Mask: Codable, Equatable, Sendable {
     public enum Source: String, Codable, Sendable {
         case subject, people

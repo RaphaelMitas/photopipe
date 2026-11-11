@@ -22,6 +22,9 @@ const CHIPS: MaskShape[] = [
   { source: "subject", inverted: true },
 ];
 
+const reveal = (field: HTMLElement | null) =>
+  field?.scrollIntoView({ block: "nearest" });
+
 const THUMB = "size-6 shrink-0 overflow-hidden rounded-xs border border-border";
 
 type Props = { image: ImageFile; edit: Edit; masks: MaskSession };
@@ -51,7 +54,11 @@ export function MaskList({ image, edit, masks }: Props) {
         </>
       )}
       {masks.creating ? (
-        <div data-testid="mask-field" className="mt-1 flex flex-col gap-1.5">
+        <div
+          ref={reveal}
+          data-testid="mask-field"
+          className="mt-1 flex flex-col gap-1.5"
+        >
           <div className="flex flex-wrap gap-1">
             {CHIPS.map((shape) => (
               <button

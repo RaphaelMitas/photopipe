@@ -24,11 +24,13 @@ export function useMaskSession(
   loupePhoto: ImageFile | null,
   edit: Edit,
   changeEdit: (image: ImageFile, edit: Edit) => void,
+  panelOpen: boolean,
 ) {
   const [stored, setStored] = useState<Stored | null>(null);
   const [overlay, setOverlay] = useState(false);
-  const current = stored?.path === loupePhoto?.path ? stored : null;
-  // another photo starts on Photo with the field closed
+  const current =
+    panelOpen && stored?.path === loupePhoto?.path ? stored : null;
+  // another photo or a closed panel starts over on Photo with the field closed
   if (stored && !current) setStored(null);
 
   const byId = (id: string | null | undefined) =>

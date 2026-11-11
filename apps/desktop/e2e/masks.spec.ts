@@ -48,3 +48,33 @@ test("a chip becomes a mask that owns the sliders until Photo takes them back", 
   await expect(page.getByTestId("mask-row-photo")).toHaveCount(0);
   await expect(exposure).toHaveAttribute("aria-valuenow", "0.25");
 });
+
+test("closing the panel ends the mask session, and M opens both again", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("thumb").first().click();
+  await page.keyboard.press("m");
+  await page.getByTestId("mask-chip-subject").click();
+  const mask = page.getByRole("button", { name: "Subject", exact: true });
+  await expect(mask).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("o");
+  await expect(page.getByTestId("mask-overlay")).toBeVisible();
+  await page.getByTestId("edit-group-masks").click();
+
+  await page.keyboard.press("e");
+  await expect(page.getByTestId("mask-overlay")).toHaveCount(0);
+  await page.keyboard.press("ArrowUp");
+
+  await page.keyboard.press("m");
+  await expect(page.getByTestId("mask-field")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("mask-field")).toHaveCount(0);
+  await expect(page.getByTestId("loupe")).toBeVisible();
+  await expect(page.getByTestId("mask-row-photo")).toHaveAttribute(
+    "data-selected",
+    "true",
+  );
+  const exposure = page.getByTestId("exposure").getByRole("slider");
+  await expect(exposure).toHaveAttribute("aria-valuenow", "0.25");
+});

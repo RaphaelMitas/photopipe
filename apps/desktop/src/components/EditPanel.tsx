@@ -35,6 +35,7 @@ import {
   signed,
   TONE_SLIDERS,
 } from "@/lib/editSliders";
+import { flagPref } from "@/lib/pref";
 import {
   useDeferredEdit,
   useRaw9Availability,
@@ -130,12 +131,21 @@ const colorSummary = (edit: Edit, raw: boolean): string | null => {
 const detailSummary = (edit: Edit): string | null =>
   edit.denoise != null ? `dn ${Math.round(edit.denoise)}` : null;
 
+const groupPrefs = new Map<string, ReturnType<typeof flagPref>>();
+
+export function editGroupPref(id: string) {
+  const known = groupPrefs.get(id);
+  if (known) return known;
+  const pref = flagPref(`photopipe.editGroup.${id}`, "open", "closed", true);
+  groupPrefs.set(id, pref);
+  return pref;
+}
+
 function Group({
   id,
   title,
   summary,
   badge,
-  expand = false,
   onToggle,
   children,
 }: {
@@ -143,18 +153,11 @@ function Group({
   title: string;
   summary?: string | null;
   badge?: ReactNode;
-  expand?: boolean;
   onToggle?: () => void;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(
-    () => localStorage.getItem(`photopipe.editGroup.${id}`) !== "closed",
-  );
-  const store = (next: boolean) => {
-    localStorage.setItem(`photopipe.editGroup.${id}`, next ? "open" : "closed");
-    setOpen(next);
-  };
-  if (expand && !open) store(true);
+  const pref = editGroupPref(id);
+  const open = pref.use();
   const aside = badge ?? (!open && summary);
   return (
     <div className="flex flex-col gap-3">
@@ -163,7 +166,7 @@ function Group({
         aria-expanded={open}
         data-testid={`edit-group-${id}`}
         onClick={() => {
-          store(!open);
+          pref.toggle();
           onToggle?.();
         }}
         className="flex w-full items-center gap-1.5 text-left font-medium text-xs"
@@ -228,7 +231,6 @@ export function EditPanel({ image, edit, onChange, crop, masks }: Props) {
           id="masks"
           title="Masks"
           badge={edit.masks.length || null}
-          expand={masks.creating}
           onToggle={masks.cancel}
         >
           <MaskList image={image} edit={edit} masks={masks} />

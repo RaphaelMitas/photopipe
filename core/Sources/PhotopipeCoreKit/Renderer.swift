@@ -226,7 +226,7 @@ public final class Renderer: @unchecked Sendable {
             image = Self.incremental(
                 Self.fitted(base, longEdge: base.longEdge * CGFloat(scale)), edit)
         }
-        // before the photo's own grade, so a mask adjusts what the camera saw
+        // after the photo's exposure and white balance, before its grade
         for mask in edit.masks where !mask.hidden && mask.adjust != .identity {
             let local = mask.adjust.edit
             let matte = try matte(for: file, source: mask.source, inverted: mask.inverted)

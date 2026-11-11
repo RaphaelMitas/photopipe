@@ -28,7 +28,9 @@ Stack, testing strategy, CI and releases.
   `photopipe:Masks`, a namespace exiftool only writes because the core starts
   it with a config that declares it. The matte is a PNG in the rebuildable
   cache, one per photo and source, found on the unedited photo so every edit
-  of it shares one.
+  of it shares one. The reader keeps every entry it cannot decode, and a mask
+  with a key it does not know, as raw JSON, and the writer puts them back: an
+  older build must never delete a newer build's mask.
 - **Formats** come from ImageIO at runtime: every extension whose type it
   reads and calls a camera raw, plus JPEG, PNG, TIFF, HEIC/HEIF, AVIF, JPEG XL
   and WebP. A camera a new OS learns needs no release.

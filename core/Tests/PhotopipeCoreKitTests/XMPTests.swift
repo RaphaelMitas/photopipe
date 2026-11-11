@@ -1054,6 +1054,44 @@ private let someMasks = [
     #expect(XMP.read(file: try image(arw)).rating == 3)
 }
 
+@Test func aMaskANewerBuildWroteSurvivesASaveHere() throws {
+    let newer = [
+        #"{"id":"sky","source":"sky"}"#,
+        #"{"feather":20,"id":"soft","source":"subject"}"#,
+    ]
+    func tag(_ entries: [String]) -> [XMP.TagWrite] {
+        [XMP.TagWrite(.photopipe, "Masks", .scalar("[\(entries.joined(separator: ","))]"))]
+    }
+    func stored(_ url: URL) throws -> String {
+        try exiftoolTag("-XMP-photopipe:Masks", of: url)
+    }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00012.ARW")
+    try Data("fake".utf8).write(to: arw)
+    let sidecar = XMP.sidecarURL(forImagePath: arw.path)
+    let ours = #"{"id":"b","source":"people"}"#
+
+    try XMP.writeText(tag(newer + [ours]), clearing: false, file: try image(arw))
+    #expect(XMP.read(file: try image(arw)).edit.masks == [Mask(id: "b", source: .people)])
+    try writeTextEdit(Edit(exposure: 1), at: arw)
+    #expect(try String(contentsOf: sidecar, encoding: .utf8).contains("feather"))
+    #expect(XMP.read(file: try image(arw)).edit == Edit(exposure: 1))
+
+    guard requireExifTool() else { return }
+    try XMP.writeEdit(Edit(masks: [Mask(id: "b", source: .people)]), file: try image(arw))
+    #expect(try stored(sidecar) == "[\(([ours] + newer).joined(separator: ","))]")
+    try XMP.writeEdit(.identity, file: try image(arw))
+    #expect(try stored(sidecar) == "[\(newer.joined(separator: ","))]")
+
+    let jpg = dir.appendingPathComponent("DSC00013.JPG")
+    try writeGrayJPEG(to: jpg)
+    try ExifTool.shared.write(
+        ["-overwrite_original"] + XMP.exiftoolArgs(tag(newer)) + [jpg.path])
+    try XMP.writeEdit(Edit(exposure: 1), file: try image(jpg))
+    #expect(try stored(jpg) == "[\(newer.joined(separator: ","))]")
+}
+
 @Test func masksEmbeddedInAJPEGAreRead() throws {
     guard requireExifTool() else { return }
     let dir = try tempDir()

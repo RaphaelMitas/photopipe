@@ -185,8 +185,12 @@ The sidecar stores the definition, never the pixels: "the subject, inverted,
 half a stop up". That is why a pasted mask fits the photo it lands on and why
 a mask survives a new crop. The price is that Lightroom does not see it. Temp
 and Tint on a mask are relative on every file, raws included, because a mask
-warms a region against the rest of the photo. Masks apply before the photo's
-own grade, so the global sliders shape both.
+warms a region against the rest of the photo. A mask applies after the photo's
+exposure and white balance and before the rest of its grade, so contrast,
+curves and colour shape the masked region too.
+
+A mask this build cannot read, one a newer build wrote, stays in the sidecar
+untouched. It is not shown and not rendered, and it survives every save.
 
 ## Before is the look, not the framing
 

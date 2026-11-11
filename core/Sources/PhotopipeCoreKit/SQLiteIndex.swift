@@ -16,7 +16,7 @@ public final class SQLiteIndex: @unchecked Sendable {
     private let path: String
 
     // bump when a read learns something a cached row lacks, or stale rows get written back over it
-    private static let schemaVersion = 11
+    private static let schemaVersion = 12
 
     public init(path: String) throws {
         self.path = path

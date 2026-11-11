@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import { AppSidebar } from "@/components/AppSidebar";
 import { BrowserPane } from "@/components/BrowserPane";
 import { Dashboard } from "@/components/Dashboard";
-import { EditSidebar } from "@/components/EditPanel";
+import { EditSidebar, editGroupPref } from "@/components/EditPanel";
 import {
   ExportDrawer,
   type ExportOptions,
@@ -495,7 +495,7 @@ export default function App() {
   };
   const crop = useCropSession(loupePhoto, loupeEdit, changeEdit);
   const cropping = crop.draft !== null;
-  const masks = useMaskSession(loupePhoto, loupeEdit, changeEdit);
+  const masks = useMaskSession(loupePhoto, loupeEdit, changeEdit, editOpen);
 
   // a filtered-out photo is not in the browser, so land on the nearest one that is
   const focusPath = useMemo(() => {
@@ -683,7 +683,8 @@ export default function App() {
     "export.open": () => (openShoot ? openExport() : false),
     "editPanel.toggle": editPanelPref.toggle,
     "mask.add": () => {
-      if (!editOpen) editPanelPref.toggle();
+      editPanelPref.set(true);
+      editGroupPref("masks").set(true);
       masks.toggleField();
     },
     "stacks.toggle": stacksPref.toggle,
