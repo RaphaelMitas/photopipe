@@ -596,7 +596,12 @@ private let violet = [20.0, 40, 180]
 private func chroma(
     _ srgb: [Double], vibrance: Double = 0, saturation: Double = 0
 ) -> [Double] {
-    let color = CIColor(red: srgb[0] / 255, green: srgb[1] / 255, blue: srgb[2] / 255)
+    chroma(
+        CIColor(red: srgb[0] / 255, green: srgb[1] / 255, blue: srgb[2] / 255),
+        vibrance: vibrance, saturation: saturation)
+}
+
+private func chroma(_ color: CIColor, vibrance: Double = 0, saturation: Double = 0) -> [Double] {
     let image = Presence.chroma(
         CIImage(color: color).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1)),
         vibrance: vibrance, saturation: saturation)
@@ -638,6 +643,20 @@ private func oklab(_ rgb: [Double]) -> (lightness: Double, chroma: Double, hue: 
         let rgb = chroma(color, saturation: -100)
         #expect(try #require(rgb.max()) - #require(rgb.min()) < 1e-5, "\(color) kept a tint")
     }
+}
+
+@Test func saturationPlus100NearlyDoublesAFaintColour() {
+    let gain = oklab(chroma(paleBlue, saturation: 100)).chroma / oklab(chroma(paleBlue)).chroma
+    #expect((1.7...2.05).contains(gain), "pale blue gained x\(gain)")
+}
+
+@Test func oklabRoundTripSurvivesNegativeComponents() throws {
+    let wideGamut = [0.01, -0.004, 0.002]
+    let linear = try #require(CGColorSpace(name: CGColorSpace.extendedLinearSRGB))
+    let color = try #require(
+        CIColor(red: wideGamut[0], green: wideGamut[1], blue: wideGamut[2], colorSpace: linear))
+    let rgb = chroma(color)
+    #expect(zip(rgb, wideGamut).allSatisfy { abs($0 - $1) < 1e-4 }, "came back as \(rgb)")
 }
 
 @Test func vibranceFavoursFaintColoursAndSparesSkin() {
