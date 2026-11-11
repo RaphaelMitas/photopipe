@@ -19,7 +19,8 @@ private func imageFile(for url: URL) throws -> ImageFile {
 }
 
 private func meanChannels(
-    of url: URL, region: CGRect? = nil
+    of url: URL, region: CGRect? = nil,
+    colorSpace: CGColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 ) throws -> (red: Double, green: Double, blue: Double) {
     guard let image = CIImage(contentsOf: url) else {
         throw Renderer.RenderError.unreadable(url.path)
@@ -30,7 +31,7 @@ private func meanChannels(
     var pixel = [UInt8](repeating: 0, count: 4)
     CIContext().render(
         average, toBitmap: &pixel, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
-        format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+        format: .RGBA8, colorSpace: colorSpace)
     return (Double(pixel[0]), Double(pixel[1]), Double(pixel[2]))
 }
 
@@ -428,12 +429,14 @@ private func contrast(_ values: [Float]) -> Float {
     #expect(channels.blue < 60)
 }
 
-private func writeSyntheticJPEG(color: CIColor, width: Int = 64, height: Int = 64) throws -> URL {
+private func writeSyntheticJPEG(
+    color: CIColor, width: Int = 64, height: Int = 64,
+    colorSpace: CGColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+) throws -> URL {
     let image = CIImage(color: color).cropped(to: CGRect(x: 0, y: 0, width: width, height: height))
     let url = FileManager.default.temporaryDirectory
         .appendingPathComponent("photopipe-synth-\(UUID().uuidString).jpg")
-    try CIContext().writeJPEGRepresentation(
-        of: image, to: url, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+    try CIContext().writeJPEGRepresentation(of: image, to: url, colorSpace: colorSpace)
     return url
 }
 
@@ -652,6 +655,30 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
     #expect(
         redOnly.red > redOnly.green + 10,
         "a red-channel curve must only move red, got \(redOnly)")
+}
+
+@Test func aToneCurveKeepsColorsOutsideSRGB() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let displayP3 = CGColorSpace(name: CGColorSpace.displayP3)!
+    let green = try #require(CIColor(red: 0.1, green: 0.9, blue: 0.1, colorSpace: displayP3))
+    let jpegURL = try writeSyntheticJPEG(color: green, colorSpace: displayP3)
+    defer { try? FileManager.default.removeItem(at: jpegURL) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: jpegURL)
+
+    let neutral = try meanChannels(
+        of: renderer.render(file: file, edit: .identity, maxPixel: 64), colorSpace: displayP3)
+    let curved = try meanChannels(
+        of: renderer.render(
+            file: file,
+            edit: Edit(curveRGB: [
+                CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.51), CurvePoint(x: 1, y: 1),
+            ]), maxPixel: 64), colorSpace: displayP3)
+    #expect(neutral.red < 40, "the source green must sit outside sRGB, got \(neutral)")
+    #expect(
+        curved.red < neutral.red + 10,
+        "a near-identity curve must not pull the green into sRGB, got \(curved)")
 }
 
 @Test func rawWhiteBalanceIsAsShotAndAdjustable() throws {
