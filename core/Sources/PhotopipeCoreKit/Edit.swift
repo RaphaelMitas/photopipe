@@ -185,7 +185,7 @@ public struct Edit: Codable, Equatable, Sendable {
     }
 
     public var hasToneComponent: Bool {
-        highlights != 0 || shadows != 0 || whites != 0 || blacks != 0
+        whites != 0 || blacks != 0
             || !Curve.isIdentity(curveRGB) || !Curve.isIdentity(curveRed)
             || !Curve.isIdentity(curveGreen) || !Curve.isIdentity(curveBlue)
     }
@@ -277,8 +277,8 @@ public enum Curve {
     }
 }
 
-/// The parametric tone sliders and the user curves folded into one
-/// per-channel lookup table, applied by a single CIColorCurves.
+/// Whites, blacks and the user curves folded into one per-channel lookup
+/// table, applied by a single CIColorCurves.
 public enum ToneLUT {
     public static let resolution = 256
 
@@ -287,18 +287,11 @@ public enum ToneLUT {
 
         // blacks/whites weigh heaviest at the ends themselves, which is what
         // moves the black and white point instead of only recovering detail
-        let s = edit.shadows / 100 * 0.25
-        let h = edit.highlights / 100 * 0.25
         let b = edit.blacks / 100 * 0.15
         let w = edit.whites / 100 * 0.15
         var tone = (0..<resolution).map { i -> Double in
             let v = Double(i) / Double(resolution - 1)
-            let shadowWeight = v * (1 - v) * (1 - v) * 6.75
-            let highlightWeight = v * v * (1 - v) * 6.75
-            let shifted =
-                v + s * shadowWeight + h * highlightWeight
-                + b * pow(1 - v, 8) + w * pow(v, 8)
-            return min(max(shifted, 0), 1)
+            return min(max(v + b * pow(1 - v, 8) + w * pow(v, 8), 0), 1)
         }
         // monotone, so an extreme slider cannot fold the scale back on itself
         for i in 1..<resolution {
