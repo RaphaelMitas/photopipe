@@ -6,6 +6,60 @@ enum Presence {
         #include <CoreImage/CoreImage.h>
         using namespace metal;
 
+        static float3 toOklab(float3 rgb) {
+            float3 lms = float3(
+                dot(rgb, float3(0.4122214708, 0.5363325363, 0.0514459929)),
+                dot(rgb, float3(0.2119034982, 0.6806995451, 0.1073969566)),
+                dot(rgb, float3(0.0883024619, 0.2817188376, 0.6299787005)));
+            // wide-gamut colours arrive with negative components
+            lms = sign(lms) * pow(abs(lms), float3(1.0 / 3.0));
+            return float3(
+                dot(lms, float3(0.2104542553, 0.7936177850, -0.0040720468)),
+                dot(lms, float3(1.9779984951, -2.4285922050, 0.4505937099)),
+                dot(lms, float3(0.0259040371, 0.7827717662, -0.8086757660)));
+        }
+
+        static float3 fromOklab(float3 lab) {
+            float3 lms = float3(
+                dot(lab, float3(1.0, 0.3963377774, 0.2158037573)),
+                dot(lab, float3(1.0, -0.1055613458, -0.0638541728)),
+                dot(lab, float3(1.0, -0.0894841775, -1.2914855480)));
+            lms = lms * lms * lms;
+            return float3(
+                dot(lms, float3(4.0767416621, -3.3077115913, 0.2309699292)),
+                dot(lms, float3(-1.2684380046, 2.6097574011, -0.3413193965)),
+                dot(lms, float3(-0.0041960863, -0.7034186147, 1.7076147010)));
+        }
+
+        static float3 withChroma(float3 lab, float gain) {
+            return fromOklab(float3(lab.x, lab.yz * gain));
+        }
+
+        static float roomInSRGB(float3 from, float3 to) {
+            float3 move = to - from;
+            float3 walls = mix(from, 1.0 - from, step(0.0, move)) / max(abs(move), 1e-9);
+            return max(min3(walls.x, walls.y, walls.z), 1e-6);
+        }
+
+        [[ stitchable ]] float4 chroma(coreimage::sample_t p, float vibrance, float saturation) {
+            float3 lab = toOklab(p.rgb);
+            float c = length(lab.yz);
+            float purity = saturate(1.0 - min3(p.r, p.g, p.b) / max(max3(p.r, p.g, p.b), 1e-6));
+            float faint = 1.0 - purity * purity;
+            // skin sits around Oklab hue 55: protected within 15 degrees, not at all past 45
+            float skin = smoothstep(0.707, 0.966, dot(lab.yz, float2(0.574, 0.819)) / max(c, 1e-6));
+            float reach = vibrance > 0.0 ? 2.5 * faint * (1.0 - 0.8 * skin) : 0.65 + 0.15 * faint;
+            float gain = saturation * (1.0 + vibrance * reach);
+            if (gain > 1.0) {
+                // headroom comes from the pixel alone, so more slider never means less colour
+                float headroom = roomInSRGB(p.rgb, withChroma(lab, 2.0));
+                headroom *= min(roomInSRGB(p.rgb, withChroma(lab, 1.0 + headroom)), 1.0);
+                float push = (gain - 1.0) / headroom;
+                gain = 1.0 + (gain - 1.0) / sqrt(1.0 + push * push);
+            }
+            return float4(withChroma(lab, gain), p.a);
+        }
+
         [[ stitchable ]] float4 localContrast(
             coreimage::sample_t p, coreimage::sample_t blurred, float amount
         ) {
@@ -73,6 +127,19 @@ enum Presence {
             float3 over = (p.rgb - airlight) / max(1.0 - airlight, 1e-4);
             haze *= 1.0 - saturate(max(max(over.r, over.g), over.b));
             p.rgb = (p.rgb - airlight) / (1.0 - omega * haze) + airlight;
+            return p;
+        }
+
+        [[ stitchable ]] float4 shoulder(coreimage::sample_t p, float gain) {
+            float knee = 0.5;
+            float peak = max(max(p.r, p.g), p.b);
+            float over = peak - knee;
+            if (over <= 0.0) { return p; }
+            // leaves the knee at slope 1 and lands the source's white, now at gain, on 1
+            float rolled = knee + 1.0 / (1.0 / over + (gain - 1.0) / ((1.0 - knee) * (gain - knee)));
+            float kept = rolled / peak;
+            // scaling by the peak holds the hue; fading to white is what a raw's tone curve does
+            p.rgb = mix(float3(rolled), p.rgb * kept, kept);
             return p;
         }
 
@@ -144,6 +211,10 @@ enum Presence {
         return kernel.apply(extent: image.extent, arguments: [image] + arguments) ?? image
     }
 
+    static func shoulder(_ image: CIImage, afterExposure exposure: Double) -> CIImage {
+        apply("shoulder", to: image, arguments: [Float(pow(2, exposure))])
+    }
+
     static func dehaze(_ image: CIImage, amount: Double) -> CIImage {
         let coarse = coarse(image)
         let patch = coarse.longEdge * 0.01
@@ -184,5 +255,11 @@ enum Presence {
     static func texture(_ image: CIImage, amount: Double) -> CIImage {
         let base = blurred(image, radius: image.longEdge * 0.0015)
         return apply("localContrast", to: image, arguments: [base, Float(amount / 100)])
+    }
+
+    static func chroma(_ image: CIImage, vibrance: Double, saturation: Double) -> CIImage {
+        apply(
+            "chroma", to: image,
+            arguments: [Float(vibrance / 100), Float(1 + saturation / 100)])
     }
 }

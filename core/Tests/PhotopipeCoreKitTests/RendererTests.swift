@@ -324,6 +324,47 @@ private func writeEntry(_ name: String, in dir: URL, bytes: Int, hoursAgo: Doubl
     #expect(top.blue < 60, "blue must have rotated to the bottom, got \(top)")
 }
 
+private func redBitmap(size: Int = 256, _ value: (Int, Int) -> Double) -> CIImage {
+    let pixels = (0..<size * size).map { Float(value($0 % size, $0 / size)) }
+    return CIImage(
+        bitmapData: pixels.withUnsafeBufferPointer { Data(buffer: $0) }, bytesPerRow: size * 4,
+        size: CGSize(width: size, height: size), format: .Rf, colorSpace: nil)
+}
+
+private func linearRed(of image: CIImage) -> [Float] {
+    let width = Int(image.extent.width)
+    var pixels = [Float](repeating: 0, count: width * Int(image.extent.height))
+    CIContext().render(
+        image, toBitmap: &pixels, rowBytes: width * 4, bounds: image.extent, format: .Rf,
+        colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB))
+    return pixels
+}
+
+private func contrast(_ values: [Float]) -> Float {
+    let mean = values.reduce(0, +) / Float(values.count)
+    return (values.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Float(values.count)).squareRoot()
+}
+
+@Test func straighteningKeepsFineDetailWithoutRinging() {
+    let middle = CropRect(left: 0.25, top: 0.25, right: 0.75, bottom: 0.75)
+    func straightened(_ image: CIImage, by angle: Double) -> [Float] {
+        linearRed(of: Renderer.applyCrop(Edit(crop: middle, cropAngle: angle), to: image))
+    }
+
+    // bilinear sampling keeps 0.77 of a wave four pixels long
+    let wave = redBitmap { x, y in 0.5 + 0.4 * sin(2 * .pi * (0.25 * Double(x) + 0.11 * Double(y))) }
+    let kept = contrast(straightened(wave, by: 0.5)) / contrast(straightened(wave, by: 0))
+    #expect(kept > 0.88, "a straightened photo keeps its fine detail, got \(kept)")
+
+    let stripes = redBitmap { x, _ in x % 4 < 2 ? 1 : 0 }
+    let turned = straightened(stripes, by: 0.5)
+    #expect(turned.allSatisfy { (0...1).contains($0) }, "a hard edge must not overshoot")
+}
+
+@Test func anAngleTooLargeToTurnIsNoCrop() {
+    #expect(Renderer.saneCrop(Edit(cropAngle: 1e308)) == nil)
+}
+
 @Test func rotationTurnsClockwiseAndCropFollowsTheTurnedFrame() throws {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
@@ -643,6 +684,48 @@ private func linearPixels(of image: CIImage, in frame: CGRect) -> [Float] {
         "positive tint must shift green toward magenta, got neutral \(neutral) tinted \(magenta)")
 }
 
+@Test func temperatureCoolsAsFarAsItWarms() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let jpegURL = try writeSyntheticJPEG(color: gray(0.5))
+    defer { try? FileManager.default.removeItem(at: jpegURL) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: jpegURL)
+    let redOverBlue = { (temperature: Double) in
+        let channels = try meanChannels(
+            of: renderer.render(file: file, edit: Edit(temperature: temperature), maxPixel: 64))
+        return log(channels.red / channels.blue)
+    }
+
+    let warmed = try redOverBlue(50)
+    let cooled = try -redOverBlue(-50)
+    #expect(warmed > 0.05)
+    #expect(
+        abs(warmed - cooled) < 0.15 * warmed,
+        "+50 and -50 must move red against blue equally far, got \(warmed) and \(cooled)")
+}
+
+@Test func brighteningANonRawRollsOffInsteadOfClipping() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let highlightsURL = try writeHalvesJPEG(left: gray(0.8), right: gray(1), width: 256, height: 256)
+    let skyURL = try writeSyntheticJPEG(color: CIColor(red: 0.35, green: 0.55, blue: 0.9))
+    defer {
+        try? FileManager.default.removeItem(at: highlightsURL)
+        try? FileManager.default.removeItem(at: skyURL)
+    }
+    let renderer = Renderer(cacheDir: cacheDir)
+
+    let detail = try seamContrast(
+        of: renderer.render(
+            file: imageFile(for: highlightsURL), edit: Edit(exposure: 1), maxPixel: 256))
+    #expect(detail > 8, "+1 EV must keep bright gray apart from white, got a step of \(detail)")
+
+    let sky = try meanChannels(
+        of: renderer.render(file: imageFile(for: skyURL), edit: Edit(exposure: 2), maxPixel: 64))
+    #expect(sky.blue > sky.green + 10, "+2 EV must leave a blue sky blue, not cyan, got \(sky)")
+}
+
 @Test func shadowsAndHighlightsBendTheToneScale() throws {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
@@ -787,6 +870,111 @@ private func linearPixels(of image: CIImage, in frame: CGRect) -> [Float] {
         of: renderer.render(file: file, edit: Edit(vibrance: 100), maxPixel: 64))
     #expect(spread(muted) < 3, "saturation -100 must be effectively grayscale, got \(muted)")
     #expect(spread(vivid) > spread(neutral) + 3, "vibrance +100 must add colorfulness")
+}
+
+private let skin = [222.0, 170, 140]
+private let deepBlue = [65.0, 80, 200]
+private let foliage = [120.0, 190, 70]
+private let flowerRed = [200.0, 30, 40]
+private let paleBlue = [150.0, 170, 200]
+private let ultramarine = [20.0, 40, 180]
+
+private func chroma(
+    _ srgb: [Double], vibrance: Double = 0, saturation: Double = 0
+) -> [Double] {
+    chroma(
+        CIColor(red: srgb[0] / 255, green: srgb[1] / 255, blue: srgb[2] / 255),
+        vibrance: vibrance, saturation: saturation)
+}
+
+private func chroma(_ color: CIColor, vibrance: Double = 0, saturation: Double = 0) -> [Double] {
+    let image = Presence.chroma(
+        CIImage(color: color).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1)),
+        vibrance: vibrance, saturation: saturation)
+    var pixel = [Float](repeating: 0, count: 4)
+    CIContext().render(
+        image, toBitmap: &pixel, rowBytes: 16, bounds: image.extent, format: .RGBAf,
+        colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB))
+    return pixel.prefix(3).map(Double.init)
+}
+
+private func oklab(_ rgb: [Double]) -> (lightness: Double, chroma: Double, hue: Double) {
+    let l = cbrt(0.4122214708 * rgb[0] + 0.5363325363 * rgb[1] + 0.0514459929 * rgb[2])
+    let m = cbrt(0.2119034982 * rgb[0] + 0.6806995451 * rgb[1] + 0.1073969566 * rgb[2])
+    let s = cbrt(0.0883024619 * rgb[0] + 0.2817188376 * rgb[1] + 0.6299787005 * rgb[2])
+    let a = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s
+    let b = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+    return (
+        0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s, hypot(a, b),
+        atan2(b, a) * 180 / .pi
+    )
+}
+
+@Test func chromaHoldsHueAndLightnessInsideSRGB() {
+    for color in [skin, deepBlue, foliage, flowerRed] {
+        let before = oklab(chroma(color))
+        for (vibrance, saturation) in [(0.0, 100.0), (0, -50), (100, 0), (-100, 0), (100, 100)] {
+            let rgb = chroma(color, vibrance: vibrance, saturation: saturation)
+            let after = oklab(rgb)
+            let edit = "\(color) at vibrance \(vibrance), saturation \(saturation) gave \(rgb)"
+            #expect(abs(after.lightness - before.lightness) < 0.002, "lightness moved: \(edit)")
+            #expect(abs(after.hue - before.hue) < 0.5, "hue moved: \(edit)")
+            #expect(rgb.allSatisfy { (-0.005...1.005).contains($0) }, "left sRGB: \(edit)")
+        }
+    }
+}
+
+@Test func saturationMinus100IsNeutral() throws {
+    for color in [skin, deepBlue, foliage, flowerRed] {
+        for vibrance in [0.0, 100] {
+            let rgb = chroma(color, vibrance: vibrance, saturation: -100)
+            #expect(
+                try #require(rgb.max()) - #require(rgb.min()) < 1e-5,
+                "\(color) kept a tint at vibrance \(vibrance)")
+        }
+    }
+}
+
+@Test func saturationPlus100NearlyDoublesAFaintColour() {
+    let gain = oklab(chroma(paleBlue, saturation: 100)).chroma / oklab(chroma(paleBlue)).chroma
+    #expect((1.7...2.05).contains(gain), "pale blue gained x\(gain)")
+}
+
+@Test func oklabRoundTripSurvivesNegativeComponents() throws {
+    let wideGamut = [0.01, -0.004, 0.002]
+    let linear = try #require(CGColorSpace(name: CGColorSpace.extendedLinearSRGB))
+    let color = try #require(
+        CIColor(red: wideGamut[0], green: wideGamut[1], blue: wideGamut[2], colorSpace: linear))
+    let rgb = chroma(color)
+    #expect(zip(rgb, wideGamut).allSatisfy { abs($0 - $1) < 1e-4 }, "came back as \(rgb)")
+}
+
+@Test func vibranceFavoursFaintColoursAndSparesSkin() {
+    func added(_ color: [Double], vibrance: Double) -> Double {
+        oklab(chroma(color, vibrance: vibrance)).chroma / oklab(chroma(color)).chroma - 1
+    }
+    #expect(
+        added(paleBlue, vibrance: 10) > 3 * added(deepBlue, vibrance: 10),
+        "a pale blue must gain more than a deep one")
+    #expect(
+        added(skin, vibrance: 100) < added(skin.reversed(), vibrance: 100) - 0.15,
+        "skin must gain less than its blue mirror")
+}
+
+@Test func moreSliderNeverMeansLessColour() {
+    let saturated = stride(from: 0.0, through: 100, by: 20).map {
+        oklab(chroma(ultramarine, saturation: $0)).chroma
+    }
+    #expect(
+        zip(saturated, saturated.dropFirst()).allSatisfy(<),
+        "ultramarine lost chroma along saturation: \(saturated)")
+    #expect(
+        oklab(chroma(deepBlue, vibrance: 100, saturation: 100)).chroma
+            > oklab(chroma(deepBlue, saturation: 100)).chroma,
+        "vibrance on top of saturation took colour away")
+    #expect(
+        oklab(chroma(paleBlue, vibrance: -50)).chroma < oklab(chroma(paleBlue)).chroma,
+        "negative vibrance added colour")
 }
 
 @Test func rgbCurveBrightensMidtones() throws {

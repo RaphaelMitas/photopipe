@@ -19,7 +19,7 @@ public final class Renderer: @unchecked Sendable {
     private let curveColorSpace = CGColorSpace(name: CGColorSpace.displayP3)!
 
     // bump when the pixels change for an unchanged key
-    private static let pipelineVersion = 6
+    private static let pipelineVersion = 8
 
     /// None of these are zero, so a slider left alone has to reach for them.
     public struct RawDefaults: Sendable {
@@ -190,16 +190,21 @@ public final class Renderer: @unchecked Sendable {
                 image = image.applyingFilter(
                     "CIExposureAdjust", parameters: ["inputEV": edit.exposure])
             }
+            // 2^EV alone runs highlights past 1, where they clip to cyan skies and flat white
+            if edit.exposure > 0 {
+                image = Presence.shoulder(image, afterExposure: edit.exposure)
+            }
             let temperature = edit.temperature ?? 0
             let tint = edit.tint ?? 0
             if temperature != 0 || tint != 0 {
-                // a lower target neutral renders warmer, so the sign flips to
-                // match the raw pipeline's "higher temperature = warmer"
+                // even mired steps look even, and a lower target neutral renders warmer,
+                // like a raw's higher temperature
+                let mired = 1e6 / 6500 + temperature / 100 * (1e6 / 4500 - 1e6 / 6500)
                 image = image.applyingFilter(
                     "CITemperatureAndTint",
                     parameters: [
                         "inputNeutral": CIVector(x: 6500, y: 0),
-                        "inputTargetNeutral": CIVector(x: 6500 - temperature * 20, y: -tint),
+                        "inputTargetNeutral": CIVector(x: 1e6 / mired, y: -tint),
                     ])
             }
         }
@@ -225,13 +230,8 @@ public final class Renderer: @unchecked Sendable {
         if edit.texture != 0 {
             image = Presence.texture(image, amount: edit.texture)
         }
-        if edit.vibrance != 0 {
-            image = image.applyingFilter(
-                "CIVibrance", parameters: ["inputAmount": edit.vibrance / 100])
-        }
-        if edit.saturation != 0 {
-            image = image.applyingFilter(
-                "CIColorControls", parameters: ["inputSaturation": 1 + edit.saturation / 100])
+        if edit.vibrance != 0 || edit.saturation != 0 {
+            image = Presence.chroma(image, vibrance: edit.vibrance, saturation: edit.saturation)
         }
         switch edit.normalizedRotation {
         case 90: image = image.oriented(forExifOrientation: 6)
@@ -249,7 +249,7 @@ public final class Renderer: @unchecked Sendable {
     }
 
     static func saneCrop(_ edit: Edit) -> CropRect? {
-        guard edit.cropAngle.isFinite else { return nil }
+        guard edit.cropAngle.isFinite, abs(edit.cropAngle) <= XMP.scalarMagnitudeLimit else { return nil }
         return (edit.crop ?? .full).sanitized()
     }
 
@@ -286,7 +286,8 @@ public final class Renderer: @unchecked Sendable {
             let center = CGPoint(x: extent.midX, y: extent.midY)
             // CI is y-up, so on-screen-clockwise negates here; CSS gets it raw
             let angle = -edit.cropAngle * .pi / 180
-            result = result.transformed(
+            result = Straighten.transformed(
+                result,
                 by: CGAffineTransform(translationX: center.x, y: center.y)
                     .rotated(by: angle)
                     .translatedBy(x: -center.x, y: -center.y))

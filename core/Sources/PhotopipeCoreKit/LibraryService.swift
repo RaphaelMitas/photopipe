@@ -431,7 +431,7 @@ public final class LibraryService: @unchecked Sendable {
 
     public func setEdit(shoot shootName: String, path: String, edit: Edit) throws -> EditChange {
         let settled = try write(shoot: shootName, path: path) { image in
-            try XMP.writeEdit(edit, file: image)
+            try XMP.writeEdit(edit, file: image, asShot: try? renderer.rawDefaults(for: image))
         }
         return EditChange(edit: settled.edit)
     }
