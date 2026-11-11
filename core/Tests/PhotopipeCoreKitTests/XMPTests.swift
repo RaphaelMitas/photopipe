@@ -219,6 +219,55 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
     #expect(active.cropAngle == 2.5)
 }
 
+@Test func cameraRawDefaultsAreNotEdits() throws {
+    let defaults = """
+        <rdf:Description crs:Version="15.2" crs:WhiteBalance="As Shot"
+        crs:Temperature="5271" crs:Tint="16" crs:LuminanceSmoothing="0"/>
+        """
+    let untouched = parsed(defaults).edit
+    #expect(untouched.temperature == nil)
+    #expect(untouched.tint == nil)
+    #expect(untouched.denoise == nil)
+
+    let edited = parsed(
+        defaults.replacingOccurrences(of: "As Shot", with: "Custom")
+            .replacingOccurrences(of: "Smoothing=\"0\"", with: "Smoothing=\"25\"")
+    ).edit
+    #expect(edited.temperature == 5271)
+    #expect(edited.tint == 16)
+    #expect(edited.denoise == 25)
+
+    #expect(
+        parsed(#"<rdf:Description crs:LuminanceSmoothing="0"/>"#).edit.denoise == 0,
+        "without crs:Version the 0 is ours and means off")
+
+    let lightroom = try Data(
+        contentsOf: fixturesRoot().appendingPathComponent("sidecars/lightroom-masks.xmp"))
+    #expect(XMP.parse(lightroom, isRaw: true).edit.denoise == nil)
+}
+
+@Test func rawWhiteBalanceIsWrittenAsCameraRawReadsIt() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00015.ARW")
+    try Data("fake".utf8).write(to: arw)
+    let sidecar = XMP.sidecarURL(forImagePath: arw.path)
+    let asShot = Renderer.RawDefaults(temperature: 5325.3, tint: 5.24, denoise: 0.38)
+
+    try XMP.writeEdit(Edit(temperature: 6000, denoise: 0), file: try image(arw), asShot: asShot)
+    #expect(try exiftoolTag("-XMP-crs:WhiteBalance", of: sidecar) == "Custom")
+    #expect(try exiftoolTag("-XMP-crs:ColorTemperature", of: sidecar) == "6000")
+    #expect(try exiftoolTag("-XMP-crs:Tint", of: sidecar) == "5", "the unset half is the raw's own")
+    #expect(XMP.read(file: try image(arw)).edit.denoise == 0, "our own 0 still means off")
+
+    try XMP.writeEdit(Edit(exposure: 1), file: try image(arw), asShot: asShot)
+    #expect(try exiftoolTag("-XMP-crs:WhiteBalance", of: sidecar) == "As Shot")
+    #expect(try exiftoolTag("-XMP-crs:ColorTemperature", of: sidecar).isEmpty)
+    #expect(try exiftoolTag("-XMP-crs:Tint", of: sidecar).isEmpty)
+    #expect(XMP.read(file: try image(arw)).edit == Edit(exposure: 1))
+}
+
 @Test func straightCurveFromAnotherToolReadsAsNoCurve() {
     let sidecar = """
         <rdf:Description><crs:ToneCurvePV2012><rdf:Seq>

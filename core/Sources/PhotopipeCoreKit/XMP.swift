@@ -72,12 +72,19 @@ public enum XMP {
     }
 
     private struct Tags {
-        let scalar: (String) -> Double?
+        let text: (String) -> String?
         let curve: (String) -> [CurvePoint]
         let hasCrop: Bool?
+
+        func scalar(_ name: String) -> Double? { sane(text(name).flatMap(Double.init)) }
     }
 
     private static func edit(from tags: Tags, isRaw: Bool, rotation: Int) -> Edit {
+        // beside As Shot the numbers are Camera Raw's reading of the file, not an edit
+        let isAsShot = isRaw && tags.text("WhiteBalance") == "As Shot"
+        let denoise = isRaw ? tags.scalar("LuminanceSmoothing") : nil
+        // Camera Raw stamps crs:Version and writes its default 0 into every sidecar; our own 0 means off
+        let isCameraRawDefault = denoise == 0 && tags.text("Version") != nil
         // other tools write a straight curve as two points; ours is the empty one.
         // nan or inf would fail every JSON encode of the whole shoot's listing
         func curve(_ tag: String) -> [CurvePoint] {
@@ -93,9 +100,10 @@ public enum XMP {
             texture: tags.scalar("Texture") ?? 0,
             clarity: tags.scalar("Clarity2012") ?? 0,
             dehaze: tags.scalar("Dehaze") ?? 0,
-            temperature: tags.scalar(isRaw ? "Temperature" : "IncrementalTemperature"),
-            tint: tags.scalar(isRaw ? "Tint" : "IncrementalTint"),
-            denoise: isRaw ? tags.scalar("LuminanceSmoothing") : nil,
+            temperature: isAsShot
+                ? nil : tags.scalar(isRaw ? "Temperature" : "IncrementalTemperature"),
+            tint: isAsShot ? nil : tags.scalar(isRaw ? "Tint" : "IncrementalTint"),
+            denoise: isCameraRawDefault ? nil : denoise,
             vibrance: tags.scalar("Vibrance") ?? 0,
             saturation: tags.scalar("Saturation") ?? 0,
             curveRGB: curve("ToneCurvePV2012"),
@@ -125,7 +133,7 @@ public enum XMP {
         let properties = XMPProperties(packet)
         let edit = edit(
             from: Tags(
-                scalar: { sane(properties.value(.crs, $0).flatMap(Double.init)) },
+                text: { properties.value(.crs, $0) },
                 curve: { properties.items(.crs, $0).compactMap(curvePoint) },
                 hasCrop: properties.value(.crs, "HasCrop").map { $0.lowercased() == "true" }),
             isRaw: isRaw,
@@ -255,7 +263,7 @@ public enum XMP {
         // a sidecar-only raw is never written into, so its XMP holds just what the camera put there
         guard !file.sidecarOnly else { return (rating, nil, .identity) }
         var pick: Int?
-        var scalars: [String: Double] = [:]
+        var texts: [String: String] = [:]
         var curves: [String: [CurvePoint]] = [:]
         var hasCrop: Bool?
         CGImageMetadataEnumerateTagsUsingBlock(metadata, nil, nil) { _, tag in
@@ -271,16 +279,16 @@ public enum XMP {
             } else if name == "HasCrop" {
                 if let text = value as? String { hasCrop = text.lowercased() == "true" }
                 if let flag = value as? Bool { hasCrop = flag }
-            } else if let text = value as? String, let number = sane(Double(text)) {
-                scalars[name] = number
-            } else if let number = value as? Double, let checked = sane(number) {
-                scalars[name] = checked
+            } else if let text = value as? String {
+                texts[name] = text
+            } else if let number = value as? Double {
+                texts[name] = "\(number)"
             }
             return true
         }
         let edit = edit(
             from: Tags(
-                scalar: { scalars[$0] },
+                text: { texts[$0] },
                 curve: { curves[$0] ?? [] },
                 hasCrop: hasCrop),
             isRaw: file.isRaw,
@@ -389,14 +397,16 @@ public enum XMP {
         try write(flagTags(flag), clearing: flag == 0, file: file)
     }
 
-    public static func writeEdit(_ edit: Edit, file: ImageFile) throws {
-        let (tags, exifOrientationPin) = try editTags(edit, file: file)
+    public static func writeEdit(
+        _ edit: Edit, file: ImageFile, asShot: Renderer.RawDefaults? = nil
+    ) throws {
+        let (tags, exifOrientationPin) = try editTags(edit, file: file, asShot: asShot)
         try write(
             tags, exifOrientationPin: exifOrientationPin, clearing: edit.isIdentity, file: file)
     }
 
     static func editTags(
-        _ edit: Edit, file: ImageFile
+        _ edit: Edit, file: ImageFile, asShot: Renderer.RawDefaults? = nil
     ) throws -> (tags: [TagWrite], exifOrientationPin: Int?) {
         var tags: [TagWrite] = []
         // exiftool drops a "10.0" for these integer tags with only a warning
@@ -435,8 +445,17 @@ public enum XMP {
         integerScalar("Texture", nonZero(edit.texture))
         integerScalar("Clarity2012", nonZero(edit.clarity))
         realScalar("Dehaze", nonZero(edit.dehaze))
-        integerScalar(file.isRaw ? "Temperature" : "IncrementalTemperature", edit.temperature)
-        integerScalar(file.isRaw ? "Tint" : "IncrementalTint", edit.tint)
+        if file.isRaw {
+            let isCustom = edit.temperature != nil || edit.tint != nil
+            // Camera Raw wants both numbers beside Custom, so an unset half is pinned to the raw's own
+            let pinned = isCustom ? asShot : nil
+            tags.append(TagWrite(.crs, "WhiteBalance", .scalar(isCustom ? "Custom" : "As Shot")))
+            integerScalar("Temperature", edit.temperature ?? pinned?.temperature)
+            integerScalar("Tint", edit.tint ?? pinned?.tint)
+        } else {
+            integerScalar("IncrementalTemperature", edit.temperature)
+            integerScalar("IncrementalTint", edit.tint)
+        }
         integerScalar("LuminanceSmoothing", file.isRaw ? edit.denoise : nil)
         integerScalar("Vibrance", nonZero(edit.vibrance))
         integerScalar("Saturation", nonZero(edit.saturation))
@@ -519,6 +538,8 @@ public enum XMP {
     static func embeddedTags(_ file: ImageFile) throws -> [TagWrite] {
         let (rating, flag, edit) = embedded(file)
         guard (rating ?? 0) != 0 || (flag ?? 0) != 0 || !edit.isIdentity else { return [] }
-        return try ratingTags(rating ?? 0) + flagTags(flag ?? 0) + editTags(edit, file: file).tags
+        // an untouched raw would otherwise start its sidecar with a WhiteBalance nobody set
+        let carriedEdit = try edit.isIdentity ? [] : editTags(edit, file: file).tags
+        return ratingTags(rating ?? 0) + flagTags(flag ?? 0) + carriedEdit
     }
 }
