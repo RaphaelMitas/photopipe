@@ -211,10 +211,14 @@ export function Loupe({
     enabled: !cropping && !!image,
     resetKey: zoomKey,
   });
+  const [divider, setDivider] = useState(0.5);
   const pick = useMaskPick(image, edit, masks, (cursor) => {
     const node = stageRef.current;
     if (!node || cropping || photoBox.width <= 0) return null;
-    const spot = photoFractionAt(zoom.state, cursorIn(node, cursor), photoBox);
+    const at = cursorIn(node, cursor);
+    // the before half covers the preview, and a click there would mask unseen
+    if (comparing && at.x < divider * node.clientWidth) return null;
+    const spot = photoFractionAt(zoom.state, at, photoBox);
     const onPhoto =
       Math.min(spot.x, spot.y) >= 0 && Math.max(spot.x, spot.y) <= 1;
     return onPhoto ? spot : null;
@@ -245,7 +249,6 @@ export function Loupe({
     current,
   ).data;
   const sharpening = wanted !== null && (!sharp || (comparing && !sharpBefore));
-  const [divider, setDivider] = useState(0.5);
 
   // Key repeat outruns re-rendering, so a nudge composes on the ref instead of
   // the draft this handler closed over.

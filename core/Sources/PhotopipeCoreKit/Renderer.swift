@@ -158,13 +158,13 @@ public final class Renderer: @unchecked Sendable {
         }
     }
 
-    /// The spot is on the framed photo. Never cached: the cursor asks on every move.
+    /// Never cached: the cursor asks on every move.
     public func maskAt(
-        file: ImageFile, edit: Edit, points: [Mask.Point], inverted: Bool, at spot: CGPoint,
+        file: ImageFile, edit: Edit, points: [Mask.Point], inverted: Bool, at framedSpot: CGPoint,
         include: Bool, maxPixel: Int
     ) throws -> MaskPick {
         let photo = try masker.clickPhoto(for: file) { try neutral(for: file) }
-        let clicked = Self.unframed(spot, of: photo, edit)
+        let clicked = Self.unframed(framedSpot, of: photo, edit)
         // a ten-thousandth is a fifth of a pixel of what the model sees
         func stored(_ fraction: CGFloat) -> Double {
             (Double(min(max(fraction, 0), 1)) * 10_000).rounded() / 10_000

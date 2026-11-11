@@ -278,12 +278,12 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     public func maskAt(
-        path: String, edit: Edit, points: [Mask.Point], inverted: Bool, at spot: CGPoint,
+        path: String, edit: Edit, points: [Mask.Point], inverted: Bool, at framedSpot: CGPoint,
         include: Bool, maxPixel: Int
     ) throws -> Renderer.MaskPick {
         try renderer.maskAt(
             file: recordUnderRoot(path: path), edit: edit, points: points, inverted: inverted,
-            at: spot, include: include, maxPixel: maxPixel)
+            at: framedSpot, include: include, maxPixel: maxPixel)
     }
 
     public func rawDefaults(path: String, decoderVersion: Int? = nil) throws

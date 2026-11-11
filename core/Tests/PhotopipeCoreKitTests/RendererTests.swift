@@ -1674,12 +1674,16 @@ private func alpha(of url: URL, at point: CGPoint) throws -> UInt8 {
 }
 
 private func alpha(of image: CIImage, at point: CGPoint) -> UInt8 {
+    pixel(of: image, at: point)[3]
+}
+
+private func pixel(of image: CIImage, at point: CGPoint) -> [UInt8] {
     var pixel = [UInt8](repeating: 0, count: 4)
     CIContext().render(
         image, toBitmap: &pixel, rowBytes: 4,
         bounds: CGRect(x: point.x, y: point.y, width: 1, height: 1),
         format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
-    return pixel[3]
+    return pixel
 }
 
 @Test func theOverlayIsTheMatteInTheFrameOfTheEdit() throws {
@@ -1796,11 +1800,8 @@ private let aroundTheLastClick: Masker.Segment = { photo, _, points in
     }
     let seen = Mutex<[Mask.Source: UInt8]>([:])
     let renderer = Renderer(cacheDir: cacheDir) { photo, source, _ in
-        var pixel = [UInt8](repeating: 0, count: 4)
-        CIContext().render(
-            photo, toBitmap: &pixel, rowBytes: 4, bounds: CGRect(x: 32, y: 32, width: 1, height: 1),
-            format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
-        seen.withLock { $0[source] = pixel[0] }
+        let red = pixel(of: photo, at: CGPoint(x: 32, y: 32))[0]
+        seen.withLock { $0[source] = red }
         return CIImage(color: .black).cropped(to: photo.extent)
     }
     let file = try imageFile(for: jpeg)

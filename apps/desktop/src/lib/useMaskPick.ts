@@ -1,4 +1,10 @@
-import { type MouseEvent, type PointerEvent, useRef, useState } from "react";
+import {
+  type MouseEvent,
+  type PointerEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { toast } from "sonner";
 import {
   type CoreMethods,
@@ -46,9 +52,14 @@ export function useMaskPick(
     asking: false,
   });
   const pressed = useRef<{ x: number; y: number } | null>(null);
-  // an answer lands a render or a model load later
-  const live = useRef({ masks, scene });
-  live.current = { masks, scene };
+  // an answer lands a render or a model load later, when the loupe may be gone
+  const live = useRef<{ masks: MaskSession; scene: string } | null>(null);
+  useEffect(() => {
+    live.current = { masks, scene };
+    return () => {
+      live.current = null;
+    };
+  });
 
   const askAt = (cursor: Cursor) => {
     const modified = cursor.shiftKey || cursor.altKey;
@@ -110,7 +121,7 @@ export function useMaskPick(
     try {
       const { point } = await coreRequest("maskAt", asked.ask);
       const now = live.current;
-      if (now.scene !== scene) return;
+      if (now?.scene !== scene) return;
       if (asked.refined) now.masks.refine(asked.refined, point);
       else now.masks.click(point);
       // an undo restores the old scene, and its answer would come back with it

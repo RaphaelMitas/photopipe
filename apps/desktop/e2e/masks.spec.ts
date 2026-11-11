@@ -95,7 +95,7 @@ test("a new mask flashes its overlay, and the flash ends by itself", async ({
   await expect(overlay).toHaveCount(0);
 });
 
-test("a click on the photo becomes a mask, and Shift-click grows it", async ({
+test("a click on the photo becomes a mask, and Shift-click refines it without adding a row", async ({
   page,
 }) => {
   await openZell(page);
@@ -147,4 +147,22 @@ test("a click on the photo becomes a mask, and Shift-click grows it", async ({
 
   await page.getByTestId("history-toggle").click();
   await expect(history).toHaveCount(4);
+});
+
+test("with the split on, only the edited half takes a click", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("thumb").first().click();
+  const photo = page.getByTestId("loupe-image");
+  const rows = page.getByRole("button", { name: "Object", exact: true });
+  await page.keyboard.press("y");
+  await expect(page.getByTestId("loupe-before-image")).toBeVisible();
+  await page.keyboard.press("m");
+  const box = await photo.boundingBox();
+  if (!box) throw new Error("no photo on the stage");
+
+  await photo.click({ position: { x: box.width * 0.25, y: box.height / 2 } });
+  await photo.click({ position: { x: box.width * 0.75, y: box.height / 2 } });
+  await expect(rows).toHaveCount(1);
 });
