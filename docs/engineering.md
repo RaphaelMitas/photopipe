@@ -24,8 +24,8 @@ Stack, testing strategy, CI and releases.
   (`DSC0001.HEIC.photopipe.xmp`), and from then on the Mac uses it too.
 - **Masks** come from Vision: person segmentation for People, foreground
   instances for Subject, and Background is Subject inverted. Vision cuts a
-  subject hard and a little wide, so its edge fades inward before the matte
-  is cached. The edit carries
+  subject hard, so its edge fades out into the background before the matte
+  is cached; the subject itself stays whole. The edit carries
   each mask's definition and sliders as one JSON value in
   `photopipe:Masks`, a namespace exiftool only writes because the core starts
   it with a config that declares it. The matte is a PNG in the rebuildable

@@ -1656,15 +1656,15 @@ private func coverage(of matte: CIImage, at point: CGPoint) -> Int {
     return Int(pixel[0])
 }
 
-@Test func aSubjectFadesInFromItsEdgeInsteadOfCuttingPastIt() {
+@Test func aSubjectStaysWholeAndFadesOutIntoTheBackground() {
     let frame = CGRect(x: 0, y: 0, width: 2048, height: 64)
     let hard = CIImage(color: .white).cropped(to: CGRect(x: 0, y: 0, width: 1024, height: 64))
         .composited(over: CIImage(color: .black).cropped(to: frame))
     let soft = Masker.feathered(hard)
 
-    #expect(coverage(of: soft, at: CGPoint(x: 1000, y: 32)) == 255)
-    #expect((60...200).contains(coverage(of: soft, at: CGPoint(x: 1023, y: 32))))
-    #expect(coverage(of: soft, at: CGPoint(x: 1027, y: 32)) == 0)
+    #expect(coverage(of: soft, at: CGPoint(x: 1023, y: 32)) == 255)
+    #expect((40...200).contains(coverage(of: soft, at: CGPoint(x: 1027, y: 32))))
+    #expect(coverage(of: soft, at: CGPoint(x: 1044, y: 32)) == 0)
 }
 
 @Test func aMatteKeepsItsHalfCoverageThroughTheCache() throws {
