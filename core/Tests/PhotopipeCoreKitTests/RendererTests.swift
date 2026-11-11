@@ -324,7 +324,7 @@ private func writeEntry(_ name: String, in dir: URL, bytes: Int, hoursAgo: Doubl
     #expect(top.blue < 60, "blue must have rotated to the bottom, got \(top)")
 }
 
-private func grayBitmap(size: Int = 256, _ value: (Int, Int) -> Double) -> CIImage {
+private func redBitmap(size: Int = 256, _ value: (Int, Int) -> Double) -> CIImage {
     let pixels = (0..<size * size).map { Float(value($0 % size, $0 / size)) }
     return CIImage(
         bitmapData: pixels.withUnsafeBufferPointer { Data(buffer: $0) }, bytesPerRow: size * 4,
@@ -352,11 +352,11 @@ private func contrast(_ values: [Float]) -> Float {
     }
 
     // bilinear sampling keeps 0.77 of a wave four pixels long
-    let wave = grayBitmap { x, y in 0.5 + 0.4 * sin(2 * .pi * (0.25 * Double(x) + 0.11 * Double(y))) }
+    let wave = redBitmap { x, y in 0.5 + 0.4 * sin(2 * .pi * (0.25 * Double(x) + 0.11 * Double(y))) }
     let kept = contrast(straightened(wave, by: 0.5)) / contrast(straightened(wave, by: 0))
     #expect(kept > 0.88, "a straightened photo keeps its fine detail, got \(kept)")
 
-    let stripes = grayBitmap { x, _ in x % 4 < 2 ? 1 : 0 }
+    let stripes = redBitmap { x, _ in x % 4 < 2 ? 1 : 0 }
     let turned = straightened(stripes, by: 0.5)
     #expect(turned.allSatisfy { (0...1).contains($0) }, "a hard edge must not overshoot")
 }
