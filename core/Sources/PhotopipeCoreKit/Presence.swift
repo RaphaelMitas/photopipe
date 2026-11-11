@@ -117,7 +117,7 @@ enum Presence {
             if (omega < 0.0) {
                 // uniform, not by the haze found, so a clear scene fogs too
                 float3 fog = mix(airlight, float3(lumaOf(airlight)), 0.5);
-                p.rgb = mix(p.rgb, fog * p.a, omega / (omega - 1.0));
+                p.rgb = mix(p.rgb, fog, omega / (omega - 1.0));
                 return p;
             }
             // no pixel holds more haze than its darkest channel, which keeps it above black
