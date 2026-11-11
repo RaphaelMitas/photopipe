@@ -64,13 +64,16 @@ private let fixtureCases: [(name: String, points: [CurvePoint])] = [
 @Test func toneLUTOnlyExistsWhenNeeded() {
     #expect(ToneLUT.samples(for: .identity) == nil)
     #expect(ToneLUT.samples(for: Edit(exposure: 1, saturation: 50)) == nil)
+    #expect(
+        ToneLUT.samples(for: Edit(highlights: -100, shadows: 100)) == nil,
+        "those two render per region, not through the table")
 
-    let lifted = ToneLUT.samples(for: Edit(shadows: 100))
+    let lifted = ToneLUT.samples(for: Edit(blacks: 100))
     #expect(lifted != nil)
     if let lifted {
         #expect(lifted.count == ToneLUT.resolution * 3)
         let dark = lifted[3 * 32]
-        #expect(Double(dark) > 32.0 / 255, "shadows +100 lifts the darks")
+        #expect(Double(dark) > 32.0 / 255, "blacks +100 lifts the darks")
         for i in 1..<ToneLUT.resolution {
             #expect(lifted[i * 3] >= lifted[(i - 1) * 3], "the parametric part stays monotone")
         }
