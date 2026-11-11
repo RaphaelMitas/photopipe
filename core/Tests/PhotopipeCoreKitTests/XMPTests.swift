@@ -1081,7 +1081,7 @@ private let someMasks = [
 
     guard requireExifTool() else { return }
     try XMP.writeEdit(Edit(masks: [Mask(id: "b", source: .people)]), file: try image(arw))
-    #expect(try stored(sidecar) == "[\(([ours] + newer).joined(separator: ","))]")
+    #expect(try stored(sidecar) == "[\((newer + [ours]).joined(separator: ","))]")
     try XMP.writeEdit(.identity, file: try image(arw))
     #expect(try stored(sidecar) == "[\(newer.joined(separator: ","))]")
 
@@ -1100,6 +1100,33 @@ private let someMasks = [
     #expect(
         try stored(XMP.sidecarURL(forImagePath: rated.path)) == "[\(newer.joined(separator: ","))]",
         "on iPad a rating is the first write, and it starts a sidecar")
+}
+
+@Test func aMaskThisBuildCannotReadKeepsItsPlaceAmongTheOthers() throws {
+    let entries = [
+        #"{"id":"kept1","source":"people"}"#, #"{"id":"future","source":"sky"}"#,
+        #"{"id":"kept2","source":"subject"}"#,
+    ]
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00017.ARW")
+    try Data("fake".utf8).write(to: arw)
+    func order() throws -> [String] {
+        let sidecar = try String(contentsOf: XMP.sidecarURL(forImagePath: arw.path), encoding: .utf8)
+        return ["kept1", "future", "kept2"]
+            .compactMap { id in sidecar.range(of: id).map { (id, $0.lowerBound) } }
+            .sorted { $0.1 < $1.1 }.map(\.0)
+    }
+
+    try XMP.writeText(
+        [XMP.TagWrite(.photopipe, "Masks", .scalar("[\(entries.joined(separator: ","))]"))],
+        clearing: false, file: try image(arw))
+    let shown = XMP.read(file: try image(arw)).edit.masks
+    try writeTextEdit(Edit(exposure: 1, masks: shown), at: arw)
+    #expect(try order() == ["kept1", "future", "kept2"])
+
+    try writeTextEdit(Edit(exposure: 1, masks: Array(shown.dropFirst())), at: arw)
+    #expect(try order() == ["future", "kept2"], "the mask before it is gone, the one after it is not")
 }
 
 @Test func aClickMaskIsShownOnlyWhereItCanBeFoundAndKeptEverywhere() throws {

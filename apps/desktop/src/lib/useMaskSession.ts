@@ -91,11 +91,9 @@ export function useMaskSession(
       const id = append({ source: "click", inverted: false, points: [point] });
       patch({ target: id, flash: id });
     },
-    refine: (id: string, point: MaskPoint) => {
-      const mask = byId(id);
-      if (!mask) return;
-      change(id, { points: [...mask.points, point] });
-      patch({ flash: id });
+    refine: (mask: Mask, point: MaskPoint) => {
+      change(mask.id, { points: [...mask.points, point] });
+      patch({ flash: mask.id });
     },
     select: (id: string | null) =>
       patch({ target: id, creating: false, chip: null, flash: id }),

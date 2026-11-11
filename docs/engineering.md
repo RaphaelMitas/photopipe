@@ -41,11 +41,12 @@ Stack, testing strategy, CI and releases.
   goes through `maskAt`, which answers with the overlay as bytes and never
   touches the cache. The reader keeps every entry it cannot decode, and a
   mask with a key it does not know, as raw JSON, and the writer puts them
-  back: an older build must never delete a newer build's mask. Whether an
-  entry is read depends on that entry alone, never on its neighbours: the
-  writer works the unread ones out again from the file, so a mask that
-  turned readable when another was deleted would be in neither the edit nor
-  the kept entries, and the save would drop it.
+  back behind the masks the file had before them, since masks render in
+  order: an older build must never delete or move a newer build's mask.
+  Whether an entry is read depends on that entry alone, never on its
+  neighbours: the writer works the unread ones out again from the file, so a
+  mask that turned readable when another was deleted would be in neither the
+  edit nor the kept entries, and the save would drop it.
 - **Formats** come from ImageIO at runtime: every extension whose type it
   reads and calls a camera raw, plus JPEG, PNG, TIFF, HEIC/HEIF, AVIF, JPEG XL
   and WebP. A camera a new OS learns needs no release.

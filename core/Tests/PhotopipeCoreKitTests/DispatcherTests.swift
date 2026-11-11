@@ -37,3 +37,9 @@ import Testing
         method: "maskOverlay", params: #"{"path":"/a.jpg","source":"sky"}"#)
     #expect(reply.text == "invalid_params: source required")
 }
+
+@Test func aClickFarOffThePhotoIsRefusedBeforeItTurnsIntoNaN() {
+    let reply = Dispatcher().dispatch(
+        method: "maskAt", params: #"{"path":"/a.jpg","x":1e308,"y":0.5}"#)
+    #expect(reply.text == "invalid_params: x required")
+}

@@ -26,12 +26,11 @@ const CLICK_SLOP = 4;
 // sent inline with every hover answer, so a quarter the pixels of the kept overlay
 const PREVIEW_MAX_PIXEL = 1024;
 
-/// A plain click masks while the field is open; Shift and Option grow or cut the selected click mask.
 export function useMaskPick(
   image: ImageFile | undefined,
   edit: Edit,
   masks: MaskSession,
-  /// In fractions of the photo as shown, null off the photo or while cropping.
+  // fractions of the framed photo
   spotAt: (cursor: Cursor) => { x: number; y: number } | null,
 ) {
   const frame = unedited(edit);
@@ -65,10 +64,12 @@ export function useMaskPick(
       points: refined?.points ?? [],
       inverted: refined?.inverted ?? false,
       ...spot,
-      include: !cursor.altKey,
+      // on an inverted mask, adding to what is shown cuts it from what the model found
+      include: cursor.altKey === (refined?.inverted ?? false),
       maxPixel: PREVIEW_MAX_PIXEL,
     };
-    return { ask, refined, scene };
+    const full = (refined?.points.length ?? 0) >= clickLimit;
+    return { ask, refined, scene, full };
   };
 
   // one question at a time, and only the newest of those that waited
@@ -102,7 +103,7 @@ export function useMaskPick(
     );
     const asked = travelled <= CLICK_SLOP ? askAt(event) : null;
     if (!asked) return;
-    if (asked.refined && asked.refined.points.length >= clickLimit) {
+    if (asked.full) {
       toast("This mask cannot take more clicks", { id: "mask-clicks" });
       return;
     }
@@ -111,9 +112,9 @@ export function useMaskPick(
       const { point } = await coreRequest("maskAt", asked.ask);
       const now = live.current;
       if (now.scene !== scene) return;
-      if (asked.refined) now.masks.refine(asked.refined.id, point);
+      if (asked.refined) now.masks.refine(asked.refined, point);
       else now.masks.click(point);
-      // the new mask flashes in its own colour until the cursor moves on
+      // an undo restores the old scene, and its answer would come back with it
       show(null);
     } catch (error) {
       toast.error("Could not mask that", { description: String(error) });
@@ -135,7 +136,8 @@ export function useMaskPick(
       },
       onPointerMove: (event: PointerEvent) => {
         const hovering = event.pointerType === "mouse" && event.buttons === 0;
-        show(hovering ? askAt(event) : null);
+        const asked = hovering ? askAt(event) : null;
+        show(asked?.full ? null : asked);
       },
       onPointerLeave: () => {
         show(null);

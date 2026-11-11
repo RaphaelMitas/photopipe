@@ -205,8 +205,9 @@ exposure and white balance and before the rest of its grade, so contrast,
 curves and colour shape the masked region too.
 
 A mask this build cannot read, one a newer build wrote, stays in the sidecar
-untouched. It is not shown and not rendered, and it survives every save. A
-click mask on a system that cannot find clicks is treated the same way.
+untouched. It is not shown and not rendered, and it survives every save in
+its place among the others. A click mask on a system that cannot find clicks
+is treated the same way.
 
 ## Before is the look, not the framing
 

@@ -1,4 +1,5 @@
 import type { Box } from "./crop";
+import { clamp01 } from "./curve";
 
 /// Loupe zoom. `scale` is relative to the fitted view (1 = fit) and
 /// `tx`/`ty` translate the fitted layer, applied before the scale with a
@@ -77,7 +78,6 @@ export function visibleRect(
   viewWidth: number,
   viewHeight: number,
 ): Box {
-  const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1);
   const from = photoFractionAt(state, { x: 0, y: 0 }, photo);
   const to = photoFractionAt(state, { x: viewWidth, y: viewHeight }, photo);
   const x = clamp01(from.x);

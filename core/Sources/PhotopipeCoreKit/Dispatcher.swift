@@ -77,7 +77,7 @@ public final class Dispatcher: Sendable {
                 path: request.string("path"), edit: request.edit() ?? .identity,
                 points: request.decoded("points") ?? [],
                 inverted: request.param("inverted")?.boolValue ?? false,
-                at: CGPoint(x: request.double("x"), y: request.double("y")),
+                at: CGPoint(x: request.fraction("x"), y: request.fraction("y")),
                 include: request.param("include")?.boolValue ?? true,
                 maxPixel: request.param("maxPixel")?.intValue ?? 2000)
         case "maskSupport":
@@ -179,8 +179,8 @@ extension Request {
         try required(key, param(key)?.intValue)
     }
 
-    fileprivate func double(_ key: String) throws -> Double {
-        try required(key, param(key)?.doubleValue)
+    fileprivate func fraction(_ key: String) throws -> Double {
+        try required(key, param(key)?.doubleValue.flatMap { (0...1).contains($0) ? $0 : nil })
     }
 
     fileprivate func strings(_ key: String) throws -> [String] {

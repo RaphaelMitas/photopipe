@@ -82,6 +82,11 @@ public enum XMP {
     // a sidecar is anyone's to write, and every mask costs a render pass
     static let maskLimit = 32
 
+    private struct UnreadMask {
+        let json: String
+        let follows: [String]
+    }
+
     // a key from a newer build would be dropped when the mask is written back
     private static func hasOnlyKnownKeys(_ entry: Any) -> Bool {
         guard let entry = entry as? [String: Any] else { return false }
@@ -96,12 +101,12 @@ public enum XMP {
 
     // an entry this build cannot read, or cannot find on this OS, is kept as written for the next save
     // each is judged alone: the writer sorts the file's entries again, and must sort them the same way
-    private static func masks(fromJSON text: String?) -> (read: [Mask], unread: [String]) {
+    private static func masks(fromJSON text: String?) -> (read: [Mask], unread: [UnreadMask]) {
         guard let text,
             let entries = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [Any]
         else { return ([], []) }
         var read: [Mask] = []
-        var unread: [String] = []
+        var unread: [UnreadMask] = []
         for entry in entries.prefix(maskLimit) {
             // a number too large for a Double reads as infinity, and writing that raises past try?
             guard JSONSerialization.isValidJSONObject([entry]),
@@ -113,7 +118,8 @@ public enum XMP {
                 Masker.supports(mask.source),
                 mask.points.count <= (mask.source == .click ? Mask.clickLimit : 0)
             else {
-                unread.append(String(decoding: json, as: UTF8.self))
+                unread.append(
+                    UnreadMask(json: String(decoding: json, as: UTF8.self), follows: read.map(\.id)))
                 continue
             }
             guard !read.contains(where: { $0.id == mask.id }) else { continue }
@@ -561,14 +567,21 @@ public enum XMP {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let unread = unreadMasks(in: written)
-        let known = try edit.masks.prefix(maskLimit - unread.count).map {
-            try String(decoding: encoder.encode($0), as: UTF8.self)
+        let known = edit.masks.prefix(maskLimit - unread.count)
+        // masks render in order, so an unread one goes back behind the masks the file had before it
+        let behind = Dictionary(grouping: unread) { entry in
+            known.lastIndex(where: { entry.follows.contains($0.id) }) ?? -1
         }
-        tags.append(masksTag(known + unread))
+        var entries = behind[-1, default: []].map(\.json)
+        for (index, mask) in known.enumerated() {
+            try entries.append(String(decoding: encoder.encode(mask), as: UTF8.self))
+            entries += behind[index, default: []].map(\.json)
+        }
+        tags.append(masksTag(entries))
         return (tags, exifOrientationPin)
     }
 
-    private static func unreadMasks(in written: XMPProperties?) -> [String] {
+    private static func unreadMasks(in written: XMPProperties?) -> [UnreadMask] {
         masks(fromJSON: written?.value(.photopipe, "Masks")).unread
     }
 
@@ -618,7 +631,8 @@ public enum XMP {
         guard (rating ?? 0) != 0 || (flag ?? 0) != 0 || !edit.isIdentity || !unread.isEmpty
         else { return [] }
         // an untouched raw would otherwise start its sidecar with a WhiteBalance nobody set
-        let carriedEdit = try edit.isIdentity ? [masksTag(unread)] : editTags(edit, file: file).tags
+        let carriedEdit =
+            try edit.isIdentity ? [masksTag(unread.map(\.json))] : editTags(edit, file: file).tags
         return ratingTags(rating ?? 0) + flagTags(flag ?? 0) + carriedEdit
     }
 }
