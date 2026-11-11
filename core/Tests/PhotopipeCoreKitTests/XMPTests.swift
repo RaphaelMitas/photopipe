@@ -261,8 +261,10 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
     #expect(try exiftoolTag("-XMP-crs:Tint", of: sidecar) == "5", "the unset half is the raw's own")
     #expect(XMP.read(file: try image(arw)).edit.denoise == 0, "our own 0 still means off")
 
-    try XMP.writeEdit(Edit(exposure: 1), file: try image(arw), asShot: asShot)
-    #expect(try exiftoolTag("-XMP-crs:WhiteBalance", of: sidecar) == "As Shot")
+    try XMP.writeEdit(Edit(exposure: 1, tint: 5), file: try image(arw), asShot: asShot)
+    #expect(
+        try exiftoolTag("-XMP-crs:WhiteBalance", of: sidecar) == "As Shot",
+        "resetting the temperature leaves only the pinned tint, which is no edit")
     #expect(try exiftoolTag("-XMP-crs:ColorTemperature", of: sidecar).isEmpty)
     #expect(try exiftoolTag("-XMP-crs:Tint", of: sidecar).isEmpty)
     #expect(XMP.read(file: try image(arw)).edit == Edit(exposure: 1))

@@ -74,9 +74,9 @@ public enum XMP {
     private struct Tags {
         let text: (String) -> String?
         let curve: (String) -> [CurvePoint]
-        let hasCrop: Bool?
 
         func scalar(_ name: String) -> Double? { sane(text(name).flatMap(Double.init)) }
+        var hasCrop: Bool? { text("HasCrop").map { $0.lowercased() == "true" } }
     }
 
     private static func edit(from tags: Tags, isRaw: Bool, rotation: Int) -> Edit {
@@ -134,8 +134,7 @@ public enum XMP {
         let edit = edit(
             from: Tags(
                 text: { properties.value(.crs, $0) },
-                curve: { properties.items(.crs, $0).compactMap(curvePoint) },
-                hasCrop: properties.value(.crs, "HasCrop").map { $0.lowercased() == "true" }),
+                curve: { properties.items(.crs, $0).compactMap(curvePoint) }),
             isRaw: isRaw,
             rotation: rotation(fromXMP: orientation(in: properties), base: baseOrientation))
         return (
@@ -265,7 +264,6 @@ public enum XMP {
         var pick: Int?
         var texts: [String: String] = [:]
         var curves: [String: [CurvePoint]] = [:]
-        var hasCrop: Bool?
         CGImageMetadataEnumerateTagsUsingBlock(metadata, nil, nil) { _, tag in
             guard let name = CGImageMetadataTagCopyName(tag) as String? else { return true }
             let namespace = CGImageMetadataTagCopyNamespace(tag) as String?
@@ -276,9 +274,8 @@ public enum XMP {
             guard namespace == TagWrite.Namespace.crs.uri else { return true }
             if name.hasPrefix("ToneCurvePV2012") {
                 curves[name] = curvePoints(fromMetadataValue: value)
-            } else if name == "HasCrop" {
-                if let text = value as? String { hasCrop = text.lowercased() == "true" }
-                if let flag = value as? Bool { hasCrop = flag }
+            } else if name == "HasCrop", let flag = value as? Bool {
+                texts[name] = "\(flag)"
             } else if let text = value as? String {
                 texts[name] = text
             } else if let number = value as? Double {
@@ -289,8 +286,7 @@ public enum XMP {
         let edit = edit(
             from: Tags(
                 text: { texts[$0] },
-                curve: { curves[$0] ?? [] },
-                hasCrop: hasCrop),
+                curve: { curves[$0] ?? [] }),
             isRaw: file.isRaw,
             rotation: rotation(
                 fromXMP: embeddedXMPOrientation(at: url),
@@ -446,12 +442,17 @@ public enum XMP {
         integerScalar("Clarity2012", nonZero(edit.clarity))
         realScalar("Dehaze", nonZero(edit.dehaze))
         if file.isRaw {
-            let isCustom = edit.temperature != nil || edit.tint != nil
-            // Camera Raw wants both numbers beside Custom, so an unset half is pinned to the raw's own
-            let pinned = isCustom ? asShot : nil
+            let own = (temperature: sane(asShot?.temperature), tint: sane(asShot?.tint))
+            // a pinned half reads back as set, so one still at the raw's own value is not an edit
+            func isEdited(_ value: Double?, own: Double?) -> Bool {
+                value.map { saneInt($0) != own.map(saneInt) } ?? false
+            }
+            let isCustom =
+                isEdited(edit.temperature, own: own.temperature) || isEdited(edit.tint, own: own.tint)
             tags.append(TagWrite(.crs, "WhiteBalance", .scalar(isCustom ? "Custom" : "As Shot")))
-            integerScalar("Temperature", edit.temperature ?? pinned?.temperature)
-            integerScalar("Tint", edit.tint ?? pinned?.tint)
+            // Camera Raw wants both numbers beside Custom, so an unset half is pinned to the raw's own
+            integerScalar("Temperature", isCustom ? edit.temperature ?? own.temperature : nil)
+            integerScalar("Tint", isCustom ? edit.tint ?? own.tint : nil)
         } else {
             integerScalar("IncrementalTemperature", edit.temperature)
             integerScalar("IncrementalTint", edit.tint)
