@@ -554,18 +554,12 @@ private func seamContrast(of url: URL) throws -> Double {
     }
 }
 
-@Test func clarityKeepsAHighlightFarOverWhiteBesideBlack() throws {
-    let cacheDir = tempCacheDir()
-    defer { try? FileManager.default.removeItem(at: cacheDir) }
-    let jpegURL = try writeHalvesJPEG(left: gray(0), right: gray(1), width: 256, height: 256)
-    defer { try? FileManager.default.removeItem(at: jpegURL) }
-    let renderer = Renderer(cacheDir: cacheDir)
-
-    // ten stops stand in for an HDR file: its luma unclipped drives Metal's tanh past 44, to NaN
-    let url = try renderer.render(
-        file: imageFile(for: jpegURL), edit: Edit(exposure: 10, clarity: 100), maxPixel: 256)
-    let highlight = try meanLuminance(of: url, region: CGRect(x: 128, y: 0, width: 4, height: 256))
-    #expect(highlight > 250, "the highlight must stay white at the edge, got \(highlight)")
+@Test func clarityKeepsAHighlightFarOverWhiteBesideBlack() {
+    // an HDR highlight: its luma unclipped drives Metal's tanh past 44, to NaN
+    let halves = redBitmap { x, _ in x < 128 ? 0 : 4096 }
+    let highlight = linearRed(of: Presence.clarity(halves, amount: 100))
+        .enumerated().filter { $0.offset % 256 >= 128 }.map(\.element)
+    #expect(highlight.allSatisfy { $0 >= 1 }, "the highlight must stay over white")
 }
 
 private func writeStripesPNG(stripe: Int) throws -> URL {
