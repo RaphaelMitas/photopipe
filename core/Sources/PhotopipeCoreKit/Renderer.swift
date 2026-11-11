@@ -18,7 +18,7 @@ public final class Renderer: @unchecked Sendable {
     private let curveColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
     // bump when the pixels change for an unchanged key
-    private static let pipelineVersion = 3
+    private static let pipelineVersion = 4
 
     /// None of these are zero, so a slider left alone has to reach for them.
     public struct RawDefaults: Sendable {
@@ -221,13 +221,8 @@ public final class Renderer: @unchecked Sendable {
         if edit.texture != 0 {
             image = Presence.texture(image, amount: edit.texture)
         }
-        if edit.vibrance != 0 {
-            image = image.applyingFilter(
-                "CIVibrance", parameters: ["inputAmount": edit.vibrance / 100])
-        }
-        if edit.saturation != 0 {
-            image = image.applyingFilter(
-                "CIColorControls", parameters: ["inputSaturation": 1 + edit.saturation / 100])
+        if edit.vibrance != 0 || edit.saturation != 0 {
+            image = Presence.chroma(image, vibrance: edit.vibrance, saturation: edit.saturation)
         }
         switch edit.normalizedRotation {
         case 90: image = image.oriented(forExifOrientation: 6)

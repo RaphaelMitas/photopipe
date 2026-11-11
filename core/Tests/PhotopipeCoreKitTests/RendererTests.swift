@@ -586,6 +586,66 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
     #expect(spread(vivid) > spread(neutral) + 3, "vibrance +100 must add colorfulness")
 }
 
+private let skin = [222.0, 170, 140]
+private let deepBlue = [65.0, 80, 200]
+private let foliage = [120.0, 190, 70]
+private let flowerRed = [200.0, 30, 40]
+
+private func chroma(
+    _ srgb: [Double], vibrance: Double = 0, saturation: Double = 0
+) -> [Double] {
+    let color = CIColor(red: srgb[0] / 255, green: srgb[1] / 255, blue: srgb[2] / 255)
+    let image = Presence.chroma(
+        CIImage(color: color).cropped(to: CGRect(x: 0, y: 0, width: 1, height: 1)),
+        vibrance: vibrance, saturation: saturation)
+    var pixel = [Float](repeating: 0, count: 4)
+    CIContext().render(
+        image, toBitmap: &pixel, rowBytes: 16, bounds: image.extent, format: .RGBAf,
+        colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB))
+    return pixel.prefix(3).map(Double.init)
+}
+
+private func oklab(_ rgb: [Double]) -> (lightness: Double, chroma: Double, hue: Double) {
+    let l = cbrt(0.4122214708 * rgb[0] + 0.5363325363 * rgb[1] + 0.0514459929 * rgb[2])
+    let m = cbrt(0.2119034982 * rgb[0] + 0.6806995451 * rgb[1] + 0.1073969566 * rgb[2])
+    let s = cbrt(0.0883024619 * rgb[0] + 0.2817188376 * rgb[1] + 0.6299787005 * rgb[2])
+    let a = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s
+    let b = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+    return (
+        0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s, hypot(a, b),
+        atan2(b, a) * 180 / .pi
+    )
+}
+
+@Test func chromaHoldsHueAndLightnessInsideSRGB() {
+    for color in [skin, deepBlue, foliage, flowerRed] {
+        let before = oklab(chroma(color))
+        for (vibrance, saturation) in [(0.0, 100.0), (0, -50), (100, 0), (-100, 0), (100, 100)] {
+            let rgb = chroma(color, vibrance: vibrance, saturation: saturation)
+            let after = oklab(rgb)
+            let edit = "\(color) at vibrance \(vibrance), saturation \(saturation) gave \(rgb)"
+            #expect(abs(after.lightness - before.lightness) < 0.002, "lightness moved: \(edit)")
+            #expect(abs(after.hue - before.hue) < 0.5, "hue moved: \(edit)")
+            #expect(rgb.allSatisfy { (-0.005...1.005).contains($0) }, "left sRGB: \(edit)")
+        }
+    }
+}
+
+@Test func saturationMinus100IsNeutral() throws {
+    for color in [skin, deepBlue, foliage, flowerRed] {
+        let rgb = chroma(color, saturation: -100)
+        #expect(try #require(rgb.max()) - #require(rgb.min()) < 1e-5, "\(color) kept a tint")
+    }
+}
+
+@Test func vibranceFavoursFaintColoursAndSparesSkin() {
+    func gain(_ color: [Double]) -> Double {
+        oklab(chroma(color, vibrance: 100)).chroma / oklab(chroma(color)).chroma
+    }
+    #expect(gain([150, 170, 200]) > gain(deepBlue) + 0.3, "a pale blue must gain more than a deep one")
+    #expect(gain(skin) < gain(skin.reversed()) - 0.15, "skin must gain less than its blue mirror")
+}
+
 @Test func rgbCurveBrightensMidtones() throws {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
