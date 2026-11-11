@@ -335,6 +335,9 @@ type CoreHandlers = {
   ) => CoreMethods[K]["result"];
 };
 
+const OPAQUE_PIXEL_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGP4DwABAQEAsTj2FAAAAABJRU5ErkJggg==";
+
 const E2E_HANDLERS: CoreHandlers = {
   listShoots: () => ({
     shoots: shoots.map((shoot) => ({ ...shoot, indexed: !indexing })),
@@ -358,6 +361,11 @@ const E2E_HANDLERS: CoreHandlers = {
   maskOverlay: ({ path, source, inverted }) => ({
     cachePath: `/fake/masks/${source}-${inverted}/${path}.png`,
   }),
+  maskAt: ({ x, y, include }) => ({
+    png: OPAQUE_PIXEL_PNG,
+    point: { x, y, include },
+  }),
+  maskSupport: () => ({ click: true }),
   render: ({ path, edit, viewport }) => {
     const real = storeSrc(path, editKey(edit) !== editKey(identityEdit));
     if (real) return { cachePath: real };

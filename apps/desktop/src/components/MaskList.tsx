@@ -11,15 +11,15 @@ import {
   type MaskShape,
   maskName,
 } from "@/lib/core";
-import { useMaskOverlay } from "@/lib/queries";
+import { useMaskOverlay, useMaskSupport } from "@/lib/queries";
 import { useShortcutLabel } from "@/lib/shortcuts";
 import type { MaskSession } from "@/lib/useMaskSession";
 import { ShortcutTooltip } from "./ShortcutTooltip";
 
 const CHIPS: MaskShape[] = [
-  { source: "subject", inverted: false },
-  { source: "people", inverted: false },
-  { source: "subject", inverted: true },
+  { source: "subject", inverted: false, points: [] },
+  { source: "people", inverted: false, points: [] },
+  { source: "subject", inverted: true, points: [] },
 ];
 
 const reveal = (field: HTMLElement | null) =>
@@ -31,6 +31,7 @@ type Props = { image: ImageFile; edit: Edit; masks: MaskSession };
 
 export function MaskList({ image, edit, masks }: Props) {
   const addKey = useShortcutLabel("mask.add");
+  const clickable = useMaskSupport().data?.click === true;
   return (
     <div className="flex flex-col gap-0.5">
       {edit.masks.length > 0 && (
@@ -75,7 +76,7 @@ export function MaskList({ image, edit, masks }: Props) {
             ))}
           </div>
           <p className="flex items-center text-2xs text-muted-foreground">
-            Pick what to mask
+            {clickable ? "Pick one, or click the photo" : "Pick what to mask"}
             <button
               type="button"
               aria-label="Cancel"

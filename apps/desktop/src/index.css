@@ -12,6 +12,7 @@
   --text-2xs--line-height: calc(1 / 0.6875);
   --color-mask: rgb(255 40 110);
   --color-mask-foreground: #ff8fb4;
+  --color-mask-pick: rgb(90 180 255);
   --animate-mask-flash: mask-flash 1.6s ease-out forwards;
 
   @keyframes mask-flash {

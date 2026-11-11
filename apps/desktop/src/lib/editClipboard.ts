@@ -1,10 +1,13 @@
-import { type Edit, framing } from "./core";
+import { type Edit, framing, type Mask } from "./core";
 
 export type EditClipboard = {
   path: string;
   edit: Edit;
   raw: boolean;
 };
+
+// a click points at one photo, where a chip names something every photo has
+export const travels = (mask: Mask) => mask.source !== "click";
 
 // A crop rect is normalized against its own turned frame, so the target keeps its own.
 // White balance is Kelvin on raw but incremental elsewhere, so it stays behind.
@@ -14,7 +17,14 @@ export function pasteEdit(
   clipboard: EditClipboard,
   targetRaw: boolean,
 ): Edit {
-  const pasted: Edit = { ...clipboard.edit, ...framing(target) };
+  const pasted: Edit = {
+    ...clipboard.edit,
+    ...framing(target),
+    masks: [
+      ...clipboard.edit.masks.filter(travels),
+      ...target.masks.filter((mask) => !travels(mask)),
+    ],
+  };
   if (targetRaw === clipboard.raw) return pasted;
   return {
     ...pasted,

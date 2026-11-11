@@ -268,12 +268,22 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     public func maskOverlay(
-        path: String, source: Mask.Source, inverted: Bool, edit: Edit, maxPixel: Int
+        path: String, source: Mask.Source, points: [Mask.Point], inverted: Bool, edit: Edit,
+        maxPixel: Int
     ) throws -> String {
         try renderer.maskOverlay(
-            file: recordUnderRoot(path: path), source: source, inverted: inverted, edit: edit,
-            maxPixel: maxPixel
+            file: recordUnderRoot(path: path), source: source, points: points, inverted: inverted,
+            edit: edit, maxPixel: maxPixel
         ).path
+    }
+
+    public func maskAt(
+        path: String, edit: Edit, points: [Mask.Point], inverted: Bool, at spot: CGPoint,
+        include: Bool, maxPixel: Int
+    ) throws -> Renderer.MaskPick {
+        try renderer.maskAt(
+            file: recordUnderRoot(path: path), edit: edit, points: points, inverted: inverted,
+            at: spot, include: include, maxPixel: maxPixel)
     }
 
     public func rawDefaults(path: String, decoderVersion: Int? = nil) throws

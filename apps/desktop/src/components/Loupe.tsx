@@ -7,6 +7,7 @@ import {
   type Flag,
   fileSrc,
   type ImageFile,
+  pointsKey,
   unedited,
 } from "@/lib/core";
 import {
@@ -26,6 +27,7 @@ import { flagPref } from "@/lib/pref";
 import {
   useDeferredEdit,
   useMaskOverlay,
+  useMaskSupport,
   usePrefetchRender,
   useRender,
   useThumbnail,
@@ -39,10 +41,12 @@ import {
 } from "@/lib/shortcuts";
 import { type Stack, stackRatingLabel, step, sweepStack } from "@/lib/stacks";
 import type { CropSession } from "@/lib/useCropSession";
+import { useMaskPick } from "@/lib/useMaskPick";
 import type { MaskSession } from "@/lib/useMaskSession";
 import {
   centerOn,
   clampPan,
+  photoPoint,
   viewportKey,
   viewportRequest,
   visibleRect,
@@ -208,6 +212,15 @@ export function Loupe({
     enabled: !cropping && !!image,
     resetKey: zoomKey,
   });
+  const clickable = useMaskSupport().data?.click === true && !cropping;
+  const pick = useMaskPick(image, edit, masks, (cursor) => {
+    const node = stageRef.current;
+    if (!node || !clickable || photoBox.width <= 0) return null;
+    const spot = photoPoint(zoom.state, cursorIn(node, cursor), photoBox);
+    const onPhoto =
+      Math.min(spot.x, spot.y) >= 0 && Math.max(spot.x, spot.y) <= 1;
+    return onPhoto ? spot : null;
+  });
   const wanted = useMemo(() => {
     const request = viewportRequest(
       zoom.state,
@@ -336,6 +349,24 @@ export function Loupe({
   const zoomTransform = zoom.state
     ? `translate(${zoom.state.tx}px, ${zoom.state.ty}px) scale(${zoom.state.scale})`
     : undefined;
+  const overlays = [
+    maskOverlay && masks.shown
+      ? {
+          key: `${masks.shown.source}|${pointsKey(masks.shown.points)}|${masks.shown.inverted}|${masks.fading}`,
+          testid: "mask-overlay",
+          look: cn("bg-mask/50", masks.fading && "animate-mask-flash"),
+          src: fileSrc(maskOverlay),
+        }
+      : null,
+    pick.preview
+      ? {
+          key: "preview",
+          testid: "mask-preview",
+          look: "bg-mask-pick/50",
+          src: `data:image/png;base64,${pick.preview}`,
+        }
+      : null,
+  ].filter((overlay) => overlay !== null);
   const ratio = cropDraft
     ? aspectRatioFor(
         cropDraft.aspect,
@@ -366,10 +397,23 @@ export function Loupe({
                   draftWithAngle(cropDraft, 0, displayWidth, displayHeight),
                 ),
             }
-          : zoom.stageProps)}
+          : {
+              ...zoom.stageProps,
+              onClick: pick.onClick,
+              onDoubleClick: (event: React.MouseEvent) => {
+                if (!pick.claims(event)) zoom.stageProps.onDoubleClick(event);
+              },
+              style: {
+                cursor:
+                  clickable && masks.creating
+                    ? "crosshair"
+                    : zoom.stageProps.style.cursor,
+              },
+            })}
       >
         <div
           className="absolute inset-0"
+          {...pick.photoProps}
           style={{
             transformOrigin: photoCenter
               ? `${photoCenter.x}px ${photoCenter.y}px`
@@ -407,28 +451,27 @@ export function Loupe({
           rect={sliceRect}
           alt={image.rel}
         />
-        {maskOverlay && masks.shown && (
+        {overlays.length > 0 && (
           <div
             className="pointer-events-none absolute inset-0"
             style={{ transformOrigin: "0 0", transform: zoomTransform }}
           >
-            <div
-              key={`${masks.shown.source}|${masks.shown.inverted}|${masks.fading}`}
-              data-testid="mask-overlay"
-              onAnimationEnd={masks.endFlash}
-              className={cn(
-                "mask-no-repeat absolute bg-mask/50",
-                masks.fading && "animate-mask-flash",
-              )}
-              style={{
-                left: photoBox.x,
-                top: photoBox.y,
-                width: photoBox.width,
-                height: photoBox.height,
-                maskImage: `url("${fileSrc(maskOverlay)}")`,
-                maskSize: "100% 100%",
-              }}
-            />
+            {overlays.map((overlay) => (
+              <div
+                key={overlay.key}
+                data-testid={overlay.testid}
+                onAnimationEnd={masks.endFlash}
+                className={cn("mask-no-repeat absolute", overlay.look)}
+                style={{
+                  left: photoBox.x,
+                  top: photoBox.y,
+                  width: photoBox.width,
+                  height: photoBox.height,
+                  maskImage: `url("${overlay.src}")`,
+                  maskSize: "100% 100%",
+                }}
+              />
+            ))}
           </div>
         )}
         {comparing && (
@@ -524,6 +567,7 @@ export function Loupe({
         )}
         {(render.isFetching ||
           !render.data ||
+          pick.busy ||
           (comparing && (before.isFetching || !before.data))) && (
           <div className="absolute top-3 right-3 h-2 w-2 animate-pulse rounded-full bg-primary" />
         )}

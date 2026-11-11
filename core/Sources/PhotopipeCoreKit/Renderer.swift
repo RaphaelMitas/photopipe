@@ -10,6 +10,12 @@ public final class Renderer: @unchecked Sendable {
         case encodeFailed
     }
 
+    public struct MaskPick: Encodable, Sendable {
+        public let png: Data
+        /// The click in the uncropped photo, as a mask stores it.
+        public let point: Mask.Point
+    }
+
     private let cache: CacheFolder
     private let masker: Masker
     private let context = CIContext(options: [.cacheIntermediates: true])
@@ -141,31 +147,63 @@ public final class Renderer: @unchecked Sendable {
 
     /// The mask as the alpha of a white image, framed like the render it lies over.
     public func maskOverlay(
-        file: ImageFile, source: Mask.Source, inverted: Bool, edit: Edit, maxPixel: Int
+        file: ImageFile, source: Mask.Source, points: [Mask.Point], inverted: Bool, edit: Edit,
+        maxPixel: Int
     ) throws -> URL {
-        guard maxPixel > 0 else { throw RenderError.encodeFailed }
         let framing = Edit(crop: edit.crop, cropAngle: edit.cropAngle, rotation: edit.rotation)
         let key =
-            "\(file.path)|\(file.mtime)|\(file.size)|overlay|\(source.rawValue)|\(inverted)|\(framing.cacheKey)|\(maxPixel)|m\(Masker.version)"
+            "\(file.path)|\(file.mtime)|\(file.size)|overlay|\(source.rawValue)|\(inverted)|\(framing.cacheKey)|\(maxPixel)\(points.cacheKey)|m\(Masker.version)"
         return try cache.cachedFile(at: cache.url(forKey: key, pathExtension: "png")) { temp in
-            let matte = try matte(for: file, source: source, inverted: inverted)
-            let coverage = CIImage(color: .white).cropped(to: matte.extent)
-                .applyingFilter("CIBlendWithRedMask", parameters: [kCIInputMaskImageKey: matte])
-            guard
-                let png = context.pngRepresentation(
-                    of: Self.fitted(
-                        Self.framed(coverage, framing, viewport: nil), longEdge: CGFloat(maxPixel)),
-                    format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
-            else { throw RenderError.encodeFailed }
-            try png.write(to: temp)
+            let matte = try matte(for: file, source: source, points: points, inverted: inverted)
+            try overlayPNG(of: matte, framing: framing, maxPixel: maxPixel).write(to: temp)
         }
     }
 
-    private func matte(for file: ImageFile, source: Mask.Source, inverted: Bool) throws -> CIImage {
-        let matte = try masker.matte(for: file, source: source) {
-            try sourceImage(
-                for: file, raw: file.isRaw ? makeFilter(for: file) : nil, edit: .identity,
-                maxPixel: Masker.inputLongEdge)
+    /// What a click on the framed photo would mask, on top of the clicks already made. Never
+    /// cached: the cursor asks on every move.
+    public func maskAt(
+        file: ImageFile, edit: Edit, points: [Mask.Point], inverted: Bool, at spot: CGPoint,
+        include: Bool, maxPixel: Int
+    ) throws -> MaskPick {
+        let photo = try masker.clickPhoto(for: file) { try neutral(for: file) }
+        let clicked = Self.unframed(spot, of: photo, edit)
+        // a ten-thousandth is a fifth of a pixel of what the model sees
+        func stored(_ fraction: CGFloat) -> Double {
+            (Double(min(max(fraction, 0), 1)) * 10_000).rounded() / 10_000
+        }
+        let point = Mask.Point(x: stored(clicked.x), y: stored(clicked.y), include: include)
+        let matte = try masker.found(in: photo, source: .click, points: points + [point])
+        return MaskPick(
+            png: try overlayPNG(
+                of: inverted ? matte.applyingFilter("CIColorInvert") : matte, framing: edit,
+                maxPixel: maxPixel),
+            point: point)
+    }
+
+    private func overlayPNG(of matte: CIImage, framing: Edit, maxPixel: Int) throws -> Data {
+        guard maxPixel > 0 else { throw RenderError.encodeFailed }
+        let coverage = CIImage(color: .white).cropped(to: matte.extent)
+            .applyingFilter("CIBlendWithRedMask", parameters: [kCIInputMaskImageKey: matte])
+        guard
+            let png = context.pngRepresentation(
+                of: Self.fitted(
+                    Self.framed(coverage, framing, viewport: nil), longEdge: CGFloat(maxPixel)),
+                format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+        else { throw RenderError.encodeFailed }
+        return png
+    }
+
+    private func neutral(for file: ImageFile) throws -> CIImage {
+        try sourceImage(
+            for: file, raw: file.isRaw ? makeFilter(for: file) : nil, edit: .identity,
+            maxPixel: Masker.inputLongEdge)
+    }
+
+    private func matte(
+        for file: ImageFile, source: Mask.Source, points: [Mask.Point], inverted: Bool
+    ) throws -> CIImage {
+        let matte = try masker.matte(for: file, source: source, points: points) {
+            try neutral(for: file)
         }
         return inverted ? matte.applyingFilter("CIColorInvert") : matte
     }
@@ -229,7 +267,8 @@ public final class Renderer: @unchecked Sendable {
         // after the photo's exposure and white balance, before its grade
         for mask in edit.masks where !mask.hidden && mask.adjust != .identity {
             let local = mask.adjust.edit
-            let matte = try matte(for: file, source: mask.source, inverted: mask.inverted)
+            let matte = try matte(
+                for: file, source: mask.source, points: mask.points, inverted: mask.inverted)
             image = graded(Self.incremental(image, local), local)
                 .applyingFilter(
                     "CIBlendWithRedMask",
@@ -301,11 +340,8 @@ public final class Renderer: @unchecked Sendable {
 
     private static func framed(_ source: CIImage, _ edit: Edit, viewport: CropRect?) -> CIImage {
         var image = source
-        switch edit.normalizedRotation {
-        case 90: image = image.oriented(forExifOrientation: 6)
-        case 180: image = image.oriented(forExifOrientation: 3)
-        case 270: image = image.oriented(forExifOrientation: 8)
-        default: break
+        if let turn = turn(edit) {
+            image = image.oriented(forExifOrientation: turn)
         }
         if edit.hasCropComponent {
             image = Self.applyCrop(edit, to: image)
@@ -314,6 +350,38 @@ public final class Renderer: @unchecked Sendable {
             image = Self.applyViewport(viewport, to: image)
         }
         return image
+    }
+
+    private static func turn(_ edit: Edit) -> Int32? {
+        switch edit.normalizedRotation {
+        case 90: 6
+        case 180: 3
+        case 270: 8
+        default: nil
+        }
+    }
+
+    /// Where a point of the framed photo lies in the photo itself, both in fractions from the
+    /// top left.
+    static func unframed(_ point: CGPoint, of photo: CIImage, _ edit: Edit) -> CGPoint {
+        var toFrame = CGAffineTransform.identity
+        var frame = photo.extent
+        if let turn = turn(edit) {
+            toFrame = photo.orientationTransform(forExifOrientation: turn)
+            frame = frame.applying(toFrame)
+        }
+        if edit.hasCropComponent, let crop = saneCrop(edit) {
+            let rect = pixelRect(for: crop, in: frame)
+            toFrame = toFrame.concatenating(straightening(edit, in: frame))
+                .concatenating(.init(translationX: -rect.minX, y: -rect.minY))
+            frame = CGRect(origin: .zero, size: rect.size)
+        }
+        let inPhoto = CGPoint(
+            x: frame.minX + point.x * frame.width, y: frame.minY + (1 - point.y) * frame.height
+        ).applying(toFrame.inverted())
+        return CGPoint(
+            x: (inPhoto.x - photo.extent.minX) / photo.extent.width,
+            y: 1 - (inPhoto.y - photo.extent.minY) / photo.extent.height)
     }
 
     static func saneCrop(_ edit: Edit) -> CropRect? {
@@ -350,18 +418,20 @@ public final class Renderer: @unchecked Sendable {
         let rect = pixelRect(for: crop, in: extent)
         var result = image
         if edit.cropAngle != 0 {
-            // pivot on center, matching the UI where the photo stays put
-            let center = CGPoint(x: extent.midX, y: extent.midY)
-            // CI is y-up, so on-screen-clockwise negates here; CSS gets it raw
-            let angle = -edit.cropAngle * .pi / 180
-            result = Straighten.transformed(
-                result,
-                by: CGAffineTransform(translationX: center.x, y: center.y)
-                    .rotated(by: angle)
-                    .translatedBy(x: -center.x, y: -center.y))
+            result = Straighten.transformed(result, by: straightening(edit, in: extent))
         }
         return result.cropped(to: rect)
             .transformed(by: .init(translationX: -rect.minX, y: -rect.minY))
+    }
+
+    static func straightening(_ edit: Edit, in extent: CGRect) -> CGAffineTransform {
+        // pivot on center, matching the UI where the photo stays put
+        let center = CGPoint(x: extent.midX, y: extent.midY)
+        // CI is y-up, so on-screen-clockwise negates here; CSS gets it raw
+        let angle = -edit.cropAngle * .pi / 180
+        return CGAffineTransform(translationX: center.x, y: center.y)
+            .rotated(by: angle)
+            .translatedBy(x: -center.x, y: -center.y)
     }
 
     /// Clamped and whole pixels, or a part-transparent edge row blurs into a bright band.

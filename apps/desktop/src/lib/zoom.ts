@@ -57,6 +57,19 @@ export function zoomAt(
   return clampPan(next, photo, viewWidth, viewHeight);
 }
 
+/// Where a point of the viewport falls on the photo, in fractions of it.
+export function photoPoint(
+  state: ZoomState | null,
+  cursor: { x: number; y: number },
+  photo: Box,
+) {
+  const { scale, tx, ty } = state ?? { scale: 1, tx: 0, ty: 0 };
+  return {
+    x: ((cursor.x - tx) / scale - photo.x) / photo.width,
+    y: ((cursor.y - ty) / scale - photo.y) / photo.height,
+  };
+}
+
 /// The visible part of the photo in photo-normalized coordinates (for the
 /// navigator's viewport rect).
 export function visibleRect(

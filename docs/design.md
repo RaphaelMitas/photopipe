@@ -165,12 +165,15 @@ says when it was left behind. There is no scope dialog: paste takes
 everything it can, every time, and ⌘Z takes it back.
 
 Masks travel with it and replace the masks the photo had. A mask is stored as
-what to find, so each photo it lands on gets its own subject.
+what to find, so each photo it lands on gets its own subject. A mask made by
+clicking is the exception: its clicks point at one photo, so it stays there,
+and a paste leaves the target's own click masks alone.
 
 ## A mask borrows the photo's sliders
 
 Masks is the first group in the edit panel. A mask is a region the core
-finds, Subject, People or Background, and a row in that group. Picking a row
+finds, Subject, People, Background or the object under a click, and a row in
+that group. Picking a row
 points the Tone and Color sliders at that mask, and the group headers say so
 in pink; Photo points them back. There is no second panel of local sliders to
 learn. Crop, curves, presence and denoise stay with the photo and leave the
@@ -181,8 +184,20 @@ that preview on hover and become a mask on click, which owns the sliders at
 once. The overlay flashes when a mask is picked and shows while its row is
 hovered; **O** holds it.
 
+While the field is open the photo takes clicks too. Moving over it shows, in
+light blue, what a click would take; the click makes that a mask called
+Object. The field stays open so the next click starts another mask, and
+**Esc** hands the photo back to zoom and pan. That is why a plain click only
+masks with the field open: everywhere else a click and a drag already mean
+something. With a click mask selected, **Shift**-click adds what is under the
+cursor and **Option**-click takes it away, field open or not, and the preview
+shows the result before the click. A tap on iPad picks directly, with no
+preview. Clicking needs macOS or iPadOS 27; on an older system the field
+offers the three chips and nothing else.
+
 The sidecar stores the definition, never the pixels: "the subject, inverted,
-half a stop up". That is why a pasted mask fits the photo it lands on and why
+half a stop up", or for a click mask the clicks themselves, as points on the
+uncropped photo. That is why a pasted mask fits the photo it lands on and why
 a mask survives a new crop. The price is that Lightroom does not see it. Temp
 and Tint on a mask are relative on every file, raws included, because a mask
 warms a region against the rest of the photo. A mask applies after the photo's
@@ -190,7 +205,8 @@ exposure and white balance and before the rest of its grade, so contrast,
 curves and colour shape the masked region too.
 
 A mask this build cannot read, one a newer build wrote, stays in the sidecar
-untouched. It is not shown and not rendered, and it survives every save.
+untouched. It is not shown and not rendered, and it survives every save. A
+click mask on a system that cannot find clicks is treated the same way.
 
 ## Before is the look, not the framing
 
@@ -221,7 +237,7 @@ protocol doesn't have yet; until then the job shows an indeterminate state.
 - **Edit-aware thumbnails** — the grid shows the unedited thumbnail with a
   small ±EV badge; only the loupe renders the edit. Rendering every edited
   thumbnail through the raw pipeline is a cost the badge defers.
-- **Masks you click or type** — the chips cover subject, people and
-  background; pointing at one object or naming it ("hair") comes after.
+- **Masks you type** — a click takes the whole object under it, usually the
+  whole person; naming a part ("hair", "dress") comes after.
 - **A catalogue.** Still the founding rule: the SQLite index is a rebuildable
   cache, never a source of truth.

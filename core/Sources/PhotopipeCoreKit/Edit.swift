@@ -119,25 +119,48 @@ public struct LocalAdjust: Codable, Equatable, Sendable {
 /// Only what to look for is stored; the pixels are found again per photo, so a pasted mask fits.
 public struct Mask: Codable, Equatable, Sendable {
     public enum Source: String, Codable, Sendable {
-        case subject, people
+        case subject, people, click
     }
+
+    /// A click on the uncropped photo, in fractions from its top left.
+    public struct Point: Codable, Equatable, Sendable {
+        public var x: Double
+        public var y: Double
+        public var include: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case x, y, include
+        }
+
+        public init(x: Double, y: Double, include: Bool) {
+            self.x = x
+            self.y = y
+            self.include = include
+        }
+    }
+
+    // a sidecar is anyone's to write, and every point costs a segmentation
+    static let pointLimit = 64
 
     public var id: String
     public var source: Source
+    /// The first click finds the object, each later one adds to it or takes away. Clicks only.
+    public var points: [Point]
     public var inverted: Bool
     public var hidden: Bool
     public var adjust: LocalAdjust
 
     enum CodingKeys: String, CodingKey {
-        case id, source, inverted, hidden, adjust
+        case id, source, points, inverted, hidden, adjust
     }
 
     public init(
-        id: String, source: Source, inverted: Bool = false, hidden: Bool = false,
-        adjust: LocalAdjust = .identity
+        id: String, source: Source, points: [Point] = [], inverted: Bool = false,
+        hidden: Bool = false, adjust: LocalAdjust = .identity
     ) {
         self.id = id
         self.source = source
+        self.points = points
         self.inverted = inverted
         self.hidden = hidden
         self.adjust = adjust
@@ -147,6 +170,7 @@ public struct Mask: Codable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         source = try container.decode(Source.self, forKey: .source)
+        points = try container.decodeIfPresent([Point].self, forKey: .points) ?? []
         inverted = try container.decodeIfPresent(Bool.self, forKey: .inverted) ?? false
         hidden = try container.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
         adjust = try container.decodeIfPresent(LocalAdjust.self, forKey: .adjust) ?? .identity
@@ -156,10 +180,16 @@ public struct Mask: Codable, Equatable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(source, forKey: .source)
+        if !points.isEmpty { try container.encode(points, forKey: .points) }
         if inverted { try container.encode(inverted, forKey: .inverted) }
         if hidden { try container.encode(hidden, forKey: .hidden) }
         if adjust != .identity { try container.encode(adjust, forKey: .adjust) }
     }
+}
+
+extension [Mask.Point] {
+    /// Empty without clicks, so the masks that have none keep their cache keys.
+    var cacheKey: String { map { "|\($0.x),\($0.y),\($0.include)" }.joined() }
 }
 
 /// Every per-photo adjustment. Curve points live in the unit square, empty

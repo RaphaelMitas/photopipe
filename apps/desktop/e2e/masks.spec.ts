@@ -94,3 +94,54 @@ test("a new mask flashes its overlay, and the flash ends by itself", async ({
   await expect(overlay).toBeVisible();
   await expect(overlay).toHaveCount(0);
 });
+
+test("a click on the photo becomes a mask, and Shift-click grows it", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("thumb").first().click();
+  const photo = page.getByTestId("loupe-image");
+  const preview = page.getByTestId("mask-preview");
+  const rows = page.getByRole("button", { name: "Object", exact: true });
+  await photo.hover();
+  await expect(photo).toBeVisible();
+  await expect(preview).toHaveCount(0);
+
+  await page.keyboard.press("m");
+  await expect(page.getByTestId("mask-field")).toContainText("click the photo");
+  await photo.hover({ position: { x: 200, y: 150 } });
+  await expect(preview).toBeVisible();
+
+  await photo.click({ position: { x: 200, y: 150 } });
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toHaveAttribute("aria-pressed", "true");
+  await expect(preview).toHaveCount(0);
+  await expect(page.getByTestId("mask-overlay")).toBeVisible();
+  await expect(page.getByTestId("mask-field")).toBeVisible();
+  await expect(page.getByTestId("history-undo")).toBeEnabled();
+
+  await photo.dblclick({ position: { x: 260, y: 150 } });
+  await expect(page.getByTestId("zoom-level")).toHaveCount(0);
+  await expect(rows).toHaveCount(2);
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("mask-field")).toHaveCount(0);
+  await photo.click({ position: { x: 300, y: 150 } });
+  await photo.hover({ position: { x: 310, y: 150 } });
+  await expect(preview).toHaveCount(0);
+  const history = page.getByTestId("history-popover").getByRole("button");
+  await page.getByTestId("history-toggle").click();
+  await expect(history).toHaveCount(3);
+  await page.keyboard.press("Escape");
+
+  await page.keyboard.down("Shift");
+  await photo.hover({ position: { x: 320, y: 150 } });
+  await expect(preview).toBeVisible();
+  await photo.click({ position: { x: 320, y: 150 }, modifiers: ["Shift"] });
+  await page.keyboard.up("Shift");
+  await expect(preview).toHaveCount(0);
+  await expect(rows).toHaveCount(2);
+
+  await page.getByTestId("history-toggle").click();
+  await expect(history).toHaveCount(4);
+});

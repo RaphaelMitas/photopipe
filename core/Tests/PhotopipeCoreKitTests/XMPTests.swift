@@ -1058,6 +1058,7 @@ private let someMasks = [
     let newer = [
         #"{"id":"sky","source":"sky"}"#,
         #"{"feather":20,"id":"soft","source":"subject"}"#,
+        #"{"id":"spot","points":[{"include":true,"radius":3,"x":0.5,"y":0.5}],"source":"click"}"#,
     ]
     func tag(_ entries: [String]) -> [XMP.TagWrite] {
         [XMP.TagWrite(.photopipe, "Masks", .scalar("[\(entries.joined(separator: ","))]"))]
@@ -1099,6 +1100,25 @@ private let someMasks = [
     #expect(
         try stored(XMP.sidecarURL(forImagePath: rated.path)) == "[\(newer.joined(separator: ","))]",
         "on iPad a rating is the first write, and it starts a sidecar")
+}
+
+@Test func aClickMaskIsShownOnlyWhereItCanBeFoundAndKeptEverywhere() throws {
+    let click = Mask(
+        id: "c", source: .click,
+        points: [Mask.Point(x: 0.5, y: 0.62, include: true), Mask.Point(x: 0.4, y: 0.3, include: false)],
+        adjust: LocalAdjust(exposure: 1))
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00015.ARW")
+    try Data("fake".utf8).write(to: arw)
+
+    try writeTextEdit(Edit(masks: [click]), at: arw)
+    let shown = XMP.read(file: try image(arw)).edit.masks
+    #expect(shown == (Masker.supports(.click) ? [click] : []))
+
+    try writeTextEdit(Edit(exposure: 1, masks: shown), at: arw)
+    let sidecar = try String(contentsOf: XMP.sidecarURL(forImagePath: arw.path), encoding: .utf8)
+    #expect(sidecar.contains("0.62"))
 }
 
 @Test func masksEmbeddedInAJPEGAreRead() throws {

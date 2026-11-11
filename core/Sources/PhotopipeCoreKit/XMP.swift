@@ -86,11 +86,15 @@ public enum XMP {
     private static func hasOnlyKnownKeys(_ entry: Any) -> Bool {
         guard let entry = entry as? [String: Any] else { return false }
         let adjust = entry["adjust"] as? [String: Any] ?? [:]
+        let points = entry["points"] as? [[String: Any]] ?? []
         return entry.keys.allSatisfy { Mask.CodingKeys(stringValue: $0) != nil }
             && adjust.keys.allSatisfy { LocalAdjust.CodingKeys(stringValue: $0) != nil }
+            && points.allSatisfy { point in
+                point.keys.allSatisfy { Mask.Point.CodingKeys(stringValue: $0) != nil }
+            }
     }
 
-    // an entry this build cannot read is a newer build's mask, kept as written for the next save
+    // an entry this build cannot read or find is a newer build's mask, kept as written for the next save
     private static func masks(fromJSON text: String?) -> (read: [Mask], unread: [String]) {
         guard let text,
             let entries = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [Any]
@@ -103,7 +107,9 @@ public enum XMP {
                 let json = try? JSONSerialization.data(
                     withJSONObject: entry, options: [.sortedKeys, .fragmentsAllowed])
             else { continue }
-            guard hasOnlyKnownKeys(entry), let mask = try? JSONDecoder().decode(Mask.self, from: json)
+            guard hasOnlyKnownKeys(entry),
+                let mask = try? JSONDecoder().decode(Mask.self, from: json),
+                Masker.supports(mask.source)
             else {
                 unread.append(String(decoding: json, as: UTF8.self))
                 continue

@@ -67,10 +67,21 @@ public final class Dispatcher: Sendable {
             let cachePath = try library.maskOverlay(
                 path: request.string("path"),
                 source: required("source", Mask.Source(rawValue: request.string("source"))),
+                points: request.decoded("points") ?? [],
                 inverted: request.param("inverted")?.boolValue ?? false,
                 edit: request.edit() ?? .identity,
                 maxPixel: request.param("maxPixel")?.intValue ?? 2000)
             return ["cachePath": cachePath]
+        case "maskAt":
+            return try library.maskAt(
+                path: request.string("path"), edit: request.edit() ?? .identity,
+                points: request.decoded("points") ?? [],
+                inverted: request.param("inverted")?.boolValue ?? false,
+                at: CGPoint(x: request.double("x"), y: request.double("y")),
+                include: request.param("include")?.boolValue ?? true,
+                maxPixel: request.param("maxPixel")?.intValue ?? 2000)
+        case "maskSupport":
+            return ["click": Masker.supports(.click)]
         case "setRating":
             return try library.setRating(
                 shoot: request.string("shoot"), path: request.string("path"),
@@ -168,12 +179,18 @@ extension Request {
         try required(key, param(key)?.intValue)
     }
 
+    fileprivate func double(_ key: String) throws -> Double {
+        try required(key, param(key)?.doubleValue)
+    }
+
     fileprivate func strings(_ key: String) throws -> [String] {
         try required(key, param(key)?.stringArrayValue)
     }
 
-    fileprivate func edit() throws -> Edit? {
-        guard let value = param("edit") else { return nil }
-        return try JSONDecoder().decode(Edit.self, from: JSONEncoder().encode(value))
+    fileprivate func decoded<Value: Decodable>(_ key: String) throws -> Value? {
+        guard let value = param(key) else { return nil }
+        return try JSONDecoder().decode(Value.self, from: JSONEncoder().encode(value))
     }
+
+    fileprivate func edit() throws -> Edit? { try decoded("edit") }
 }

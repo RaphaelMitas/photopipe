@@ -190,4 +190,12 @@ private let fixtureCases: [(name: String, points: [CurvePoint])] = [
             #""masks":[{"adjust":{"exposure":0.5},"id":"a","inverted":true,"source":"subject"},{"id":"b","source":"people"}]"#
         ))
     #expect(try JSONDecoder().decode(Edit.self, from: Data(masked.cacheKey.utf8)) == masked)
+
+    let clicked = Edit(masks: [
+        Mask(id: "c", source: .click, points: [Mask.Point(x: 0.5, y: 0.62, include: true)])
+    ])
+    #expect(
+        clicked.cacheKey.contains(
+            #"{"id":"c","points":[{"include":true,"x":0.5,"y":0.62}],"source":"click"}"#))
+    #expect(try JSONDecoder().decode(Edit.self, from: Data(clicked.cacheKey.utf8)) == clicked)
 }

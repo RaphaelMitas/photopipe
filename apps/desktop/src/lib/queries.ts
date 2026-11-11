@@ -35,6 +35,7 @@ import {
   normalizeEdit,
   normalizeImage,
   normalizeShoot,
+  pointsKey,
   type StatusResult,
   unedited,
 } from "./core";
@@ -191,6 +192,7 @@ export function useMaskOverlay(
       file?.mtime,
       shape?.source,
       shape?.inverted,
+      shape && pointsKey(shape.points),
       editKey(frame),
     ],
     queryFn:
@@ -201,6 +203,7 @@ export function useMaskOverlay(
                 path: file.path,
                 source: shape.source,
                 inverted: shape.inverted,
+                points: shape.points,
                 edit: frame,
                 maxPixel: MASK_OVERLAY_MAX_PIXEL,
               })
@@ -383,6 +386,14 @@ export function useRaw9Availability(enabled: boolean) {
     queryFn: async () =>
       (await coreRequest("decoderAvailability")).raw9 ?? null,
     enabled,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+export function useMaskSupport() {
+  return useQuery({
+    queryKey: ["maskSupport"],
+    queryFn: () => coreRequest("maskSupport"),
     staleTime: Number.POSITIVE_INFINITY,
   });
 }

@@ -50,7 +50,7 @@ import {
   identityEdit,
   isIdentityEdit,
 } from "@/lib/core";
-import { type EditClipboard, pasteEdit } from "@/lib/editClipboard";
+import { type EditClipboard, pasteEdit, travels } from "@/lib/editClipboard";
 import { useFeatures } from "@/lib/features";
 import { fileName } from "@/lib/fileName";
 import {
@@ -519,10 +519,9 @@ export default function App() {
       if (!readable(image)) return;
       const edit = editOf(image);
       setClipboard({ path: image.path, edit, raw: image.isRaw });
+      const carried = edit.masks.filter(travels).length;
       const what =
-        edit.masks.length > 0
-          ? `settings and ${pluralize(edit.masks.length, "mask")}`
-          : "settings";
+        carried > 0 ? `settings and ${pluralize(carried, "mask")}` : "settings";
       toast(`Copied ${what} from ${fileName(image.path)}`, {
         id: "clipboard",
       });
