@@ -551,16 +551,22 @@ public enum XMP {
         curve("ToneCurvePV2012Blue", edit.curveBlue)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let unread = masks(fromJSON: written?.value(.photopipe, "Masks")).unread
-        let entries =
-            try edit.masks.prefix(maskLimit - unread.count).map {
-                try String(decoding: encoder.encode($0), as: UTF8.self)
-            } + unread
-        tags.append(
-            TagWrite(
-                .photopipe, "Masks",
-                entries.isEmpty ? .remove : .scalar("[\(entries.joined(separator: ","))]")))
+        let unread = unreadMasks(in: written)
+        let known = try edit.masks.prefix(maskLimit - unread.count).map {
+            try String(decoding: encoder.encode($0), as: UTF8.self)
+        }
+        tags.append(masksTag(known + unread))
         return (tags, exifOrientationPin)
+    }
+
+    private static func unreadMasks(in written: XMPProperties?) -> [String] {
+        masks(fromJSON: written?.value(.photopipe, "Masks")).unread
+    }
+
+    private static func masksTag(_ entries: [String]) -> TagWrite {
+        TagWrite(
+            .photopipe, "Masks",
+            entries.isEmpty ? .remove : .scalar("[\(entries.joined(separator: ","))]"))
     }
 
     // serialized, so two writes can neither both seed a new sidecar nor lose each other's tags
@@ -596,9 +602,14 @@ public enum XMP {
     /// with the rating, flag and edit the file carried.
     static func embeddedTags(_ file: ImageFile) throws -> [TagWrite] {
         let (rating, flag, edit) = embedded(file)
-        guard (rating ?? 0) != 0 || (flag ?? 0) != 0 || !edit.isIdentity else { return [] }
+        // a mask only a newer build can read leaves the edit an identity, and still moves to the sidecar
+        let unread =
+            file.sidecarOnly
+            ? [] : unreadMasks(in: embeddedXMPProperties(at: URL(fileURLWithPath: file.path)))
+        guard (rating ?? 0) != 0 || (flag ?? 0) != 0 || !edit.isIdentity || !unread.isEmpty
+        else { return [] }
         // an untouched raw would otherwise start its sidecar with a WhiteBalance nobody set
-        let carriedEdit = try edit.isIdentity ? [] : editTags(edit, file: file).tags
+        let carriedEdit = try edit.isIdentity ? [masksTag(unread)] : editTags(edit, file: file).tags
         return ratingTags(rating ?? 0) + flagTags(flag ?? 0) + carriedEdit
     }
 }

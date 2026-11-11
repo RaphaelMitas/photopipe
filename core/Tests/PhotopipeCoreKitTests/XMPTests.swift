@@ -1090,6 +1090,15 @@ private let someMasks = [
         ["-overwrite_original"] + XMP.exiftoolArgs(tag(newer)) + [jpg.path])
     try XMP.writeEdit(Edit(exposure: 1), file: try image(jpg))
     #expect(try stored(jpg) == "[\(newer.joined(separator: ","))]")
+
+    let rated = dir.appendingPathComponent("DSC00014.JPG")
+    try writeGrayJPEG(to: rated)
+    try ExifTool.shared.write(
+        ["-overwrite_original"] + XMP.exiftoolArgs(tag(newer)) + [rated.path])
+    try XMP.writeText(XMP.ratingTags(3), clearing: false, file: try image(rated))
+    #expect(
+        try stored(XMP.sidecarURL(forImagePath: rated.path)) == "[\(newer.joined(separator: ","))]",
+        "on iPad a rating is the first write, and it starts a sidecar")
 }
 
 @Test func masksEmbeddedInAJPEGAreRead() throws {
