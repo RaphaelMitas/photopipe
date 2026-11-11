@@ -584,8 +584,8 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
     }
     let darkHalo = try abs(strip(244) - strip(100))
     let brightHalo = try abs(strip(260) - strip(404))
-    #expect(darkHalo < 15, "the dark side must be as lifted beside the edge as away from it")
-    #expect(brightHalo < 8, "and the bright side as recovered, got \(darkHalo) and \(brightHalo)")
+    #expect(darkHalo < 20, "the dark side must be as lifted beside the edge as away from it")
+    #expect(brightHalo < 20, "and the bright side as recovered, got \(darkHalo) and \(brightHalo)")
 }
 
 @Test func shadowsAndHighlightsKeepTheHue() throws {

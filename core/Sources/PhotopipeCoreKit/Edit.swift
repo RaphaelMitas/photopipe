@@ -184,12 +184,6 @@ public struct Edit: Codable, Equatable, Sendable {
         [90, 180, 270].contains(rotation) ? rotation : 0
     }
 
-    public var hasToneComponent: Bool {
-        whites != 0 || blacks != 0
-            || !Curve.isIdentity(curveRGB) || !Curve.isIdentity(curveRed)
-            || !Curve.isIdentity(curveGreen) || !Curve.isIdentity(curveBlue)
-    }
-
     /// Deterministic representation for render cache keys.
     public var cacheKey: String {
         let encoder = JSONEncoder()
@@ -283,10 +277,12 @@ public enum ToneLUT {
     public static let resolution = 256
 
     public static func samples(for edit: Edit) -> [Float]? {
-        guard edit.hasToneComponent else { return nil }
+        let curves = [edit.curveRGB, edit.curveRed, edit.curveGreen, edit.curveBlue]
+        guard edit.whites != 0 || edit.blacks != 0 || !curves.allSatisfy(Curve.isIdentity) else {
+            return nil
+        }
 
-        // blacks/whites weigh heaviest at the ends themselves, which is what
-        // moves the black and white point instead of only recovering detail
+        // pow 8 keeps the shift at the very ends, so it moves the black and white point
         let b = edit.blacks / 100 * 0.15
         let w = edit.whites / 100 * 0.15
         var tone = (0..<resolution).map { i -> Double in
