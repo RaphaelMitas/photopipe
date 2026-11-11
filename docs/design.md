@@ -192,8 +192,11 @@ masks with the field open: everywhere else a click and a drag already mean
 something. With a click mask selected, **Shift**-click adds what is under the
 cursor and **Option**-click takes it away, field open or not, and the preview
 shows the result before the click. A tap on iPad picks directly, with no
-preview. Clicking needs macOS or iPadOS 27; on an older system the field
-offers the three chips and nothing else. A mask takes 16 clicks.
+preview. A mask takes 16 clicks.
+
+One model cuts every mask, the chips included, because it draws the best
+outline. It ships with macOS and iPadOS 27, so masking needs that system: on
+an older one the Masks group is not there.
 
 The sidecar stores the definition, never the pixels: "the subject, inverted,
 half a stop up", or for a click mask the clicks themselves, as points on the
@@ -206,8 +209,8 @@ curves and colour shape the masked region too.
 
 A mask this build cannot read, one a newer build wrote, stays in the sidecar
 untouched. It is not shown and not rendered, and it survives every save in
-its place among the others. A click mask on a system that cannot find clicks
-is treated the same way.
+its place among the others. On a system that cannot mask, every mask is
+treated the same way.
 
 ## Before is the look, not the framing
 

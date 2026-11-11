@@ -390,12 +390,14 @@ export function useRaw9Availability(enabled: boolean) {
   });
 }
 
-export function useMaskSupport() {
-  return useQuery({
+/// 0 where the system cannot mask.
+export function useMaskClickLimit() {
+  const support = useQuery({
     queryKey: ["maskSupport"],
     queryFn: () => coreRequest("maskSupport"),
     staleTime: Number.POSITIVE_INFINITY,
   });
+  return support.data?.clicks ?? 0;
 }
 
 const SET_RATING_KEY = ["setRating"];

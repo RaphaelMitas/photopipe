@@ -15,7 +15,7 @@ import {
   pointsKey,
   unedited,
 } from "./core";
-import { useMaskSupport } from "./queries";
+import { useMaskClickLimit } from "./queries";
 import type { MaskSession } from "./useMaskSession";
 
 type Ask = CoreMethods["maskAt"]["params"];
@@ -42,7 +42,7 @@ export function useMaskPick(
   const target = masks.target;
   // a preview or a click lands only on the photo, frame and mask it was asked about
   const scene = `${image?.path}|${editKey(frame)}|${masks.creating}|${target?.id}|${target?.inverted}|${pointsKey(target?.points ?? [])}`;
-  const clickLimit = useMaskSupport().data?.clicks ?? 0;
+  const clickLimit = useMaskClickLimit();
   const [answer, setAnswer] = useState<{ scene: string; png: string } | null>(
     null,
   );

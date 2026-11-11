@@ -3,24 +3,31 @@ import Foundation
 import Vision
 
 enum TapToSegment {
+    enum Seed: Sendable {
+        /// The first has to include: it finds the object, the rest refine it.
+        case clicks([Mask.Point])
+        /// The model clicks for itself: the mask's deepest spot, then the deepest it still misses.
+        case covering(RoughMask)
+        /// One answer for each.
+        case scribbles([RoughMask])
+    }
+
     // the request arrives with the macOS 27 SDK, and Swift 6.4 is the first toolchain to carry it
     #if compiler(>=6.4)
         static var isAvailable: Bool {
             if #available(macOS 27, iOS 27, *) { true } else { false }
         }
 
-        /// nil when there is nothing to find: the first click has to include.
-        static func matte(in photo: CIImage, at points: [Mask.Point]) throws -> CIImage? {
-            guard #available(macOS 27, iOS 27, *), let seed = points.first, seed.include else {
-                return nil
-            }
+        /// Empty when there is nothing to find.
+        static func mattes(in photo: CIImage, from seed: Seed) throws -> [CIImage] {
+            guard #available(macOS 27, iOS 27, *) else { return [] }
             guard let image = photo.cgImage ?? CIContext().createCGImage(photo, from: photo.extent)
             else { throw Renderer.RenderError.encodeFailed }
             let done = DispatchSemaphore(value: 0)
             let answer = Answer()
             Task.detached {
                 do {
-                    answer.result = .success(try await segment(image, seed: seed, then: points.dropFirst()))
+                    answer.result = .success(try await segment(image, from: seed))
                 } catch {
                     answer.result = .failure(error)
                 }
@@ -31,23 +38,71 @@ enum TapToSegment {
         }
 
         @available(macOS 27, iOS 27, *)
-        private static func segment(
-            _ image: CGImage, seed: Mask.Point, then refinements: ArraySlice<Mask.Point>
-        ) async throws -> CGImage? {
-            let request = GenerateIterativeSegmentationRequest(seedPoint: normalized(seed))
-            request.qualityLevel = .accurate
-            if case .ready = await request.assetStatus {} else { try await request.downloadAssets() }
+        private static func segment(_ image: CGImage, from seed: Seed) async throws -> [CGImage] {
             let handler = ImageRequestHandler(image)
-            var found = try await handler.perform(request)
-            for point in refinements {
+            let context = CIContext(options: [.workingColorSpace: NSNull()])
+            switch seed {
+            case .clicks(let points):
+                guard let first = points.first, first.include else { return [] }
+                var rest = points.dropFirst().makeIterator()
+                return try await grown(from: first, with: handler) { _ in rest.next() }
+            case .covering(let wanted):
+                guard let first = wanted.deepest() else { return [] }
+                var clicks = 1
+                return try await grown(from: first.spot, with: handler) { found in
+                    guard let found, clicks < ownClickLimit else { return nil }
+                    clicks += 1
+                    let photo = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+                    return wanted.spotMissed(
+                        by: RoughMask(
+                            CIImage(cgImage: found, options: [.colorSpace: NSNull()]), over: photo,
+                            context: context))
+                }
+            case .scribbles(let scribbles):
+                var found: [CGImage] = []
+                for scribble in scribbles {
+                    let buffer = try scribble.scribble(
+                        width: image.width, height: image.height, context: context)
+                    let request = try await ready(
+                        GenerateIterativeSegmentationRequest(
+                            seedScribbleBuffer: CVReadOnlyPixelBuffer(unsafeBuffer: buffer)))
+                    if let answer = try await handler.perform(request) {
+                        found.append(try answer.cgImage)
+                    }
+                }
+                return found
+            }
+        }
+
+        private static let ownClickLimit = 8
+
+        /// `next` sees the answer so far and names the click that refines it.
+        @available(macOS 27, iOS 27, *)
+        private static func grown(
+            from seed: Mask.Point, with handler: ImageRequestHandler,
+            next: (CGImage?) -> Mask.Point?
+        ) async throws -> [CGImage] {
+            let request = try await ready(
+                GenerateIterativeSegmentationRequest(seedPoint: normalized(seed)))
+            var found = try await handler.perform(request)?.cgImage
+            while let point = next(found) {
                 if point.include {
                     try request.addIncludedPoint(normalized(point))
                 } else {
                     try request.addExcludedPoint(normalized(point))
                 }
-                found = try await handler.perform(request)
+                found = try await handler.perform(request)?.cgImage
             }
-            return try found?.cgImage
+            return found.map { [$0] } ?? []
+        }
+
+        @available(macOS 27, iOS 27, *)
+        private static func ready(
+            _ request: GenerateIterativeSegmentationRequest
+        ) async throws -> GenerateIterativeSegmentationRequest {
+            request.qualityLevel = .accurate
+            if case .ready = await request.assetStatus {} else { try await request.downloadAssets() }
+            return request
         }
 
         @available(macOS 27, iOS 27, *)
@@ -57,11 +112,11 @@ enum TapToSegment {
         }
 
         private final class Answer: @unchecked Sendable {
-            var result: Result<CGImage?, any Error> = .success(nil)
+            var result: Result<[CGImage], any Error> = .success([])
         }
     #else
         static let isAvailable = false
 
-        static func matte(in photo: CIImage, at points: [Mask.Point]) throws -> CIImage? { nil }
+        static func mattes(in photo: CIImage, from seed: Seed) throws -> [CIImage] { [] }
     #endif
 }

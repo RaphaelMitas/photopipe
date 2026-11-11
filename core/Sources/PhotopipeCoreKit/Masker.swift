@@ -8,23 +8,22 @@ struct Masker {
 
     static let inputLongEdge = 2048
     // bump when the same photo would get a different matte
-    static let version = 4
+    static let version = 5
 
     let cache: CacheFolder
     let segment: Segment
     // a matte is coverage, not colour: managed, a half would come back as a fifth
     private let context = CIContext(options: [.workingColorSpace: NSNull()])
     private let photoContext = CIContext()
-    private let clicked = LastPhoto()
+    private let brightened = LastPhoto()
 
     init(cache: CacheFolder, segment: @escaping Segment) {
         self.cache = cache
         self.segment = segment
     }
 
-    static func supports(_ source: Mask.Source) -> Bool {
-        source != .click || TapToSegment.isAvailable
-    }
+    /// Every mask is cut by the click model, so without it there are none.
+    static var isAvailable: Bool { TapToSegment.isAvailable }
 
     /// `neutral` is the photo before any edit, so one matte serves every edit of it.
     func matte(
@@ -34,11 +33,11 @@ struct Masker {
         let key =
             "\(file.path)|\(file.mtime)|\(file.size)|matte|\(source.rawValue)\(points.cacheKey)|v\(Self.version)"
         let url = try cache.cachedFile(at: cache.url(forKey: key, pathExtension: "png")) { temp in
-            let photo =
-                try source == .click ? clickPhoto(for: file, neutral: neutral) : neutral()
             guard
                 let png = context.pngRepresentation(
-                    of: try found(in: photo, source: source, points: points), format: .L8,
+                    of: try found(
+                        in: try brightPhoto(for: file, neutral: neutral), source: source,
+                        points: points), format: .L8,
                     colorSpace: CGColorSpace(name: CGColorSpace.linearGray)!)
             else { throw Renderer.RenderError.encodeFailed }
             try png.write(to: temp)
@@ -50,14 +49,13 @@ struct Masker {
     }
 
     func found(in photo: CIImage, source: Mask.Source, points: [Mask.Point]) throws -> CIImage {
-        let segmented = try segment(photo, source, points)
-        // Vision answers people in a fixed 3:4 whatever the photo's shape
-        return Self.stretched(segmented, over: photo.extent).applyingFilter("CIMaximumComponent")
+        Self.stretched(try segment(photo, source, points), over: photo.extent)
+            .applyingFilter("CIMaximumComponent")
     }
 
     /// Drawn once and kept, so the cursor's next question does not wait on a decode.
-    func clickPhoto(for file: ImageFile, neutral: () throws -> CIImage) throws -> CIImage {
-        try clicked.photo(for: "\(file.path)|\(file.mtime)|\(file.size)") {
+    func brightPhoto(for file: ImageFile, neutral: () throws -> CIImage) throws -> CIImage {
+        try brightened.photo(for: "\(file.path)|\(file.mtime)|\(file.size)") {
             let photo = try neutral()
             // half floats, so lifting the shadows does not band them
             guard
@@ -94,31 +92,55 @@ struct Masker {
             .cropped(to: extent)
     }
 
+    /// The older models only say where: who the subject is, where each person stands.
     static let vision: Segment = { photo, source, points in
         let nothing = CIImage(color: .black).cropped(to: photo.extent)
         let handler = VNImageRequestHandler(ciImage: photo)
-        let found: CVPixelBuffer?
+        let context = CIContext(options: [.workingColorSpace: NSNull()])
+        func rough(_ found: CVPixelBuffer) -> RoughMask {
+            RoughMask(
+                CIImage(cvPixelBuffer: found, options: [.colorSpace: NSNull()]), over: photo.extent,
+                context: context)
+        }
+        var seed = TapToSegment.Seed.clicks(points)
         switch source {
         case .click:
-            return try TapToSegment.matte(in: photo, at: points) ?? nothing
-        case .people:
-            let request = VNGeneratePersonSegmentationRequest()
-            request.qualityLevel = .accurate
-            request.outputPixelFormat = kCVPixelFormatType_OneComponent8
-            try handler.perform([request])
-            found = request.results?.first?.pixelBuffer
+            break
         case .subject:
             let request = VNGenerateForegroundInstanceMaskRequest()
             try handler.perform([request])
-            found = try request.results?.first.flatMap { subjects in
-                subjects.allInstances.isEmpty
-                    ? nil
-                    : try subjects.generateScaledMaskForImage(
-                        forInstances: subjects.allInstances, from: handler)
+            guard let subjects = request.results?.first, !subjects.allInstances.isEmpty else {
+                return nothing
             }
+            seed = .covering(
+                rough(
+                    try subjects.generateScaledMaskForImage(
+                        forInstances: subjects.allInstances, from: handler)))
+        case .people:
+            let everyone = VNGeneratePersonSegmentationRequest()
+            everyone.qualityLevel = .accurate
+            everyone.outputPixelFormat = kCVPixelFormatType_OneComponent8
+            let bodies = VNDetectHumanRectanglesRequest()
+            bodies.upperBodyOnly = false
+            try handler.perform([everyone, bodies])
+            guard let crowd = everyone.results?.first.map({ rough($0.pixelBuffer) }), crowd.count > 0
+            else { return nothing }
+            let boxes = (bodies.results ?? []).map { body in
+                // Vision counts up from the bottom
+                let box = body.boundingBox
+                return CGRect(x: box.minX, y: 1 - box.maxY, width: box.width, height: box.height)
+            }
+            // the detector misses people the mask has, and they go in together
+            let missed = [crowd.outside(boxes)].filter { $0.isMuch(of: crowd) }
+            seed = .scribbles(boxes.map(crowd.inside).filter { $0.count > 0 } + missed)
         }
-        guard let found else { return nothing }
-        return CIImage(cvPixelBuffer: found, options: [.colorSpace: NSNull()])
+        let found = try TapToSegment.mattes(in: photo, from: seed).map {
+            stretched($0, over: photo.extent)
+        }
+        return found.dropFirst().reduce(found.first) { union, matte in
+            matte.applyingFilter(
+                "CIMaximumCompositing", parameters: [kCIInputBackgroundImageKey: union as Any])
+        } ?? nothing
     }
 }
 

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { openZell } from "./open-shoot";
+import { openShoot, openZell } from "./open-shoot";
 
 test("a chip becomes a mask that owns the sliders until Photo takes them back", async ({
   page,
@@ -179,4 +179,15 @@ test("with the split on, only the edited half previews and takes a click", async
   await photo.click({ position: before });
   await photo.click({ position: edited });
   await expect(rows).toHaveCount(1);
+});
+
+test("a system that cannot mask has no Masks group and M opens nothing", async ({
+  page,
+}) => {
+  await openShoot(page, "2026-07-12_zell", { url: "/?nomasks" });
+  await page.getByTestId("thumb").first().click();
+  await expect(page.getByTestId("exposure")).toBeVisible();
+  await page.keyboard.press("m");
+  await expect(page.getByTestId("mask-add")).toHaveCount(0);
+  await expect(page.getByTestId("mask-field")).toHaveCount(0);
 });

@@ -365,7 +365,9 @@ const E2E_HANDLERS: CoreHandlers = {
     png: OPAQUE_PIXEL_PNG,
     point: { x, y, include },
   }),
-  maskSupport: () => ({ clicks: 16 }),
+  maskSupport: () => ({
+    clicks: location.search.includes("nomasks") ? 0 : 16,
+  }),
   render: ({ path, edit, viewport }) => {
     const real = storeSrc(path, editKey(edit) !== editKey(identityEdit));
     if (real) return { cachePath: real };

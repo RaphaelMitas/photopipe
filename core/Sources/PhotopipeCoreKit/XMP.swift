@@ -115,7 +115,7 @@ public enum XMP {
             else { continue }
             guard hasOnlyKnownKeys(entry),
                 let mask = try? JSONDecoder().decode(Mask.self, from: json),
-                Masker.supports(mask.source),
+                Masker.isAvailable,
                 mask.points.count <= (mask.source == .click ? Mask.clickLimit : 0)
             else {
                 unread.append(

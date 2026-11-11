@@ -22,24 +22,32 @@ Stack, testing strategy, CI and releases.
   the one inside a CR3. A raw other than a DNG gets Lightroom's
   `DSC0001.xmp`; anything else keeps its extension
   (`DSC0001.HEIC.photopipe.xmp`), and from then on the Mac uses it too.
-- **Masks** come from Vision: person segmentation for People, foreground
-  instances for Subject, and Background is Subject inverted. The edit carries
-  each mask's definition and sliders as one JSON value in
-  `photopipe:Masks`, a namespace exiftool only writes because the core starts
-  it with a config that declares it. The matte is a PNG in the rebuildable
-  cache, one per photo and source, and per list of clicks for a click mask,
-  found on the unedited photo so every edit of it shares one. A click mask is
-  Vision's tap to segment (`GenerateIterativeSegmentationRequest`), replayed
-  from its stored points on a copy of the photo brightened toward middle
-  grey, by at most four stops, because the model misses edges on a dark
+- **Masks** are all cut by one model, Vision's tap to segment
+  (`GenerateIterativeSegmentationRequest`), because it draws the best
+  outline. It has to be told where to look, so a chip asks an older Vision
+  model first. Subject takes the foreground instances and clicks for itself:
+  the deepest spot of that mask, then the deepest spot the answer still
+  misses, until little is missed or eight clicks are spent. People takes the
+  person segmentation inside each detected body's box as a scribble, one
+  answer a person, since a box or a point drops a dancer when two overlap;
+  what the person segmentation has outside every box goes in as one more
+  scribble, and the answers are joined. Background is Subject inverted. A
+  click mask replays its stored points. The edit carries each mask's
+  definition and sliders as one JSON value in `photopipe:Masks`, a namespace
+  exiftool only writes because the core starts it with a config that
+  declares it. The matte is a PNG in the rebuildable cache, one per photo
+  and source, and per list of clicks for a click mask, found on the unedited
+  photo so every edit of it shares one, on a copy brightened toward middle
+  grey, by at most four stops, because the models miss edges on a dark
   frame. Every click is a pass of the model, so a mask takes 16 and a
   sidecar's mask with more stays unread. The request only exists in the 27
   SDK, so the call sits behind `#if compiler(>=6.4)` and `#available`: an
-  older toolchain builds a core without click masks, and `maskSupport` tells
-  the UI. The index rebuilds its file rows when the core gains or loses
-  clicks, since the same sidecar reads differently on each. The hover preview
-  goes through `maskAt`, which answers with the overlay as bytes and never
-  touches the cache. The reader keeps every entry it cannot decode, and a
+  older toolchain or system gets a core without masks, `maskSupport` answers
+  zero clicks, the UI drops the Masks group, and every mask in a sidecar is
+  an unread entry. The index rebuilds its file rows when the core gains or
+  loses masking, since the same sidecar reads differently on each. The hover
+  preview goes through `maskAt`, which answers with the overlay as bytes and
+  never touches the cache. The reader keeps every entry it cannot decode, and a
   mask with a key it does not know, as raw JSON, and the writer puts them
   back behind the masks the file had before them, since masks render in
   order: an older build must never delete or move a newer build's mask.

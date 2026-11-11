@@ -163,7 +163,7 @@ public final class Renderer: @unchecked Sendable {
         file: ImageFile, edit: Edit, points: [Mask.Point], inverted: Bool, at framedSpot: CGPoint,
         include: Bool, maxPixel: Int
     ) throws -> MaskPick {
-        let photo = try masker.clickPhoto(for: file) { try neutral(for: file) }
+        let photo = try masker.brightPhoto(for: file) { try neutral(for: file) }
         let clicked = Self.unframed(framedSpot, of: photo, edit)
         // a ten-thousandth is a fifth of a pixel of what the model sees
         func stored(_ fraction: CGFloat) -> Double {

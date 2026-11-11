@@ -1791,26 +1791,72 @@ private let aroundTheLastClick: Masker.Segment = { photo, _, points in
     #expect(segmented.withLock { $0 } == 2)
 }
 
-@Test func aClickIsLookedForInABrightenedCopyOfADarkPhoto() throws {
+@Test func aMaskIsLookedForInABrightenedCopyOfADarkPhoto() throws {
     let cacheDir = tempCacheDir()
     let jpeg = try writeSyntheticJPEG(color: gray(0.1))
     defer {
         try? FileManager.default.removeItem(at: cacheDir)
         try? FileManager.default.removeItem(at: jpeg)
     }
+    let centre = CGPoint(x: 32, y: 32)
     let seen = Mutex<[Mask.Source: UInt8]>([:])
     let renderer = Renderer(cacheDir: cacheDir) { photo, source, _ in
-        let red = pixel(of: photo, at: CGPoint(x: 32, y: 32))[0]
+        let red = pixel(of: photo, at: centre)[0]
         seen.withLock { $0[source] = red }
         return CIImage(color: .black).cropped(to: photo.extent)
     }
     let file = try imageFile(for: jpeg)
-    for source in [Mask.Source.subject, .click] {
+    for source in [Mask.Source.subject, .people, .click] {
         _ = try renderer.maskOverlay(
             file: file, source: source, points: [], inverted: false, edit: .identity, maxPixel: 64)
     }
+    let dark = pixel(of: try #require(CIImage(contentsOf: jpeg)), at: centre)[0]
     let levels = seen.withLock { $0 }
-    #expect(try #require(levels[.click]) > #require(levels[.subject]) + 50)
+    #expect(levels.count == 3)
+    #expect(levels.values.allSatisfy { $0 > dark + 50 })
+}
+
+private let unmanaged = CIContext(options: [.workingColorSpace: NSNull()])
+
+private func roughMask(white: [CGRect], in photo: CGRect) -> RoughMask {
+    RoughMask(
+        white.reduce(CIImage(color: .black).cropped(to: photo)) {
+            CIImage(color: .white).cropped(to: $1).composited(over: $0)
+        }, over: photo, context: unmanaged)
+}
+
+@Test func aRoughMaskCountsFromTheTopLikeAClick() throws {
+    let photo = CGRect(x: 0, y: 0, width: 640, height: 320)
+    let topLeftQuarter = CGRect(x: 0, y: 0, width: 0.5, height: 0.5)
+    // Core Image counts from below
+    let mask = roughMask(white: [CGRect(x: 0, y: 160, width: 320, height: 160)], in: photo)
+    let deepest = try #require(mask.deepest()).spot
+    #expect(deepest.x < 0.5 && deepest.y < 0.5)
+    #expect(mask.inside(topLeftQuarter) == mask)
+    #expect(mask.outside([topLeftQuarter]).count == 0)
+
+    let scribble = try mask.scribble(width: 640, height: 320, context: unmanaged)
+    let back = RoughMask(
+        CIImage(cvPixelBuffer: scribble, options: [.colorSpace: NSNull()]), over: photo,
+        context: unmanaged)
+    #expect(back == mask)
+}
+
+@Test func theNextClickGoesWhereMostIsMissedAndStopsWhenLittleIs() throws {
+    let photo = CGRect(x: 0, y: 0, width: 320, height: 320)
+    let left = CGRect(x: 20, y: 100, width: 100, height: 100)
+    let right = CGRect(x: 200, y: 100, width: 100, height: 100)
+    let wanted = roughMask(white: [left, right], in: photo)
+    func next(found: [CGRect]) -> Mask.Point? {
+        wanted.spotMissed(by: roughMask(white: found, in: photo))
+    }
+
+    let click = try #require(next(found: [left]))
+    #expect(right.contains(CGPoint(x: click.x * 320, y: click.y * 320)))
+    #expect(next(found: [left, right.insetBy(dx: 3, dy: 3)]) == nil, "a rim is not worth a click")
+    #expect(
+        next(found: [left, right.divided(atDistance: 92, from: .minXEdge).slice]) == nil,
+        "nor is a twentieth of the mask")
 }
 
 @Test func aMaskOnARawAdjustsItsRegionToo() throws {

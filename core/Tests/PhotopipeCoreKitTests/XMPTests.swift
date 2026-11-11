@@ -1029,7 +1029,7 @@ private let someMasks = [
     Mask(id: "b", source: .people, hidden: true),
 ]
 
-@Test func masksRoundTripThroughBothWriters() throws {
+@Test(.enabled(if: Masker.isAvailable)) func masksRoundTripThroughBothWriters() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
     let arw = dir.appendingPathComponent("DSC00010.ARW")
@@ -1058,7 +1058,7 @@ private func masksTag(_ entries: [String]) -> [XMP.TagWrite] {
     [XMP.TagWrite(.photopipe, "Masks", .scalar("[\(entries.joined(separator: ","))]"))]
 }
 
-@Test func aMaskANewerBuildWroteSurvivesASaveHere() throws {
+@Test(.enabled(if: Masker.isAvailable)) func aMaskANewerBuildWroteSurvivesASaveHere() throws {
     let newer = [
         #"{"id":"sky","source":"sky"}"#,
         #"{"feather":20,"id":"soft","source":"subject"}"#,
@@ -1103,7 +1103,7 @@ private func masksTag(_ entries: [String]) -> [XMP.TagWrite] {
         "on iPad a rating is the first write, and it starts a sidecar")
 }
 
-@Test func aMaskThisBuildCannotReadKeepsItsPlaceAmongTheOthers() throws {
+@Test(.enabled(if: Masker.isAvailable)) func aMaskThisBuildCannotReadKeepsItsPlaceAmongTheOthers() throws {
     let entries = [
         #"{"id":"kept1","source":"people"}"#, #"{"id":"future","source":"sky"}"#,
         #"{"id":"kept2","source":"subject"}"#,
@@ -1140,7 +1140,7 @@ private func masksTag(_ entries: [String]) -> [XMP.TagWrite] {
 
     try writeTextEdit(Edit(masks: [click]), at: arw)
     let shown = XMP.read(file: try image(arw)).edit.masks
-    #expect(shown == (Masker.supports(.click) ? [click] : []))
+    #expect(shown == (Masker.isAvailable ? [click] : []))
 
     try writeTextEdit(Edit(exposure: 1, masks: shown), at: arw)
     let sidecar = try String(contentsOf: XMP.sidecarURL(forImagePath: arw.path), encoding: .utf8)
@@ -1162,7 +1162,7 @@ private func masksTag(_ entries: [String]) -> [XMP.TagWrite] {
     try writeTextEdit(
         Edit(masks: [click("first", full), click("crowded", full + 1), click("last", full)]), at: arw)
     let shown = XMP.read(file: try image(arw)).edit.masks
-    #expect(shown.map(\.id) == (Masker.supports(.click) ? ["first", "last"] : []))
+    #expect(shown.map(\.id) == (Masker.isAvailable ? ["first", "last"] : []))
 
     try writeTextEdit(Edit(exposure: 1, masks: Array(shown.dropFirst())), at: arw)
     #expect(XMP.read(file: try image(arw)).edit.masks.map(\.id) == Array(shown.map(\.id).dropFirst()))
@@ -1170,7 +1170,7 @@ private func masksTag(_ entries: [String]) -> [XMP.TagWrite] {
     #expect(sidecar.contains("crowded"))
 }
 
-@Test func masksEmbeddedInAJPEGAreRead() throws {
+@Test(.enabled(if: Masker.isAvailable)) func masksEmbeddedInAJPEGAreRead() throws {
     guard requireExifTool() else { return }
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
@@ -1181,7 +1181,7 @@ private func masksTag(_ entries: [String]) -> [XMP.TagWrite] {
     #expect(XMP.read(file: try image(jpg)).edit.masks == someMasks)
 }
 
-@Test func masksAnotherHandWroteCostNoMoreThanTheirLimit() {
+@Test(.enabled(if: Masker.isAvailable)) func masksAnotherHandWroteCostNoMoreThanTheirLimit() {
     func masks(_ json: String) -> [Mask] {
         parsed(
             """

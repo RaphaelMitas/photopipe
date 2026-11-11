@@ -74,6 +74,7 @@ import {
   useExportJobs,
   useImages,
   useLibrarySync,
+  useMaskClickLimit,
   useReveal,
   useScoring,
   useShoots,
@@ -496,6 +497,7 @@ export default function App() {
   const crop = useCropSession(loupePhoto, loupeEdit, changeEdit);
   const cropping = crop.draft !== null;
   const masks = useMaskSession(loupePhoto, loupeEdit, changeEdit, editOpen);
+  const canMask = useMaskClickLimit() > 0;
 
   // a filtered-out photo is not in the browser, so land on the nearest one that is
   const focusPath = useMemo(() => {
@@ -682,6 +684,7 @@ export default function App() {
     "export.open": () => (openShoot ? openExport() : false),
     "editPanel.toggle": editPanelPref.toggle,
     "mask.add": () => {
+      if (!canMask) return false;
       editPanelPref.set(true);
       editGroupPref("masks").set(true);
       masks.toggleField();
