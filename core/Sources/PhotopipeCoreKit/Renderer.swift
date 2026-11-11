@@ -19,7 +19,7 @@ public final class Renderer: @unchecked Sendable {
     private let curveColorSpace = CGColorSpace(name: CGColorSpace.displayP3)!
 
     // bump when the pixels change for an unchanged key
-    private static let pipelineVersion = 5
+    private static let pipelineVersion = 6
 
     /// None of these are zero, so a slider left alone has to reach for them.
     public struct RawDefaults: Sendable {
@@ -206,6 +206,9 @@ public final class Renderer: @unchecked Sendable {
 
         if edit.dehaze != 0 {
             image = Presence.dehaze(image, amount: edit.dehaze)
+        }
+        if edit.highlights != 0 || edit.shadows != 0 {
+            image = Presence.tone(image, highlights: edit.highlights, shadows: edit.shadows)
         }
         if let lut = ToneLUT.samples(for: edit) {
             image = image.applyingFilter(
