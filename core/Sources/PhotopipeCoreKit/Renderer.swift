@@ -15,7 +15,8 @@ public final class Renderer: @unchecked Sendable {
     // an export renders each photo once, so there is nothing to reuse
     private let exportContext = CIContext(options: [.cacheIntermediates: false])
     private let jpegColorSpace = CGColorSpace(name: CGColorSpace.displayP3)!
-    private let curveColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+    // CIColorCurves clips to this space, so it must be no narrower than the preview's
+    private let curveColorSpace = CGColorSpace(name: CGColorSpace.displayP3)!
 
     // bump when the pixels change for an unchanged key
     private static let pipelineVersion = 4
