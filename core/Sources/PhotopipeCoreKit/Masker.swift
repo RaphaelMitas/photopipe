@@ -8,7 +8,7 @@ struct Masker {
 
     static let inputLongEdge = 2048
     // bump when the same photo would get a different matte
-    static let version = 3
+    static let version = 4
 
     let cache: CacheFolder
     let segment: Segment
@@ -69,23 +69,6 @@ struct Masker {
             }
         }
         guard let found else { return CIImage(color: .black).cropped(to: photo.extent) }
-        let matte = CIImage(cvPixelBuffer: found, options: [.colorSpace: NSNull()])
-        return source == .subject ? feathered(matte) : matte
-    }
-
-    // Vision cuts a subject hard; the blur is half at that cut, so doubling it keeps the subject whole
-    static func feathered(_ matte: CIImage) -> CIImage {
-        matte.clampedToExtent()
-            .applyingGaussianBlur(sigma: max(matte.extent.width, matte.extent.height) / 512)
-            .applyingFilter(
-                "CIColorMatrix",
-                parameters: [
-                    "inputRVector": CIVector(x: 2, y: 0, z: 0, w: 0),
-                    "inputGVector": CIVector(x: 0, y: 2, z: 0, w: 0),
-                    "inputBVector": CIVector(x: 0, y: 0, z: 2, w: 0),
-                ]
-            )
-            .applyingFilter("CIColorClamp")
-            .cropped(to: matte.extent)
+        return CIImage(cvPixelBuffer: found, options: [.colorSpace: NSNull()])
     }
 }
