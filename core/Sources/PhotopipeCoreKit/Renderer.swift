@@ -249,7 +249,7 @@ public final class Renderer: @unchecked Sendable {
     }
 
     static func saneCrop(_ edit: Edit) -> CropRect? {
-        guard edit.cropAngle.isFinite else { return nil }
+        guard edit.cropAngle.isFinite, abs(edit.cropAngle) <= XMP.scalarMagnitudeLimit else { return nil }
         return (edit.crop ?? .full).sanitized()
     }
 
@@ -286,7 +286,8 @@ public final class Renderer: @unchecked Sendable {
             let center = CGPoint(x: extent.midX, y: extent.midY)
             // CI is y-up, so on-screen-clockwise negates here; CSS gets it raw
             let angle = -edit.cropAngle * .pi / 180
-            result = result.transformed(
+            result = Straighten.transformed(
+                result,
                 by: CGAffineTransform(translationX: center.x, y: center.y)
                     .rotated(by: angle)
                     .translatedBy(x: -center.x, y: -center.y))
