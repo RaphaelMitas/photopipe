@@ -54,14 +54,12 @@ enum TapToSegment {
                     let photo = CGRect(x: 0, y: 0, width: image.width, height: image.height)
                     return wanted.spotMissed(
                         by: RoughMask(
-                            CIImage(cgImage: found, options: [.colorSpace: NSNull()]), over: photo,
-                            context: Masker.unmanaged))
+                            CIImage(cgImage: found, options: [.colorSpace: NSNull()]), over: photo))
                 }
             case .scribbles(let scribbles):
                 var found: [CGImage] = []
                 for scribble in scribbles {
-                    let buffer = try scribble.scribble(
-                        width: image.width, height: image.height, context: Masker.unmanaged)
+                    let buffer = try scribble.scribble(width: image.width, height: image.height)
                     let request = try await ready(
                         GenerateIterativeSegmentationRequest(
                             seedScribbleBuffer: CVReadOnlyPixelBuffer(unsafeBuffer: buffer)))

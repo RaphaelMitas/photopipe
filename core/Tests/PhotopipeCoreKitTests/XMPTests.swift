@@ -1103,6 +1103,30 @@ private func masksTag(_ entries: [String]) -> [XMP.TagWrite] {
         "on iPad a rating is the first write, and it starts a sidecar")
 }
 
+@Test func masksTooLongForOneJPEGSegmentSurviveASave() throws {
+    guard requireExifTool() else { return }
+    let long = #"{"id":"sky","note":"\#(String(repeating: "n", count: 70_000))","source":"sky"}"#
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    func jpeg(_ name: String) throws -> URL {
+        let jpg = dir.appendingPathComponent(name)
+        try writeGrayJPEG(to: jpg)
+        try ExifTool.shared.write(
+            ["-overwrite_original"] + XMP.exiftoolArgs(masksTag([long])) + [jpg.path])
+        return jpg
+    }
+
+    let edited = try jpeg("DSC00018.JPG")
+    try XMP.writeEdit(Edit(exposure: 1), file: try image(edited))
+    #expect(try exiftoolTag("-XMP-photopipe:Masks", of: edited) == "[\(long)]")
+
+    let rated = try jpeg("DSC00019.JPG")
+    try XMP.writeText(XMP.ratingTags(3), clearing: false, file: try image(rated))
+    #expect(
+        try exiftoolTag("-XMP-photopipe:Masks", of: XMP.sidecarURL(forImagePath: rated.path))
+            == "[\(long)]")
+}
+
 @Test(.enabled(if: Masker.isAvailable)) func aMaskThisBuildCannotReadKeepsItsPlaceAmongTheOthers() throws {
     let entries = [
         #"{"id":"kept1","source":"people"}"#, #"{"id":"future","source":"sky"}"#,

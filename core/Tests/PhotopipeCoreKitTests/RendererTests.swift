@@ -1902,13 +1902,11 @@ private let aroundTheLastClick: Masker.Segment = { photo, _, points in
     #expect(levels.values.allSatisfy { $0 > dark + 50 })
 }
 
-private let unmanaged = CIContext(options: [.workingColorSpace: NSNull()])
-
 private func roughMask(white: [CGRect], in photo: CGRect) -> RoughMask {
     RoughMask(
         white.reduce(CIImage(color: .black).cropped(to: photo)) {
             CIImage(color: .white).cropped(to: $1).composited(over: $0)
-        }, over: photo, context: unmanaged)
+        }, over: photo)
 }
 
 @Test func aRoughMaskCountsFromTheTopLikeAClick() throws {
@@ -1921,10 +1919,9 @@ private func roughMask(white: [CGRect], in photo: CGRect) -> RoughMask {
     #expect(mask.inside(topLeftQuarter) == mask)
     #expect(mask.outside([topLeftQuarter]).count == 0)
 
-    let scribble = try mask.scribble(width: 640, height: 320, context: unmanaged)
+    let scribble = try mask.scribble(width: 640, height: 320)
     let back = RoughMask(
-        CIImage(cvPixelBuffer: scribble, options: [.colorSpace: NSNull()]), over: photo,
-        context: unmanaged)
+        CIImage(cvPixelBuffer: scribble, options: [.colorSpace: NSNull()]), over: photo)
     #expect(back == mask)
 }
 

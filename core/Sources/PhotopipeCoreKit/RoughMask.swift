@@ -10,14 +10,13 @@ struct RoughMask: Equatable, Sendable {
     // rows from the top, like a click
     private var cells: [Bool]
 
-    /// `context` must not manage colour, or a half would not read as a half.
-    init(_ matte: CIImage, over photo: CGRect, context: CIContext) {
+    init(_ matte: CIImage, over photo: CGRect) {
         let scale = Double(Self.longEdge) / max(photo.width, photo.height)
         width = max(1, Int((photo.width * scale).rounded()))
         height = max(1, Int((photo.height * scale).rounded()))
         let frame = CGRect(x: 0, y: 0, width: width, height: height)
         var bytes = [UInt8](repeating: 0, count: width * height)
-        context.render(
+        Masker.unmanaged.render(
             Masker.stretched(matte.applyingFilter("CIMaximumComponent"), over: frame),
             toBitmap: &bytes, rowBytes: width, bounds: frame, format: .L8, colorSpace: nil)
         cells = bytes.map { $0 > 127 }
@@ -85,7 +84,7 @@ struct RoughMask: Equatable, Sendable {
     }
 
     /// The mask at the photo's size, the way a scribble seed takes it.
-    func scribble(width: Int, height: Int, context: CIContext) throws -> CVPixelBuffer {
+    func scribble(width: Int, height: Int) throws -> CVPixelBuffer {
         var buffer: CVPixelBuffer?
         CVPixelBufferCreate(
             nil, width, height, kCVPixelFormatType_OneComponent8,
@@ -98,7 +97,7 @@ struct RoughMask: Equatable, Sendable {
                 bitmapInfo: [], provider: provider, decode: nil, shouldInterpolate: true,
                 intent: .defaultIntent)
         else { throw Renderer.RenderError.encodeFailed }
-        context.render(
+        Masker.unmanaged.render(
             Masker.stretched(
                 CIImage(cgImage: image, options: [.colorSpace: NSNull()]),
                 over: CGRect(x: 0, y: 0, width: width, height: height)),

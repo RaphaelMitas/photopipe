@@ -107,7 +107,6 @@ public struct LocalAdjust: Codable, Equatable, Sendable {
         }
     }
 
-    /// The same sliders as a whole-photo edit, for the renderer's shared stages.
     var edit: Edit {
         Edit(
             exposure: exposure, highlights: highlights, shadows: shadows, whites: whites,
@@ -144,7 +143,7 @@ public struct Mask: Codable, Equatable, Sendable {
 
     public var id: String
     public var source: Source
-    /// Empty unless the source is .click; the first finds the object, the rest refine it.
+    /// Empty unless the source is .click.
     public var points: [Point]
     public var inverted: Bool
     public var hidden: Bool

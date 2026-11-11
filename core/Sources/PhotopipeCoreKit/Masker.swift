@@ -105,8 +105,7 @@ struct Masker {
         lazy var handler = VNImageRequestHandler(ciImage: photo)
         func rough(_ found: CVPixelBuffer) -> RoughMask {
             RoughMask(
-                CIImage(cvPixelBuffer: found, options: [.colorSpace: NSNull()]), over: photo.extent,
-                context: unmanaged)
+                CIImage(cvPixelBuffer: found, options: [.colorSpace: NSNull()]), over: photo.extent)
         }
         var seed = TapToSegment.Seed.clicks(points)
         switch source {

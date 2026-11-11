@@ -99,7 +99,7 @@ public enum XMP {
             }
     }
 
-    // an entry this build or OS cannot read is kept for the next save, judged alone so the writer splits the file the same way
+    // an entry this build or OS cannot read is kept for the next save
     private static func masks(fromJSON text: String?) -> (read: [Mask], unread: [UnreadMask]) {
         guard let text,
             let entries = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [Any]
@@ -305,18 +305,28 @@ public enum XMP {
         return nil
     }
 
+    private static func metadata(at url: URL) -> CGImageMetadata? {
+        CGImageSourceCreateWithURL(url as CFURL, nil).flatMap {
+            CGImageSourceCopyMetadataAtIndex($0, 0, nil)
+        }
+    }
+
+    // ImageIO for every reader: a long value spills into a JPEG's extended XMP, which the packet reader does not follow
+    private static func embeddedMasks(in metadata: CGImageMetadata?) -> String? {
+        metadata.flatMap {
+            CGImageMetadataCopyStringValueWithPath($0, nil, "photopipe:Masks" as CFString) as String?
+        }
+    }
+
     static func embedded(_ file: ImageFile) -> Judgment {
         let url = URL(fileURLWithPath: file.path)
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-            let metadata = CGImageSourceCopyMetadataAtIndex(source, 0, nil)
-        else { return (nil, nil, .identity) }
+        guard let metadata = metadata(at: url) else { return (nil, nil, .identity) }
         let rating = validRating(
             CGImageMetadataCopyStringValueWithPath(metadata, nil, "xmp:Rating" as CFString)
                 as String?)
         // a sidecar-only raw is never written into, so its XMP holds just what the camera put there
         guard !file.sidecarOnly else { return (rating, nil, .identity) }
         var pick: Int?
-        var masks: String?
         var texts: [String: String] = [:]
         var curves: [String: [CurvePoint]] = [:]
         CGImageMetadataEnumerateTagsUsingBlock(metadata, nil, nil) { _, tag in
@@ -325,9 +335,6 @@ public enum XMP {
             let value = CGImageMetadataTagCopyValue(tag)
             if namespace == TagWrite.Namespace.xmpDM.uri && name == "pick" {
                 pick = validFlag(value as? String)
-            }
-            if namespace == TagWrite.Namespace.photopipe.uri && name == "Masks" {
-                masks = value as? String
             }
             guard namespace == TagWrite.Namespace.crs.uri else { return true }
             if name.hasPrefix("ToneCurvePV2012") {
@@ -349,7 +356,7 @@ public enum XMP {
             rotation: rotation(
                 fromXMP: embeddedXMPOrientation(at: url),
                 base: baseOrientation(at: url) ?? 1),
-            masks: masks)
+            masks: embeddedMasks(in: metadata))
         return (rating, pick, edit)
     }
 
@@ -565,7 +572,10 @@ public enum XMP {
         curve("ToneCurvePV2012Blue", edit.curveBlue)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let unread = unreadMasks(in: written)
+        let unread = masks(
+            fromJSON: inSidecar
+                ? written?.value(.photopipe, "Masks") : embeddedMasks(in: metadata(at: fileURL))
+        ).unread
         let known = edit.masks.prefix(maskLimit - unread.count)
         // masks render in order, so an unread one goes back behind the masks the file had before it
         let behind = Dictionary(grouping: unread) { entry in
@@ -578,10 +588,6 @@ public enum XMP {
         }
         tags.append(masksTag(entries))
         return (tags, exifOrientationPin)
-    }
-
-    private static func unreadMasks(in written: XMPProperties?) -> [UnreadMask] {
-        masks(fromJSON: written?.value(.photopipe, "Masks")).unread
     }
 
     private static func masksTag(_ entries: [String]) -> TagWrite {
@@ -623,10 +629,10 @@ public enum XMP {
     /// with the rating, flag and edit the file carried.
     static func embeddedTags(_ file: ImageFile) throws -> [TagWrite] {
         let (rating, flag, edit) = embedded(file)
-        // a mask only a newer build can read leaves the edit an identity, and still moves to the sidecar
+        // a mask this build or OS cannot read leaves the edit an identity, and still moves to the sidecar
         let unread =
             file.sidecarOnly
-            ? [] : unreadMasks(in: embeddedXMPProperties(at: URL(fileURLWithPath: file.path)))
+            ? [] : masks(fromJSON: embeddedMasks(in: metadata(at: URL(fileURLWithPath: file.path)))).unread
         guard (rating ?? 0) != 0 || (flag ?? 0) != 0 || !edit.isIdentity || !unread.isEmpty
         else { return [] }
         // an untouched raw would otherwise start its sidecar with a WhiteBalance nobody set
