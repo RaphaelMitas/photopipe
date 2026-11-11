@@ -510,7 +510,29 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
         "gray haze beside a blue wall must stay gray, got \(haze)")
 }
 
-@Test func dehazeStaysBetweenBlackAndWhite() {
+@Test func dehazeDoesNotBrightenASceneOfTwoColours() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let jpegURL = try writeHalvesJPEG(
+        left: CIColor(red: 0.95, green: 0.63, blue: 0.31), right: CIColor(red: 0.35, green: 0.48, blue: 0.67),
+        width: 256, height: 256)
+    defer { try? FileManager.default.removeItem(at: jpegURL) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: jpegURL)
+    let water = { (edit: Edit) in
+        try meanLuminance(
+            of: renderer.render(file: file, edit: edit, maxPixel: 256),
+            region: CGRect(x: 160, y: 0, width: 96, height: 256))
+    }
+    let plain = try water(Edit())
+    let dehazed = try water(Edit(dehaze: 100))
+    #expect(
+        dehazed < plain + 2,
+        "blue water beside an orange sky must not brighten, got \(dehazed) from \(plain)")
+}
+
+// a sidecar may ask for more than the slider reaches
+@Test(arguments: [100.0, 400]) func dehazeStaysBetweenBlackAndWhite(amount: Double) {
     let frame = CGRect(x: 0, y: 0, width: 1000, height: 600)
     // the cloud is smaller than the dark channel's patch, so it stays above the airlight
     let scene = CIImage(color: gray(0.98))
@@ -519,7 +541,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
         .composited(over: CIImage(color: gray(0.75)).cropped(to: frame))
     var pixels = [Float](repeating: 0, count: 1000 * 600 * 4)
     CIContext().render(
-        Presence.dehaze(scene, amount: 100), toBitmap: &pixels, rowBytes: 1000 * 16,
+        Presence.dehaze(scene, amount: amount), toBitmap: &pixels, rowBytes: 1000 * 16,
         bounds: frame, format: .RGBAf, colorSpace: nil)
     let darkest = pixels.min() ?? 0
     let brightest = pixels.max() ?? 0

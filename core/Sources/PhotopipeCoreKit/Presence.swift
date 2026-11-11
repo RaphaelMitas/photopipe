@@ -25,14 +25,18 @@ enum Presence {
             return max(light.rgb / max(light.a, 1e-6), 0.05);
         }
 
+        float lumaOf(float3 rgb) {
+            return dot(rgb, float3(0.2126, 0.7152, 0.0722));
+        }
+
         float hazeGuide(float3 rgb) {
-            return sqrt(max(dot(rgb, float3(0.2126, 0.7152, 0.0722)), 0.0));
+            return sqrt(max(lumaOf(rgb), 0.0));
         }
 
         [[ stitchable ]] float4 airlightWeight(
             coreimage::sample_t p, coreimage::sample_t dark, coreimage::sample_t peak
         ) {
-            float weight = pow(saturate(minChannel(dark.rgb) / max(minChannel(peak.rgb), 1e-6)), 32.0);
+            float weight = pow(saturate(minChannel(dark.rgb) / max(peak.r, 1e-6)), 32.0);
             return float4(p.rgb * weight, weight);
         }
 
@@ -55,9 +59,9 @@ enum Presence {
         ) {
             float3 airlight = airlightOf(light);
             if (omega < 0.0) {
-                // adding fogs a clear scene too, in the airlight's colour half way to grey
-                float grey = dot(airlight, float3(0.2126, 0.7152, 0.0722));
-                p.rgb = mix(p.rgb, mix(airlight, float3(grey), 0.5), omega / (omega - 1.0));
+                // adding fogs a clear scene too
+                float3 fog = mix(airlight, float3(lumaOf(airlight)), 0.5);
+                p.rgb = mix(p.rgb, fog, omega / (omega - 1.0));
                 return p;
             }
             // no pixel holds more haze than its darkest channel, which keeps it above black
@@ -122,7 +126,7 @@ enum Presence {
             "CIMorphologyMaximum", radius: patch)
         let whole = [kCIInputExtentKey: CIVector(cgRect: coarse.extent)]
         // blurred, so a lamp smaller than the blur cannot pass for the haziest region
-        let peak = blurred(dark, radius: coarse.longEdge * 0.02)
+        let peak = blurred(dark.applyingFilter("CIMinimumComponent"), radius: coarse.longEdge * 0.02)
             .applyingFilter("CIAreaMaximum", parameters: whole).clampedToExtent()
         let light = apply("airlightWeight", to: coarse, arguments: [dark, peak])
             .applyingFilter("CIAreaAverage", parameters: whole).clampedToExtent()
@@ -131,9 +135,8 @@ enum Presence {
         let moments = blurred(
             apply("hazeMoments", to: coarse, arguments: [dark, light]), radius: radius)
         let fit = blurred(apply("hazeFit", to: moments, arguments: []), radius: radius)
-        return apply(
-            "dehaze", to: image,
-            arguments: [upscaled(fit, to: image), light, Float(amount / 100 * 0.75)])
+        let omega = min(max(amount, -100), 100) / 100 * 0.75
+        return apply("dehaze", to: image, arguments: [upscaled(fit, to: image), light, Float(omega)])
     }
 
     static func clarity(_ image: CIImage, amount: Double) -> CIImage {
