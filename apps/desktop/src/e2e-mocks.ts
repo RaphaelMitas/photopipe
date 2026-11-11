@@ -365,7 +365,7 @@ const E2E_HANDLERS: CoreHandlers = {
     png: OPAQUE_PIXEL_PNG,
     point: { x, y, include },
   }),
-  maskSupport: () => ({ clicks: 64 }),
+  maskSupport: () => ({ clicks: 16 }),
   render: ({ path, edit, viewport }) => {
     const real = storeSrc(path, editKey(edit) !== editKey(identityEdit));
     if (real) return { cachePath: real };

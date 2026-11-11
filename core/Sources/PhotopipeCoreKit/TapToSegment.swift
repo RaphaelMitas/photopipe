@@ -2,7 +2,6 @@ import CoreImage
 import Foundation
 import Vision
 
-/// Apple's tap to segment: the object under a click, grown or cut back by the clicks after it.
 enum TapToSegment {
     // the request arrives with the macOS 27 SDK, and Swift 6.4 is the first toolchain to carry it
     #if compiler(>=6.4)

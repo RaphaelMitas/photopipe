@@ -193,8 +193,7 @@ something. With a click mask selected, **Shift**-click adds what is under the
 cursor and **Option**-click takes it away, field open or not, and the preview
 shows the result before the click. A tap on iPad picks directly, with no
 preview. Clicking needs macOS or iPadOS 27; on an older system the field
-offers the three chips and nothing else. A photo takes 64 clicks across its
-masks.
+offers the three chips and nothing else. A mask takes 16 clicks.
 
 The sidecar stores the definition, never the pixels: "the subject, inverted,
 half a stop up", or for a click mask the clicks themselves, as points on the

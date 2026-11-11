@@ -74,7 +74,7 @@ struct Masker {
         }
     }
 
-    // a dark photo hides its edges from the model; in half stops, never darker
+    // a dark photo hides its edges from the model
     private func stopsToMiddleGrey(_ photo: CGImage) -> Double {
         let image = CIImage(cgImage: photo)
         let average = image.applyingFilter(

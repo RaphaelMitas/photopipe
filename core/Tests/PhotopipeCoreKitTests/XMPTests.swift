@@ -1121,7 +1121,7 @@ private let someMasks = [
     #expect(sidecar.contains("0.62"))
 }
 
-@Test func aSidecarsClicksPastWhatAPhotoTakesAreKeptAndNotFound() throws {
+@Test func aMaskWithMoreClicksThanItTakesStaysUnreadWhateverItsNeighbours() throws {
     func click(_ id: String, _ count: Int) -> Mask {
         Mask(
             id: id, source: .click,
@@ -1132,11 +1132,14 @@ private let someMasks = [
     let arw = dir.appendingPathComponent("DSC00016.ARW")
     try Data("fake".utf8).write(to: arw)
 
-    try writeTextEdit(Edit(masks: [click("first", 40), click("crowded", 30), click("last", 24)]), at: arw)
+    let full = Mask.clickLimit
+    try writeTextEdit(
+        Edit(masks: [click("first", full), click("crowded", full + 1), click("last", full)]), at: arw)
     let shown = XMP.read(file: try image(arw)).edit.masks
     #expect(shown.map(\.id) == (Masker.supports(.click) ? ["first", "last"] : []))
 
-    try writeTextEdit(Edit(exposure: 1, masks: shown), at: arw)
+    try writeTextEdit(Edit(exposure: 1, masks: Array(shown.dropFirst())), at: arw)
+    #expect(XMP.read(file: try image(arw)).edit.masks.map(\.id) == Array(shown.map(\.id).dropFirst()))
     let sidecar = try String(contentsOf: XMP.sidecarURL(forImagePath: arw.path), encoding: .utf8)
     #expect(sidecar.contains("crowded"))
 }
@@ -1163,6 +1166,9 @@ private let someMasks = [
     }
     #expect(masks("not json").isEmpty)
     #expect(masks(#"[{"id":"a","source":"sky"}]"#).isEmpty, "a source this build cannot find")
+    #expect(
+        masks(#"[{"id":"a","source":"subject","points":[{"x":0.5,"y":0.5,"include":true}]}]"#).isEmpty,
+        "clicks on a mask that has nothing to click")
     #expect(
         masks(#"[-1e400,{"id":"a","source":"people","adjust":{"exposure":-1e400}}]"#).isEmpty,
         "-1e400 reads as -inf, which crashed the reader")

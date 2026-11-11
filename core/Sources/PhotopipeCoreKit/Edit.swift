@@ -140,7 +140,7 @@ public struct Mask: Codable, Equatable, Sendable {
     }
 
     // a sidecar is anyone's to write, and every click costs a segmentation
-    static let clicksPerPhoto = 64
+    static let clickLimit = 16
 
     public var id: String
     public var source: Source

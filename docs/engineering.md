@@ -28,19 +28,24 @@ Stack, testing strategy, CI and releases.
   `photopipe:Masks`, a namespace exiftool only writes because the core starts
   it with a config that declares it. The matte is a PNG in the rebuildable
   cache, one per photo and source, and per list of clicks for a click mask,
-  found on the unedited photo so every edit of it shares one. A click mask is Vision's tap to segment
-  (`GenerateIterativeSegmentationRequest`), replayed from its stored points
-  on a copy of the photo lifted to middle grey, because the model misses
-  edges on a dark frame. Every click is a pass of the model, so a photo takes
-  64 across its masks and a sidecar's masks past that stay unread. The request only exists in the 27 SDK, so the call
-  sits behind `#if compiler(>=6.4)` and `#available`: an older toolchain
-  builds a core without click masks, and `maskSupport` tells the UI. The
-  index keeps the rows of a system that finds clicks apart from one that
-  cannot, since the same sidecar reads differently on each. The
-  hover preview goes through `maskAt`, which answers with the overlay as
-  bytes and never touches the cache. The reader keeps every entry it cannot decode, and a mask
-  with a key it does not know, as raw JSON, and the writer puts them back: an
-  older build must never delete a newer build's mask.
+  found on the unedited photo so every edit of it shares one. A click mask is
+  Vision's tap to segment (`GenerateIterativeSegmentationRequest`), replayed
+  from its stored points on a copy of the photo brightened toward middle
+  grey, by at most four stops, because the model misses edges on a dark
+  frame. Every click is a pass of the model, so a mask takes 16 and a
+  sidecar's mask with more stays unread. The request only exists in the 27
+  SDK, so the call sits behind `#if compiler(>=6.4)` and `#available`: an
+  older toolchain builds a core without click masks, and `maskSupport` tells
+  the UI. The index rebuilds its file rows when the core gains or loses
+  clicks, since the same sidecar reads differently on each. The hover preview
+  goes through `maskAt`, which answers with the overlay as bytes and never
+  touches the cache. The reader keeps every entry it cannot decode, and a
+  mask with a key it does not know, as raw JSON, and the writer puts them
+  back: an older build must never delete a newer build's mask. Whether an
+  entry is read depends on that entry alone, never on its neighbours: the
+  writer works the unread ones out again from the file, so a mask that
+  turned readable when another was deleted would be in neither the edit nor
+  the kept entries, and the save would drop it.
 - **Formats** come from ImageIO at runtime: every extension whose type it
   reads and calls a camera raw, plus JPEG, PNG, TIFF, HEIC/HEIF, AVIF, JPEG XL
   and WebP. A camera a new OS learns needs no release.

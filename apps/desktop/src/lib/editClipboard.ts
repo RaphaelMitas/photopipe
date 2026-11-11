@@ -17,13 +17,15 @@ export function pasteEdit(
   clipboard: EditClipboard,
   targetRaw: boolean,
 ): Edit {
+  const stays = target.masks.filter((mask) => !travels(mask));
+  // back on its own photo a click mask keeps its place among the chips
+  const copied = clipboard.edit.masks.flatMap((mask) =>
+    travels(mask) ? [mask] : stays.filter((own) => own.id === mask.id),
+  );
   const pasted: Edit = {
     ...clipboard.edit,
     ...framing(target),
-    masks: [
-      ...clipboard.edit.masks.filter(travels),
-      ...target.masks.filter((mask) => !travels(mask)),
-    ],
+    masks: [...copied, ...stays.filter((own) => !copied.includes(own))],
   };
   if (targetRaw === clipboard.raw) return pasted;
   return {

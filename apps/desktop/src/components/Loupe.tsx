@@ -27,7 +27,6 @@ import { flagPref } from "@/lib/pref";
 import {
   useDeferredEdit,
   useMaskOverlay,
-  useMaskSupport,
   usePrefetchRender,
   useRender,
   useThumbnail,
@@ -212,10 +211,9 @@ export function Loupe({
     enabled: !cropping && !!image,
     resetKey: zoomKey,
   });
-  const clickable = (useMaskSupport().data?.clicks ?? 0) > 0 && !cropping;
   const pick = useMaskPick(image, edit, masks, (cursor) => {
     const node = stageRef.current;
-    if (!node || !clickable || photoBox.width <= 0) return null;
+    if (!node || cropping || photoBox.width <= 0) return null;
     const spot = photoFractionAt(zoom.state, cursorIn(node, cursor), photoBox);
     const onPhoto =
       Math.min(spot.x, spot.y) >= 0 && Math.max(spot.x, spot.y) <= 1;
@@ -404,10 +402,9 @@ export function Loupe({
                 if (!pick.claims(event)) zoom.stageProps.onDoubleClick(event);
               },
               style: {
-                cursor:
-                  clickable && masks.creating
-                    ? "crosshair"
-                    : zoom.stageProps.style.cursor,
+                cursor: pick.crosshair
+                  ? "crosshair"
+                  : zoom.stageProps.style.cursor,
               },
             })}
       >

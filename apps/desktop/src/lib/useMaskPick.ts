@@ -6,6 +6,7 @@ import {
   type Edit,
   editKey,
   type ImageFile,
+  pointsKey,
   unedited,
 } from "./core";
 import { useMaskSupport } from "./queries";
@@ -30,14 +31,14 @@ export function useMaskPick(
   image: ImageFile | undefined,
   edit: Edit,
   masks: MaskSession,
-  /// In fractions of the photo as shown, null off the photo or where it takes no clicks.
+  /// In fractions of the photo as shown, null off the photo or while cropping.
   spotAt: (cursor: Cursor) => { x: number; y: number } | null,
 ) {
   const frame = unedited(edit);
-  // an answer is shown only while a click would still do what was asked
-  const scene = `${image?.path}|${editKey(frame)}|${masks.creating}|${masks.target?.id}`;
+  const target = masks.target;
+  // a preview or a click lands only on the photo, frame and mask it was asked about
+  const scene = `${image?.path}|${editKey(frame)}|${masks.creating}|${target?.id}|${pointsKey(target?.points ?? [])}`;
   const clickLimit = useMaskSupport().data?.clicks ?? 0;
-  const clicks = edit.masks.reduce((sum, mask) => sum + mask.points.length, 0);
   const [answer, setAnswer] = useState<{ scene: string; png: string } | null>(
     null,
   );
@@ -53,9 +54,9 @@ export function useMaskPick(
 
   const askAt = (cursor: Cursor) => {
     const modified = cursor.shiftKey || cursor.altKey;
-    const refined =
-      modified && masks.target?.source === "click" ? masks.target : null;
-    if (!image || (modified ? !refined : !masks.creating)) return null;
+    const refined = modified && target?.source === "click" ? target : null;
+    if (!image || !clickLimit || (modified ? !refined : !masks.creating))
+      return null;
     const spot = spotAt(cursor);
     if (!spot) return null;
     const ask: Ask = {
@@ -101,8 +102,8 @@ export function useMaskPick(
     );
     const asked = travelled <= CLICK_SLOP ? askAt(event) : null;
     if (!asked) return;
-    if (clicks >= clickLimit) {
-      toast("This photo cannot take more clicks", { id: "mask-clicks" });
+    if (asked.refined && asked.refined.points.length >= clickLimit) {
+      toast("This mask cannot take more clicks", { id: "mask-clicks" });
       return;
     }
     setPicking(true);
@@ -124,6 +125,7 @@ export function useMaskPick(
   return {
     preview: answer?.scene === scene ? answer.png : null,
     busy: picking,
+    crosshair: clickLimit > 0 && masks.creating,
     claims: (cursor: Cursor) => askAt(cursor) !== null,
     onClick,
     photoProps: {
