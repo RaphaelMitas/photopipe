@@ -420,11 +420,10 @@ private func gray(_ value: CGFloat) -> CIColor {
     CIColor(red: value, green: value, blue: value)
 }
 
-/// Step across the seam of a 256 px halves render, averaged over a band either side.
-private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
-    let left = try meanLuminance(
-        of: url, region: CGRect(x: 128 - band, y: 0, width: band, height: 256))
-    let right = try meanLuminance(of: url, region: CGRect(x: 128, y: 0, width: band, height: 256))
+/// Step across the seam of a 256 px halves render, averaged over 8 px either side.
+private func seamContrast(of url: URL) throws -> Double {
+    let left = try meanLuminance(of: url, region: CGRect(x: 120, y: 0, width: 8, height: 256))
+    let right = try meanLuminance(of: url, region: CGRect(x: 128, y: 0, width: 8, height: 256))
     return right - left
 }
 
@@ -469,7 +468,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
     }
 }
 
-@Test func clarityAndTextureSharpenTheSeam() throws {
+@Test func clarityDeepensAndSoftensTheSeam() throws {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
     let jpegURL = try writeHalvesJPEG(left: gray(0.4), right: gray(0.6), width: 256, height: 256)
@@ -484,14 +483,77 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
     #expect(punchy > neutral + 5, "clarity +100 must deepen the seam, got \(neutral) → \(punchy)")
     #expect(soft < neutral - 5, "clarity -100 must soften the seam, got \(neutral) → \(soft)")
 
-    // texture's radius is a sliver of this frame, so read right at the seam
-    let fine = try seamContrast(of: render(.identity), band: 2)
-    let crisp = try seamContrast(of: render(Edit(texture: 100)), band: 2)
-    #expect(crisp > fine + 2, "texture +100 must crisp the seam, got \(fine) → \(crisp)")
-
     let flat = try meanLuminance(of: render(.identity))
     let flatPunchy = try meanLuminance(of: render(Edit(clarity: 100)))
     #expect(abs(flatPunchy - flat) < 3, "local contrast must not move the overall brightness")
+}
+
+@Test func clarityKeepsTheDarkSideOfAHardEdgeAndItsHue() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let jpegURL = try writeHalvesJPEG(
+        left: CIColor(red: 0.2, green: 0.3, blue: 0.6),
+        right: CIColor(red: 0.35, green: 0.8, blue: 0.8), width: 256, height: 256)
+    defer { try? FileManager.default.removeItem(at: jpegURL) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: jpegURL)
+    let render = { (edit: Edit) in try renderer.render(file: file, edit: edit, maxPixel: 256) }
+
+    for (side, x) in [("dark", 124), ("light", 128)] {
+        let halo = CGRect(x: x, y: 0, width: 4, height: 256)
+        let neutral = try meanChannels(of: render(.identity), region: halo)
+        let punchy = try meanChannels(of: render(Edit(clarity: 100)), region: halo)
+        #expect(
+            punchy.red > neutral.red * 0.4,
+            "the \(side) side must not crush, got red \(neutral.red) → \(punchy.red)")
+        let hueShift = (punchy.red / punchy.blue) / (neutral.red / neutral.blue)
+        #expect(
+            abs(hueShift - 1) < 0.15,
+            "the \(side) side must keep its hue, got \(neutral) → \(punchy)")
+    }
+}
+
+private func writeStripesPNG(stripe: Int) throws -> URL {
+    let stripes = CIFilter(
+        name: "CIStripesGenerator",
+        parameters: [
+            "inputColor0": gray(0.4), "inputColor1": gray(0.6), "inputWidth": stripe,
+            "inputSharpness": 1, kCIInputCenterKey: CIVector(x: 0, y: 0),
+        ])!.outputImage!
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("photopipe-stripes-\(UUID().uuidString).png")
+    try CIContext().writePNGRepresentation(
+        of: stripes.cropped(to: CGRect(x: 0, y: 0, width: 3000, height: 256)), to: url,
+        format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+    return url
+}
+
+@Test func textureWorksAMiddleBandAndLeavesTheFinestDetail() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let contrast = { (stripe: Int, edit: Edit) in
+        let pngURL = try writeStripesPNG(stripe: stripe)
+        defer { try? FileManager.default.removeItem(at: pngURL) }
+        let url = try renderer.render(file: imageFile(for: pngURL), edit: edit, maxPixel: 3000)
+        let column = { (x: Int) in
+            try meanLuminance(of: url, region: CGRect(x: x, y: 0, width: stripe, height: 256))
+        }
+        return abs(try column(1500) - column(1500 + stripe))
+    }
+
+    // a pixel wide is where noise and capture sharpening live; 6 px sits mid-band at this size
+    let fine = try contrast(1, .identity)
+    let mid = try contrast(6, .identity)
+    let crispFine = try contrast(1, Edit(texture: 100))
+    let crispMid = try contrast(6, Edit(texture: 100))
+    #expect(crispMid > mid * 1.4, "texture +100 must lift mid detail, got \(mid) → \(crispMid)")
+    #expect(crispFine < fine * 1.2, "and leave the finest alone, got \(fine) → \(crispFine)")
+
+    let smoothFine = try contrast(1, Edit(texture: -100))
+    let smoothMid = try contrast(6, Edit(texture: -100))
+    #expect(smoothMid < mid * 0.5, "texture -100 must smooth mid detail, got \(mid) → \(smoothMid)")
+    #expect(smoothFine > fine * 0.8, "and keep the finest, got \(fine) → \(smoothFine)")
 }
 
 @Test func temperatureWarmsAndTintShiftsMagenta() throws {
