@@ -184,12 +184,6 @@ public struct Edit: Codable, Equatable, Sendable {
         [90, 180, 270].contains(rotation) ? rotation : 0
     }
 
-    public var hasToneComponent: Bool {
-        highlights != 0 || shadows != 0 || whites != 0 || blacks != 0
-            || !Curve.isIdentity(curveRGB) || !Curve.isIdentity(curveRed)
-            || !Curve.isIdentity(curveGreen) || !Curve.isIdentity(curveBlue)
-    }
-
     /// Deterministic representation for render cache keys.
     public var cacheKey: String {
         let encoder = JSONEncoder()
@@ -277,28 +271,23 @@ public enum Curve {
     }
 }
 
-/// The parametric tone sliders and the user curves folded into one
-/// per-channel lookup table, applied by a single CIColorCurves.
+/// Whites, blacks and the user curves folded into one per-channel lookup
+/// table, applied by a single CIColorCurves.
 public enum ToneLUT {
     public static let resolution = 256
 
     public static func samples(for edit: Edit) -> [Float]? {
-        guard edit.hasToneComponent else { return nil }
+        let curves = [edit.curveRGB, edit.curveRed, edit.curveGreen, edit.curveBlue]
+        guard edit.whites != 0 || edit.blacks != 0 || !curves.allSatisfy(Curve.isIdentity) else {
+            return nil
+        }
 
-        // blacks/whites weigh heaviest at the ends themselves, which is what
-        // moves the black and white point instead of only recovering detail
-        let s = edit.shadows / 100 * 0.25
-        let h = edit.highlights / 100 * 0.25
+        // pow 8 keeps the shift at the very ends, so it moves the black and white point
         let b = edit.blacks / 100 * 0.15
         let w = edit.whites / 100 * 0.15
         var tone = (0..<resolution).map { i -> Double in
             let v = Double(i) / Double(resolution - 1)
-            let shadowWeight = v * (1 - v) * (1 - v) * 6.75
-            let highlightWeight = v * v * (1 - v) * 6.75
-            let shifted =
-                v + s * shadowWeight + h * highlightWeight
-                + b * pow(1 - v, 8) + w * pow(v, 8)
-            return min(max(shifted, 0), 1)
+            return min(max(v + b * pow(1 - v, 8) + w * pow(v, 8), 0), 1)
         }
         // monotone, so an extreme slider cannot fold the scale back on itself
         for i in 1..<resolution {

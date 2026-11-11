@@ -207,6 +207,9 @@ public final class Renderer: @unchecked Sendable {
         if edit.dehaze != 0 {
             image = Presence.dehaze(image, amount: edit.dehaze)
         }
+        if edit.highlights != 0 || edit.shadows != 0 {
+            image = Presence.tone(image, highlights: edit.highlights, shadows: edit.shadows)
+        }
         if let lut = ToneLUT.samples(for: edit) {
             image = image.applyingFilter(
                 "CIColorCurves",
