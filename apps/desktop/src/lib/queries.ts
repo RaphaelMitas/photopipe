@@ -264,9 +264,9 @@ function renderQueryOptions(
   });
 }
 
-function usePreviewOptions(file: RenderFile, edit: Edit) {
+export function useRender(file: RenderFile, edit: Edit) {
   const decoder = useRawDecoderVersion();
-  return queryOptions({
+  return useQuery({
     ...renderQueryOptions(
       file,
       edit,
@@ -277,21 +277,6 @@ function usePreviewOptions(file: RenderFile, edit: Edit) {
     placeholderData: (previous, previousQuery) =>
       previousQuery?.queryKey[1] === file?.path ? previous : undefined,
   });
-}
-
-export function useRender(file: RenderFile, edit: Edit) {
-  return useQuery({
-    ...usePreviewOptions(file, edit),
-    select: (preview) => preview.cachePath,
-  });
-}
-
-export function useRenderUnmasked(file: RenderFile, edit: Edit) {
-  const unmasked = useQuery({
-    ...usePreviewOptions(file, edit),
-    select: (preview) => preview.unmasked,
-  });
-  return unmasked.data ?? false;
 }
 
 /// A photo you step to renders with its own edit at once; only slider drags lag.

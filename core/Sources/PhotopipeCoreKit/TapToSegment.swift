@@ -110,21 +110,23 @@ enum TapToSegment {
             case unasked
             case fetching(DispatchGroup, since: DispatchTime)
             case ready
+            case failed(until: DispatchTime)
         }
 
         private static let model = Mutex(Model.unasked)
 
-        /// A new process calls the model missing until one request has fetched it, which takes
-        /// milliseconds from disk. So it gets a second, and a real download holds nobody who asks.
+        /// A fresh process sees the model missing until a fetch, milliseconds from disk, so wait at most a second for it.
         static func modelArrives() -> Bool {
             guard #available(macOS 27, iOS 27, *) else { return false }
             let fetch: (done: DispatchGroup, since: DispatchTime)? = model.withLock { model in
                 switch model {
                 case .ready:
                     return nil
+                case .failed(let until) where until > .now():
+                    return nil
                 case .fetching(let done, let since):
                     return (done, since)
-                case .unasked:
+                case .unasked, .failed:
                     let done = DispatchGroup()
                     done.enter()
                     let since = DispatchTime.now()
@@ -133,19 +135,15 @@ enum TapToSegment {
                         let request = GenerateIterativeSegmentationRequest(
                             seedPoint: NormalizedPoint(x: 0.5, y: 0.5))
                         let arrived = (try? await ready(request)) != nil
-                        if arrived { Self.model.withLock { $0 = .ready } }
+                        // a fetch that fails slowly must not cost every render of a drag its wait
+                        let failed = Model.failed(until: .now() + .seconds(5))
+                        Self.model.withLock { $0 = arrived ? .ready : failed }
                         done.leave()
-                        if !arrived {
-                            // a fetch that fails slowly must not cost every render of a drag its wait
-                            try? await Task.sleep(for: .seconds(5))
-                            Self.model.withLock { $0 = .unasked }
-                        }
                     }
                     return (done, since)
                 }
             }
-            guard let fetch else { return true }
-            _ = fetch.done.wait(timeout: fetch.since + .seconds(1))
+            if let fetch { _ = fetch.done.wait(timeout: fetch.since + .seconds(1)) }
             return model.withLock { if case .ready = $0 { true } else { false } }
         }
 

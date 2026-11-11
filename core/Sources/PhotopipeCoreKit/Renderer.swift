@@ -96,13 +96,19 @@ public final class Renderer: @unchecked Sendable {
     /// Our metadata writes move mtime and size without touching a pixel, so what was rendered and cut still holds.
     public func restamp(_ before: ImageFile, to after: ImageFile) {
         guard before.mtime != after.mtime || before.size != after.size else { return }
-        let stamp = pixelStamp(of: before)
-        lock.withLock { pixelStampsByPath[after.path] = (after.mtime, after.size, stamp) }
+        lock.withLock {
+            pixelStampsByPath[after.path] = (after.mtime, after.size, carriedStamp(of: before))
+        }
     }
 
     private func pixelStamp(of file: ImageFile) -> String {
-        let carried = lock.withLock { pixelStampsByPath[file.path] }
-        if let carried, carried.mtime == file.mtime, carried.size == file.size {
+        lock.withLock { carriedStamp(of: file) }
+    }
+
+    private func carriedStamp(of file: ImageFile) -> String {
+        if let carried = pixelStampsByPath[file.path], carried.mtime == file.mtime,
+            carried.size == file.size
+        {
             return carried.stamp
         }
         return "\(file.path)|\(file.mtime)|\(file.size)"
@@ -331,7 +337,7 @@ public final class Renderer: @unchecked Sendable {
         return Self.framed(graded(image, edit), edit, viewport: viewport)
     }
 
-    /// Exposure and white balance without a raw decoder to set them in.
+    /// Exposure and white balance as filters: for files without a raw decoder, and for every mask's region.
     private static func incremental(_ source: CIImage, _ edit: Edit) -> CIImage {
         var image = source
         if edit.exposure != 0 {

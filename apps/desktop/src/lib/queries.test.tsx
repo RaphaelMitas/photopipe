@@ -391,7 +391,7 @@ describe("useRender and a busy lane", () => {
         { path: "/r/shoot1/A.ARW", mtime: 1, isRaw: true },
         identityEdit,
       );
-      return before.data ? <p>{before.data}</p> : null;
+      return before.data ? <p>{before.data.cachePath}</p> : null;
     }
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -447,7 +447,7 @@ describe("usePrefetchRender", () => {
 
   function Landed() {
     const render = useRender(next, identityEdit);
-    return render.data ? <p>{render.data}</p> : null;
+    return render.data ? <p>{render.data.cachePath}</p> : null;
   }
 
   async function arrive(landed: boolean, drops = 1) {

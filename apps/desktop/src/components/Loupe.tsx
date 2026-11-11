@@ -29,7 +29,6 @@ import {
   useMaskOverlay,
   usePrefetchRender,
   useRender,
-  useRenderUnmasked,
   useThumbnail,
   useViewportRender,
 } from "@/lib/queries";
@@ -150,7 +149,7 @@ export function Loupe({
   );
   // Queries fetch in call order and an idle lane usually starts on the first, so the edit asks first.
   const render = useRender(image, previewEdit);
-  const unmasked = useRenderUnmasked(image, previewEdit);
+  const unmasked = render.data?.unmasked ?? false;
   const beforeEdit = useMemo(() => unedited(deferredEdit), [deferredEdit]);
   const before = useRender(comparing ? image : undefined, beforeEdit);
   const thumb = useThumbnail(image);
@@ -343,7 +342,7 @@ export function Loupe({
   // in — the overlay and CSS rotation would not line up with it. Fall back to
   // the (uncropped) thumbnail until the full-frame render lands.
   const freshRender =
-    cropping && render.isPlaceholderData ? undefined : render.data;
+    cropping && render.isPlaceholderData ? undefined : render.data?.cachePath;
   // The slice sits outside the zoom transform, laid out at its own on-screen
   // size, so it is never a scaled-up copy of the fitted render.
   const sliceRect = zoom.state
@@ -490,7 +489,7 @@ export function Loupe({
                 {before.data && (
                   <img
                     data-testid="loupe-before-image"
-                    src={fileSrc(before.data)}
+                    src={fileSrc(before.data.cachePath)}
                     alt={image.rel}
                     draggable={false}
                     className="h-full w-full object-contain select-none"
@@ -543,7 +542,7 @@ export function Loupe({
               // The preview render has the crop and turn baked in, so it maps
               // onto the navigator box without any stretch arithmetic.
               <Navigator
-                src={fileSrc(render.data)}
+                src={fileSrc(render.data.cachePath)}
                 pixelWidth={pixelWidth}
                 pixelHeight={pixelHeight}
                 visible={visibleRect(

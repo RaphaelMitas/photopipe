@@ -285,7 +285,7 @@ export function EditPanel({ image, edit, onChange, crop, masks }: Props) {
           {!target && (
             <CurveEditor
               edit={edit}
-              imageSrc={render.data}
+              imageSrc={render.data?.cachePath}
               photo={image.path}
               onChange={set}
             />
