@@ -19,7 +19,8 @@ private func imageFile(for url: URL) throws -> ImageFile {
 }
 
 private func meanChannels(
-    of url: URL, region: CGRect? = nil
+    of url: URL, region: CGRect? = nil,
+    colorSpace: CGColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 ) throws -> (red: Double, green: Double, blue: Double) {
     guard let image = CIImage(contentsOf: url) else {
         throw Renderer.RenderError.unreadable(url.path)
@@ -30,7 +31,7 @@ private func meanChannels(
     var pixel = [UInt8](repeating: 0, count: 4)
     CIContext().render(
         average, toBitmap: &pixel, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
-        format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+        format: .RGBA8, colorSpace: colorSpace)
     return (Double(pixel[0]), Double(pixel[1]), Double(pixel[2]))
 }
 
@@ -387,12 +388,14 @@ private func writeEntry(_ name: String, in dir: URL, bytes: Int, hoursAgo: Doubl
     #expect(channels.blue < 60)
 }
 
-private func writeSyntheticJPEG(color: CIColor, width: Int = 64, height: Int = 64) throws -> URL {
+private func writeSyntheticJPEG(
+    color: CIColor, width: Int = 64, height: Int = 64,
+    colorSpace: CGColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+) throws -> URL {
     let image = CIImage(color: color).cropped(to: CGRect(x: 0, y: 0, width: width, height: height))
     let url = FileManager.default.temporaryDirectory
         .appendingPathComponent("photopipe-synth-\(UUID().uuidString).jpg")
-    try CIContext().writeJPEGRepresentation(
-        of: image, to: url, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+    try CIContext().writeJPEGRepresentation(of: image, to: url, colorSpace: colorSpace)
     return url
 }
 
@@ -453,7 +456,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
     let renderer = Renderer(cacheDir: cacheDir)
     let file = try imageFile(for: jpegURL)
 
-    for edit in [Edit(clarity: 100), Edit(dehaze: 80)] {
+    for edit in [Edit(clarity: 100), Edit(dehaze: 80), Edit(highlights: -100, shadows: 100)] {
         let url = try renderer.render(file: file, edit: edit, maxPixel: 3000)
         let band = { (y: Int) in
             try meanLuminance(of: url, region: CGRect(x: 0, y: y, width: 1400, height: 16))
@@ -581,6 +584,80 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
     #expect(brightRecovered < brightNeutral - 5, "highlights -80 must pull bright tones down")
 }
 
+@Test func shadowsAndHighlightsKeepTheDetailTheyMove() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let stripes = CIFilter(
+        name: "CIStripesGenerator",
+        parameters: [
+            "inputColor0": gray(0.35), "inputColor1": gray(0.45), "inputWidth": 8,
+            "inputCenter": CIVector(x: 0, y: 0),
+        ]
+    )!.outputImage!.cropped(to: CGRect(x: 0, y: 0, width: 256, height: 256))
+    let jpegURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("photopipe-stripes-\(UUID().uuidString).jpg")
+    try CIContext().writeJPEGRepresentation(
+        of: stripes, to: jpegURL, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+    defer { try? FileManager.default.removeItem(at: jpegURL) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: jpegURL)
+
+    let neutral = try abs(
+        seamContrast(of: renderer.render(file: file, edit: .identity, maxPixel: 256)))
+    let moved = try abs(
+        seamContrast(
+            of: renderer.render(
+                file: file, edit: Edit(highlights: -100, shadows: 100), maxPixel: 256)))
+    #expect(neutral > 15)
+    #expect(
+        moved > neutral * 0.9,
+        "texture inside one region must survive both sliders, got \(neutral) → \(moved)")
+}
+
+@Test func shadowsAndHighlightsStopAtAHardEdge() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let jpegURL = try writeHalvesJPEG(left: gray(0.15), right: gray(0.85), width: 512, height: 256)
+    defer { try? FileManager.default.removeItem(at: jpegURL) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: jpegURL)
+
+    let url = try renderer.render(
+        file: file, edit: Edit(highlights: -100, shadows: 100), maxPixel: 512)
+    let strip = { (x: Int) in
+        try meanLuminance(of: url, region: CGRect(x: x, y: 0, width: 8, height: 256))
+    }
+    let darkHalo = try abs(strip(244) - strip(100))
+    let brightHalo = try abs(strip(260) - strip(404))
+    #expect(darkHalo < 20, "the dark side must be as lifted beside the edge as away from it")
+    #expect(brightHalo < 20, "and the bright side as recovered, got \(darkHalo) and \(brightHalo)")
+}
+
+@Test func shadowsAndHighlightsKeepTheHue() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    func saturation(_ channels: (red: Double, green: Double, blue: Double)) -> Double {
+        let high = max(channels.red, channels.green, channels.blue)
+        return (high - min(channels.red, channels.green, channels.blue)) / high
+    }
+
+    let skin = CIColor(red: 0.3, green: 0.19, blue: 0.15)
+    let sky = CIColor(red: 0.42, green: 0.62, blue: 0.85)
+    for (color, edit) in [(skin, Edit(shadows: 100)), (sky, Edit(highlights: -100))] {
+        let jpegURL = try writeSyntheticJPEG(color: color)
+        defer { try? FileManager.default.removeItem(at: jpegURL) }
+        let file = try imageFile(for: jpegURL)
+        let neutral = try meanChannels(
+            of: renderer.render(file: file, edit: .identity, maxPixel: 64))
+        let moved = try meanChannels(of: renderer.render(file: file, edit: edit, maxPixel: 64))
+        #expect(abs(moved.green - neutral.green) > 20, "the tone must move")
+        #expect(
+            abs(saturation(moved) - saturation(neutral)) < 0.04,
+            "without the colour washing out or deepening, got \(neutral) → \(moved)")
+    }
+}
+
 @Test func whitesAndBlacksRenderAgainstTheEndPoints() throws {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
@@ -653,6 +730,30 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
     #expect(
         redOnly.red > redOnly.green + 10,
         "a red-channel curve must only move red, got \(redOnly)")
+}
+
+@Test func aToneCurveKeepsColorsOutsideSRGB() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let displayP3 = CGColorSpace(name: CGColorSpace.displayP3)!
+    let green = try #require(CIColor(red: 0.1, green: 0.9, blue: 0.1, colorSpace: displayP3))
+    let jpegURL = try writeSyntheticJPEG(color: green, colorSpace: displayP3)
+    defer { try? FileManager.default.removeItem(at: jpegURL) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: jpegURL)
+
+    let neutral = try meanChannels(
+        of: renderer.render(file: file, edit: .identity, maxPixel: 64), colorSpace: displayP3)
+    let curved = try meanChannels(
+        of: renderer.render(
+            file: file,
+            edit: Edit(curveRGB: [
+                CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.51), CurvePoint(x: 1, y: 1),
+            ]), maxPixel: 64), colorSpace: displayP3)
+    #expect(neutral.red < 40, "the source green must sit outside sRGB, got \(neutral)")
+    #expect(
+        curved.red < neutral.red + 10,
+        "a near-identity curve must not pull the green into sRGB, got \(curved)")
 }
 
 @Test func rawWhiteBalanceIsAsShotAndAdjustable() throws {
