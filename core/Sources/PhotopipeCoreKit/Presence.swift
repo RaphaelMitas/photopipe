@@ -60,17 +60,6 @@ enum Presence {
             return float4(withChroma(lab, gain), p.a);
         }
 
-        [[ stitchable ]] float4 localContrast(
-            coreimage::sample_t p, coreimage::sample_t blurred, float amount
-        ) {
-            float3 weights = float3(0.2126, 0.7152, 0.0722);
-            float luma = dot(p.rgb, weights);
-            float base = dot(blurred.rgb, weights);
-            float midtone = 4.0 * saturate(luma) * (1.0 - saturate(luma));
-            p.rgb += amount * midtone * (luma - base);
-            return p;
-        }
-
         float minChannel(float3 v) {
             return min(min(v.r, v.g), v.b);
         }
@@ -167,6 +156,16 @@ enum Presence {
             p.rgb *= exp2(shadows * dark + highlights * bright);
             return p;
         }
+
+        [[ stitchable ]] float4 localContrast(
+            coreimage::sample_t p, coreimage::sample_t fine, coreimage::sample_t base, float amount
+        ) {
+            // an eighth keeps every tone above half its luma at full strength, so no edge crushes
+            float detail = 0.125 * tanh((fine.r - base.r) / 0.125);
+            // the midtone weight 4·luma·(1 - luma) with its luma factored out, leaving a gain
+            p.rgb *= pow(1.0 + amount * 4.0 * (1.0 - encodedLuma(p.rgb)) * detail, 2.2);
+            return p;
+        }
         """
 
     private static let kernels: [String: CIColorKernel] = {
@@ -247,14 +246,19 @@ enum Presence {
     }
 
     static func clarity(_ image: CIImage, amount: Double) -> CIImage {
-        let coarse = coarse(image)
-        let base = upscaled(blurred(coarse, radius: coarse.longEdge * 0.015), to: image)
-        return apply("localContrast", to: image, arguments: [base, Float(amount / 100)])
+        let luma = apply("lumaMoments", to: image, arguments: [])
+        // not `coarse`: resampling moves a flat tone off its own luma, which then reads as detail
+        let base = blurred(luma, radius: image.longEdge * 0.015)
+        return apply("localContrast", to: image, arguments: [luma, base, Float(amount / 100)])
     }
 
+    /// Starts above the finest pixels, where noise and capture sharpening live.
     static func texture(_ image: CIImage, amount: Double) -> CIImage {
-        let base = blurred(image, radius: image.longEdge * 0.0015)
-        return apply("localContrast", to: image, arguments: [base, Float(amount / 100)])
+        let luma = apply("lumaMoments", to: image, arguments: [])
+        // not `blurred`: its half pixel floor would narrow the band in renders under 2000 px
+        let fine = clamped(luma, "CIGaussianBlur", radius: image.longEdge * 0.00025)
+        let base = blurred(luma, radius: image.longEdge * 0.002)
+        return apply("localContrast", to: image, arguments: [fine, base, Float(amount / 100)])
     }
 
     static func chroma(_ image: CIImage, vibrance: Double, saturation: Double) -> CIImage {
