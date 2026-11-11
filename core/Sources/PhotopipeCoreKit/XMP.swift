@@ -443,16 +443,16 @@ public enum XMP {
         realScalar("Dehaze", nonZero(edit.dehaze))
         if file.isRaw {
             let own = (temperature: sane(asShot?.temperature), tint: sane(asShot?.tint))
-            // a pinned half reads back as set, so one still at the raw's own value is not an edit
-            func isEdited(_ value: Double?, own: Double?) -> Bool {
-                value.map { saneInt($0) != own.map(saneInt) } ?? false
-            }
+            // Camera Raw wants both numbers beside Custom
+            let temperature = edit.temperature ?? own.temperature
+            let tint = edit.tint ?? own.tint
+            // a half taken from the raw reads back as set, so one still at the raw's own value is no edit
             let isCustom =
-                isEdited(edit.temperature, own: own.temperature) || isEdited(edit.tint, own: own.tint)
+                temperature.map(saneInt) != own.temperature.map(saneInt)
+                || tint.map(saneInt) != own.tint.map(saneInt)
             tags.append(TagWrite(.crs, "WhiteBalance", .scalar(isCustom ? "Custom" : "As Shot")))
-            // Camera Raw wants both numbers beside Custom, so an unset half is pinned to the raw's own
-            integerScalar("Temperature", isCustom ? edit.temperature ?? own.temperature : nil)
-            integerScalar("Tint", isCustom ? edit.tint ?? own.tint : nil)
+            integerScalar("Temperature", isCustom ? temperature : nil)
+            integerScalar("Tint", isCustom ? tint : nil)
         } else {
             integerScalar("IncrementalTemperature", edit.temperature)
             integerScalar("IncrementalTint", edit.tint)
