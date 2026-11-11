@@ -311,7 +311,7 @@ public enum XMP {
         }
     }
 
-    // ImageIO for every reader: a long value spills into a JPEG's extended XMP, which the packet reader does not follow
+    // not embeddedXMPProperties: a JPEG's long XMP spills into extended segments it does not follow
     private static func embeddedMasks(in metadata: CGImageMetadata?) -> String? {
         metadata.flatMap {
             CGImageMetadataCopyStringValueWithPath($0, nil, "photopipe:Masks" as CFString) as String?
@@ -629,7 +629,7 @@ public enum XMP {
     /// with the rating, flag and edit the file carried.
     static func embeddedTags(_ file: ImageFile) throws -> [TagWrite] {
         let (rating, flag, edit) = embedded(file)
-        // a mask this build or OS cannot read leaves the edit an identity, and still moves to the sidecar
+        // a mask this build or OS cannot read is not in edit, so the identity check alone would drop it
         let unread =
             file.sidecarOnly
             ? [] : masks(fromJSON: embeddedMasks(in: metadata(at: URL(fileURLWithPath: file.path)))).unread

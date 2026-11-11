@@ -237,8 +237,8 @@ files were skipped".
 
 The core runs requests concurrently, and each request gets its own reply.
 Renders and thumbnails each have a newest-first lane that answers the oldest
-waiting request "superseded" once too many pile up; mask overlays and the
-hover share a one-worker lane, so a photo's rows cut one matte at a time;
+waiting request "superseded" once too many pile up; mask overlays, the
+hover and clicks share a one-worker lane, so a photo's rows cut one matte at a time;
 `setRoot` gets a thread of
 its own; everything else shares an 8-wide queue, so a long JPEG export occupies one slot while ratings keep
 flowing. Per-file export progress needs mid-request events the
