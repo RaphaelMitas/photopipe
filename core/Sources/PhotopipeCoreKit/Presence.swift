@@ -22,7 +22,7 @@ enum Presence {
         }
 
         float3 airlightOf(float4 light) {
-            return max(light.rgb / max(light.a, 1e-6), 0.05);
+            return max(light.rgb / max(light.a, 1e-6), 1e-3);
         }
 
         float lumaOf(float3 rgb) {
@@ -37,7 +37,8 @@ enum Presence {
             coreimage::sample_t p, coreimage::sample_t dark, coreimage::sample_t peak
         ) {
             float weight = pow(saturate(minChannel(dark.rgb) / max(peak.r, 1e-6)), 32.0);
-            return float4(p.rgb * weight, weight);
+            // bounded, so one stray pixel far above white cannot carry the average
+            return float4(clamp(p.rgb, 0.0, 16.0) * weight, weight);
         }
 
         [[ stitchable ]] float4 hazeMoments(
@@ -59,9 +60,9 @@ enum Presence {
         ) {
             float3 airlight = airlightOf(light);
             if (omega < 0.0) {
-                // adding fogs a clear scene too
+                // uniform, not by the haze found, so a clear scene fogs too
                 float3 fog = mix(airlight, float3(lumaOf(airlight)), 0.5);
-                p.rgb = mix(p.rgb, fog, omega / (omega - 1.0));
+                p.rgb = mix(p.rgb, fog * p.a, omega / (omega - 1.0));
                 return p;
             }
             // no pixel holds more haze than its darkest channel, which keeps it above black
@@ -75,7 +76,7 @@ enum Presence {
         }
 
         float encodedLuma(float3 rgb) {
-            return pow(saturate(dot(rgb, float3(0.2126, 0.7152, 0.0722))), 1.0 / 2.2);
+            return pow(saturate(lumaOf(rgb)), 1.0 / 2.2);
         }
 
         [[ stitchable ]] float4 lumaMoments(coreimage::sample_t p) {

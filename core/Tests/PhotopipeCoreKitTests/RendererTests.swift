@@ -539,14 +539,41 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
         .cropped(to: CGRect(x: 500, y: 400, width: 12, height: 12))
         .composited(over: CIImage(color: gray(0.15)).cropped(to: frame.insetBy(dx: 0, dy: 200)))
         .composited(over: CIImage(color: gray(0.75)).cropped(to: frame))
-    var pixels = [Float](repeating: 0, count: 1000 * 600 * 4)
-    CIContext().render(
-        Presence.dehaze(scene, amount: amount), toBitmap: &pixels, rowBytes: 1000 * 16,
-        bounds: frame, format: .RGBAf, colorSpace: nil)
+    let pixels = linearPixels(of: Presence.dehaze(scene, amount: amount), in: frame)
     let darkest = pixels.min() ?? 0
     let brightest = pixels.max() ?? 0
     #expect(darkest > -0.001, "no channel may fall below black, got \(darkest)")
     #expect(brightest < 1.001, "and none may pass white, got \(brightest)")
+}
+
+@Test func dehazeLeavesAFlatFieldAsItWas() {
+    let frame = CGRect(x: 0, y: 0, width: 512, height: 512)
+    let corner = CGRect(x: 0, y: 0, width: 1, height: 1)
+    let change = { (scene: CIImage) in
+        linearPixels(of: Presence.dehaze(scene, amount: 100), in: corner)[0]
+            - linearPixels(of: scene, in: corner)[0]
+    }
+    let dim = change(CIImage(color: gray(0.2)).cropped(to: frame))
+    #expect(abs(dim) < 0.002, "a dim field is its own airlight, moved \(dim)")
+
+    // far above white, the way a stray pixel in a float TIFF is
+    let stray: [Float] = [60000, 60000, 60000, 1]
+    let glint = change(
+        CIImage(
+            bitmapData: Data(bytes: stray, count: 16), bytesPerRow: 16,
+            size: CGSize(width: 1, height: 1), format: .RGBAf, colorSpace: nil
+        )
+        .transformed(by: CGAffineTransform(translationX: 300, y: 300))
+        .composited(over: CIImage(color: gray(0.6)).cropped(to: frame)))
+    #expect(abs(glint) < 0.01, "one stray pixel must not move the airlight, moved \(glint)")
+}
+
+private func linearPixels(of image: CIImage, in frame: CGRect) -> [Float] {
+    var pixels = [Float](repeating: 0, count: Int(frame.width * frame.height) * 4)
+    CIContext().render(
+        image, toBitmap: &pixels, rowBytes: Int(frame.width) * 16, bounds: frame, format: .RGBAf,
+        colorSpace: nil)
+    return pixels
 }
 
 @Test func clarityAndTextureSharpenTheSeam() throws {
