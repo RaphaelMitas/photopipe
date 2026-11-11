@@ -323,6 +323,43 @@ private func writeEntry(_ name: String, in dir: URL, bytes: Int, hoursAgo: Doubl
     #expect(top.blue < 60, "blue must have rotated to the bottom, got \(top)")
 }
 
+private func grayBitmap(size: Int = 256, _ value: (Int, Int) -> Double) -> CIImage {
+    let pixels = (0..<size * size).map { Float(value($0 % size, $0 / size)) }
+    return CIImage(
+        bitmapData: pixels.withUnsafeBufferPointer { Data(buffer: $0) }, bytesPerRow: size * 4,
+        size: CGSize(width: size, height: size), format: .Rf, colorSpace: nil)
+}
+
+private func linearRed(of image: CIImage) -> [Float] {
+    let width = Int(image.extent.width)
+    var pixels = [Float](repeating: 0, count: width * Int(image.extent.height) * 4)
+    CIContext().render(
+        image, toBitmap: &pixels, rowBytes: width * 16, bounds: image.extent, format: .RGBAf,
+        colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB))
+    return stride(from: 0, to: pixels.count, by: 4).map { pixels[$0] }
+}
+
+private func contrast(_ values: [Float]) -> Float {
+    let mean = values.reduce(0, +) / Float(values.count)
+    return (values.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Float(values.count)).squareRoot()
+}
+
+@Test func straighteningKeepsFineDetailWithoutRinging() {
+    let middle = CropRect(left: 0.25, top: 0.25, right: 0.75, bottom: 0.75)
+    func straightened(_ image: CIImage, by angle: Double) -> [Float] {
+        linearRed(of: Renderer.applyCrop(Edit(crop: middle, cropAngle: angle), to: image))
+    }
+
+    // bilinear sampling keeps 0.77 of a wave four pixels long
+    let wave = grayBitmap { x, y in 0.5 + 0.4 * sin(2 * .pi * (0.25 * Double(x) + 0.11 * Double(y))) }
+    let kept = contrast(straightened(wave, by: 0.5)) / contrast(straightened(wave, by: 0))
+    #expect(kept > 0.88, "a straightened photo keeps its fine detail, got \(kept)")
+
+    let stripes = grayBitmap { x, _ in x % 4 < 2 ? 1 : 0 }
+    let turned = straightened(stripes, by: 0.5)
+    #expect(turned.allSatisfy { (0...1).contains($0) }, "a hard edge must not overshoot")
+}
+
 @Test func rotationTurnsClockwiseAndCropFollowsTheTurnedFrame() throws {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }

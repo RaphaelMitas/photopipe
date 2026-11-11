@@ -18,7 +18,7 @@ public final class Renderer: @unchecked Sendable {
     private let curveColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
     // bump when the pixels change for an unchanged key
-    private static let pipelineVersion = 3
+    private static let pipelineVersion = 4
 
     /// None of these are zero, so a slider left alone has to reach for them.
     public struct RawDefaults: Sendable {
@@ -282,7 +282,8 @@ public final class Renderer: @unchecked Sendable {
             let center = CGPoint(x: extent.midX, y: extent.midY)
             // CI is y-up, so on-screen-clockwise negates here; CSS gets it raw
             let angle = -edit.cropAngle * .pi / 180
-            result = result.transformed(
+            result = Straighten.transformed(
+                result,
                 by: CGAffineTransform(translationX: center.x, y: center.y)
                     .rotated(by: angle)
                     .translatedBy(x: -center.x, y: -center.y))
