@@ -6,26 +6,6 @@ enum Presence {
         #include <CoreImage/CoreImage.h>
         using namespace metal;
 
-        static float perceptual(float3 rgb) {
-            return pow(max(dot(rgb, float3(0.2126, 0.7152, 0.0722)), 0.0), 1.0 / 2.2);
-        }
-
-        [[ stitchable ]] float4 perceptualLuma(coreimage::sample_t p) {
-            return float4(float3(perceptual(p.rgb)), 1.0);
-        }
-
-        [[ stitchable ]] float4 localContrast(
-            coreimage::sample_t p, coreimage::sample_t fine, coreimage::sample_t base, float amount
-        ) {
-            float luma = saturate(perceptual(p.rgb));
-            // an eighth keeps every tone above half its luma at full strength, so no edge crushes
-            // Metal's tanh returns 0 and then NaN past 44, which an HDR highlight reaches
-            float detail = 0.125 * tanh(clamp((fine.r - base.r) / 0.125, -8.0, 8.0));
-            // the midtone weight 4·luma·(1 - luma) with its luma factored out, leaving a gain
-            p.rgb *= pow(1.0 + amount * 4.0 * (1.0 - luma) * detail, 2.2);
-            return p;
-        }
-
         [[ stitchable ]] float4 dehaze(
             coreimage::sample_t p, coreimage::sample_t veil, coreimage::sample_t light,
             float omega
@@ -61,6 +41,16 @@ enum Presence {
             // peaks at 1 for a tone of 0.75; a pixel near white has nothing to recover
             float bright = 256.0 / 27.0 * pow(tone, 3.0) * (1.0 - max(tone, own));
             p.rgb *= exp2(shadows * dark + highlights * bright);
+            return p;
+        }
+
+        [[ stitchable ]] float4 localContrast(
+            coreimage::sample_t p, coreimage::sample_t fine, coreimage::sample_t base, float amount
+        ) {
+            // an eighth keeps every tone above half its luma at full strength, so no edge crushes
+            float detail = 0.125 * tanh((fine.r - base.r) / 0.125);
+            // the midtone weight 4·luma·(1 - luma) with its luma factored out, leaving a gain
+            p.rgb *= pow(1.0 + amount * 4.0 * (1.0 - encodedLuma(p.rgb)) * detail, 2.2);
             return p;
         }
         """
@@ -130,12 +120,8 @@ enum Presence {
             "regionalExposure", to: image, arguments: [upscaled(moments, to: image)] + stops)
     }
 
-    private static func perceptualLuma(_ image: CIImage) -> CIImage {
-        apply("perceptualLuma", to: image, arguments: [])
-    }
-
     static func clarity(_ image: CIImage, amount: Double) -> CIImage {
-        let luma = perceptualLuma(image)
+        let luma = apply("lumaMoments", to: image, arguments: [])
         let coarse = coarse(luma)
         let base = upscaled(blurred(coarse, radius: coarse.longEdge * 0.015), to: image)
         return apply("localContrast", to: image, arguments: [luma, base, Float(amount / 100)])
@@ -143,7 +129,7 @@ enum Presence {
 
     /// Starts above the finest pixels, where noise and capture sharpening live.
     static func texture(_ image: CIImage, amount: Double) -> CIImage {
-        let luma = perceptualLuma(image)
+        let luma = apply("lumaMoments", to: image, arguments: [])
         // not `blurred`: its half pixel floor would narrow the band in renders under 2000 px
         let fine = clamped(luma, "CIGaussianBlur", radius: image.longEdge * 0.00025)
         let base = blurred(luma, radius: image.longEdge * 0.002)

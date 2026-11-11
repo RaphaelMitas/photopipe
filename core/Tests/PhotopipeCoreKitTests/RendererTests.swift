@@ -520,7 +520,7 @@ private func seamContrast(of url: URL) throws -> Double {
     defer { try? FileManager.default.removeItem(at: jpegURL) }
     let renderer = Renderer(cacheDir: cacheDir)
 
-    // ten stops stand in for an HDR file: far enough over white to break Metal's tanh
+    // ten stops stand in for an HDR file: its luma unclipped drives Metal's tanh past 44, to NaN
     let url = try renderer.render(
         file: imageFile(for: jpegURL), edit: Edit(exposure: 10, clarity: 100), maxPixel: 256)
     let highlight = try meanLuminance(of: url, region: CGRect(x: 128, y: 0, width: 4, height: 256))
