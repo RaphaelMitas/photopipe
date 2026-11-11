@@ -78,3 +78,19 @@ test("closing the panel ends the mask session, and M opens both again", async ({
   const exposure = page.getByTestId("exposure").getByRole("slider");
   await expect(exposure).toHaveAttribute("aria-valuenow", "0.25");
 });
+
+test("a new mask flashes its overlay, and the flash ends by itself", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("thumb").first().click();
+  await page.keyboard.press("m");
+  await page.getByTestId("mask-chip-people").press("Enter");
+  const overlay = page.getByTestId("mask-overlay");
+  await expect(overlay).toBeVisible();
+  await expect(overlay).toHaveCount(0);
+
+  await page.getByTestId("mask-invert").press("Enter");
+  await expect(overlay).toBeVisible();
+  await expect(overlay).toHaveCount(0);
+});

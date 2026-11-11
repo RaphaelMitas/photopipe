@@ -378,7 +378,7 @@ export function EditPanel({ image, edit, onChange, crop, masks }: Props) {
         </Group>
         {target && (
           <p className="text-2xs text-muted-foreground">
-            Crop, curves and denoise stay with the photo.
+            Crop, curves, presence and denoise stay with the photo.
           </p>
         )}
         {raw && !target && (

@@ -91,7 +91,7 @@ export function MaskList({ image, edit, masks }: Props) {
           type="button"
           data-testid="mask-add"
           onClick={masks.toggleField}
-          className="mt-1 flex w-full items-center gap-1.5 rounded-md border border-border border-dashed px-2 py-1 text-muted-foreground text-xs hover:border-muted-foreground hover:text-foreground"
+          className="mt-1 flex w-full items-center gap-1.5 rounded-md border border-border border-dashed px-2 py-1 pointer-coarse:py-2 text-muted-foreground text-xs hover:border-muted-foreground hover:text-foreground"
         >
           <Plus className="size-3" />
           Mask

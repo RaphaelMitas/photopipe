@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   type Edit,
   type ImageFile,
@@ -7,9 +7,6 @@ import {
   type Mask,
   type MaskShape,
 } from "./core";
-
-// as long as --animate-mask-flash in index.css
-const FLASH_MS = 1600;
 
 type Stored = {
   path: string;
@@ -38,15 +35,6 @@ export function useMaskSession(
   const target = byId(current?.target);
   const creating = current?.creating ?? false;
   const flash = current?.flash ?? null;
-
-  useEffect(() => {
-    if (flash === null) return;
-    const timer = window.setTimeout(
-      () => setStored((now) => now && { ...now, flash: null }),
-      FLASH_MS,
-    );
-    return () => clearTimeout(timer);
-  }, [flash]);
 
   const patch = (change: Partial<Stored>) => {
     if (!loupePhoto) return;
@@ -84,7 +72,7 @@ export function useMaskSession(
     toggleField: () => patch({ creating: !creating, chip: null }),
     cancel: () => patch({ creating: false, chip: null }),
     hoverChip: (chip: MaskShape | null) => patch({ chip }),
-    hoverRow: (row: string | null) => patch({ row }),
+    hoverRow: (row: string | null) => patch({ row, flash: null }),
     add: (shape: MaskShape) => {
       const id = crypto.randomUUID().slice(0, 8);
       write([
@@ -108,7 +96,11 @@ export function useMaskSession(
       if (target)
         change(target.id, { adjust: { ...target.adjust, ...partial } });
     },
-    toggleOverlay: () => setOverlay((on) => !on),
+    toggleOverlay: () => {
+      setOverlay((on) => !on);
+      patch({ flash: null });
+    },
+    endFlash: () => patch({ flash: null }),
   };
 }
 

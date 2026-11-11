@@ -1114,6 +1114,9 @@ private let someMasks = [
     }
     #expect(masks("not json").isEmpty)
     #expect(masks(#"[{"id":"a","source":"sky"}]"#).isEmpty, "a source this build cannot find")
+    #expect(
+        masks(#"[-1e400,{"id":"a","source":"people","adjust":{"exposure":-1e400}}]"#).isEmpty,
+        "-1e400 reads as -inf, which crashed the reader")
     let twice = #"{"id":"a","source":"people"}"#
     #expect(masks("[\(twice),\(twice)]") == [Mask(id: "a", source: .people)])
     let many = (0..<100).map { #"{"id":"\#($0)","source":"subject"}"# }.joined(separator: ",")

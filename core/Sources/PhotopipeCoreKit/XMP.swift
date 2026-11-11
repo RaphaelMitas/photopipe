@@ -98,7 +98,8 @@ public enum XMP {
         var read: [Mask] = []
         var unread: [String] = []
         for entry in entries.prefix(maskLimit) {
-            guard
+            // a number too large for a Double reads as infinity, and writing that raises past try?
+            guard JSONSerialization.isValidJSONObject([entry]),
                 let json = try? JSONSerialization.data(
                     withJSONObject: entry, options: [.sortedKeys, .fragmentsAllowed])
             else { continue }

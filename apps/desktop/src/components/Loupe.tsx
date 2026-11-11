@@ -415,6 +415,7 @@ export function Loupe({
             <div
               key={`${masks.shown.source}|${masks.shown.inverted}|${masks.fading}`}
               data-testid="mask-overlay"
+              onAnimationEnd={masks.endFlash}
               className={cn(
                 "mask-no-repeat absolute bg-mask/50",
                 masks.fading && "animate-mask-flash",

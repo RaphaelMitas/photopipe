@@ -63,6 +63,7 @@ const noMasks: MaskSession = {
   remove: vi.fn(),
   adjust: vi.fn(),
   toggleOverlay: vi.fn(),
+  endFlash: vi.fn(),
 };
 
 /// A real tap is pointerdown then click, and Radix closes the tooltip on both.
