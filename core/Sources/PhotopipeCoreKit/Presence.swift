@@ -31,32 +31,33 @@ enum Presence {
                 dot(lms, float3(-0.0041960863, -0.7034186147, 1.7076147010)));
         }
 
+        static float3 withChroma(float3 lab, float gain) {
+            return fromOklab(float3(lab.x, lab.yz * gain));
+        }
+
         static float roomInSRGB(float3 from, float3 to) {
             float3 move = to - from;
             float3 walls = mix(from, 1.0 - from, step(0.0, move)) / max(abs(move), 1e-9);
-            return max(min(walls.x, min(walls.y, walls.z)), 1e-6);
+            return max(min3(walls.x, walls.y, walls.z), 1e-6);
         }
 
-        [[ stitchable ]] float4 chroma(coreimage::sample_t p, float saturation, float vibrance) {
+        [[ stitchable ]] float4 chroma(coreimage::sample_t p, float vibrance, float saturation) {
             float3 lab = toOklab(p.rgb);
             float c = length(lab.yz);
-            float low = min(p.r, min(p.g, p.b));
-            float purity = saturate(1.0 - low / max(max(p.r, max(p.g, p.b)), 1e-6));
+            float purity = saturate(1.0 - min3(p.r, p.g, p.b) / max(max3(p.r, p.g, p.b), 1e-6));
             float faint = 1.0 - purity * purity;
             // skin sits around Oklab hue 55: protected within 15 degrees, not at all past 45
             float skin = smoothstep(0.707, 0.966, dot(lab.yz, float2(0.574, 0.819)) / max(c, 1e-6));
             float reach = vibrance > 0.0 ? 2.5 * faint * (1.0 - 0.8 * skin) : 0.65 + 0.15 * faint;
             float gain = saturation * (1.0 + vibrance * reach);
-            float3 pushed = fromOklab(float3(lab.x, lab.yz * gain));
             if (gain > 1.0) {
-                // ease into the sRGB wall, then stop at it: the path bends, so the first room is a guess
-                float room = roomInSRGB(p.rgb, pushed);
-                gain = 1.0 + (gain - 1.0) * room / sqrt(1.0 + room * room);
-                pushed = fromOklab(float3(lab.x, lab.yz * gain));
-                gain = 1.0 + (gain - 1.0) * min(roomInSRGB(p.rgb, pushed), 1.0);
-                pushed = fromOklab(float3(lab.x, lab.yz * gain));
+                // headroom comes from the pixel alone, so more slider never means less colour
+                float headroom = roomInSRGB(p.rgb, withChroma(lab, 2.0));
+                headroom *= min(roomInSRGB(p.rgb, withChroma(lab, 1.0 + headroom)), 1.0);
+                float push = (gain - 1.0) / headroom;
+                gain = 1.0 + (gain - 1.0) / sqrt(1.0 + push * push);
             }
-            return float4(pushed, p.a);
+            return float4(withChroma(lab, gain), p.a);
         }
 
         [[ stitchable ]] float4 localContrast(
@@ -154,6 +155,6 @@ enum Presence {
     static func chroma(_ image: CIImage, vibrance: Double, saturation: Double) -> CIImage {
         apply(
             "chroma", to: image,
-            arguments: [Float(1 + saturation / 100), Float(vibrance / 100)])
+            arguments: [Float(vibrance / 100), Float(1 + saturation / 100)])
     }
 }

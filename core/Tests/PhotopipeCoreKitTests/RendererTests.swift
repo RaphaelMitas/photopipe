@@ -590,6 +590,8 @@ private let skin = [222.0, 170, 140]
 private let deepBlue = [65.0, 80, 200]
 private let foliage = [120.0, 190, 70]
 private let flowerRed = [200.0, 30, 40]
+private let paleBlue = [150.0, 170, 200]
+private let violet = [20.0, 40, 180]
 
 private func chroma(
     _ srgb: [Double], vibrance: Double = 0, saturation: Double = 0
@@ -639,11 +641,28 @@ private func oklab(_ rgb: [Double]) -> (lightness: Double, chroma: Double, hue: 
 }
 
 @Test func vibranceFavoursFaintColoursAndSparesSkin() {
-    func gain(_ color: [Double]) -> Double {
-        oklab(chroma(color, vibrance: 100)).chroma / oklab(chroma(color)).chroma
+    func added(_ color: [Double], vibrance: Double) -> Double {
+        oklab(chroma(color, vibrance: vibrance)).chroma / oklab(chroma(color)).chroma - 1
     }
-    #expect(gain([150, 170, 200]) > gain(deepBlue) + 0.3, "a pale blue must gain more than a deep one")
-    #expect(gain(skin) < gain(skin.reversed()) - 0.15, "skin must gain less than its blue mirror")
+    #expect(
+        added(paleBlue, vibrance: 10) > 3 * added(deepBlue, vibrance: 10),
+        "a pale blue must gain more than a deep one")
+    #expect(
+        added(skin, vibrance: 100) < added(skin.reversed(), vibrance: 100) - 0.15,
+        "skin must gain less than its blue mirror")
+}
+
+@Test func moreSliderNeverMeansLessColour() {
+    let saturated = stride(from: 0.0, through: 100, by: 20).map {
+        oklab(chroma(violet, saturation: $0)).chroma
+    }
+    #expect(
+        zip(saturated, saturated.dropFirst()).allSatisfy(<),
+        "violet lost chroma along saturation: \(saturated)")
+    #expect(
+        oklab(chroma(deepBlue, vibrance: 100, saturation: 100)).chroma
+            > oklab(chroma(deepBlue, saturation: 100)).chroma,
+        "vibrance on top of saturation took colour away")
 }
 
 @Test func rgbCurveBrightensMidtones() throws {
