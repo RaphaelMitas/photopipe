@@ -456,7 +456,7 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
     let renderer = Renderer(cacheDir: cacheDir)
     let file = try imageFile(for: jpegURL)
 
-    for edit in [Edit(clarity: 100), Edit(dehaze: 80)] {
+    for edit in [Edit(clarity: 100), Edit(dehaze: 80), Edit(highlights: -100, shadows: 100)] {
         let url = try renderer.render(file: file, edit: edit, maxPixel: 3000)
         let band = { (y: Int) in
             try meanLuminance(of: url, region: CGRect(x: 0, y: y, width: 1400, height: 16))
@@ -540,6 +540,80 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
     let brightRecovered = try meanLuminance(
         of: renderer.render(file: bright, edit: Edit(highlights: -80), maxPixel: 64))
     #expect(brightRecovered < brightNeutral - 5, "highlights -80 must pull bright tones down")
+}
+
+@Test func shadowsAndHighlightsKeepTheDetailTheyMove() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let stripes = CIFilter(
+        name: "CIStripesGenerator",
+        parameters: [
+            "inputColor0": gray(0.35), "inputColor1": gray(0.45), "inputWidth": 8,
+            "inputCenter": CIVector(x: 0, y: 0),
+        ]
+    )!.outputImage!.cropped(to: CGRect(x: 0, y: 0, width: 256, height: 256))
+    let jpegURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("photopipe-stripes-\(UUID().uuidString).jpg")
+    try CIContext().writeJPEGRepresentation(
+        of: stripes, to: jpegURL, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+    defer { try? FileManager.default.removeItem(at: jpegURL) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: jpegURL)
+
+    let neutral = try abs(
+        seamContrast(of: renderer.render(file: file, edit: .identity, maxPixel: 256)))
+    let moved = try abs(
+        seamContrast(
+            of: renderer.render(
+                file: file, edit: Edit(highlights: -100, shadows: 100), maxPixel: 256)))
+    #expect(neutral > 15)
+    #expect(
+        moved > neutral * 0.9,
+        "texture inside one region must survive both sliders, got \(neutral) → \(moved)")
+}
+
+@Test func shadowsAndHighlightsStopAtAHardEdge() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let jpegURL = try writeHalvesJPEG(left: gray(0.15), right: gray(0.85), width: 512, height: 256)
+    defer { try? FileManager.default.removeItem(at: jpegURL) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: jpegURL)
+
+    let url = try renderer.render(
+        file: file, edit: Edit(highlights: -100, shadows: 100), maxPixel: 512)
+    let strip = { (x: Int) in
+        try meanLuminance(of: url, region: CGRect(x: x, y: 0, width: 8, height: 256))
+    }
+    let darkHalo = try abs(strip(244) - strip(100))
+    let brightHalo = try abs(strip(260) - strip(404))
+    #expect(darkHalo < 20, "the dark side must be as lifted beside the edge as away from it")
+    #expect(brightHalo < 20, "and the bright side as recovered, got \(darkHalo) and \(brightHalo)")
+}
+
+@Test func shadowsAndHighlightsKeepTheHue() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    func saturation(_ channels: (red: Double, green: Double, blue: Double)) -> Double {
+        let high = max(channels.red, channels.green, channels.blue)
+        return (high - min(channels.red, channels.green, channels.blue)) / high
+    }
+
+    let skin = CIColor(red: 0.3, green: 0.19, blue: 0.15)
+    let sky = CIColor(red: 0.42, green: 0.62, blue: 0.85)
+    for (color, edit) in [(skin, Edit(shadows: 100)), (sky, Edit(highlights: -100))] {
+        let jpegURL = try writeSyntheticJPEG(color: color)
+        defer { try? FileManager.default.removeItem(at: jpegURL) }
+        let file = try imageFile(for: jpegURL)
+        let neutral = try meanChannels(
+            of: renderer.render(file: file, edit: .identity, maxPixel: 64))
+        let moved = try meanChannels(of: renderer.render(file: file, edit: edit, maxPixel: 64))
+        #expect(abs(moved.green - neutral.green) > 20, "the tone must move")
+        #expect(
+            abs(saturation(moved) - saturation(neutral)) < 0.04,
+            "without the colour washing out or deepening, got \(neutral) → \(moved)")
+    }
 }
 
 @Test func whitesAndBlacksRenderAgainstTheEndPoints() throws {
