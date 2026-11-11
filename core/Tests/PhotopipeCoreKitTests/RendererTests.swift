@@ -420,7 +420,7 @@ private func gray(_ value: CGFloat) -> CIColor {
     CIColor(red: value, green: value, blue: value)
 }
 
-/// Step across the seam of a 256 px halves render, averaged over 8 px either side.
+/// Step across the seam of a 256 px halves render.
 private func seamContrast(of url: URL) throws -> Double {
     let left = try meanLuminance(of: url, region: CGRect(x: 120, y: 0, width: 8, height: 256))
     let right = try meanLuminance(of: url, region: CGRect(x: 128, y: 0, width: 8, height: 256))
@@ -511,6 +511,20 @@ private func seamContrast(of url: URL) throws -> Double {
             abs(hueShift - 1) < 0.15,
             "the \(side) side must keep its hue, got \(neutral) → \(punchy)")
     }
+}
+
+@Test func clarityKeepsAHighlightFarOverWhiteBesideBlack() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let jpegURL = try writeHalvesJPEG(left: gray(0), right: gray(1), width: 256, height: 256)
+    defer { try? FileManager.default.removeItem(at: jpegURL) }
+    let renderer = Renderer(cacheDir: cacheDir)
+
+    // ten stops stand in for an HDR file: far enough over white to break Metal's tanh
+    let url = try renderer.render(
+        file: imageFile(for: jpegURL), edit: Edit(exposure: 10, clarity: 100), maxPixel: 256)
+    let highlight = try meanLuminance(of: url, region: CGRect(x: 128, y: 0, width: 4, height: 256))
+    #expect(highlight > 250, "the highlight must stay white at the edge, got \(highlight)")
 }
 
 private func writeStripesPNG(stripe: Int) throws -> URL {
