@@ -193,8 +193,8 @@ enum Presence {
 
     static func clarity(_ image: CIImage, amount: Double) -> CIImage {
         let luma = apply("lumaMoments", to: image, arguments: [])
-        let coarse = coarse(luma)
-        let base = upscaled(blurred(coarse, radius: coarse.longEdge * 0.015), to: image)
+        // not `coarse`: resampling moves a flat tone off its own luma, which then reads as detail
+        let base = blurred(luma, radius: image.longEdge * 0.015)
         return apply("localContrast", to: image, arguments: [luma, base, Float(amount / 100)])
     }
 
