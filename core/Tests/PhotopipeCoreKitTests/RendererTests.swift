@@ -1648,6 +1648,25 @@ private let rightSide = CGRect(x: 40, y: 0, width: 24, height: 64)
     #expect(segmented.withLock { $0 } == 1, "one matte serves every edit of the photo")
 }
 
+private func coverage(of matte: CIImage, at point: CGPoint) -> Int {
+    var pixel = [UInt8](repeating: 0, count: 4)
+    CIContext(options: [.workingColorSpace: NSNull()]).render(
+        matte, toBitmap: &pixel, rowBytes: 4,
+        bounds: CGRect(x: point.x, y: point.y, width: 1, height: 1), format: .RGBA8, colorSpace: nil)
+    return Int(pixel[0])
+}
+
+@Test func aSubjectFadesInFromItsEdgeInsteadOfCuttingPastIt() {
+    let frame = CGRect(x: 0, y: 0, width: 2048, height: 64)
+    let hard = CIImage(color: .white).cropped(to: CGRect(x: 0, y: 0, width: 1024, height: 64))
+        .composited(over: CIImage(color: .black).cropped(to: frame))
+    let soft = Masker.feathered(hard)
+
+    #expect(coverage(of: soft, at: CGPoint(x: 1000, y: 32)) == 255)
+    #expect((60...200).contains(coverage(of: soft, at: CGPoint(x: 1023, y: 32))))
+    #expect(coverage(of: soft, at: CGPoint(x: 1027, y: 32)) == 0)
+}
+
 @Test func aMatteKeepsItsHalfCoverageThroughTheCache() throws {
     let cacheDir = tempCacheDir()
     let jpeg = try writeSyntheticJPEG(color: gray(0.4))
@@ -1661,11 +1680,7 @@ private let rightSide = CGRect(x: 40, y: 0, width: 24, height: 64)
     let photo = CIImage(color: .black).cropped(to: CGRect(x: 0, y: 0, width: 64, height: 64))
     for _ in 0..<2 {
         let matte = try masker.matte(for: imageFile(for: jpeg), source: .people) { photo }
-        var pixel = [UInt8](repeating: 0, count: 4)
-        CIContext(options: [.workingColorSpace: NSNull()]).render(
-            matte, toBitmap: &pixel, rowBytes: 4, bounds: CGRect(x: 32, y: 32, width: 1, height: 1),
-            format: .RGBA8, colorSpace: nil)
-        #expect(abs(Int(pixel[0]) - 128) <= 1)
+        #expect(abs(coverage(of: matte, at: CGPoint(x: 32, y: 32)) - 128) <= 1)
     }
 }
 
