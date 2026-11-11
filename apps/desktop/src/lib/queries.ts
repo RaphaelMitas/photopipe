@@ -246,27 +246,27 @@ function renderQueryOptions(
       decoderVersion ?? "",
     ],
     queryFn: file
-      ? async () =>
-          (
-            await coreRequest("render", {
-              path: file.path,
-              edit,
-              maxPixel,
-              ...(viewport ? { viewport } : {}),
-              ...(decoderVersion ? { decoderVersion } : {}),
-            })
-          ).cachePath
+      ? () =>
+          coreRequest("render", {
+            path: file.path,
+            edit,
+            maxPixel,
+            ...(viewport ? { viewport } : {}),
+            ...(decoderVersion ? { decoderVersion } : {}),
+          })
       : skipToken,
     staleTime: Number.POSITIVE_INFINITY,
     retry: renderRetry,
     retryDelay: (failures, error) =>
       superseded(error) ? 0 : 1000 * 2 ** failures,
+    // the model that cuts the masks may still be on its way
+    refetchInterval: (query) => (query.state.data?.unmasked ? 5000 : false),
   });
 }
 
-export function useRender(file: RenderFile, edit: Edit) {
+function usePreviewOptions(file: RenderFile, edit: Edit) {
   const decoder = useRawDecoderVersion();
-  return useQuery({
+  return queryOptions({
     ...renderQueryOptions(
       file,
       edit,
@@ -274,9 +274,24 @@ export function useRender(file: RenderFile, edit: Edit) {
       undefined,
       renderDecoderVersion(file, decoder),
     ),
-    placeholderData: (previous: string | undefined, previousQuery) =>
+    placeholderData: (previous, previousQuery) =>
       previousQuery?.queryKey[1] === file?.path ? previous : undefined,
   });
+}
+
+export function useRender(file: RenderFile, edit: Edit) {
+  return useQuery({
+    ...usePreviewOptions(file, edit),
+    select: (preview) => preview.cachePath,
+  });
+}
+
+export function useRenderUnmasked(file: RenderFile, edit: Edit) {
+  const unmasked = useQuery({
+    ...usePreviewOptions(file, edit),
+    select: (preview) => preview.unmasked,
+  });
+  return unmasked.data ?? false;
 }
 
 /// A photo you step to renders with its own edit at once; only slider drags lag.
@@ -303,6 +318,7 @@ export function useViewportRender(
       request?.viewport,
       renderDecoderVersion(file, decoder),
     ),
+    select: (preview) => preview.cachePath,
     enabled: request !== null,
   });
 }
@@ -398,6 +414,10 @@ export function useMaskClickLimit() {
     staleTime: Number.POSITIVE_INFINITY,
   });
   return support.data?.clicks ?? 0;
+}
+
+export function useCanMask() {
+  return useMaskClickLimit() > 0;
 }
 
 const SET_RATING_KEY = ["setRating"];

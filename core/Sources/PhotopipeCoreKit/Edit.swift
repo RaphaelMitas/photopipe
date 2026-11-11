@@ -150,6 +150,8 @@ public struct Mask: Codable, Equatable, Sendable {
     public var hidden: Bool
     public var adjust: LocalAdjust
 
+    var changesPixels: Bool { !hidden && adjust != .identity }
+
     enum CodingKeys: String, CodingKey {
         case id, source, points, inverted, hidden, adjust
     }
@@ -339,9 +341,12 @@ public struct Edit: Codable, Equatable, Sendable {
 
     /// Deterministic representation for render cache keys.
     public var cacheKey: String {
+        // a new, hidden or unadjusted mask draws nothing, so it must not ask for a render
+        var drawn = self
+        drawn.masks = masks.filter(\.changesPixels)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let data = (try? encoder.encode(self)) ?? Data()
+        let data = (try? encoder.encode(drawn)) ?? Data()
         return String(decoding: data, as: UTF8.self)
     }
 }

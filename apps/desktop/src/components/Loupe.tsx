@@ -29,6 +29,7 @@ import {
   useMaskOverlay,
   usePrefetchRender,
   useRender,
+  useRenderUnmasked,
   useThumbnail,
   useViewportRender,
 } from "@/lib/queries";
@@ -149,6 +150,7 @@ export function Loupe({
   );
   // Queries fetch in call order and an idle lane usually starts on the first, so the edit asks first.
   const render = useRender(image, previewEdit);
+  const unmasked = useRenderUnmasked(image, previewEdit);
   const beforeEdit = useMemo(() => unedited(deferredEdit), [deferredEdit]);
   const before = useRender(comparing ? image : undefined, beforeEdit);
   const thumb = useThumbnail(image);
@@ -554,6 +556,14 @@ export function Loupe({
               />
             )}
           </>
+        )}
+        {unmasked && (
+          <div
+            data-testid="loupe-unmasked"
+            className={`${CHIP} pointer-events-none absolute right-3 bottom-3`}
+          >
+            Masks not shown
+          </div>
         )}
         {multiFrame && !cropping && (
           <StackOverlay

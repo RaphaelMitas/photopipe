@@ -15,8 +15,15 @@ public final class Renderer: @unchecked Sendable {
         public let point: Mask.Point
     }
 
+    public struct Preview: Encodable, Sendable {
+        public let cachePath: String
+        /// The photo has masks that could not be cut, and was rendered without any.
+        public let unmasked: Bool
+    }
+
     private let cache: CacheFolder
     private let masker: Masker
+    private let maskModelArrives: @Sendable () -> Bool
     private let context = CIContext(options: [.cacheIntermediates: true])
     // an export renders each photo once, so there is nothing to reuse
     private let exportContext = CIContext(options: [.cacheIntermediates: false])
@@ -50,16 +57,22 @@ public final class Renderer: @unchecked Sendable {
     private var defaultsByPath: [String: (values: RawDefaults, mtime: Double)] = [:]
     private var supportsByCamera: [String: Bool] = [:]
     private var supportsByPath: [String: (supported: Bool, mtime: Double)] = [:]
+    private var pixelStampsByPath: [String: (mtime: Double, size: Int64, stamp: String)] = [:]
     // the loupe holds current, both neighbours and a zoom render at once
     private let filterCapacity = 6
 
     public convenience init(cacheDir: URL) {
-        self.init(cacheDir: cacheDir, segment: Masker.vision)
+        self.init(
+            cacheDir: cacheDir, segment: Masker.vision, maskModelArrives: TapToSegment.modelArrives)
     }
 
-    init(cacheDir: URL, segment: @escaping Masker.Segment) {
+    init(
+        cacheDir: URL, segment: @escaping Masker.Segment,
+        maskModelArrives: @escaping @Sendable () -> Bool = { true }
+    ) {
         cache = CacheFolder(dir: cacheDir, maxBytes: 2 * 1024 * 1024 * 1024)
         masker = Masker(cache: cache, segment: segment)
+        self.maskModelArrives = maskModelArrives
         cache.pruneInBackground()
     }
 
@@ -74,10 +87,48 @@ public final class Renderer: @unchecked Sendable {
     ) -> URL {
         let region = viewport.map { "|\($0.left),\($0.top),\($0.right),\($0.bottom)" } ?? ""
         let decoder = resolvedTag(for: file, requested: decoderVersion)
-        let masks = edit.masks.isEmpty ? "" : "|m\(Masker.version)"
+        let masks = edit.masks.contains(where: \.changesPixels) ? "|m\(Masker.version)" : ""
         let key =
-            "\(file.path)|\(file.mtime)|\(file.size)|\(edit.cacheKey)|\(maxPixel)\(region)\(decoder)\(masks)|v\(Self.pipelineVersion)"
+            "\(pixelStamp(of: file))|\(edit.cacheKey)|\(maxPixel)\(region)\(decoder)\(masks)|v\(Self.pipelineVersion)"
         return cache.url(forKey: key)
+    }
+
+    /// Our metadata writes move mtime and size without touching a pixel, so what was rendered and cut still holds.
+    public func restamp(_ before: ImageFile, to after: ImageFile) {
+        guard before.mtime != after.mtime || before.size != after.size else { return }
+        let stamp = pixelStamp(of: before)
+        lock.withLock { pixelStampsByPath[after.path] = (after.mtime, after.size, stamp) }
+    }
+
+    private func pixelStamp(of file: ImageFile) -> String {
+        let carried = lock.withLock { pixelStampsByPath[file.path] }
+        if let carried, carried.mtime == file.mtime, carried.size == file.size {
+            return carried.stamp
+        }
+        return "\(file.path)|\(file.mtime)|\(file.size)"
+    }
+
+    /// What the loupe shows. A mask that cannot be cut costs the photo its masks, not the photo.
+    public func preview(
+        file: ImageFile, edit: Edit, maxPixel: Int, viewport: CropRect? = nil,
+        decoderVersion: Int? = nil
+    ) throws -> Preview {
+        func rendered(_ edit: Edit) throws -> String {
+            try render(
+                file: file, edit: edit, maxPixel: maxPixel, viewport: viewport,
+                decoderVersion: decoderVersion
+            ).path
+        }
+        guard edit.masks.contains(where: \.changesPixels) else {
+            return Preview(cachePath: try rendered(edit), unmasked: false)
+        }
+        // asked first, so a model still downloading does not hold the render lane
+        if maskModelArrives(), let masked = try? rendered(edit) {
+            return Preview(cachePath: masked, unmasked: false)
+        }
+        var bare = edit
+        bare.masks = []
+        return Preview(cachePath: try rendered(bare), unmasked: true)
     }
 
     public func render(
@@ -151,7 +202,7 @@ public final class Renderer: @unchecked Sendable {
     ) throws -> URL {
         let framing = Edit(crop: edit.crop, cropAngle: edit.cropAngle, rotation: edit.rotation)
         let key =
-            "\(file.path)|\(file.mtime)|\(file.size)|overlay|\(source.rawValue)|\(inverted)|\(framing.cacheKey)|\(maxPixel)\(points.cacheKey)|m\(Masker.version)"
+            "\(pixelStamp(of: file))|overlay|\(source.rawValue)|\(inverted)|\(framing.cacheKey)|\(maxPixel)\(points.cacheKey)|m\(Masker.version)"
         return try cache.cachedFile(at: cache.url(forKey: key, pathExtension: "png")) { temp in
             let matte = try matte(for: file, source: source, points: points, inverted: inverted)
             try overlayPNG(of: matte, framing: framing, maxPixel: maxPixel).write(to: temp)
@@ -163,7 +214,7 @@ public final class Renderer: @unchecked Sendable {
         file: ImageFile, edit: Edit, points: [Mask.Point], inverted: Bool, at framedSpot: CGPoint,
         include: Bool, maxPixel: Int
     ) throws -> MaskPick {
-        let photo = try masker.brightPhoto(for: file) { try neutral(for: file) }
+        let photo = try masker.brightPhoto(for: pixelStamp(of: file)) { try neutral(for: file) }
         let clicked = Self.unframed(framedSpot, of: photo, edit)
         // a ten-thousandth is a fifth of a pixel of what the model sees
         func stored(_ fraction: CGFloat) -> Double {
@@ -200,7 +251,7 @@ public final class Renderer: @unchecked Sendable {
     private func matte(
         for file: ImageFile, source: Mask.Source, points: [Mask.Point], inverted: Bool
     ) throws -> CIImage {
-        let matte = try masker.matte(for: file, source: source, points: points) {
+        let matte = try masker.matte(for: pixelStamp(of: file), source: source, points: points) {
             try neutral(for: file)
         }
         return inverted ? matte.applyingFilter("CIColorInvert") : matte
@@ -263,7 +314,7 @@ public final class Renderer: @unchecked Sendable {
                 Self.fitted(base, longEdge: base.longEdge * CGFloat(scale)), edit)
         }
         // after the photo's exposure and white balance, before its grade
-        for mask in edit.masks where !mask.hidden && mask.adjust != .identity {
+        for mask in edit.masks where mask.changesPixels {
             let local = mask.adjust.edit
             let matte = try matte(
                 for: file, source: mask.source, points: mask.points, inverted: mask.inverted)

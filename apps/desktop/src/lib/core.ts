@@ -324,7 +324,8 @@ export type CoreMethods = {
       viewport?: CropRect;
       decoderVersion?: number;
     };
-    result: CachePath;
+    // unmasked: the masks could not be cut, and the photo was drawn without any
+    result: CachePath & { unmasked: boolean };
   };
   maskOverlay: {
     params: MaskShape & { path: string; edit: Edit; maxPixel: number };

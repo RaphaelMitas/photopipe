@@ -1660,12 +1660,98 @@ private let rightSide = CGRect(x: 40, y: 0, width: 24, height: 64)
     }
     let photo = CIImage(color: .black).cropped(to: CGRect(x: 0, y: 0, width: 64, height: 64))
     for _ in 0..<2 {
-        let matte = try masker.matte(for: imageFile(for: jpeg), source: .people, points: []) { photo }
+        let matte = try masker.matte(for: jpeg.path, source: .people, points: []) { photo }
         var pixel = [UInt8](repeating: 0, count: 4)
         CIContext(options: [.workingColorSpace: NSNull()]).render(
             matte, toBitmap: &pixel, rowBytes: 4, bounds: CGRect(x: 32, y: 32, width: 1, height: 1),
             format: .RGBA8, colorSpace: nil)
         #expect(abs(Int(pixel[0]) - 128) <= 1)
+    }
+}
+
+@Test func aMaskThatDrawsNothingAsksForNoRender() throws {
+    let cacheDir = tempCacheDir()
+    let jpeg = try writeSyntheticJPEG(color: gray(0.4))
+    defer {
+        try? FileManager.default.removeItem(at: cacheDir)
+        try? FileManager.default.removeItem(at: jpeg)
+    }
+    let segmented = Mutex(0)
+    let renderer = Renderer(cacheDir: cacheDir) { photo, source, points in
+        segmented.withLock { $0 += 1 }
+        return try leftHalf(photo, source, points)
+    }
+    let file = try imageFile(for: jpeg)
+    func rendered(_ masks: [Mask]) throws -> URL {
+        try renderer.render(file: file, edit: Edit(exposure: 0.5, masks: masks), maxPixel: 64)
+    }
+    let plain = try rendered([])
+
+    #expect(try rendered([Mask(id: "new", source: .subject)]) == plain)
+    let hidden = Mask(id: "off", source: .people, hidden: true, adjust: LocalAdjust(exposure: 1))
+    #expect(try rendered([hidden]) == plain)
+    #expect(segmented.withLock { $0 } == 0)
+}
+
+@Test func aMatteOutlivesOurOwnMetadataWrite() throws {
+    let cacheDir = tempCacheDir()
+    let jpeg = try writeSyntheticJPEG(color: gray(0.4))
+    defer {
+        try? FileManager.default.removeItem(at: cacheDir)
+        try? FileManager.default.removeItem(at: jpeg)
+    }
+    let segmented = Mutex(0)
+    let renderer = Renderer(cacheDir: cacheDir) { photo, source, points in
+        segmented.withLock { $0 += 1 }
+        return try leftHalf(photo, source, points)
+    }
+    let edit = Edit(masks: [Mask(id: "a", source: .subject, adjust: LocalAdjust(exposure: 1))])
+    let before = try imageFile(for: jpeg)
+    let first = try renderer.render(file: before, edit: edit, maxPixel: 64)
+
+    try FileManager.default.setAttributes(
+        [.modificationDate: Date(timeIntervalSince1970: before.mtime + 60)], ofItemAtPath: jpeg.path)
+    let after = try imageFile(for: jpeg)
+    renderer.restamp(before, to: after)
+
+    #expect(try renderer.render(file: after, edit: edit, maxPixel: 64) == first)
+    let brighter = Edit(exposure: 1, masks: edit.masks)
+    #expect(try renderer.render(file: after, edit: brighter, maxPixel: 64) != first)
+    #expect(segmented.withLock { $0 } == 1)
+}
+
+@Test func aPreviewWithoutTheModelLosesItsMasksAndAnExportDoesNot() throws {
+    let cacheDir = tempCacheDir()
+    let out = tempCacheDir()
+    let jpeg = try writeSyntheticJPEG(color: gray(0.4))
+    defer {
+        try? FileManager.default.removeItem(at: cacheDir)
+        try? FileManager.default.removeItem(at: out)
+        try? FileManager.default.removeItem(at: jpeg)
+    }
+    try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+    let file = try imageFile(for: jpeg)
+    let masked = Edit(masks: [Mask(id: "a", source: .subject, adjust: LocalAdjust(exposure: 1))])
+
+    let noModel = Renderer(cacheDir: cacheDir, segment: leftHalf, maskModelArrives: { false })
+    let plain = try noModel.render(file: file, edit: .identity, maxPixel: 64)
+    let preview = try noModel.preview(file: file, edit: masked, maxPixel: 64)
+    #expect(preview.unmasked)
+    #expect(preview.cachePath == plain.path)
+    #expect(try !noModel.preview(file: file, edit: .identity, maxPixel: 64).unmasked)
+
+    let exported = out.appendingPathComponent("masked.jpg")
+    try noModel.exportJPEG(file: file, edit: masked, quality: 0.9, to: exported)
+    #expect(try meanLuminance(of: exported, region: leftSide) > meanLuminance(of: plain) + 20)
+
+    struct ModelFailed: Error {}
+    let uncut = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: uncut) }
+    let failing = Renderer(cacheDir: uncut) { _, _, _ in throw ModelFailed() }
+    #expect(try failing.preview(file: file, edit: masked, maxPixel: 64).unmasked)
+    #expect(throws: ModelFailed.self) {
+        try failing.exportJPEG(
+            file: file, edit: masked, quality: 0.9, to: out.appendingPathComponent("failed.jpg"))
     }
 }
 

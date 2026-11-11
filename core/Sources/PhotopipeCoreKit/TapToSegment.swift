@@ -1,5 +1,6 @@
 import CoreImage
 import Foundation
+import Synchronization
 import Vision
 
 enum TapToSegment {
@@ -105,6 +106,49 @@ enum TapToSegment {
             return request
         }
 
+        private enum Model {
+            case unasked
+            case fetching(DispatchGroup, since: DispatchTime)
+            case ready
+        }
+
+        private static let model = Mutex(Model.unasked)
+
+        /// A new process calls the model missing until one request has fetched it, which takes
+        /// milliseconds from disk. So it gets a second, and a real download holds nobody who asks.
+        static func modelArrives() -> Bool {
+            guard #available(macOS 27, iOS 27, *) else { return false }
+            let fetch: (done: DispatchGroup, since: DispatchTime)? = model.withLock { model in
+                switch model {
+                case .ready:
+                    return nil
+                case .fetching(let done, let since):
+                    return (done, since)
+                case .unasked:
+                    let done = DispatchGroup()
+                    done.enter()
+                    let since = DispatchTime.now()
+                    model = .fetching(done, since: since)
+                    Task.detached {
+                        let request = GenerateIterativeSegmentationRequest(
+                            seedPoint: NormalizedPoint(x: 0.5, y: 0.5))
+                        let arrived = (try? await ready(request)) != nil
+                        if arrived { Self.model.withLock { $0 = .ready } }
+                        done.leave()
+                        if !arrived {
+                            // a fetch that fails slowly must not cost every render of a drag its wait
+                            try? await Task.sleep(for: .seconds(5))
+                            Self.model.withLock { $0 = .unasked }
+                        }
+                    }
+                    return (done, since)
+                }
+            }
+            guard let fetch else { return true }
+            _ = fetch.done.wait(timeout: fetch.since + .seconds(1))
+            return model.withLock { if case .ready = $0 { true } else { false } }
+        }
+
         @available(macOS 27, iOS 27, *)
         private static func normalized(_ point: Mask.Point) -> NormalizedPoint {
             // Vision counts up from the bottom
@@ -118,5 +162,7 @@ enum TapToSegment {
         static let isAvailable = false
 
         static func mattes(in photo: CIImage, from seed: Seed) throws -> [CIImage] { [] }
+
+        static func modelArrives() -> Bool { false }
     #endif
 }

@@ -16,8 +16,9 @@ public final class SQLiteIndex: @unchecked Sendable {
     private let path: String
 
     // bump when a read learns something a cached row lacks, or stale rows get written back over it
+    private static let schema = 7
     // only a system that can mask reads a mask, so it shares no rows with one that cannot
-    private static let schemaVersion = Masker.isAvailable ? 14 : 15
+    private static let schemaVersion = schema * 2 + (Masker.isAvailable ? 0 : 1)
 
     public init(path: String) throws {
         self.path = path

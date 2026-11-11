@@ -198,6 +198,13 @@ One model cuts every mask, the chips included, because it draws the best
 outline. It ships with macOS and iPadOS 27, so masking needs that system: on
 an older one the Masks group is not there.
 
+The system fetches that model on first use. While it is on its way, or when a
+cut fails, the loupe shows the photo without its masks, says **Masks not
+shown** in the corner and asks again every few seconds: a missing model must
+not cost you the photo. An export is the opposite. It waits for the model and
+fails the photo if the mask cannot be cut, because a file written without its
+mask looks finished and is not.
+
 The sidecar stores the definition, never the pixels: "the subject, inverted,
 half a stop up", or for a click mask the clicks themselves, as points on the
 uncropped photo. That is why a pasted mask fits the photo it lands on and why
@@ -230,7 +237,9 @@ files were skipped".
 
 The core runs requests concurrently, and each request gets its own reply.
 Renders and thumbnails each have a newest-first lane that answers the oldest
-waiting request "superseded" once too many pile up; `setRoot` gets a thread of
+waiting request "superseded" once too many pile up; mask overlays and the
+hover share a one-worker lane, so a photo's rows cut one matte at a time;
+`setRoot` gets a thread of
 its own; everything else shares an 8-wide queue, so a long JPEG export occupies one slot while ratings keep
 flowing. Per-file export progress needs mid-request events the
 protocol doesn't have yet; until then the job shows an indeterminate state.

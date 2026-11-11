@@ -37,8 +37,8 @@ import {
 } from "@/lib/editSliders";
 import { flagPref } from "@/lib/pref";
 import {
+  useCanMask,
   useDeferredEdit,
-  useMaskClickLimit,
   useRaw9Availability,
   useRawDefaults,
   useRender,
@@ -224,7 +224,7 @@ export function EditPanel({ image, edit, onChange, crop, masks }: Props) {
     : (edit.tint ?? (raw ? asShotTint : 0));
   const denoise = edit.denoise ?? rawDefaults.data?.denoise ?? 0;
   const whileCropping = crop.draft && "pointer-events-none opacity-40";
-  const canMask = useMaskClickLimit() > 0;
+  const canMask = useCanMask();
 
   return (
     <div className="flex flex-col gap-3">

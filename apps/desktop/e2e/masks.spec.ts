@@ -181,6 +181,25 @@ test("with the split on, only the edited half previews and takes a click", async
   await expect(rows).toHaveCount(1);
 });
 
+test("a photo whose masks cannot be cut still shows, and says they are missing", async ({
+  page,
+}) => {
+  await openShoot(page, "2026-07-12_zell", { url: "/?nomodel" });
+  await page.getByTestId("thumb").first().click();
+  await page.keyboard.press("m");
+  await page.getByTestId("mask-chip-subject").click();
+  await expect(page.getByTestId("loupe-unmasked")).toHaveCount(0);
+
+  await page.keyboard.press("ArrowUp");
+  await expect(page.getByTestId("loupe-unmasked")).toHaveText(
+    "Masks not shown",
+  );
+  await expect(page.getByTestId("loupe-image")).toBeVisible();
+
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByTestId("loupe-unmasked")).toHaveCount(0);
+});
+
 test("a system that cannot mask has no Masks group and M opens nothing", async ({
   page,
 }) => {

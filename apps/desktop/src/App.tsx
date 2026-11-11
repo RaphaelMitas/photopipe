@@ -70,11 +70,11 @@ import { flagPref } from "@/lib/pref";
 import {
   cachedImage,
   jobStatus,
+  useCanMask,
   useEnriched,
   useExportJobs,
   useImages,
   useLibrarySync,
-  useMaskClickLimit,
   useReveal,
   useScoring,
   useShoots,
@@ -497,7 +497,7 @@ export default function App() {
   const crop = useCropSession(loupePhoto, loupeEdit, changeEdit);
   const cropping = crop.draft !== null;
   const masks = useMaskSession(loupePhoto, loupeEdit, changeEdit, editOpen);
-  const canMask = useMaskClickLimit() > 0;
+  const canMask = useCanMask();
 
   // a filtered-out photo is not in the browser, so land on the nearest one that is
   const focusPath = useMemo(() => {

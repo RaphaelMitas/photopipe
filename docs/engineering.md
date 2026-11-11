@@ -39,7 +39,19 @@ Stack, testing strategy, CI and releases.
   and source, and per list of clicks for a click mask, found on the unedited
   photo so every edit of it shares one, on a copy brightened toward middle
   grey, by at most four stops, because the models miss edges on a dark
-  frame. Every click is a pass of the model, so a mask takes 16 and a
+  frame. Cuts run one at a time and look in the cache first, so a render
+  and a mask row that want the same matte cut it once. Mattes and renders
+  are keyed by a stamp of the photo's pixels, and a write of our own into a
+  file that embeds its XMP carries the old stamp over to the new mtime and
+  size, for the session, so a slider release does not cut every matte
+  again. A mask that is hidden or has no adjustment draws nothing and is
+  left out of the render's key. Before the loupe renders a photo with
+  masks, the core asks whether the model is there, starts the fetch if not
+  and waits a second for it at most, since a new process calls a model on
+  disk missing until one request has fetched it. Without the model, or when
+  the cut throws, `render` answers the photo without masks and
+  `unmasked: true`; the export calls the model itself and throws. Every
+  click is a pass of the model, so a mask takes 16 and a
   sidecar's mask with more stays unread. The request only exists in the 27
   SDK, so the call sits behind `#if compiler(>=6.4)` and `#available`: an
   older toolchain or system gets a core without masks, `maskSupport` answers
@@ -95,7 +107,7 @@ A method name and JSON params in, the result as JSON or the error as
 and waits on a blocking thread until it fires, exactly once, or for 10 s
 (120 s for `setRoot` and `rescan`) and fails the request. A timed-out request keeps running
 and its late answer is dropped; a walk that finishes after a newer `setRoot`
-does not install its root. Renders and thumbnails go through newest-first
+does not install its root. Renders, thumbnails and mask requests go through newest-first
 lanes, `setRoot` and `rescan` get a thread of their own so a walk of a hung
 volume cannot hold a slot, and everything else runs on a bounded queue. Quitting waits up to
 three seconds for running work and then exits regardless; an exit hook stops
