@@ -50,7 +50,7 @@ struct Masker {
     }
 
     func found(in photo: CIImage, source: Mask.Source, points: [Mask.Point]) throws -> CIImage {
-        let segmented = try segment(photo, source, Array(points.prefix(Mask.pointLimit)))
+        let segmented = try segment(photo, source, points)
         // Vision answers people in a fixed 3:4 whatever the photo's shape
         return Self.stretched(segmented, over: photo.extent).applyingFilter("CIMaximumComponent")
     }

@@ -16,7 +16,8 @@ public final class SQLiteIndex: @unchecked Sendable {
     private let path: String
 
     // bump when a read learns something a cached row lacks, or stale rows get written back over it
-    private static let schemaVersion = 12
+    // only a system that finds clicks reads a click mask, so it shares no rows with one that cannot
+    private static let schemaVersion = Masker.supports(.click) ? 14 : 13
 
     public init(path: String) throws {
         self.path = path

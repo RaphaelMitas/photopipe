@@ -81,7 +81,7 @@ public final class Dispatcher: Sendable {
                 include: request.param("include")?.boolValue ?? true,
                 maxPixel: request.param("maxPixel")?.intValue ?? 2000)
         case "maskSupport":
-            return ["click": Masker.supports(.click)]
+            return ["clicks": Masker.supports(.click) ? Mask.clicksPerPhoto : 0]
         case "setRating":
             return try library.setRating(
                 shoot: request.string("shoot"), path: request.string("path"),

@@ -1715,7 +1715,6 @@ private func alpha(of image: CIImage, at point: CGPoint) -> UInt8 {
     #expect(try overlay(graded) == overlay(.identity), "sliders do not move a mask")
 }
 
-/// White in a small square around the last click.
 private let aroundTheLastClick: Masker.Segment = { photo, _, points in
     let nothing = CIImage(color: .black).cropped(to: photo.extent)
     guard let last = points.last else { return nothing }

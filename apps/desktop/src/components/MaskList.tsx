@@ -31,7 +31,7 @@ type Props = { image: ImageFile; edit: Edit; masks: MaskSession };
 
 export function MaskList({ image, edit, masks }: Props) {
   const addKey = useShortcutLabel("mask.add");
-  const clickable = useMaskSupport().data?.click === true;
+  const clickable = (useMaskSupport().data?.clicks ?? 0) > 0;
   return (
     <div className="flex flex-col gap-0.5">
       {edit.masks.length > 0 && (

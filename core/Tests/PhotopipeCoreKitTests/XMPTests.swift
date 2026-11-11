@@ -1121,6 +1121,26 @@ private let someMasks = [
     #expect(sidecar.contains("0.62"))
 }
 
+@Test func aSidecarsClicksPastWhatAPhotoTakesAreKeptAndNotFound() throws {
+    func click(_ id: String, _ count: Int) -> Mask {
+        Mask(
+            id: id, source: .click,
+            points: Array(repeating: Mask.Point(x: 0.5, y: 0.5, include: true), count: count))
+    }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00016.ARW")
+    try Data("fake".utf8).write(to: arw)
+
+    try writeTextEdit(Edit(masks: [click("first", 40), click("crowded", 30), click("last", 24)]), at: arw)
+    let shown = XMP.read(file: try image(arw)).edit.masks
+    #expect(shown.map(\.id) == (Masker.supports(.click) ? ["first", "last"] : []))
+
+    try writeTextEdit(Edit(exposure: 1, masks: shown), at: arw)
+    let sidecar = try String(contentsOf: XMP.sidecarURL(forImagePath: arw.path), encoding: .utf8)
+    #expect(sidecar.contains("crowded"))
+}
+
 @Test func masksEmbeddedInAJPEGAreRead() throws {
     guard requireExifTool() else { return }
     let dir = try tempDir()

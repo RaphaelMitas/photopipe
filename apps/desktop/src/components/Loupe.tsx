@@ -46,7 +46,7 @@ import type { MaskSession } from "@/lib/useMaskSession";
 import {
   centerOn,
   clampPan,
-  photoPoint,
+  photoFractionAt,
   viewportKey,
   viewportRequest,
   visibleRect,
@@ -212,11 +212,11 @@ export function Loupe({
     enabled: !cropping && !!image,
     resetKey: zoomKey,
   });
-  const clickable = useMaskSupport().data?.click === true && !cropping;
+  const clickable = (useMaskSupport().data?.clicks ?? 0) > 0 && !cropping;
   const pick = useMaskPick(image, edit, masks, (cursor) => {
     const node = stageRef.current;
     if (!node || !clickable || photoBox.width <= 0) return null;
-    const spot = photoPoint(zoom.state, cursorIn(node, cursor), photoBox);
+    const spot = photoFractionAt(zoom.state, cursorIn(node, cursor), photoBox);
     const onPhoto =
       Math.min(spot.x, spot.y) >= 0 && Math.max(spot.x, spot.y) <= 1;
     return onPhoto ? spot : null;

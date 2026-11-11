@@ -124,8 +124,11 @@ test("a click on the photo becomes a mask, and Shift-click grows it", async ({
   await expect(page.getByTestId("zoom-level")).toHaveCount(0);
   await expect(rows).toHaveCount(2);
 
+  await photo.hover({ position: { x: 270, y: 150 } });
+  await expect(preview).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("mask-field")).toHaveCount(0);
+  await expect(preview).toHaveCount(0);
   await photo.click({ position: { x: 300, y: 150 } });
   await photo.hover({ position: { x: 310, y: 150 } });
   await expect(preview).toHaveCount(0);

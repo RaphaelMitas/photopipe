@@ -80,7 +80,7 @@ export function useMaskSession(
     fading: held === null,
     toggleField: () => patch({ creating: !creating, chip: null }),
     cancel: () => patch({ creating: false, chip: null }),
-    hoverChip: (chip: MaskShape | null) => patch({ chip }),
+    hoverChip: (chip: MaskShape | null) => patch({ chip, flash: null }),
     hoverRow: (row: string | null) => patch({ row, flash: null }),
     add: (shape: MaskShape) => {
       const id = append(shape);

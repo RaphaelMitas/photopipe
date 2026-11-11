@@ -94,13 +94,14 @@ public enum XMP {
             }
     }
 
-    // an entry this build cannot read or find is a newer build's mask, kept as written for the next save
+    // an entry this build cannot read, or cannot find on this OS, is kept as written for the next save
     private static func masks(fromJSON text: String?) -> (read: [Mask], unread: [String]) {
         guard let text,
             let entries = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [Any]
         else { return ([], []) }
         var read: [Mask] = []
         var unread: [String] = []
+        var clicks = 0
         for entry in entries.prefix(maskLimit) {
             // a number too large for a Double reads as infinity, and writing that raises past try?
             guard JSONSerialization.isValidJSONObject([entry]),
@@ -109,12 +110,15 @@ public enum XMP {
             else { continue }
             guard hasOnlyKnownKeys(entry),
                 let mask = try? JSONDecoder().decode(Mask.self, from: json),
-                Masker.supports(mask.source)
+                Masker.supports(mask.source),
+                clicks + mask.points.count <= Mask.clicksPerPhoto
             else {
                 unread.append(String(decoding: json, as: UTF8.self))
                 continue
             }
-            if !read.contains(where: { $0.id == mask.id }) { read.append(mask) }
+            guard !read.contains(where: { $0.id == mask.id }) else { continue }
+            read.append(mask)
+            clicks += mask.points.count
         }
         return (read, unread)
     }

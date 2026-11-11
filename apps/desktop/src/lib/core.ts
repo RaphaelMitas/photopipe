@@ -340,7 +340,7 @@ export type CoreMethods = {
     };
     result: { png: string; point: MaskPoint };
   };
-  maskSupport: { params: undefined; result: { click: boolean } };
+  maskSupport: { params: undefined; result: { clicks: number } };
   rawDefaults: {
     params: { path: string; decoderVersion: number };
     result: {

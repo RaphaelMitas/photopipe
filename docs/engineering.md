@@ -27,13 +27,16 @@ Stack, testing strategy, CI and releases.
   each mask's definition and sliders as one JSON value in
   `photopipe:Masks`, a namespace exiftool only writes because the core starts
   it with a config that declares it. The matte is a PNG in the rebuildable
-  cache, one per photo and source, found on the unedited photo so every edit
-  of it shares one. A click mask is Vision's tap to segment
+  cache, one per photo and source, and per list of clicks for a click mask,
+  found on the unedited photo so every edit of it shares one. A click mask is Vision's tap to segment
   (`GenerateIterativeSegmentationRequest`), replayed from its stored points
   on a copy of the photo lifted to middle grey, because the model misses
-  edges on a dark frame. The request only exists in the 27 SDK, so the call
+  edges on a dark frame. Every click is a pass of the model, so a photo takes
+  64 across its masks and a sidecar's masks past that stay unread. The request only exists in the 27 SDK, so the call
   sits behind `#if compiler(>=6.4)` and `#available`: an older toolchain
   builds a core without click masks, and `maskSupport` tells the UI. The
+  index keeps the rows of a system that finds clicks apart from one that
+  cannot, since the same sidecar reads differently on each. The
   hover preview goes through `maskAt`, which answers with the overlay as
   bytes and never touches the cache. The reader keeps every entry it cannot decode, and a mask
   with a key it does not know, as raw JSON, and the writer puts them back: an

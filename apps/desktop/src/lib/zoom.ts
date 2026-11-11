@@ -57,8 +57,7 @@ export function zoomAt(
   return clampPan(next, photo, viewWidth, viewHeight);
 }
 
-/// Where a point of the viewport falls on the photo, in fractions of it.
-export function photoPoint(
+export function photoFractionAt(
   state: ZoomState | null,
   cursor: { x: number; y: number },
   photo: Box,
@@ -79,21 +78,11 @@ export function visibleRect(
   viewHeight: number,
 ): Box {
   const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1);
-  const left = clamp01(
-    (0 - (photo.x * state.scale + state.tx)) / (photo.width * state.scale),
-  );
-  const right = clamp01(
-    (viewWidth - (photo.x * state.scale + state.tx)) /
-      (photo.width * state.scale),
-  );
-  const top = clamp01(
-    (0 - (photo.y * state.scale + state.ty)) / (photo.height * state.scale),
-  );
-  const bottom = clamp01(
-    (viewHeight - (photo.y * state.scale + state.ty)) /
-      (photo.height * state.scale),
-  );
-  return { x: left, y: top, width: right - left, height: bottom - top };
+  const from = photoFractionAt(state, { x: 0, y: 0 }, photo);
+  const to = photoFractionAt(state, { x: viewWidth, y: viewHeight }, photo);
+  const x = clamp01(from.x);
+  const y = clamp01(from.y);
+  return { x, y, width: clamp01(to.x) - x, height: clamp01(to.y) - y };
 }
 
 export type ViewportRequest = {

@@ -139,12 +139,12 @@ public struct Mask: Codable, Equatable, Sendable {
         }
     }
 
-    // a sidecar is anyone's to write, and every point costs a segmentation
-    static let pointLimit = 64
+    // a sidecar is anyone's to write, and every click costs a segmentation
+    static let clicksPerPhoto = 64
 
     public var id: String
     public var source: Source
-    /// The first click finds the object, each later one adds to it or takes away. Clicks only.
+    /// Empty unless the source is .click; the first finds the object, the rest refine it.
     public var points: [Point]
     public var inverted: Bool
     public var hidden: Bool

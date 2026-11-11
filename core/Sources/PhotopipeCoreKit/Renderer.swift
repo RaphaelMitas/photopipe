@@ -12,7 +12,6 @@ public final class Renderer: @unchecked Sendable {
 
     public struct MaskPick: Encodable, Sendable {
         public let png: Data
-        /// The click in the uncropped photo, as a mask stores it.
         public let point: Mask.Point
     }
 
@@ -159,8 +158,7 @@ public final class Renderer: @unchecked Sendable {
         }
     }
 
-    /// What a click on the framed photo would mask, on top of the clicks already made. Never
-    /// cached: the cursor asks on every move.
+    /// The spot is on the framed photo. Never cached: the cursor asks on every move.
     public func maskAt(
         file: ImageFile, edit: Edit, points: [Mask.Point], inverted: Bool, at spot: CGPoint,
         include: Bool, maxPixel: Int
@@ -361,8 +359,7 @@ public final class Renderer: @unchecked Sendable {
         }
     }
 
-    /// Where a point of the framed photo lies in the photo itself, both in fractions from the
-    /// top left.
+    /// Framed fraction to photo fraction, both from the top left.
     static func unframed(_ point: CGPoint, of photo: CIImage, _ edit: Edit) -> CGPoint {
         var toFrame = CGAffineTransform.identity
         var frame = photo.extent

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   centerOn,
   clampPan,
-  photoPoint,
+  photoFractionAt,
   viewportKey,
   viewportRequest,
   visibleRect,
@@ -37,20 +37,20 @@ describe("zoomAt", () => {
   });
 });
 
-describe("photoPoint", () => {
+describe("photoFractionAt", () => {
   it("finds the same spot on the photo fitted and zoomed in", () => {
     const cursor = { x: 400, y: 250 };
-    const fitted = photoPoint(null, cursor, photo);
+    const fitted = photoFractionAt(null, cursor, photo);
     expect(fitted.x).toBeCloseTo((400 - 125) / 750);
     expect(fitted.y).toBeCloseTo(0.5);
 
     const zoomed = zoomAt(null, cursor, 3, 8, photo, view.width, view.height);
     expect(zoomed).not.toBeNull();
     if (!zoomed) return;
-    const under = photoPoint(zoomed, cursor, photo);
+    const under = photoFractionAt(zoomed, cursor, photo);
     expect(under.x).toBeCloseTo(fitted.x);
     expect(under.y).toBeCloseTo(fitted.y);
-    expect(photoPoint(zoomed, { x: 475, y: 250 }, photo).x).toBeCloseTo(
+    expect(photoFractionAt(zoomed, { x: 475, y: 250 }, photo).x).toBeCloseTo(
       fitted.x + 75 / 3 / 750,
     );
   });

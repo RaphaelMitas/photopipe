@@ -8,9 +8,11 @@ import {
   type ImageFile,
   unedited,
 } from "./core";
+import { useMaskSupport } from "./queries";
 import type { MaskSession } from "./useMaskSession";
 
 type Ask = CoreMethods["maskAt"]["params"];
+type Wanted = { ask: Ask; scene: string };
 type Cursor = {
   clientX: number;
   clientY: number;
@@ -18,16 +20,12 @@ type Cursor = {
   altKey: boolean;
 };
 
-const sceneOf = (path: string | undefined, frame: Edit) =>
-  `${path}|${editKey(frame)}`;
-
 // a press that travels further is a pan
 const CLICK_SLOP = 4;
-// crosses into the webview on every mouse move, a third the bytes of the kept overlay
+// sent inline with every hover answer, so a quarter the pixels of the kept overlay
 const PREVIEW_MAX_PIXEL = 1024;
 
-/// Clicks on the photo become masks. A plain click starts one while the field
-/// is open; Shift and Option grow and cut the click mask that has the sliders.
+/// A plain click masks while the field is open; Shift and Option grow or cut the selected click mask.
 export function useMaskPick(
   image: ImageFile | undefined,
   edit: Edit,
@@ -36,12 +34,15 @@ export function useMaskPick(
   spotAt: (cursor: Cursor) => { x: number; y: number } | null,
 ) {
   const frame = unedited(edit);
-  const scene = sceneOf(image?.path, frame);
+  // an answer is shown only while a click would still do what was asked
+  const scene = `${image?.path}|${editKey(frame)}|${masks.creating}|${masks.target?.id}`;
+  const clickLimit = useMaskSupport().data?.clicks ?? 0;
+  const clicks = edit.masks.reduce((sum, mask) => sum + mask.points.length, 0);
   const [answer, setAnswer] = useState<{ scene: string; png: string } | null>(
     null,
   );
   const [picking, setPicking] = useState(false);
-  const hover = useRef<{ wanted: Ask | null; asking: boolean }>({
+  const hover = useRef<{ wanted: Wanted | null; asking: boolean }>({
     wanted: null,
     asking: false,
   });
@@ -66,28 +67,26 @@ export function useMaskPick(
       include: !cursor.altKey,
       maxPixel: PREVIEW_MAX_PIXEL,
     };
-    return { ask, refined };
+    return { ask, refined, scene };
   };
 
   // one question at a time, and only the newest of those that waited
-  const show = async (wanted: Ask | null) => {
+  const show = async (wanted: Wanted | null) => {
     const state = hover.current;
     state.wanted = wanted;
     if (!wanted) setAnswer(null);
     if (state.asking) return;
     state.asking = true;
     for (
-      let ask = state.wanted;
-      ask;
-      ask = state.wanted === ask ? null : state.wanted
+      let next = state.wanted;
+      next;
+      next = state.wanted === next ? null : state.wanted
     ) {
-      const png = await coreRequest("maskAt", ask).then(
+      const png = await coreRequest("maskAt", next.ask).then(
         (pick) => pick.png,
         () => null,
       );
-      if (state.wanted && png) {
-        setAnswer({ scene: sceneOf(ask.path, ask.edit), png });
-      }
+      if (state.wanted && png) setAnswer({ scene: next.scene, png });
     }
     state.asking = false;
   };
@@ -102,6 +101,10 @@ export function useMaskPick(
     );
     const asked = travelled <= CLICK_SLOP ? askAt(event) : null;
     if (!asked) return;
+    if (clicks >= clickLimit) {
+      toast("This photo cannot take more clicks", { id: "mask-clicks" });
+      return;
+    }
     setPicking(true);
     try {
       const { point } = await coreRequest("maskAt", asked.ask);
@@ -130,7 +133,7 @@ export function useMaskPick(
       },
       onPointerMove: (event: PointerEvent) => {
         const hovering = event.pointerType === "mouse" && event.buttons === 0;
-        show(hovering ? (askAt(event)?.ask ?? null) : null);
+        show(hovering ? askAt(event) : null);
       },
       onPointerLeave: () => {
         show(null);
