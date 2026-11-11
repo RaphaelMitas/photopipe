@@ -758,8 +758,12 @@ private func oklab(_ rgb: [Double]) -> (lightness: Double, chroma: Double, hue: 
 
 @Test func saturationMinus100IsNeutral() throws {
     for color in [skin, deepBlue, foliage, flowerRed] {
-        let rgb = chroma(color, saturation: -100)
-        #expect(try #require(rgb.max()) - #require(rgb.min()) < 1e-5, "\(color) kept a tint")
+        for vibrance in [0.0, 100] {
+            let rgb = chroma(color, vibrance: vibrance, saturation: -100)
+            #expect(
+                try #require(rgb.max()) - #require(rgb.min()) < 1e-5,
+                "\(color) kept a tint at vibrance \(vibrance)")
+        }
     }
 }
 
