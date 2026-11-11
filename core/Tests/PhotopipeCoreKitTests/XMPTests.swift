@@ -1021,3 +1021,63 @@ func theMacNeverWritesIntoAnUntestedFormatButKeepsWhatItCarried(_ ext: String) t
     #expect(read.edit.exposure == 0)
     #expect(try Data(contentsOf: outside) == foreign)
 }
+
+private let someMasks = [
+    Mask(
+        id: "a", source: .subject, inverted: true,
+        adjust: LocalAdjust(exposure: -0.5, temperature: 12, saturation: -20)),
+    Mask(id: "b", source: .people, hidden: true),
+]
+
+@Test func masksRoundTripThroughBothWriters() throws {
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00010.ARW")
+    try Data("fake".utf8).write(to: arw)
+
+    try writeTextEdit(Edit(exposure: 1, masks: someMasks), at: arw)
+    #expect(XMP.read(file: try image(arw)).edit == Edit(exposure: 1, masks: someMasks))
+    try writeTextEdit(Edit(exposure: 1), at: arw)
+    #expect(XMP.read(file: try image(arw)).edit == Edit(exposure: 1))
+
+    guard requireExifTool() else { return }
+    try XMP.writeRating(3, file: try image(arw))
+    try XMP.writeEdit(Edit(masks: someMasks), file: try image(arw))
+    #expect(XMP.read(file: try image(arw)).edit.masks == someMasks)
+    let sidecar = XMP.sidecarURL(forImagePath: arw.path)
+    #expect(try exiftoolTag("-XMP-photopipe:Masks", of: sidecar).contains(#""source":"people""#))
+
+    try XMP.writeEdit(Edit(masks: [someMasks[1]]), file: try image(arw))
+    #expect(XMP.read(file: try image(arw)).edit.masks == [someMasks[1]])
+    try XMP.writeEdit(.identity, file: try image(arw))
+    #expect(try exiftoolTag("-XMP-photopipe:Masks", of: sidecar).isEmpty)
+    #expect(XMP.read(file: try image(arw)).rating == 3)
+}
+
+@Test func masksEmbeddedInAJPEGAreRead() throws {
+    guard requireExifTool() else { return }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let jpg = dir.appendingPathComponent("DSC00011.JPG")
+    try writeGrayJPEG(to: jpg)
+
+    try XMP.writeEdit(Edit(masks: someMasks), file: try image(jpg))
+    #expect(XMP.read(file: try image(jpg)).edit.masks == someMasks)
+}
+
+@Test func masksAnotherHandWroteCostNoMoreThanTheirLimit() {
+    func masks(_ json: String) -> [Mask] {
+        parsed(
+            """
+            <rdf:Description xmlns:photopipe="https://photopipe.net/ns/1.0/"
+            crs:Exposure2012="0.5" photopipe:Masks="\(json.replacingOccurrences(of: "\"", with: "&quot;"))"/>
+            """
+        ).edit.masks
+    }
+    #expect(masks("not json").isEmpty)
+    #expect(masks(#"[{"id":"a","source":"sky"}]"#).isEmpty, "a source this build cannot find")
+    let twice = #"{"id":"a","source":"people"}"#
+    #expect(masks("[\(twice),\(twice)]") == [Mask(id: "a", source: .people)])
+    let many = (0..<100).map { #"{"id":"\#($0)","source":"subject"}"# }.joined(separator: ",")
+    #expect(masks("[\(many)]").count == XMP.maskLimit)
+}

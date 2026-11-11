@@ -63,6 +63,14 @@ public final class Dispatcher: Sendable {
                 viewport: Self.viewport(from: request.param("viewport")),
                 decoderVersion: request.param("decoderVersion")?.intValue)
             return ["cachePath": cachePath]
+        case "maskOverlay":
+            let cachePath = try library.maskOverlay(
+                path: request.string("path"),
+                source: required("source", Mask.Source(rawValue: request.string("source"))),
+                inverted: request.param("inverted")?.boolValue ?? false,
+                edit: request.edit() ?? .identity,
+                maxPixel: request.param("maxPixel")?.intValue ?? 2000)
+            return ["cachePath": cachePath]
         case "setRating":
             return try library.setRating(
                 shoot: request.string("shoot"), path: request.string("path"),

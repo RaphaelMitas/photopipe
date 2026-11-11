@@ -267,6 +267,15 @@ public final class LibraryService: @unchecked Sendable {
         ).path
     }
 
+    public func maskOverlay(
+        path: String, source: Mask.Source, inverted: Bool, edit: Edit, maxPixel: Int
+    ) throws -> String {
+        try renderer.maskOverlay(
+            file: recordUnderRoot(path: path), source: source, inverted: inverted, edit: edit,
+            maxPixel: maxPixel
+        ).path
+    }
+
     public func rawDefaults(path: String, decoderVersion: Int? = nil) throws
         -> Renderer.RawDefaults?
     {

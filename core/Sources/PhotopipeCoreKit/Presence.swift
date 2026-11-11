@@ -183,14 +183,14 @@ enum Presence {
     }
 
     private static func upscaled(_ estimate: CIImage, to image: CIImage) -> CIImage {
-        let extent = image.extent
-        return estimate.samplingLinear().transformed(
-            by: CGAffineTransform(translationX: extent.minX, y: extent.minY)
-                .scaledBy(
-                    x: extent.width / estimate.extent.width,
-                    y: extent.height / estimate.extent.height
-                )
-                .translatedBy(x: -estimate.extent.minX, y: -estimate.extent.minY))
+        stretched(estimate, from: estimate.extent, to: image.extent)
+    }
+
+    static func stretched(_ image: CIImage, from: CGRect, to: CGRect) -> CIImage {
+        image.samplingLinear().transformed(
+            by: CGAffineTransform(translationX: to.minX, y: to.minY)
+                .scaledBy(x: to.width / from.width, y: to.height / from.height)
+                .translatedBy(x: -from.minX, y: -from.minY))
     }
 
     private static func clamped(_ image: CIImage, _ filter: String, radius: CGFloat) -> CIImage {

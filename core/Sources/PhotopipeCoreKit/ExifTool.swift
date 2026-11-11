@@ -111,7 +111,11 @@ import Synchronization
 
             let process = Process()
             process.executableURL = URL(fileURLWithPath: binary)
-            process.arguments = ["-stay_open", "True", "-@", "-"]
+            let config = FileManager.default.temporaryDirectory
+                .appendingPathComponent("photopipe-exiftool.config")
+            try Data(Self.config.utf8).write(to: config, options: .atomic)
+            // exiftool only takes -config as its very first argument
+            process.arguments = ["-config", config.path, "-stay_open", "True", "-@", "-"]
             let stdinPipe = Pipe()
             let stdoutPipe = Pipe()
             process.standardInput = stdinPipe
@@ -123,6 +127,25 @@ import Synchronization
             self.stdinPipe = stdinPipe
             self.stdoutPipe = stdoutPipe
         }
+
+        // exiftool refuses to write a namespace it has no table for
+        private static let config = """
+            %Image::ExifTool::UserDefined::photopipe = (
+                GROUPS => { 0 => 'XMP', 1 => 'XMP-photopipe', 2 => 'Image' },
+                NAMESPACE => { 'photopipe' => '\(XMP.TagWrite.Namespace.photopipe.uri)' },
+                WRITABLE => 'string',
+                Masks => { },
+            );
+            %Image::ExifTool::UserDefined = (
+                'Image::ExifTool::XMP::Main' => {
+                    photopipe => {
+                        SubDirectory => { TagTable => 'Image::ExifTool::UserDefined::photopipe' },
+                    },
+                },
+            );
+            1;
+
+            """
 
         // exiftool outlives a closed stdin, and would hold the app's stderr open after it exits;
         // SIGINT, because only that one makes it delete a half-written temp file

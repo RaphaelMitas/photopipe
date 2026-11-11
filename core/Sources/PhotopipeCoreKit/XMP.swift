@@ -79,7 +79,18 @@ public enum XMP {
         var hasCrop: Bool? { text("HasCrop").map { $0.lowercased() == "true" } }
     }
 
-    private static func edit(from tags: Tags, isRaw: Bool, rotation: Int) -> Edit {
+    // a sidecar is anyone's to write, and every mask costs a render pass
+    static let maskLimit = 32
+
+    private static func masks(fromJSON text: String?) -> [Mask] {
+        guard let text,
+            let masks = try? JSONDecoder().decode([Mask].self, from: Data(text.utf8))
+        else { return [] }
+        var seen: Set<String> = []
+        return Array(masks.filter { seen.insert($0.id).inserted }.prefix(maskLimit))
+    }
+
+    private static func edit(from tags: Tags, isRaw: Bool, rotation: Int, masks: String?) -> Edit {
         // beside As Shot the numbers are Camera Raw's reading of the file, not an edit
         let isAsShot = isRaw && tags.text("WhiteBalance") == "As Shot"
         let denoise = isRaw ? tags.scalar("LuminanceSmoothing") : nil
@@ -113,7 +124,8 @@ public enum XMP {
             // Lightroom's crop reset keeps Crop* but sets HasCrop False, so HasCrop wins
             crop: tags.hasCrop == false ? nil : cropRect { tags.scalar("Crop\($0)") },
             cropAngle: tags.hasCrop == false ? 0 : tags.scalar("CropAngle") ?? 0,
-            rotation: rotation)
+            rotation: rotation,
+            masks: Self.masks(fromJSON: masks))
     }
 
     typealias Judgment = (rating: Int?, flag: Int?, edit: Edit)
@@ -136,7 +148,8 @@ public enum XMP {
                 text: { properties.value(.crs, $0) },
                 curve: { properties.items(.crs, $0).compactMap(curvePoint) }),
             isRaw: isRaw,
-            rotation: rotation(fromXMP: orientation(in: properties), base: baseOrientation))
+            rotation: rotation(fromXMP: orientation(in: properties), base: baseOrientation),
+            masks: properties.value(.photopipe, "Masks"))
         return (
             validRating(properties.value(.xmp, "Rating")), validFlag(properties.value(.xmpDM, "pick")), edit
         )
@@ -262,6 +275,7 @@ public enum XMP {
         // a sidecar-only raw is never written into, so its XMP holds just what the camera put there
         guard !file.sidecarOnly else { return (rating, nil, .identity) }
         var pick: Int?
+        var masks: String?
         var texts: [String: String] = [:]
         var curves: [String: [CurvePoint]] = [:]
         CGImageMetadataEnumerateTagsUsingBlock(metadata, nil, nil) { _, tag in
@@ -270,6 +284,9 @@ public enum XMP {
             let value = CGImageMetadataTagCopyValue(tag)
             if namespace == TagWrite.Namespace.xmpDM.uri && name == "pick" {
                 pick = validFlag(value as? String)
+            }
+            if namespace == TagWrite.Namespace.photopipe.uri && name == "Masks" {
+                masks = value as? String
             }
             guard namespace == TagWrite.Namespace.crs.uri else { return true }
             if name.hasPrefix("ToneCurvePV2012") {
@@ -290,7 +307,8 @@ public enum XMP {
             isRaw: file.isRaw,
             rotation: rotation(
                 fromXMP: embeddedXMPOrientation(at: url),
-                base: baseOrientation(at: url) ?? 1))
+                base: baseOrientation(at: url) ?? 1),
+            masks: masks)
         return (rating, pick, edit)
     }
 
@@ -323,7 +341,7 @@ public enum XMP {
 
     struct TagWrite {
         enum Namespace: String, CaseIterable {
-            case xmp, crs, tiff, xmpDM
+            case xmp, crs, tiff, xmpDM, photopipe
 
             var prefix: String { rawValue }
 
@@ -333,6 +351,7 @@ public enum XMP {
                 case .crs: "http://ns.adobe.com/camera-raw-settings/1.0/"
                 case .tiff: "http://ns.adobe.com/tiff/1.0/"
                 case .xmpDM: "http://ns.adobe.com/xmp/1.0/DynamicMedia/"
+                case .photopipe: "https://photopipe.net/ns/1.0/"
                 }
             }
         }
@@ -502,6 +521,10 @@ public enum XMP {
         curve("ToneCurvePV2012Red", edit.curveRed)
         curve("ToneCurvePV2012Green", edit.curveGreen)
         curve("ToneCurvePV2012Blue", edit.curveBlue)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let masks = try String(decoding: encoder.encode(Array(edit.masks.prefix(maskLimit))), as: UTF8.self)
+        tags.append(TagWrite(.photopipe, "Masks", edit.masks.isEmpty ? .remove : .scalar(masks)))
         return (tags, exifOrientationPin)
     }
 

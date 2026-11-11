@@ -43,6 +43,127 @@ public struct CropRect: Codable, Equatable, Sendable {
     var height: Double { bottom - top }
 }
 
+/// A mask's own sliders. Temperature and tint are relative on every file:
+/// a region has no as-shot neutral of its own.
+public struct LocalAdjust: Codable, Equatable, Sendable {
+    public var exposure: Double
+    public var highlights: Double
+    public var shadows: Double
+    public var whites: Double
+    public var blacks: Double
+    public var temperature: Double
+    public var tint: Double
+    public var vibrance: Double
+    public var saturation: Double
+
+    public static let identity = LocalAdjust()
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
+        case exposure, highlights, shadows, whites, blacks, temperature, tint, vibrance, saturation
+    }
+
+    private static func path(_ key: CodingKeys) -> WritableKeyPath<LocalAdjust, Double> {
+        switch key {
+        case .exposure: \.exposure
+        case .highlights: \.highlights
+        case .shadows: \.shadows
+        case .whites: \.whites
+        case .blacks: \.blacks
+        case .temperature: \.temperature
+        case .tint: \.tint
+        case .vibrance: \.vibrance
+        case .saturation: \.saturation
+        }
+    }
+
+    public init(
+        exposure: Double = 0, highlights: Double = 0, shadows: Double = 0,
+        whites: Double = 0, blacks: Double = 0, temperature: Double = 0, tint: Double = 0,
+        vibrance: Double = 0, saturation: Double = 0
+    ) {
+        self.exposure = exposure
+        self.highlights = highlights
+        self.shadows = shadows
+        self.whites = whites
+        self.blacks = blacks
+        self.temperature = temperature
+        self.tint = tint
+        self.vibrance = vibrance
+        self.saturation = saturation
+    }
+
+    public init(from decoder: Decoder) throws {
+        self.init()
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        for key in CodingKeys.allCases {
+            self[keyPath: Self.path(key)] =
+                try container.decodeIfPresent(Double.self, forKey: key) ?? 0
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        for key in CodingKeys.allCases where self[keyPath: Self.path(key)] != 0 {
+            try container.encode(self[keyPath: Self.path(key)], forKey: key)
+        }
+    }
+
+    /// The same sliders as a whole-photo edit, for the renderer's shared stages.
+    var edit: Edit {
+        Edit(
+            exposure: exposure, highlights: highlights, shadows: shadows, whites: whites,
+            blacks: blacks, temperature: temperature, tint: tint, vibrance: vibrance,
+            saturation: saturation)
+    }
+}
+
+/// A region of the photo with its own sliders. Only what to look for is stored;
+/// the pixels are found again per photo, so a pasted mask fits its new photo.
+public struct Mask: Codable, Equatable, Sendable {
+    public enum Source: String, Codable, Sendable {
+        case subject, people
+    }
+
+    public var id: String
+    public var source: Source
+    public var inverted: Bool
+    public var hidden: Bool
+    public var adjust: LocalAdjust
+
+    enum CodingKeys: String, CodingKey {
+        case id, source, inverted, hidden, adjust
+    }
+
+    public init(
+        id: String, source: Source, inverted: Bool = false, hidden: Bool = false,
+        adjust: LocalAdjust = .identity
+    ) {
+        self.id = id
+        self.source = source
+        self.inverted = inverted
+        self.hidden = hidden
+        self.adjust = adjust
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        source = try container.decode(Source.self, forKey: .source)
+        inverted = try container.decodeIfPresent(Bool.self, forKey: .inverted) ?? false
+        hidden = try container.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
+        adjust = try container.decodeIfPresent(LocalAdjust.self, forKey: .adjust) ?? .identity
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(source, forKey: .source)
+        if inverted { try container.encode(inverted, forKey: .inverted) }
+        if hidden { try container.encode(hidden, forKey: .hidden) }
+        if adjust != .identity { try container.encode(adjust, forKey: .adjust) }
+    }
+}
+
 /// Every per-photo adjustment. Curve points live in the unit square, empty
 /// meaning the identity ramp.
 /// `temperature`/`tint`: Kelvin and green–magenta for raws (nil = as shot),
@@ -74,6 +195,7 @@ public struct Edit: Codable, Equatable, Sendable {
     public var crop: CropRect?
     public var cropAngle: Double
     public var rotation: Int
+    public var masks: [Mask]
 
     public static let identity = Edit()
 
@@ -81,7 +203,7 @@ public struct Edit: Codable, Equatable, Sendable {
         case exposure, highlights, shadows, whites, blacks
         case texture, clarity, dehaze
         case temperature, tint, denoise, vibrance, saturation
-        case curveRGB, curveRed, curveGreen, curveBlue, crop, cropAngle, rotation
+        case curveRGB, curveRed, curveGreen, curveBlue, crop, cropAngle, rotation, masks
     }
 
     public init(
@@ -92,7 +214,7 @@ public struct Edit: Codable, Equatable, Sendable {
         vibrance: Double = 0, saturation: Double = 0,
         curveRGB: [CurvePoint] = [], curveRed: [CurvePoint] = [],
         curveGreen: [CurvePoint] = [], curveBlue: [CurvePoint] = [],
-        crop: CropRect? = nil, cropAngle: Double = 0, rotation: Int = 0
+        crop: CropRect? = nil, cropAngle: Double = 0, rotation: Int = 0, masks: [Mask] = []
     ) {
         self.exposure = exposure
         self.highlights = highlights
@@ -114,6 +236,7 @@ public struct Edit: Codable, Equatable, Sendable {
         self.crop = crop
         self.cropAngle = cropAngle
         self.rotation = rotation
+        self.masks = masks
     }
 
     public init(from decoder: Decoder) throws {
@@ -138,6 +261,7 @@ public struct Edit: Codable, Equatable, Sendable {
         crop = try container.decodeIfPresent(CropRect.self, forKey: .crop)
         cropAngle = try container.decodeIfPresent(Double.self, forKey: .cropAngle) ?? 0
         rotation = try container.decodeIfPresent(Int.self, forKey: .rotation) ?? 0
+        masks = try container.decodeIfPresent([Mask].self, forKey: .masks) ?? []
     }
 
     /// Later-added fields are omitted at their defaults, so older edits keep
@@ -169,6 +293,7 @@ public struct Edit: Codable, Equatable, Sendable {
         try container.encodeIfPresent(crop, forKey: .crop)
         try encodeUnlessZero(cropAngle, forKey: .cropAngle)
         try encodeUnlessZero(rotation, forKey: .rotation)
+        if !masks.isEmpty { try container.encode(masks, forKey: .masks) }
     }
 
     public var isIdentity: Bool {

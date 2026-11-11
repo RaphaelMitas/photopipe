@@ -1,5 +1,6 @@
 import CoreImage
 import Foundation
+import Synchronization
 import Testing
 import UniformTypeIdentifiers
 
@@ -1601,4 +1602,132 @@ private func oklab(_ rgb: [Double]) -> (lightness: Double, chroma: Double, hue: 
     // caches for the session, so a no here would stick after the copy lands.
     #expect(renderer.known(file: file, major: 9) == nil)
     #expect(renderer.supports(file: file, major: 9) == false)
+}
+
+/// White over the left half, in a shape that is not the photo's.
+private let leftHalf: Masker.Segment = { _, _ in
+    CIImage(color: .white).cropped(to: CGRect(x: 0, y: 0, width: 15, height: 40))
+        .composited(
+            over: CIImage(color: .black).cropped(to: CGRect(x: 0, y: 0, width: 30, height: 40)))
+}
+
+private let leftSide = CGRect(x: 0, y: 0, width: 24, height: 64)
+private let rightSide = CGRect(x: 40, y: 0, width: 24, height: 64)
+
+@Test func aMaskAdjustsItsRegionAndNothingElse() throws {
+    let cacheDir = tempCacheDir()
+    let jpeg = try writeSyntheticJPEG(color: gray(0.4))
+    defer {
+        try? FileManager.default.removeItem(at: cacheDir)
+        try? FileManager.default.removeItem(at: jpeg)
+    }
+    let segmented = Mutex(0)
+    let renderer = Renderer(cacheDir: cacheDir) { photo, source in
+        segmented.withLock { $0 += 1 }
+        return try leftHalf(photo, source)
+    }
+    let file = try imageFile(for: jpeg)
+    func luminance(_ masks: [Mask], _ region: CGRect) throws -> Double {
+        try meanLuminance(
+            of: renderer.render(file: file, edit: Edit(masks: masks), maxPixel: 64), region: region)
+    }
+    let brighter = LocalAdjust(exposure: 1)
+    let plain = try luminance([], leftSide)
+
+    let masked = [Mask(id: "a", source: .subject, adjust: brighter)]
+    #expect(try luminance(masked, leftSide) > plain + 20)
+    #expect(try abs(luminance(masked, rightSide) - plain) <= 1)
+
+    let inverted = [Mask(id: "a", source: .subject, inverted: true, adjust: brighter)]
+    #expect(try abs(luminance(inverted, leftSide) - plain) <= 1)
+    #expect(try luminance(inverted, rightSide) > plain + 20)
+
+    let hidden = [Mask(id: "a", source: .subject, hidden: true, adjust: brighter)]
+    #expect(try abs(luminance(hidden, leftSide) - plain) <= 1)
+
+    #expect(segmented.withLock { $0 } == 1, "one matte serves every edit of the photo")
+}
+
+@Test func aMatteKeepsItsHalfCoverageThroughTheCache() throws {
+    let cacheDir = tempCacheDir()
+    let jpeg = try writeSyntheticJPEG(color: gray(0.4))
+    defer {
+        try? FileManager.default.removeItem(at: cacheDir)
+        try? FileManager.default.removeItem(at: jpeg)
+    }
+    let masker = Masker(cache: CacheFolder(dir: cacheDir, maxBytes: 1 << 20)) { photo, _ in
+        CIImage(color: gray(0.5)).cropped(to: photo.extent)
+    }
+    let photo = CIImage(color: .black).cropped(to: CGRect(x: 0, y: 0, width: 64, height: 64))
+    for _ in 0..<2 {
+        let matte = try masker.matte(for: imageFile(for: jpeg), source: .people) { photo }
+        var pixel = [UInt8](repeating: 0, count: 4)
+        CIContext(options: [.workingColorSpace: NSNull()]).render(
+            matte, toBitmap: &pixel, rowBytes: 4, bounds: CGRect(x: 32, y: 32, width: 1, height: 1),
+            format: .RGBA8, colorSpace: nil)
+        #expect(abs(Int(pixel[0]) - 128) <= 1)
+    }
+}
+
+private func alpha(of url: URL, at point: CGPoint) throws -> UInt8 {
+    let image = try #require(CIImage(contentsOf: url))
+    var pixel = [UInt8](repeating: 0, count: 4)
+    CIContext().render(
+        image, toBitmap: &pixel, rowBytes: 4,
+        bounds: CGRect(x: point.x, y: point.y, width: 1, height: 1),
+        format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+    return pixel[3]
+}
+
+@Test func theOverlayIsTheMatteInTheFrameOfTheEdit() throws {
+    let cacheDir = tempCacheDir()
+    let jpeg = try writeSyntheticJPEG(color: gray(0.4))
+    defer {
+        try? FileManager.default.removeItem(at: cacheDir)
+        try? FileManager.default.removeItem(at: jpeg)
+    }
+    let renderer = Renderer(cacheDir: cacheDir, segment: leftHalf)
+    let file = try imageFile(for: jpeg)
+    func overlay(_ edit: Edit, inverted: Bool = false) throws -> URL {
+        try renderer.maskOverlay(
+            file: file, source: .subject, inverted: inverted, edit: edit, maxPixel: 64)
+    }
+    let left = CGPoint(x: 8, y: 32)
+    let right = CGPoint(x: 56, y: 32)
+
+    #expect(try alpha(of: overlay(.identity), at: left) == 255)
+    #expect(try alpha(of: overlay(.identity), at: right) == 0)
+    #expect(try alpha(of: overlay(.identity, inverted: true), at: left) == 0)
+    #expect(try alpha(of: overlay(.identity, inverted: true), at: right) == 255)
+
+    let rightHalfCrop = Edit(crop: CropRect(left: 0.5, top: 0, right: 1, bottom: 1))
+    #expect(try alpha(of: overlay(rightHalfCrop), at: CGPoint(x: 8, y: 32)) == 0)
+
+    // clockwise, so the photo's left side is the top, which Core Image counts from below
+    let turned = try overlay(Edit(rotation: 90))
+    #expect(try alpha(of: turned, at: CGPoint(x: 32, y: 56)) == 255)
+    #expect(try alpha(of: turned, at: CGPoint(x: 32, y: 8)) == 0)
+
+    let graded = Edit(exposure: 1, masks: [Mask(id: "a", source: .subject)])
+    #expect(try overlay(graded) == overlay(.identity), "sliders do not move a mask")
+}
+
+@Test func aMaskOnARawAdjustsItsRegionToo() throws {
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir, segment: leftHalf)
+    let file = try imageFile(for: fixture)
+    let plain = try renderer.render(file: file, edit: .identity, maxPixel: 256)
+    let masked = try renderer.render(
+        file: file,
+        edit: Edit(masks: [Mask(id: "a", source: .people, adjust: LocalAdjust(exposure: 1))]),
+        maxPixel: 256)
+    let size = try #require(CIImage(contentsOf: plain)).extent
+    let left = CGRect(x: 0, y: 0, width: size.width * 0.4, height: size.height)
+    let right = CGRect(x: size.width * 0.6, y: 0, width: size.width * 0.4, height: size.height)
+    #expect(try meanLuminance(of: masked, region: left) > meanLuminance(of: plain, region: left) + 10)
+    #expect(
+        try abs(meanLuminance(of: masked, region: right) - meanLuminance(of: plain, region: right))
+            <= 1)
 }

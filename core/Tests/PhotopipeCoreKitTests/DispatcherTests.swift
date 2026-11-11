@@ -31,3 +31,9 @@ import Testing
     #expect(!reply.ok)
     #expect(reply.text == "invalid_params: shoot required")
 }
+
+@Test func aMaskOverlayOfAnUnknownSourceIsRefused() {
+    let reply = Dispatcher().dispatch(
+        method: "maskOverlay", params: #"{"path":"/a.jpg","source":"sky"}"#)
+    #expect(reply.text == "invalid_params: source required")
+}

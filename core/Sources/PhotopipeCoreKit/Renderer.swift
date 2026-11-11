@@ -11,6 +11,7 @@ public final class Renderer: @unchecked Sendable {
     }
 
     private let cache: CacheFolder
+    private let masker: Masker
     private let context = CIContext(options: [.cacheIntermediates: true])
     // an export renders each photo once, so there is nothing to reuse
     private let exportContext = CIContext(options: [.cacheIntermediates: false])
@@ -47,8 +48,13 @@ public final class Renderer: @unchecked Sendable {
     // the loupe holds current, both neighbours and a zoom render at once
     private let filterCapacity = 6
 
-    public init(cacheDir: URL) {
+    public convenience init(cacheDir: URL) {
+        self.init(cacheDir: cacheDir, segment: Masker.vision)
+    }
+
+    init(cacheDir: URL, segment: @escaping Masker.Segment) {
         cache = CacheFolder(dir: cacheDir, maxBytes: 2 * 1024 * 1024 * 1024)
+        masker = Masker(cache: cache, segment: segment)
         cache.pruneInBackground()
     }
 
@@ -63,8 +69,9 @@ public final class Renderer: @unchecked Sendable {
     ) -> URL {
         let region = viewport.map { "|\($0.left),\($0.top),\($0.right),\($0.bottom)" } ?? ""
         let decoder = resolvedTag(for: file, requested: decoderVersion)
+        let masks = edit.masks.isEmpty ? "" : "|m\(Masker.version)"
         let key =
-            "\(file.path)|\(file.mtime)|\(file.size)|\(edit.cacheKey)|\(maxPixel)\(region)\(decoder)|v\(Self.pipelineVersion)"
+            "\(file.path)|\(file.mtime)|\(file.size)|\(edit.cacheKey)|\(maxPixel)\(region)\(decoder)\(masks)|v\(Self.pipelineVersion)"
         return cache.url(forKey: key)
     }
 
@@ -132,6 +139,37 @@ public final class Renderer: @unchecked Sendable {
         }
     }
 
+    /// The mask as the alpha of a white image, framed like the render it lies over.
+    public func maskOverlay(
+        file: ImageFile, source: Mask.Source, inverted: Bool, edit: Edit, maxPixel: Int
+    ) throws -> URL {
+        guard maxPixel > 0 else { throw RenderError.encodeFailed }
+        let framing = Edit(crop: edit.crop, cropAngle: edit.cropAngle, rotation: edit.rotation)
+        let key =
+            "\(file.path)|\(file.mtime)|\(file.size)|overlay|\(source.rawValue)|\(inverted)|\(framing.cacheKey)|\(maxPixel)|m\(Masker.version)"
+        return try cache.cachedFile(at: cache.url(forKey: key, pathExtension: "png")) { temp in
+            let matte = try matte(for: file, source: source, inverted: inverted)
+            let coverage = CIImage(color: .white).cropped(to: matte.extent)
+                .applyingFilter("CIBlendWithRedMask", parameters: [kCIInputMaskImageKey: matte])
+            guard
+                let png = context.pngRepresentation(
+                    of: Self.fitted(
+                        Self.framed(coverage, framing, viewport: nil), longEdge: CGFloat(maxPixel)),
+                    format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+            else { throw RenderError.encodeFailed }
+            try png.write(to: temp)
+        }
+    }
+
+    private func matte(for file: ImageFile, source: Mask.Source, inverted: Bool) throws -> CIImage {
+        let matte = try masker.matte(for: file, source: source) {
+            try sourceImage(
+                for: file, raw: file.isRaw ? makeFilter(for: file) : nil, edit: .identity,
+                maxPixel: Masker.inputLongEdge)
+        }
+        return inverted ? matte.applyingFilter("CIColorInvert") : matte
+    }
+
     /// nil for non-raws, which have no neutral to offset against.
     public func rawDefaults(for file: ImageFile, decoderVersion: Int? = nil) throws -> RawDefaults? {
         guard file.isRaw else { return nil }
@@ -185,30 +223,55 @@ public final class Renderer: @unchecked Sendable {
             guard !base.extent.isEmpty else { throw RenderError.unreadable(file.path) }
             let scale = Self.sourceScale(
                 for: edit, orientedSize: base.extent.size, maxPixel: maxPixel, viewport: viewport)
-            image = Self.fitted(base, longEdge: base.longEdge * CGFloat(scale))
-            if edit.exposure != 0 {
-                image = image.applyingFilter(
-                    "CIExposureAdjust", parameters: ["inputEV": edit.exposure])
-            }
-            // 2^EV alone runs highlights past 1, where they clip to cyan skies and flat white
-            if edit.exposure > 0 {
-                image = Presence.shoulder(image, afterExposure: edit.exposure)
-            }
-            let temperature = edit.temperature ?? 0
-            let tint = edit.tint ?? 0
-            if temperature != 0 || tint != 0 {
-                // even mired steps look even, and a lower target neutral renders warmer,
-                // like a raw's higher temperature
-                let mired = 1e6 / 6500 + temperature / 100 * (1e6 / 4500 - 1e6 / 6500)
-                image = image.applyingFilter(
-                    "CITemperatureAndTint",
-                    parameters: [
-                        "inputNeutral": CIVector(x: 6500, y: 0),
-                        "inputTargetNeutral": CIVector(x: 1e6 / mired, y: -tint),
-                    ])
-            }
+            image = Self.incremental(
+                Self.fitted(base, longEdge: base.longEdge * CGFloat(scale)), edit)
         }
+        // before the photo's own grade, so a mask adjusts what the camera saw
+        for mask in edit.masks where !mask.hidden && mask.adjust != .identity {
+            let local = mask.adjust.edit
+            let matte = try matte(for: file, source: mask.source, inverted: mask.inverted)
+            image = graded(Self.incremental(image, local), local)
+                .applyingFilter(
+                    "CIBlendWithRedMask",
+                    parameters: [
+                        kCIInputBackgroundImageKey: image,
+                        kCIInputMaskImageKey: Masker.stretched(matte, over: image.extent),
+                    ]
+                )
+                .cropped(to: image.extent)
+        }
+        return Self.framed(graded(image, edit), edit, viewport: viewport)
+    }
 
+    /// Exposure and white balance without a raw decoder to set them in.
+    private static func incremental(_ source: CIImage, _ edit: Edit) -> CIImage {
+        var image = source
+        if edit.exposure != 0 {
+            image = image.applyingFilter(
+                "CIExposureAdjust", parameters: ["inputEV": edit.exposure])
+        }
+        // 2^EV alone runs highlights past 1, where they clip to cyan skies and flat white
+        if edit.exposure > 0 {
+            image = Presence.shoulder(image, afterExposure: edit.exposure)
+        }
+        let temperature = edit.temperature ?? 0
+        let tint = edit.tint ?? 0
+        if temperature != 0 || tint != 0 {
+            // even mired steps look even, and a lower target neutral renders warmer,
+            // like a raw's higher temperature
+            let mired = 1e6 / 6500 + temperature / 100 * (1e6 / 4500 - 1e6 / 6500)
+            image = image.applyingFilter(
+                "CITemperatureAndTint",
+                parameters: [
+                    "inputNeutral": CIVector(x: 6500, y: 0),
+                    "inputTargetNeutral": CIVector(x: 1e6 / mired, y: -tint),
+                ])
+        }
+        return image
+    }
+
+    private func graded(_ source: CIImage, _ edit: Edit) -> CIImage {
+        var image = source
         if edit.dehaze != 0 {
             image = Presence.dehaze(image, amount: edit.dehaze)
         }
@@ -233,6 +296,11 @@ public final class Renderer: @unchecked Sendable {
         if edit.vibrance != 0 || edit.saturation != 0 {
             image = Presence.chroma(image, vibrance: edit.vibrance, saturation: edit.saturation)
         }
+        return image
+    }
+
+    private static func framed(_ source: CIImage, _ edit: Edit, viewport: CropRect?) -> CIImage {
+        var image = source
         switch edit.normalizedRotation {
         case 90: image = image.oriented(forExifOrientation: 6)
         case 180: image = image.oriented(forExifOrientation: 3)

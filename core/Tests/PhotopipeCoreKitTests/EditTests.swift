@@ -175,3 +175,19 @@ private let fixtureCases: [(name: String, points: [CurvePoint])] = [
         }
     }
 }
+
+@Test func anEditWithoutMasksEncodesAsItAlwaysDid() throws {
+    #expect(!Edit(exposure: 1).cacheKey.contains("masks"), "or every cached render goes stale")
+    let old = try JSONDecoder().decode(Edit.self, from: Data(#"{"exposure":1}"#.utf8))
+    #expect(old.masks.isEmpty)
+
+    let masked = Edit(masks: [
+        Mask(id: "a", source: .subject, inverted: true, adjust: LocalAdjust(exposure: 0.5)),
+        Mask(id: "b", source: .people),
+    ])
+    #expect(
+        masked.cacheKey.contains(
+            #""masks":[{"adjust":{"exposure":0.5},"id":"a","inverted":true,"source":"subject"},{"id":"b","source":"people"}]"#
+        ))
+    #expect(try JSONDecoder().decode(Edit.self, from: Data(masked.cacheKey.utf8)) == masked)
+}
