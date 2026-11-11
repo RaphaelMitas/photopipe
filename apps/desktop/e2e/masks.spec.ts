@@ -149,12 +149,13 @@ test("a click on the photo becomes a mask, and Shift-click refines it without ad
   await expect(history).toHaveCount(4);
 });
 
-test("with the split on, only the edited half takes a click", async ({
+test("with the split on, only the edited half previews and takes a click", async ({
   page,
 }) => {
   await openZell(page);
   await page.getByTestId("thumb").first().click();
   const photo = page.getByTestId("loupe-image");
+  const preview = page.getByTestId("mask-preview");
   const rows = page.getByRole("button", { name: "Object", exact: true });
   await page.keyboard.press("y");
   await expect(page.getByTestId("loupe-before-image")).toBeVisible();
@@ -162,7 +163,15 @@ test("with the split on, only the edited half takes a click", async ({
   const box = await photo.boundingBox();
   if (!box) throw new Error("no photo on the stage");
 
-  await photo.click({ position: { x: box.width * 0.25, y: box.height / 2 } });
-  await photo.click({ position: { x: box.width * 0.75, y: box.height / 2 } });
+  const before = { x: box.width * 0.25, y: box.height / 2 };
+  const edited = { x: box.width * 0.75, y: box.height / 2 };
+
+  await photo.hover({ position: edited });
+  await expect(preview).toBeVisible();
+  await photo.hover({ position: before });
+  await expect(preview).toHaveCount(0);
+
+  await photo.click({ position: before });
+  await photo.click({ position: edited });
   await expect(rows).toHaveCount(1);
 });

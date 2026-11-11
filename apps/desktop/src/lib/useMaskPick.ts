@@ -1,7 +1,7 @@
 import {
   type MouseEvent,
   type PointerEvent,
-  useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -54,7 +54,7 @@ export function useMaskPick(
   const pressed = useRef<{ x: number; y: number } | null>(null);
   // an answer lands a render or a model load later, when the loupe may be gone
   const live = useRef<{ masks: MaskSession; scene: string } | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     live.current = { masks, scene };
     return () => {
       live.current = null;
