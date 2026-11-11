@@ -759,6 +759,9 @@ private func oklab(_ rgb: [Double]) -> (lightness: Double, chroma: Double, hue: 
         oklab(chroma(deepBlue, vibrance: 100, saturation: 100)).chroma
             > oklab(chroma(deepBlue, saturation: 100)).chroma,
         "vibrance on top of saturation took colour away")
+    #expect(
+        oklab(chroma(paleBlue, vibrance: -50)).chroma < oklab(chroma(paleBlue)).chroma,
+        "negative vibrance added colour")
 }
 
 @Test func rgbCurveBrightensMidtones() throws {
