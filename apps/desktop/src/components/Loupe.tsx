@@ -7,7 +7,7 @@ import {
   type Flag,
   fileSrc,
   type ImageFile,
-  pointsKey,
+  shapeKey,
   unedited,
 } from "@/lib/core";
 import {
@@ -354,7 +354,7 @@ export function Loupe({
   const overlays = [
     maskOverlay && masks.shown
       ? {
-          key: `${masks.shown.source}|${pointsKey(masks.shown.points)}|${masks.shown.inverted}|${masks.fading}`,
+          key: `${shapeKey(masks.shown)}|${masks.fading}`,
           testid: "mask-overlay",
           look: cn("bg-mask/50", masks.fading && "animate-mask-flash"),
           src: fileSrc(maskOverlay),

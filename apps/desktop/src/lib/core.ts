@@ -127,8 +127,11 @@ export function isIdentityEdit(edit: Edit): boolean {
   return editKey(edit) === editKey(identityEdit);
 }
 
-export const pointsKey = (points: MaskPoint[]) =>
+const pointsKey = (points: MaskPoint[]) =>
   points.map((point) => `${point.x}:${point.y}:${point.include}`).join("/");
+
+export const shapeKey = ({ source, inverted, points }: MaskShape) =>
+  `${source}|${inverted}|${pointsKey(points)}`;
 
 // Stable string for react-query keys and mock cache paths.
 export function editKey(edit: Edit): string {
@@ -140,11 +143,9 @@ export function editKey(edit: Edit): string {
   const mask = (entry: Mask) =>
     [
       entry.id,
-      entry.source,
-      entry.inverted,
+      shapeKey(entry),
       entry.hidden,
       ...ADJUST_KEYS.map((key) => entry.adjust[key]),
-      pointsKey(entry.points),
     ].join(",");
   return [
     edit.exposure,

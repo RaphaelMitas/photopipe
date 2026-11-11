@@ -500,6 +500,26 @@ describe("usePrefetchRender", () => {
     expect(invoke).toHaveBeenCalledTimes(1);
   });
 
+  it("asks again for a prefetch that came back without its masks once the loupe lands on it", async () => {
+    invoke.mockReset();
+    invoke.mockResolvedValueOnce({
+      cachePath: "/cache/bare.jpg",
+      unmasked: true,
+    });
+    invoke.mockResolvedValue({ cachePath: "/cache/b.jpg", unmasked: false });
+    const client = new QueryClient();
+    const loupe = (landed: boolean) => (
+      <QueryClientProvider client={client}>
+        <Loupe landed={landed} />
+      </QueryClientProvider>
+    );
+    const view = render(loupe(false));
+    await waitFor(() => expect(client.isFetching()).toBe(0));
+    expect(invoke).toHaveBeenCalledTimes(1);
+    view.rerender(loupe(true));
+    expect(await view.findByText("/cache/b.jpg")).toBeTruthy();
+  });
+
   it("does not revive a passed photo's retries by prefetching it as a neighbour", async () => {
     const photos = ["A", "B", "C", "D"].map((name) => ({
       path: `/r/shoot1/${name}.ARW`,

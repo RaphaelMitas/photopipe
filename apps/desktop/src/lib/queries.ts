@@ -35,8 +35,8 @@ import {
   normalizeEdit,
   normalizeImage,
   normalizeShoot,
-  pointsKey,
   type StatusResult,
+  shapeKey,
   unedited,
 } from "./core";
 import { useFeatures } from "./features";
@@ -190,9 +190,7 @@ export function useMaskOverlay(
       "maskOverlay",
       file?.path,
       file?.mtime,
-      shape?.source,
-      shape?.inverted,
-      shape && pointsKey(shape.points),
+      shape && shapeKey(shape),
       editKey(frame),
     ],
     queryFn:
@@ -255,7 +253,8 @@ function renderQueryOptions(
             ...(decoderVersion ? { decoderVersion } : {}),
           })
       : skipToken,
-    staleTime: Number.POSITIVE_INFINITY,
+    staleTime: (query) =>
+      query.state.data?.unmasked ? 0 : Number.POSITIVE_INFINITY,
     retry: renderRetry,
     retryDelay: (failures, error) =>
       superseded(error) ? 0 : 1000 * 2 ** failures,
@@ -391,7 +390,6 @@ export function useRaw9Availability(enabled: boolean) {
   });
 }
 
-/// 0 where the system cannot mask.
 export function useMaskClickLimit() {
   const support = useQuery({
     queryKey: ["maskSupport"],

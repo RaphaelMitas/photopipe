@@ -128,7 +128,7 @@ public final class Renderer: @unchecked Sendable {
         guard edit.masks.contains(where: \.changesPixels) else {
             return Preview(cachePath: try rendered(edit), unmasked: false)
         }
-        // asked first, so a model still downloading does not hold the render lane
+        // asked first, so a model still downloading holds the render lane a second at most
         if maskModelArrives(), let masked = try? rendered(edit) {
             return Preview(cachePath: masked, unmasked: false)
         }

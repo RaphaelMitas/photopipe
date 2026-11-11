@@ -7,9 +7,7 @@ enum TapToSegment {
     enum Seed: Sendable {
         /// The first has to include: it finds the object, the rest refine it.
         case clicks([Mask.Point])
-        /// The model clicks for itself: the mask's deepest spot, then the deepest it still misses.
         case covering(RoughMask)
-        /// One answer for each.
         case scribbles([RoughMask])
     }
 
@@ -26,6 +24,7 @@ enum TapToSegment {
             else { throw Renderer.RenderError.encodeFailed }
             let done = DispatchSemaphore(value: 0)
             let answer = Answer()
+            // an export waits here on a thread of Swift's pool, which spares one for this task only while exports stay utility
             Task.detached {
                 do {
                     answer.result = .success(try await segment(image, from: seed))
@@ -41,7 +40,6 @@ enum TapToSegment {
         @available(macOS 27, iOS 27, *)
         private static func segment(_ image: CGImage, from seed: Seed) async throws -> [CGImage] {
             let handler = ImageRequestHandler(image)
-            let context = CIContext(options: [.workingColorSpace: NSNull()])
             switch seed {
             case .clicks(let points):
                 guard let first = points.first, first.include else { return [] }
@@ -57,13 +55,13 @@ enum TapToSegment {
                     return wanted.spotMissed(
                         by: RoughMask(
                             CIImage(cgImage: found, options: [.colorSpace: NSNull()]), over: photo,
-                            context: context))
+                            context: Masker.unmanaged))
                 }
             case .scribbles(let scribbles):
                 var found: [CGImage] = []
                 for scribble in scribbles {
                     let buffer = try scribble.scribble(
-                        width: image.width, height: image.height, context: context)
+                        width: image.width, height: image.height, context: Masker.unmanaged)
                     let request = try await ready(
                         GenerateIterativeSegmentationRequest(
                             seedScribbleBuffer: CVReadOnlyPixelBuffer(unsafeBuffer: buffer)))

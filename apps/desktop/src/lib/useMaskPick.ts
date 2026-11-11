@@ -12,7 +12,7 @@ import {
   type Edit,
   editKey,
   type ImageFile,
-  pointsKey,
+  shapeKey,
   unedited,
 } from "./core";
 import { useMaskClickLimit } from "./queries";
@@ -41,7 +41,7 @@ export function useMaskPick(
   const frame = unedited(edit);
   const target = masks.target;
   // a preview or a click lands only on the photo, frame and mask it was asked about
-  const scene = `${image?.path}|${editKey(frame)}|${masks.creating}|${target?.id}|${target?.inverted}|${pointsKey(target?.points ?? [])}`;
+  const scene = `${image?.path}|${editKey(frame)}|${masks.creating}|${target?.id}|${target && shapeKey(target)}`;
   const clickLimit = useMaskClickLimit();
   const [answer, setAnswer] = useState<{ scene: string; png: string } | null>(
     null,

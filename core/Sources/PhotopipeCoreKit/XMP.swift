@@ -79,7 +79,7 @@ public enum XMP {
         var hasCrop: Bool? { text("HasCrop").map { $0.lowercased() == "true" } }
     }
 
-    // a sidecar is anyone's to write, and every mask costs a render pass
+    // a sidecar is anyone's to write, and each mask can cost a cut by the model
     static let maskLimit = 32
 
     private struct UnreadMask {
@@ -99,8 +99,7 @@ public enum XMP {
             }
     }
 
-    // an entry this build cannot read, or cannot find on this OS, is kept as written for the next save
-    // each is judged alone: the writer splits the file's entries again, and must split them the same way
+    // an entry this build or OS cannot read is kept for the next save, judged alone so the writer splits the file the same way
     private static func masks(fromJSON text: String?) -> (read: [Mask], unread: [UnreadMask]) {
         guard let text,
             let entries = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [Any]

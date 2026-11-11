@@ -13,7 +13,7 @@ struct Masker {
     let cache: CacheFolder
     let segment: Segment
     // a matte is coverage, not colour: managed, a half would come back as a fifth
-    private let context = CIContext(options: [.workingColorSpace: NSNull()])
+    static let unmanaged = CIContext(options: [.workingColorSpace: NSNull()])
     private let photoContext = CIContext()
     private let brightened = LastPhoto()
     // a render and the mask's row want the same matte at once, and the second must find it cut
@@ -27,20 +27,20 @@ struct Masker {
     /// Every mask is cut by the click model, so without it there are none.
     static var isAvailable: Bool { TapToSegment.isAvailable }
 
-    /// `neutral` is the photo before any edit, so one matte serves every edit of it; `stamp` names its pixels.
+    /// `neutral` is the photo before any edit, so one matte serves every edit of it.
     func matte(
-        for stamp: String, source: Mask.Source, points: [Mask.Point],
+        for pixelStamp: String, source: Mask.Source, points: [Mask.Point],
         neutral: () throws -> CIImage
     ) throws -> CIImage {
-        let key = "\(stamp)|matte|\(source.rawValue)\(points.cacheKey)|v\(Self.version)"
+        let key = "\(pixelStamp)|matte|\(source.rawValue)\(points.cacheKey)|v\(Self.version)"
         let url = cache.url(forKey: key, pathExtension: "png")
         if !cache.isCached(url) {
             _ = try cutting.withLock {
                 try cache.cachedFile(at: url) { temp in
                     guard
-                        let png = context.pngRepresentation(
+                        let png = Self.unmanaged.pngRepresentation(
                             of: try found(
-                                in: try brightPhoto(for: stamp, neutral: neutral), source: source,
+                                in: try brightPhoto(for: pixelStamp, neutral: neutral), source: source,
                                 points: points), format: .L8,
                             colorSpace: CGColorSpace(name: CGColorSpace.linearGray)!)
                     else { throw Renderer.RenderError.encodeFailed }
@@ -60,8 +60,8 @@ struct Masker {
     }
 
     /// Drawn once and kept, so the cursor's next question does not wait on a decode.
-    func brightPhoto(for stamp: String, neutral: () throws -> CIImage) throws -> CIImage {
-        try brightened.photo(for: stamp) {
+    func brightPhoto(for pixelStamp: String, neutral: () throws -> CIImage) throws -> CIImage {
+        try brightened.photo(for: pixelStamp) {
             let photo = try neutral()
             // half floats, so lifting the shadows does not band them
             guard
@@ -101,13 +101,12 @@ struct Masker {
     /// The older models only say where: who the subject is, where each person stands.
     static let vision: Segment = { photo, source, points in
         let nothing = CIImage(color: .black).cropped(to: photo.extent)
-        // a click needs neither, and the cursor asks on every move
+        // a click does not need it, and the cursor asks on every move
         lazy var handler = VNImageRequestHandler(ciImage: photo)
-        lazy var context = CIContext(options: [.workingColorSpace: NSNull()])
         func rough(_ found: CVPixelBuffer) -> RoughMask {
             RoughMask(
                 CIImage(cvPixelBuffer: found, options: [.colorSpace: NSNull()]), over: photo.extent,
-                context: context)
+                context: unmanaged)
         }
         var seed = TapToSegment.Seed.clicks(points)
         switch source {
