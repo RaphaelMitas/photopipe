@@ -558,6 +558,48 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
         "positive tint must shift green toward magenta, got neutral \(neutral) tinted \(magenta)")
 }
 
+@Test func temperatureCoolsAsFarAsItWarms() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let jpegURL = try writeSyntheticJPEG(color: gray(0.5))
+    defer { try? FileManager.default.removeItem(at: jpegURL) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: jpegURL)
+    let redOverBlue = { (temperature: Double) in
+        let channels = try meanChannels(
+            of: renderer.render(file: file, edit: Edit(temperature: temperature), maxPixel: 64))
+        return log(channels.red / channels.blue)
+    }
+
+    let warmed = try redOverBlue(50)
+    let cooled = try -redOverBlue(-50)
+    #expect(warmed > 0.05)
+    #expect(
+        abs(warmed - cooled) < 0.15 * warmed,
+        "+50 and -50 must move red against blue equally far, got \(warmed) and \(cooled)")
+}
+
+@Test func brighteningANonRawRollsOffInsteadOfClipping() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let highlightsURL = try writeHalvesJPEG(left: gray(0.8), right: gray(1), width: 256, height: 256)
+    let skyURL = try writeSyntheticJPEG(color: CIColor(red: 0.35, green: 0.55, blue: 0.9))
+    defer {
+        try? FileManager.default.removeItem(at: highlightsURL)
+        try? FileManager.default.removeItem(at: skyURL)
+    }
+    let renderer = Renderer(cacheDir: cacheDir)
+
+    let detail = try seamContrast(
+        of: renderer.render(
+            file: imageFile(for: highlightsURL), edit: Edit(exposure: 1), maxPixel: 256))
+    #expect(detail > 8, "+1 EV must keep bright gray apart from white, got a step of \(detail)")
+
+    let sky = try meanChannels(
+        of: renderer.render(file: imageFile(for: skyURL), edit: Edit(exposure: 2), maxPixel: 64))
+    #expect(sky.blue > sky.green + 10, "+2 EV must leave a blue sky blue, not cyan, got \(sky)")
+}
+
 @Test func shadowsAndHighlightsBendTheToneScale() throws {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
