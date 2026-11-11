@@ -69,9 +69,10 @@ export function useMaskSession(
     return id;
   };
 
-  const held: MaskShape | null = creating
-    ? (current?.chip ?? null)
-    : (byId(current?.row) ?? (overlay ? target : null));
+  const held: MaskShape | null =
+    (creating ? current?.chip : null) ??
+    byId(current?.row) ??
+    (overlay ? target : null);
 
   return {
     target,

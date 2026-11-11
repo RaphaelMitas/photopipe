@@ -120,6 +120,11 @@ test("a click on the photo becomes a mask, and Shift-click refines it without ad
   await expect(page.getByTestId("mask-field")).toBeVisible();
   await expect(page.getByTestId("history-undo")).toBeEnabled();
 
+  const overlay = page.getByTestId("mask-overlay");
+  await expect(overlay).toHaveCount(0);
+  await rows.hover();
+  await expect(overlay).toBeVisible();
+
   await photo.dblclick({ position: { x: 260, y: 150 } });
   await expect(page.getByTestId("zoom-level")).toHaveCount(0);
   await expect(rows).toHaveCount(2);
