@@ -30,13 +30,12 @@ export function useMaskPick(
   image: ImageFile | undefined,
   edit: Edit,
   masks: MaskSession,
-  // fractions of the framed photo
-  spotAt: (cursor: Cursor) => { x: number; y: number } | null,
+  framedFractionAt: (cursor: Cursor) => { x: number; y: number } | null,
 ) {
   const frame = unedited(edit);
   const target = masks.target;
   // a preview or a click lands only on the photo, frame and mask it was asked about
-  const scene = `${image?.path}|${editKey(frame)}|${masks.creating}|${target?.id}|${pointsKey(target?.points ?? [])}`;
+  const scene = `${image?.path}|${editKey(frame)}|${masks.creating}|${target?.id}|${target?.inverted}|${pointsKey(target?.points ?? [])}`;
   const clickLimit = useMaskSupport().data?.clicks ?? 0;
   const [answer, setAnswer] = useState<{ scene: string; png: string } | null>(
     null,
@@ -56,7 +55,7 @@ export function useMaskPick(
     const refined = modified && target?.source === "click" ? target : null;
     if (!image || !clickLimit || (modified ? !refined : !masks.creating))
       return null;
-    const spot = spotAt(cursor);
+    const spot = framedFractionAt(cursor);
     if (!spot) return null;
     const ask: Ask = {
       path: image.path,

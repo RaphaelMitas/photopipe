@@ -100,7 +100,7 @@ public enum XMP {
     }
 
     // an entry this build cannot read, or cannot find on this OS, is kept as written for the next save
-    // each is judged alone: the writer sorts the file's entries again, and must sort them the same way
+    // each is judged alone: the writer splits the file's entries again, and must split them the same way
     private static func masks(fromJSON text: String?) -> (read: [Mask], unread: [UnreadMask]) {
         guard let text,
             let entries = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [Any]

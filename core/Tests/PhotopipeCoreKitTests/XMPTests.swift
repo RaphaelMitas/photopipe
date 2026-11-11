@@ -1054,15 +1054,16 @@ private let someMasks = [
     #expect(XMP.read(file: try image(arw)).rating == 3)
 }
 
+private func masksTag(_ entries: [String]) -> [XMP.TagWrite] {
+    [XMP.TagWrite(.photopipe, "Masks", .scalar("[\(entries.joined(separator: ","))]"))]
+}
+
 @Test func aMaskANewerBuildWroteSurvivesASaveHere() throws {
     let newer = [
         #"{"id":"sky","source":"sky"}"#,
         #"{"feather":20,"id":"soft","source":"subject"}"#,
         #"{"id":"spot","points":[{"include":true,"radius":3,"x":0.5,"y":0.5}],"source":"click"}"#,
     ]
-    func tag(_ entries: [String]) -> [XMP.TagWrite] {
-        [XMP.TagWrite(.photopipe, "Masks", .scalar("[\(entries.joined(separator: ","))]"))]
-    }
     func stored(_ url: URL) throws -> String {
         try exiftoolTag("-XMP-photopipe:Masks", of: url)
     }
@@ -1073,7 +1074,7 @@ private let someMasks = [
     let sidecar = XMP.sidecarURL(forImagePath: arw.path)
     let ours = #"{"id":"b","source":"people"}"#
 
-    try XMP.writeText(tag(newer + [ours]), clearing: false, file: try image(arw))
+    try XMP.writeText(masksTag(newer + [ours]), clearing: false, file: try image(arw))
     #expect(XMP.read(file: try image(arw)).edit.masks == [Mask(id: "b", source: .people)])
     try writeTextEdit(Edit(exposure: 1), at: arw)
     #expect(try String(contentsOf: sidecar, encoding: .utf8).contains("feather"))
@@ -1088,14 +1089,14 @@ private let someMasks = [
     let jpg = dir.appendingPathComponent("DSC00013.JPG")
     try writeGrayJPEG(to: jpg)
     try ExifTool.shared.write(
-        ["-overwrite_original"] + XMP.exiftoolArgs(tag(newer)) + [jpg.path])
+        ["-overwrite_original"] + XMP.exiftoolArgs(masksTag(newer)) + [jpg.path])
     try XMP.writeEdit(Edit(exposure: 1), file: try image(jpg))
     #expect(try stored(jpg) == "[\(newer.joined(separator: ","))]")
 
     let rated = dir.appendingPathComponent("DSC00014.JPG")
     try writeGrayJPEG(to: rated)
     try ExifTool.shared.write(
-        ["-overwrite_original"] + XMP.exiftoolArgs(tag(newer)) + [rated.path])
+        ["-overwrite_original"] + XMP.exiftoolArgs(masksTag(newer)) + [rated.path])
     try XMP.writeText(XMP.ratingTags(3), clearing: false, file: try image(rated))
     #expect(
         try stored(XMP.sidecarURL(forImagePath: rated.path)) == "[\(newer.joined(separator: ","))]",
@@ -1118,9 +1119,7 @@ private let someMasks = [
             .sorted { $0.1 < $1.1 }.map(\.0)
     }
 
-    try XMP.writeText(
-        [XMP.TagWrite(.photopipe, "Masks", .scalar("[\(entries.joined(separator: ","))]"))],
-        clearing: false, file: try image(arw))
+    try XMP.writeText(masksTag(entries), clearing: false, file: try image(arw))
     let shown = XMP.read(file: try image(arw)).edit.masks
     try writeTextEdit(Edit(exposure: 1, masks: shown), at: arw)
     #expect(try order() == ["kept1", "future", "kept2"])
