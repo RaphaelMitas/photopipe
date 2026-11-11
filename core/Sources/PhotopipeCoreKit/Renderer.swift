@@ -191,13 +191,13 @@ public final class Renderer: @unchecked Sendable {
             }
             // 2^EV alone runs highlights past 1, where they clip to cyan skies and flat white
             if edit.exposure > 0 {
-                image = Presence.shoulder(image, exposure: edit.exposure)
+                image = Presence.shoulder(image, afterExposure: edit.exposure)
             }
             let temperature = edit.temperature ?? 0
             let tint = edit.tint ?? 0
             if temperature != 0 || tint != 0 {
-                // even mired steps look even; this scale keeps +100 at the 4500 K it had,
-                // and a lower target neutral renders warmer, like a raw's higher temperature
+                // even mired steps look even, and a lower target neutral renders warmer,
+                // like a raw's higher temperature
                 let mired = 1e6 / 6500 + temperature / 100 * (1e6 / 4500 - 1e6 / 6500)
                 image = image.applyingFilter(
                     "CITemperatureAndTint",

@@ -36,7 +36,7 @@ enum Presence {
             float over = peak - knee;
             if (over <= 0.0) { return p; }
             // leaves the knee at slope 1 and lands the source's white, now at gain, on 1
-            float rolled = knee + over / (1.0 + over * (gain - 1.0) / ((1.0 - knee) * (gain - knee)));
+            float rolled = knee + 1.0 / (1.0 / over + (gain - 1.0) / ((1.0 - knee) * (gain - knee)));
             float kept = rolled / peak;
             // scaling by the peak holds the hue; fading to white is what a raw's tone curve does
             p.rgb = mix(float3(rolled), p.rgb * kept, kept);
@@ -86,8 +86,7 @@ enum Presence {
         return kernel.apply(extent: image.extent, arguments: [image] + arguments) ?? image
     }
 
-    /// For an image already brightened by `exposure` stops, which a raw's decoder rolls off itself.
-    static func shoulder(_ image: CIImage, exposure: Double) -> CIImage {
+    static func shoulder(_ image: CIImage, afterExposure exposure: Double) -> CIImage {
         apply("shoulder", to: image, arguments: [Float(pow(2, exposure))])
     }
 
