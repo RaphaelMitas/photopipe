@@ -591,7 +591,7 @@ private let deepBlue = [65.0, 80, 200]
 private let foliage = [120.0, 190, 70]
 private let flowerRed = [200.0, 30, 40]
 private let paleBlue = [150.0, 170, 200]
-private let violet = [20.0, 40, 180]
+private let ultramarine = [20.0, 40, 180]
 
 private func chroma(
     _ srgb: [Double], vibrance: Double = 0, saturation: Double = 0
@@ -673,11 +673,11 @@ private func oklab(_ rgb: [Double]) -> (lightness: Double, chroma: Double, hue: 
 
 @Test func moreSliderNeverMeansLessColour() {
     let saturated = stride(from: 0.0, through: 100, by: 20).map {
-        oklab(chroma(violet, saturation: $0)).chroma
+        oklab(chroma(ultramarine, saturation: $0)).chroma
     }
     #expect(
         zip(saturated, saturated.dropFirst()).allSatisfy(<),
-        "violet lost chroma along saturation: \(saturated)")
+        "ultramarine lost chroma along saturation: \(saturated)")
     #expect(
         oklab(chroma(deepBlue, vibrance: 100, saturation: 100)).chroma
             > oklab(chroma(deepBlue, saturation: 100)).chroma,
