@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type Edit, identityEdit } from "./core";
+import { type Edit, identityAdjust, identityEdit, type Mask } from "./core";
 import { type EditClipboard, pasteEdit } from "./editClipboard";
 
 const source: Edit = {
@@ -105,6 +105,28 @@ describe("pasteEdit", () => {
     const pasted = pasteEdit({ ...identityEdit, denoise: 10 }, clipboard, true);
 
     expect(pasted.denoise).toBe(60);
+  });
+
+  it("carries masks and their relative white balance from a raw to a JPEG", () => {
+    const mask: Mask = {
+      id: "a1b2c3d4",
+      source: "subject",
+      inverted: true,
+      hidden: false,
+      adjust: { ...identityAdjust, exposure: -0.5, temperature: 20, tint: -5 },
+    };
+    const target: Edit = {
+      ...identityEdit,
+      masks: [{ ...mask, id: "own", source: "people" }],
+    };
+
+    const pasted = pasteEdit(
+      target,
+      { ...clipboard, edit: { ...source, masks: [mask] } },
+      false,
+    );
+
+    expect(pasted.masks).toEqual([mask]);
   });
 
   it("carries white balance between two non-raw photos", () => {

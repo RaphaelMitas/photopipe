@@ -144,6 +144,18 @@ const DEFINITIONS = {
     contexts: ["loupe"],
     keys: ["y"],
   },
+  "mask.add": {
+    label: "Add a mask",
+    group: "Loupe",
+    contexts: ["loupe"],
+    keys: ["m"],
+  },
+  "mask.overlay": {
+    label: "Show the mask",
+    group: "Loupe",
+    contexts: ["loupe"],
+    keys: ["o"],
+  },
   "exposure.up": {
     label: "Exposure +¼ EV",
     group: "Loupe",

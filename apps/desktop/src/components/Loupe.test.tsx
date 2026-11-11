@@ -19,6 +19,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { type Edit, type Flag, type ImageFile, identityEdit } from "@/lib/core";
 import { type CropDraft, draftFromEdit } from "@/lib/crop";
 import { makeImage } from "@/lib/test-image";
+import type { MaskSession } from "@/lib/useMaskSession";
 import { EditSidebar } from "./EditPanel";
 import { filmstripPref } from "./Filmstrip";
 import { autoAdvancePref, Loupe, type LoupeStacks } from "./Loupe";
@@ -45,6 +46,24 @@ afterEach(() =>
 );
 
 const editWith = (exposure: number): Edit => ({ ...identityEdit, exposure });
+
+const noMasks: MaskSession = {
+  target: null,
+  creating: false,
+  shown: null,
+  fading: false,
+  toggleField: vi.fn(),
+  cancel: vi.fn(),
+  hoverChip: vi.fn(),
+  hoverRow: vi.fn(),
+  add: vi.fn(),
+  select: vi.fn(),
+  toggleHidden: vi.fn(),
+  invert: vi.fn(),
+  remove: vi.fn(),
+  adjust: vi.fn(),
+  toggleOverlay: vi.fn(),
+};
 
 /// A real tap is pointerdown then click, and Radix closes the tooltip on both.
 /// Firing only pointerdown passes against a trigger that a finger cannot open.
@@ -93,6 +112,7 @@ function renderLoupe(
           apply: onApplyCrop,
           cancel: onCancelCrop,
         }}
+        masks={noMasks}
         stacks={stacks}
         split={split}
         onEditChange={onEditChange}
@@ -607,6 +627,7 @@ describe("EditSidebar", () => {
               apply: onApplyCrop,
               cancel: onCancelCrop,
             }}
+            masks={noMasks}
             split={false}
             onToggleSplit={vi.fn()}
             canPaste={false}

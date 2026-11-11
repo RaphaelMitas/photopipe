@@ -2,6 +2,7 @@ import {
   Contrast,
   Crop,
   Droplet,
+  Layers,
   type LucideIcon,
   RotateCcw,
   SlidersHorizontal,
@@ -71,6 +72,14 @@ export function describeEdit(
   }
   if (FRAMING.some(changed)) {
     found.push({ icon: Crop, label: "Crop & straighten" });
+  }
+  if (changed("masks")) {
+    const grew = after.masks.length - before.masks.length;
+    found.push({
+      icon: Layers,
+      label: "Mask",
+      detail: grew > 0 ? "added" : grew < 0 ? "removed" : undefined,
+    });
   }
 
   if (found.length === 1) return found[0];

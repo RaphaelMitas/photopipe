@@ -31,10 +31,12 @@ import {
   editKey,
   type Flag,
   type ImageFile,
+  type MaskShape,
   normalizeEdit,
   normalizeImage,
   normalizeShoot,
   type StatusResult,
+  unedited,
 } from "./core";
 import { useFeatures } from "./features";
 import { fileName } from "./fileName";
@@ -169,6 +171,41 @@ export function useThumbnail(
           (await coreRequest("thumbnail", { path: file.path, maxPixel: 512 }))
             .cachePath
       : skipToken,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+// one size for the loupe overlay and the row thumbs, so they share a file
+const MASK_OVERLAY_MAX_PIXEL = 2048;
+
+export function useMaskOverlay(
+  file: { path: string; mtime: number } | undefined,
+  shape: MaskShape | null,
+  edit: Edit,
+) {
+  const frame = unedited(edit);
+  return useQuery({
+    queryKey: [
+      "maskOverlay",
+      file?.path,
+      file?.mtime,
+      shape?.source,
+      shape?.inverted,
+      editKey(frame),
+    ],
+    queryFn:
+      file && shape
+        ? async () =>
+            (
+              await coreRequest("maskOverlay", {
+                path: file.path,
+                source: shape.source,
+                inverted: shape.inverted,
+                edit: frame,
+                maxPixel: MASK_OVERLAY_MAX_PIXEL,
+              })
+            ).cachePath
+        : skipToken,
     staleTime: Number.POSITIVE_INFINITY,
   });
 }

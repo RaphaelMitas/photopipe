@@ -355,6 +355,9 @@ const E2E_HANDLERS: CoreHandlers = {
     cachePath:
       storeSrc(params.path, false) ?? `/fake/thumbs/${params.path}.jpg`,
   }),
+  maskOverlay: ({ path, source, inverted }) => ({
+    cachePath: `/fake/masks/${source}-${inverted}/${path}.png`,
+  }),
   render: ({ path, edit, viewport }) => {
     const real = storeSrc(path, editKey(edit) !== editKey(identityEdit));
     if (real) return { cachePath: real };

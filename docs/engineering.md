@@ -22,6 +22,13 @@ Stack, testing strategy, CI and releases.
   the one inside a CR3. A raw other than a DNG gets Lightroom's
   `DSC0001.xmp`; anything else keeps its extension
   (`DSC0001.HEIC.photopipe.xmp`), and from then on the Mac uses it too.
+- **Masks** come from Vision: person segmentation for People, foreground
+  instances for Subject, and Background is Subject inverted. The edit carries
+  each mask's definition and sliders as one JSON value in
+  `photopipe:Masks`, a namespace exiftool only writes because the core starts
+  it with a config that declares it. The matte is a PNG in the rebuildable
+  cache, one per photo and source, found on the unedited photo so every edit
+  of it shares one.
 - **Formats** come from ImageIO at runtime: every extension whose type it
   reads and calls a camera raw, plus JPEG, PNG, TIFF, HEIC/HEIF, AVIF, JPEG XL
   and WebP. A camera a new OS learns needs no release.

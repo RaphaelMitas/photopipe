@@ -1,13 +1,13 @@
 import { Kbd } from "@photopipe/ui/components/kbd";
+import { cn } from "@photopipe/ui/lib/utils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   type Edit,
   type Flag,
   fileSrc,
-  framing,
   type ImageFile,
-  identityEdit,
+  unedited,
 } from "@/lib/core";
 import {
   aspectRatioFor,
@@ -25,6 +25,7 @@ import { capturePointer, cursorIn, normalizedIn, useDrag } from "@/lib/pointer";
 import { flagPref } from "@/lib/pref";
 import {
   useDeferredEdit,
+  useMaskOverlay,
   usePrefetchRender,
   useRender,
   useThumbnail,
@@ -38,6 +39,7 @@ import {
 } from "@/lib/shortcuts";
 import { type Stack, stackRatingLabel, step, sweepStack } from "@/lib/stacks";
 import type { CropSession } from "@/lib/useCropSession";
+import type { MaskSession } from "@/lib/useMaskSession";
 import {
   centerOn,
   clampPan,
@@ -65,9 +67,6 @@ const NUDGE_PIXELS = 10;
 
 const CHIP =
   "rounded-md border border-border bg-background/85 px-2.5 py-1 font-mono text-2xs backdrop-blur-sm";
-
-// Keeping the framing keeps both halves of the split on the same pixels.
-const unedited = (edit: Edit): Edit => ({ ...identityEdit, ...framing(edit) });
 
 function usePrefetchNeighbour(
   photo: ImageFile | undefined,
@@ -103,6 +102,7 @@ type Props = {
   index: number;
   edit: Edit;
   crop: CropSession;
+  masks: MaskSession;
   stacks: LoupeStacks | null;
   split: boolean;
   onEditChange: (edit: Edit) => void;
@@ -118,6 +118,7 @@ export function Loupe({
   index,
   edit,
   crop: session,
+  masks,
   stacks,
   split,
   onEditChange,
@@ -148,6 +149,11 @@ export function Loupe({
   const beforeEdit = useMemo(() => unedited(deferredEdit), [deferredEdit]);
   const before = useRender(comparing ? image : undefined, beforeEdit);
   const thumb = useThumbnail(image);
+  const maskOverlay = useMaskOverlay(
+    image,
+    cropping ? null : masks.shown,
+    edit,
+  ).data;
   const neighbour = (direction: 1 | -1) =>
     stacks && image
       ? step(stacks.list, image.path, stacks.inside, direction)
@@ -278,18 +284,22 @@ export function Loupe({
     if (!outcome) return;
     advance(next, stacks?.inside ? "Last frame of this stack" : "Last photo");
   };
+  const exposure = masks.target?.adjust.exposure ?? edit.exposure;
+  const expose = (exposure: number) =>
+    masks.target
+      ? masks.adjust({ exposure })
+      : onEditChange({ ...edit, exposure });
   const exposeBy = (by: number) =>
-    onEditChange({
-      ...edit,
-      exposure: Math.max(
-        -EXPOSURE_RANGE,
-        Math.min(edit.exposure + by, EXPOSURE_RANGE),
-      ),
-    });
+    expose(Math.max(-EXPOSURE_RANGE, Math.min(exposure + by, EXPOSURE_RANGE)));
   useShortcuts(
     image
       ? {
-          "loupe.close": () => (stacks?.inside ? stacks.onLeave() : onClose()),
+          "loupe.close": () => {
+            if (masks.creating) masks.cancel();
+            else if (stacks?.inside) stacks.onLeave();
+            else onClose();
+          },
+          "mask.overlay": masks.toggleOverlay,
           "photo.next": () => next && onNavigate(next.path),
           "photo.previous": () => previous && onNavigate(previous.path),
           "stack.enter": () =>
@@ -305,7 +315,7 @@ export function Loupe({
           "autoAdvance.toggle": autoAdvancePref.toggle,
           "exposure.up": () => exposeBy(EXPOSURE_STEP),
           "exposure.down": () => exposeBy(-EXPOSURE_STEP),
-          "exposure.reset": () => onEditChange({ ...edit, exposure: 0 }),
+          "exposure.reset": () => expose(0),
         }
       : {},
     "loupe",
@@ -397,6 +407,29 @@ export function Loupe({
           rect={sliceRect}
           alt={image.rel}
         />
+        {maskOverlay && masks.shown && (
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{ transformOrigin: "0 0", transform: zoomTransform }}
+          >
+            <div
+              key={`${masks.shown.source}|${masks.shown.inverted}|${masks.fading}`}
+              data-testid="mask-overlay"
+              className={cn(
+                "mask-no-repeat absolute bg-mask/50",
+                masks.fading && "animate-mask-flash",
+              )}
+              style={{
+                left: photoBox.x,
+                top: photoBox.y,
+                width: photoBox.width,
+                height: photoBox.height,
+                maskImage: `url("${fileSrc(maskOverlay)}")`,
+                maskSize: "100% 100%",
+              }}
+            />
+          </div>
+        )}
         {comparing && (
           <>
             <div

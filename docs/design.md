@@ -164,6 +164,30 @@ elsewhere, so it only crosses between photos of the same kind and the toast
 says when it was left behind. There is no scope dialog: paste takes
 everything it can, every time, and ⌘Z takes it back.
 
+Masks travel with it and replace the masks the photo had. A mask is stored as
+what to find, so each photo it lands on gets its own subject.
+
+## A mask borrows the photo's sliders
+
+Masks is the first group in the edit panel. A mask is a region the core
+finds, Subject, People or Background, and a row in that group. Picking a row
+points the Tone and Color sliders at that mask, and the group headers say so
+in pink; Photo points them back. There is no second panel of local sliders to
+learn. Crop, curves, presence and denoise stay with the photo and leave the
+panel while a mask has the sliders.
+
+**M** opens the field in the group, from the button or the key: three chips
+that preview on hover and become a mask on click, which owns the sliders at
+once. The overlay flashes when a mask is picked and shows while its row is
+hovered; **O** holds it.
+
+The sidecar stores the definition, never the pixels: "the subject, inverted,
+half a stop up". That is why a pasted mask fits the photo it lands on and why
+a mask survives a new crop. The price is that Lightroom does not see it. Temp
+and Tint on a mask are relative on every file, raws included, because a mask
+warms a region against the rest of the photo. Masks apply before the photo's
+own grade, so the global sliders shape both.
+
 ## Before is the look, not the framing
 
 **Y** splits the loupe: the photo as shot on the left of a divider, the edit
@@ -193,5 +217,7 @@ protocol doesn't have yet; until then the job shows an indeterminate state.
 - **Edit-aware thumbnails** — the grid shows the unedited thumbnail with a
   small ±EV badge; only the loupe renders the edit. Rendering every edited
   thumbnail through the raw pipeline is a cost the badge defers.
+- **Masks you click or type** — the chips cover subject, people and
+  background; pointing at one object or naming it ("hair") comes after.
 - **A catalogue.** Still the founding rule: the SQLite index is a rebuildable
   cache, never a source of truth.

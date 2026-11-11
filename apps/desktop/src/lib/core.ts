@@ -10,6 +10,48 @@ export type CropRect = {
   bottom: number;
 };
 
+const ADJUST_KEYS = [
+  "exposure",
+  "highlights",
+  "shadows",
+  "whites",
+  "blacks",
+  "temperature",
+  "tint",
+  "vibrance",
+  "saturation",
+] as const;
+
+// every slider is relative, temperature and tint included, on raws too
+export type LocalAdjust = Record<(typeof ADJUST_KEYS)[number], number>;
+
+export type MaskSource = "subject" | "people";
+
+export type MaskShape = { source: MaskSource; inverted: boolean };
+
+export type Mask = MaskShape & {
+  id: string;
+  hidden: boolean;
+  adjust: LocalAdjust;
+};
+
+export const identityAdjust: LocalAdjust = Object.freeze({
+  exposure: 0,
+  highlights: 0,
+  shadows: 0,
+  whites: 0,
+  blacks: 0,
+  temperature: 0,
+  tint: 0,
+  vibrance: 0,
+  saturation: 0,
+});
+
+export function maskName({ source, inverted }: MaskShape): string {
+  if (source === "subject") return inverted ? "Background" : "Subject";
+  return inverted ? "Not people" : "People";
+}
+
 // Mirrors core Edit.swift, which documents the units. The core omits null
 // fields when encoding, so read them with `?? null`.
 export type Edit = {
@@ -33,6 +75,7 @@ export type Edit = {
   crop?: CropRect | null;
   cropAngle?: number;
   rotation?: number;
+  masks: Mask[];
 };
 
 export const identityEdit: Edit = Object.freeze({
@@ -56,6 +99,7 @@ export const identityEdit: Edit = Object.freeze({
   crop: null,
   cropAngle: 0,
   rotation: 0,
+  masks: [],
 });
 
 export function framing(edit: Edit) {
@@ -65,6 +109,11 @@ export function framing(edit: Edit) {
     rotation: edit.rotation ?? 0,
   };
 }
+
+export const unedited = (edit: Edit): Edit => ({
+  ...identityEdit,
+  ...framing(edit),
+});
 
 export function isIdentityEdit(edit: Edit): boolean {
   return editKey(edit) === editKey(identityEdit);
@@ -77,6 +126,14 @@ export function editKey(edit: Edit): string {
   const crop = edit.crop
     ? `${edit.crop.left},${edit.crop.top},${edit.crop.right},${edit.crop.bottom}`
     : "";
+  const mask = (entry: Mask) =>
+    [
+      entry.id,
+      entry.source,
+      entry.inverted,
+      entry.hidden,
+      ...ADJUST_KEYS.map((key) => entry.adjust[key]),
+    ].join(",");
   return [
     edit.exposure,
     edit.highlights,
@@ -98,6 +155,7 @@ export function editKey(edit: Edit): string {
     crop,
     edit.cropAngle ?? 0,
     edit.rotation ?? 0,
+    edit.masks.map(mask).join(";"),
   ].join("|");
 }
 
@@ -142,13 +200,30 @@ type WireImage = Omit<ImageFile, "score" | "captured" | "stack" | "edit"> & {
   score?: number | null;
   captured?: number | null;
   stack?: string | null;
-  edit: Partial<Edit>;
+  edit: WireEdit;
 };
+
+type WireMask = Pick<Mask, "id" | "source"> & {
+  inverted?: boolean;
+  hidden?: boolean;
+  adjust?: Partial<LocalAdjust>;
+};
+
+export type WireEdit = Partial<Omit<Edit, "masks">> & { masks?: WireMask[] };
 
 export type PassProgress = { done: number; total: number; running: boolean };
 
-export function normalizeEdit(edit: Partial<Edit>): Edit {
-  return { ...identityEdit, ...edit };
+export function normalizeEdit({ masks = [], ...edit }: WireEdit): Edit {
+  return {
+    ...identityEdit,
+    ...edit,
+    masks: masks.map((mask) => ({
+      ...mask,
+      inverted: mask.inverted ?? false,
+      hidden: mask.hidden ?? false,
+      adjust: { ...identityAdjust, ...mask.adjust },
+    })),
+  };
 }
 
 export function normalizeImage(image: WireImage): ImageFile {
@@ -237,6 +312,10 @@ export type CoreMethods = {
     };
     result: CachePath;
   };
+  maskOverlay: {
+    params: MaskShape & { path: string; edit: Edit; maxPixel: number };
+    result: CachePath;
+  };
   rawDefaults: {
     params: { path: string; decoderVersion: number };
     result: {
@@ -260,7 +339,7 @@ export type CoreMethods = {
   };
   setEdit: {
     params: { shoot: string | null; path: string; edit: Edit };
-    result: { edit: Partial<Edit> };
+    result: { edit: WireEdit };
   };
   trash: {
     params: { shoot: string | null; paths: string[] };
