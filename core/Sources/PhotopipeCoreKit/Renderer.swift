@@ -245,7 +245,7 @@ public final class Renderer: @unchecked Sendable {
     }
 
     static func saneCrop(_ edit: Edit) -> CropRect? {
-        guard edit.cropAngle.isFinite else { return nil }
+        guard edit.cropAngle.isFinite, abs(edit.cropAngle) <= XMP.scalarMagnitudeLimit else { return nil }
         return (edit.crop ?? .full).sanitized()
     }
 

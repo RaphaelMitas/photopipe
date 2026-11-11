@@ -332,11 +332,11 @@ private func grayBitmap(size: Int = 256, _ value: (Int, Int) -> Double) -> CIIma
 
 private func linearRed(of image: CIImage) -> [Float] {
     let width = Int(image.extent.width)
-    var pixels = [Float](repeating: 0, count: width * Int(image.extent.height) * 4)
+    var pixels = [Float](repeating: 0, count: width * Int(image.extent.height))
     CIContext().render(
-        image, toBitmap: &pixels, rowBytes: width * 16, bounds: image.extent, format: .RGBAf,
+        image, toBitmap: &pixels, rowBytes: width * 4, bounds: image.extent, format: .Rf,
         colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB))
-    return stride(from: 0, to: pixels.count, by: 4).map { pixels[$0] }
+    return pixels
 }
 
 private func contrast(_ values: [Float]) -> Float {
@@ -358,6 +358,10 @@ private func contrast(_ values: [Float]) -> Float {
     let stripes = grayBitmap { x, _ in x % 4 < 2 ? 1 : 0 }
     let turned = straightened(stripes, by: 0.5)
     #expect(turned.allSatisfy { (0...1).contains($0) }, "a hard edge must not overshoot")
+}
+
+@Test func anAngleTooLargeToTurnIsNoCrop() {
+    #expect(Renderer.saneCrop(Edit(cropAngle: 1e308)) == nil)
 }
 
 @Test func rotationTurnsClockwiseAndCropFollowsTheTurnedFrame() throws {

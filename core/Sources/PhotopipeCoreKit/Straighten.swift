@@ -6,11 +6,11 @@ enum Straighten {
         #include <CoreImage/CoreImage.h>
         using namespace metal;
 
-        // bounds holds the first and last pixel centre, toSource the two rows of the affine
         [[ stitchable ]] float4 resampleCubic(
-            coreimage::sampler src, float3 toSourceX, float3 toSourceY, float4 bounds,
-            coreimage::destination dest
+            coreimage::sampler src, float3 toSourceX, float3 toSourceY, coreimage::destination dest
         ) {
+            float4 extent = src.extent();
+            float4 centerBounds = float4(extent.xy + 0.5, extent.xy + extent.zw - 0.5);
             float3 at = float3(dest.coord(), 1.0);
             float2 p = float2(dot(toSourceX, at), dot(toSourceY, at));
             float2 first = floor(p - 0.5) + 0.5;
@@ -26,7 +26,8 @@ enum Straighten {
             float4 highest = float4(-1e9);
             for (int j = 0; j < 4; j++) {
                 for (int i = 0; i < 4; i++) {
-                    float2 tap = clamp(first + float2(i - 1, j - 1), bounds.xy, bounds.zw);
+                    float2 tap = clamp(
+                        first + float2(i - 1, j - 1), centerBounds.xy, centerBounds.zw);
                     float4 pixel = src.sample(src.transform(tap));
                     sum += catmullRom[i].x * catmullRom[j].y * pixel;
                     if ((i == 1 || i == 2) && (j == 1 || j == 2)) {
@@ -37,8 +38,8 @@ enum Straighten {
             }
             // the negative lobes ring at hard edges, so stay within the four nearest pixels
             sum = clamp(sum, lowest, highest);
-            // the photo's own border fades over one pixel, as the bilinear transform's did
-            float2 inside = saturate(min(p - bounds.xy, bounds.zw - p) + 1.0);
+            // the taps clamp to the border, so fade it to clear over one pixel like the bilinear fallback
+            float2 inside = saturate(min(p - centerBounds.xy, centerBounds.zw - p) + 1.0);
             return sum * inside.x * inside.y;
         }
         """
@@ -47,17 +48,13 @@ enum Straighten {
 
     static func transformed(_ image: CIImage, by transform: CGAffineTransform) -> CIImage {
         let toSource = transform.inverted()
-        let extent = image.extent
         return kernel?.apply(
-            extent: extent.applying(transform),
+            extent: image.extent.applying(transform),
             roiCallback: { _, rect in rect.applying(toSource).insetBy(dx: -2, dy: -2) },
             arguments: [
                 image.samplingNearest(),
                 CIVector(x: toSource.a, y: toSource.c, z: toSource.tx),
                 CIVector(x: toSource.b, y: toSource.d, z: toSource.ty),
-                CIVector(
-                    x: extent.minX + 0.5, y: extent.minY + 0.5, z: extent.maxX - 0.5,
-                    w: extent.maxY - 0.5),
             ]) ?? image.transformed(by: transform)
     }
 }
