@@ -17,16 +17,56 @@ enum Presence {
             return p;
         }
 
+        float minChannel(float3 v) {
+            return min(min(v.r, v.g), v.b);
+        }
+
+        float3 airlightOf(float4 light) {
+            return max(light.rgb / max(light.a, 1e-6), 0.05);
+        }
+
+        float hazeGuide(float3 rgb) {
+            return sqrt(max(dot(rgb, float3(0.2126, 0.7152, 0.0722)), 0.0));
+        }
+
+        [[ stitchable ]] float4 airlightWeight(
+            coreimage::sample_t p, coreimage::sample_t dark, coreimage::sample_t peak
+        ) {
+            float weight = pow(saturate(minChannel(dark.rgb) / max(minChannel(peak.rgb), 1e-6)), 32.0);
+            return float4(p.rgb * weight, weight);
+        }
+
+        [[ stitchable ]] float4 hazeMoments(
+            coreimage::sample_t p, coreimage::sample_t dark, coreimage::sample_t light
+        ) {
+            float haze = saturate(minChannel(dark.rgb / airlightOf(light)));
+            float guide = hazeGuide(p.rgb);
+            return float4(guide, haze, guide * haze, guide * guide);
+        }
+
+        [[ stitchable ]] float4 hazeFit(coreimage::sample_t mean) {
+            float slope = (mean.b - mean.r * mean.g) / (mean.a - mean.r * mean.r + 0.002);
+            return float4(slope, mean.g - slope * mean.r, 0.0, 1.0);
+        }
+
         [[ stitchable ]] float4 dehaze(
-            coreimage::sample_t p, coreimage::sample_t veil, coreimage::sample_t light,
+            coreimage::sample_t p, coreimage::sample_t fit, coreimage::sample_t light,
             float omega
         ) {
-            float3 airlight = max(light.rgb, 0.05);
-            float3 ratio = veil.rgb / airlight;
-            float haze = saturate(min(min(ratio.r, ratio.g), ratio.b));
-            // lifting scales with the haze found; adding fogs a clear scene too
-            float transmission = omega > 0.0 ? max(1.0 - omega * haze, 0.1) : 1.0 - omega;
-            p.rgb = (p.rgb - airlight) / transmission + airlight;
+            float3 airlight = airlightOf(light);
+            if (omega < 0.0) {
+                // adding fogs a clear scene too, in the airlight's colour half way to grey
+                float grey = dot(airlight, float3(0.2126, 0.7152, 0.0722));
+                p.rgb = mix(p.rgb, mix(airlight, float3(grey), 0.5), omega / (omega - 1.0));
+                return p;
+            }
+            // no pixel holds more haze than its darkest channel, which keeps it above black
+            float haze = saturate(min(
+                fit.r * hazeGuide(p.rgb) + fit.g, minChannel(p.rgb / airlight)));
+            // brighter than the airlight rolls off into white instead of clipping
+            float3 over = (p.rgb - airlight) / max(1.0 - airlight, 1e-4);
+            haze *= 1.0 - saturate(max(max(over.r, over.g), over.b));
+            p.rgb = (p.rgb - airlight) / (1.0 - omega * haze) + airlight;
             return p;
         }
         """
@@ -75,16 +115,25 @@ enum Presence {
 
     static func dehaze(_ image: CIImage, amount: Double) -> CIImage {
         let coarse = coarse(image)
-        // dark channel kept per channel, so its per-channel max estimates a tinted airlight
-        let veil = blurred(
-            clamped(coarse, "CIMorphologyMinimum", radius: coarse.longEdge * 0.01),
-            radius: coarse.longEdge * 0.02)
-        let light = veil.applyingFilter(
-            "CIAreaMaximum", parameters: [kCIInputExtentKey: CIVector(cgRect: veil.extent)]
-        ).clampedToExtent()
+        let patch = coarse.longEdge * 0.01
+        // opened, so the dark channel's edge sits on the silhouette, not a patch outside it
+        let dark = clamped(
+            clamped(coarse, "CIMorphologyMinimum", radius: patch),
+            "CIMorphologyMaximum", radius: patch)
+        let whole = [kCIInputExtentKey: CIVector(cgRect: coarse.extent)]
+        // blurred, so a lamp smaller than the blur cannot pass for the haziest region
+        let peak = blurred(dark, radius: coarse.longEdge * 0.02)
+            .applyingFilter("CIAreaMaximum", parameters: whole).clampedToExtent()
+        let light = apply("airlightWeight", to: coarse, arguments: [dark, peak])
+            .applyingFilter("CIAreaAverage", parameters: whole).clampedToExtent()
+        // haze as a local line through the guide, which puts the photo's edges back at full size
+        let radius = coarse.longEdge * 0.015
+        let moments = blurred(
+            apply("hazeMoments", to: coarse, arguments: [dark, light]), radius: radius)
+        let fit = blurred(apply("hazeFit", to: moments, arguments: []), radius: radius)
         return apply(
             "dehaze", to: image,
-            arguments: [upscaled(veil, to: image), light, Float(amount / 100 * 0.75)])
+            arguments: [upscaled(fit, to: image), light, Float(amount / 100 * 0.75)])
     }
 
     static func clarity(_ image: CIImage, amount: Double) -> CIImage {

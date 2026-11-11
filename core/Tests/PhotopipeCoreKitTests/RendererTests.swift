@@ -466,6 +466,64 @@ private func seamContrast(of url: URL, band: Int = 8) throws -> Double {
     }
 }
 
+@Test func dehazeLeavesNoHaloAlongASilhouetteInAnyViewport() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let jpegURL = try writeHalvesJPEG(left: gray(0.2), right: gray(0.7), width: 1500, height: 1000)
+    defer { try? FileManager.default.removeItem(at: jpegURL) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let file = try imageFile(for: jpegURL)
+
+    let whole = try renderer.render(file: file, edit: Edit(dehaze: 100), maxPixel: 1500)
+    let band = { (x: Int) in
+        try meanLuminance(of: whole, region: CGRect(x: x, y: 0, width: 16, height: 1000))
+    }
+    let beside = try band(728)
+    let away = try band(300)
+    #expect(
+        abs(beside - away) < 3,
+        "the silhouette must be as dark at the sky's edge as away from it, got \(beside) vs \(away)")
+
+    // a viewport that sees no sky still clears against the sky's haze
+    let silhouette = try renderer.render(
+        file: file, edit: Edit(dehaze: 100), maxPixel: 1000,
+        viewport: CropRect(left: 0, top: 0, right: 0.4, bottom: 1))
+    let zoomed = try meanLuminance(of: silhouette)
+    #expect(abs(zoomed - away) < 2, "a viewport must match the whole frame, got \(zoomed) vs \(away)")
+}
+
+@Test func dehazeTakesNoCastFromABrightColour() throws {
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let jpegURL = try writeHalvesJPEG(
+        left: gray(0.6), right: CIColor(red: 0.3, green: 0.3, blue: 1), width: 256, height: 256)
+    defer { try? FileManager.default.removeItem(at: jpegURL) }
+    let renderer = Renderer(cacheDir: cacheDir)
+    let haze = try meanChannels(
+        of: renderer.render(file: imageFile(for: jpegURL), edit: Edit(dehaze: 100), maxPixel: 256),
+        region: CGRect(x: 0, y: 0, width: 96, height: 256))
+    #expect(
+        abs(haze.red - haze.blue) < 3,
+        "gray haze beside a blue wall must stay gray, got \(haze)")
+}
+
+@Test func dehazeStaysBetweenBlackAndWhite() {
+    let frame = CGRect(x: 0, y: 0, width: 1000, height: 600)
+    // the cloud is smaller than the dark channel's patch, so it stays above the airlight
+    let scene = CIImage(color: gray(0.98))
+        .cropped(to: CGRect(x: 500, y: 400, width: 12, height: 12))
+        .composited(over: CIImage(color: gray(0.15)).cropped(to: frame.insetBy(dx: 0, dy: 200)))
+        .composited(over: CIImage(color: gray(0.75)).cropped(to: frame))
+    var pixels = [Float](repeating: 0, count: 1000 * 600 * 4)
+    CIContext().render(
+        Presence.dehaze(scene, amount: 100), toBitmap: &pixels, rowBytes: 1000 * 16,
+        bounds: frame, format: .RGBAf, colorSpace: nil)
+    let darkest = pixels.min() ?? 0
+    let brightest = pixels.max() ?? 0
+    #expect(darkest > -0.001, "no channel may fall below black, got \(darkest)")
+    #expect(brightest < 1.001, "and none may pass white, got \(brightest)")
+}
+
 @Test func clarityAndTextureSharpenTheSeam() throws {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
