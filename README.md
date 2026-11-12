@@ -114,7 +114,8 @@ pnpm dev
 Running `tauri dev` directly fails until exiftool is vendored once:
 `./scripts/fetch-exiftool.sh`.
 
-You need Rust, Swift (Xcode command line tools) and Node 24.
+You need Rust, the Xcode 27 command line tools (Xcode 26 still builds, without
+masking) and Node 24.
 
 ```bash
 pnpm check                      # lint and format
