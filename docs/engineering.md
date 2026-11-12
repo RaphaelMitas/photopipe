@@ -142,19 +142,20 @@ which answers JSON request lines on stdin without starting the app, under
 `PATH=/usr/bin:/bin` and no overrides. Opening a library and writing a rating
 proves the release binary loads, its core answers, and it finds the bundled
 exiftool. The App Store flavour skips the drive: a store-signed binary only
-launches from the store.
+launches from the store. Both flavours check that masking is compiled in,
+which an Xcode 26 build drops without a failing test.
 
 ## CI
 
 Two jobs. `quick` on Ubuntu does lint, typecheck, Vitest and Playwright.
-`native` on macOS 27 does swift-format, `swift test`, clippy for macOS and the
-iPad simulator, a simulator build of the iPad app, `cargo test`, then builds a
-real `.app` and smoke tests it. Caches: pnpm, cargo, SwiftPM,
+`native` on the `xcode-27` image does swift-format, `swift test`, clippy for
+macOS and the iPad simulator, a simulator build of the iPad app, `cargo test`,
+then builds a real `.app` and smoke tests it. Caches: pnpm, cargo, SwiftPM,
 raw fixtures, vendored exiftool.
 
-CI and every release job run on the `xcode-27` image with its default Xcode, a
-27.x, so the shipped apps link the 27 SDKs and carry masking. The core needs
-Xcode 26 or later to build: it relies on Core Image types being Sendable.
+CI and every release job use the `xcode-27` image's default Xcode, so the
+shipped apps link the 27 SDKs and carry masking. The core needs Xcode 26 or
+later to build: it relies on Core Image types being Sendable.
 
 Real raw fixtures, two Sony bodies and one per other major raw format, are
 fetched by `fixtures/fetch.sh` (CC0, from raw.pixls.us) rather than committed

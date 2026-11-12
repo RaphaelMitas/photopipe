@@ -33,7 +33,7 @@ FOREIGN=$(otool -L "$BINARY" | tail -n +2 | awk '{print $1}' \
 [ -z "$FOREIGN" ] || fail "$EXECUTABLE links outside the OS: $FOREIGN"
 echo "  linkage:  OS libraries only, Swift runtime through /usr/lib/swift"
 
-nm -u "$BINARY" | grep GenerateIterativeSegmentationRequest >/dev/null \
+grep -qa GenerateIterativeSegmentationRequest "$BINARY" \
   || fail "$EXECUTABLE was built without masking; it needs Xcode 27 or later"
 echo "  masking:  compiled in"
 
