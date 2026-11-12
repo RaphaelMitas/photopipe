@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import { AppSidebar } from "@/components/AppSidebar";
 import { BrowserPane } from "@/components/BrowserPane";
 import { Dashboard } from "@/components/Dashboard";
-import { EditSidebar } from "@/components/EditPanel";
+import { EditSidebar, editGroupPref } from "@/components/EditPanel";
 import {
   ExportDrawer,
   type ExportOptions,
@@ -50,7 +50,7 @@ import {
   identityEdit,
   isIdentityEdit,
 } from "@/lib/core";
-import { type EditClipboard, pasteEdit } from "@/lib/editClipboard";
+import { type EditClipboard, pasteEdit, travels } from "@/lib/editClipboard";
 import { useFeatures } from "@/lib/features";
 import { fileName } from "@/lib/fileName";
 import {
@@ -70,6 +70,7 @@ import { flagPref } from "@/lib/pref";
 import {
   cachedImage,
   jobStatus,
+  useCanMask,
   useEnriched,
   useExportJobs,
   useImages,
@@ -115,6 +116,7 @@ import {
 } from "@/lib/stacks";
 import { useCropSession } from "@/lib/useCropSession";
 import { useDebouncedEdit } from "@/lib/useDebouncedEdit";
+import { useMaskSession } from "@/lib/useMaskSession";
 import { useRecordedWrites } from "@/lib/useRecordedWrites";
 import { useUpdater } from "@/lib/useUpdater";
 
@@ -494,6 +496,8 @@ export default function App() {
   };
   const crop = useCropSession(loupePhoto, loupeEdit, changeEdit);
   const cropping = crop.draft !== null;
+  const masks = useMaskSession(loupePhoto, loupeEdit, changeEdit, editOpen);
+  const canMask = useCanMask();
 
   // a filtered-out photo is not in the browser, so land on the nearest one that is
   const focusPath = useMemo(() => {
@@ -515,12 +519,12 @@ export default function App() {
   const copySettings = useCallback(
     (image: ImageFile) => {
       if (!readable(image)) return;
-      setClipboard({
-        path: image.path,
-        edit: editOf(image),
-        raw: image.isRaw,
-      });
-      toast(`Copied settings from ${fileName(image.path)}`, {
+      const edit = editOf(image);
+      setClipboard({ path: image.path, edit, raw: image.isRaw });
+      const carried = edit.masks.filter(travels).length;
+      const what =
+        carried > 0 ? `settings and ${pluralize(carried, "mask")}` : "settings";
+      toast(`Copied ${what} from ${fileName(image.path)}`, {
         id: "clipboard",
       });
     },
@@ -679,6 +683,12 @@ export default function App() {
     "settings.paste": () => (openShoot ? pasteSettings(pasteTargets) : false),
     "export.open": () => (openShoot ? openExport() : false),
     "editPanel.toggle": editPanelPref.toggle,
+    "mask.add": () => {
+      if (!canMask) return false;
+      editPanelPref.set(true);
+      editGroupPref("masks").set(true);
+      masks.toggleField();
+    },
     "stacks.toggle": stacksPref.toggle,
     "split.toggle": toggleSplit,
   });
@@ -794,6 +804,7 @@ export default function App() {
       index={loupeIndex}
       edit={loupeEdit}
       crop={crop}
+      masks={masks}
       split={split}
       stacks={
         loupeStacks && currentStack
@@ -1063,6 +1074,7 @@ export default function App() {
                 onChange={(edit) => changeEdit(loupeImage, edit)}
                 onHold={holdEdit}
                 crop={crop}
+                masks={masks}
                 split={split}
                 onToggleSplit={toggleSplit}
                 canPaste={clipboard !== null}

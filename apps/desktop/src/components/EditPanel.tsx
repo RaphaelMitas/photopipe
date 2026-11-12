@@ -22,6 +22,8 @@ import {
   type ImageFile,
   identityEdit,
   isIdentityEdit,
+  type LocalAdjust,
+  maskName,
 } from "@/lib/core";
 import { CURVE_CHANNELS, isIdentityCurve } from "@/lib/curve";
 import {
@@ -33,7 +35,9 @@ import {
   signed,
   TONE_SLIDERS,
 } from "@/lib/editSliders";
+import { flagPref } from "@/lib/pref";
 import {
+  useCanMask,
   useDeferredEdit,
   useRaw9Availability,
   useRawDefaults,
@@ -45,9 +49,11 @@ import {
   useRawDecoderVersion,
 } from "@/lib/rawDecoder";
 import type { CropSession } from "@/lib/useCropSession";
+import type { MaskSession } from "@/lib/useMaskSession";
 import { CropPanel } from "./CropTool";
 import { CurveEditor } from "./CurveEditor";
 import { DecoderSegmented } from "./DecoderSegmented";
+import { MaskList } from "./MaskList";
 import { ShortcutTooltip } from "./ShortcutTooltip";
 import { SliderRow } from "./SliderRow";
 
@@ -56,31 +62,32 @@ type Props = {
   edit: Edit;
   onChange: (edit: Edit) => void;
   crop: CropSession;
+  masks: MaskSession;
 };
 
-function SliderRows({
+function SliderRows<Key extends SliderSpec["key"]>({
   sliders,
-  edit,
-  set,
+  values,
+  onValue,
 }: {
-  sliders: SliderSpec[];
-  edit: Edit;
-  set: (partial: Partial<Edit>) => void;
+  sliders: SliderSpec<Key>[];
+  values: Record<Key, number>;
+  onValue: (key: Key, value: number) => void;
 }) {
   return sliders.map(({ key, label, trackClassName }) => (
     <SliderRow
       key={key}
       label={label}
-      value={edit[key]}
-      display={signed(edit[key])}
+      value={values[key]}
+      display={signed(values[key])}
       min={-100}
       max={100}
       step={1}
       testid={key}
       resetLabel={`Reset ${label.toLowerCase()}`}
       trackClassName={trackClassName}
-      onValue={(value) => set({ [key]: value })}
-      onReset={() => set({ [key]: 0 })}
+      onValue={(value) => onValue(key, value)}
+      onReset={() => onValue(key, 0)}
     />
   ));
 }
@@ -125,20 +132,34 @@ const colorSummary = (edit: Edit, raw: boolean): string | null => {
 const detailSummary = (edit: Edit): string | null =>
   edit.denoise != null ? `dn ${Math.round(edit.denoise)}` : null;
 
+const groupPrefs = new Map<string, ReturnType<typeof flagPref>>();
+
+export function editGroupPref(id: string) {
+  const known = groupPrefs.get(id);
+  if (known) return known;
+  const pref = flagPref(`photopipe.editGroup.${id}`, "open", "closed", true);
+  groupPrefs.set(id, pref);
+  return pref;
+}
+
 function Group({
   id,
   title,
   summary,
+  badge,
+  onToggle,
   children,
 }: {
   id: string;
   title: string;
   summary?: string | null;
+  badge?: ReactNode;
+  onToggle?: () => void;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(
-    () => localStorage.getItem(`photopipe.editGroup.${id}`) !== "closed",
-  );
+  const pref = editGroupPref(id);
+  const open = pref.use();
+  const aside = badge ?? (!open && summary);
   return (
     <div className="flex flex-col gap-3">
       <button
@@ -146,11 +167,8 @@ function Group({
         aria-expanded={open}
         data-testid={`edit-group-${id}`}
         onClick={() => {
-          localStorage.setItem(
-            `photopipe.editGroup.${id}`,
-            open ? "closed" : "open",
-          );
-          setOpen(!open);
+          pref.toggle();
+          onToggle?.();
         }}
         className="flex w-full items-center gap-1.5 text-left font-medium text-xs"
       >
@@ -161,9 +179,9 @@ function Group({
           )}
         />
         {title}
-        {!open && summary && (
+        {aside && (
           <span className="ml-auto overflow-hidden text-ellipsis whitespace-nowrap font-mono text-2xs text-muted-foreground">
-            {summary}
+            {aside}
           </span>
         )}
       </button>
@@ -172,7 +190,7 @@ function Group({
   );
 }
 
-export function EditPanel({ image, edit, onChange, crop }: Props) {
+export function EditPanel({ image, edit, onChange, crop, masks }: Props) {
   const raw = image.isRaw;
   const rawDefaults = useRawDefaults(raw ? image : undefined);
   // deferred like the Loupe's request, so both resolve to the same query
@@ -180,82 +198,141 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
 
   const set = (partial: Partial<Edit>) => onChange({ ...edit, ...partial });
 
+  const target = masks.target;
+  const targetBadge = target && (
+    <span className="text-mask-foreground">{maskName(target)}</span>
+  );
+  const values = target?.adjust ?? edit;
+  const adjust = (partial: Partial<LocalAdjust>) =>
+    target ? masks.adjust(partial) : set(partial);
+  const kelvinScale = raw && !target;
+  const setTemperature = (value: number | null) =>
+    target
+      ? masks.adjust({ temperature: value ?? 0 })
+      : set({ temperature: value });
+  const setTint = (value: number | null) =>
+    target ? masks.adjust({ tint: value ?? 0 }) : set({ tint: value });
+
   const summary = cropSummary(edit);
   const asShotTemperature = rawDefaults.data?.temperature ?? 6500;
   const asShotTint = rawDefaults.data?.tint ?? 0;
-  const temperature = edit.temperature ?? (raw ? asShotTemperature : 0);
-  const tint = edit.tint ?? (raw ? asShotTint : 0);
+  const temperature = target
+    ? target.adjust.temperature
+    : (edit.temperature ?? (raw ? asShotTemperature : 0));
+  const tint = target
+    ? target.adjust.tint
+    : (edit.tint ?? (raw ? asShotTint : 0));
   const denoise = edit.denoise ?? rawDefaults.data?.denoise ?? 0;
+  const whileCropping = crop.draft && "pointer-events-none opacity-40";
+  const canMask = useCanMask();
 
   return (
     <div className="flex flex-col gap-3">
-      {crop.draft ? (
-        <CropPanel
-          image={image}
-          draft={crop.draft}
-          onDraft={crop.set}
-          onApply={crop.apply}
-          onCancel={crop.cancel}
-        />
-      ) : (
-        <Group id="geometry" title="Geometry" summary={summary}>
-          <Button
-            variant="outline"
-            size="sm"
-            data-testid="enter-crop"
-            onClick={crop.enter}
-            className="justify-start text-xs"
-          >
-            <Crop />
-            Crop & straighten
-            {summary && (
-              <span className="ml-auto min-w-0 truncate font-mono text-2xs text-muted-foreground">
-                {summary}
-              </span>
-            )}
-          </Button>
-        </Group>
+      {canMask && (
+        <>
+          <div className={cn(whileCropping)}>
+            <Group
+              id="masks"
+              title="Masks"
+              badge={edit.masks.length || null}
+              onToggle={masks.cancel}
+            >
+              <MaskList image={image} edit={edit} masks={masks} />
+            </Group>
+          </div>
+          <Separator />
+        </>
       )}
-      <Separator />
-      <div
-        className={cn(
-          "flex flex-col gap-3",
-          crop.draft && "pointer-events-none opacity-40",
-        )}
-      >
-        <Group id="tone" title="Tone" summary={toneSummary(edit)}>
-          <CurveEditor
-            edit={edit}
-            imageSrc={render.data}
-            photo={image.path}
-            onChange={set}
-          />
+      {!target && (
+        <>
+          {crop.draft ? (
+            <CropPanel
+              image={image}
+              draft={crop.draft}
+              onDraft={crop.set}
+              onApply={crop.apply}
+              onCancel={crop.cancel}
+            />
+          ) : (
+            <Group id="geometry" title="Geometry" summary={summary}>
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="enter-crop"
+                onClick={crop.enter}
+                className="justify-start text-xs"
+              >
+                <Crop />
+                Crop & straighten
+                {summary && (
+                  <span className="ml-auto min-w-0 truncate font-mono text-2xs text-muted-foreground">
+                    {summary}
+                  </span>
+                )}
+              </Button>
+            </Group>
+          )}
+          <Separator />
+        </>
+      )}
+      <div className={cn("flex flex-col gap-3", whileCropping)}>
+        <Group
+          id="tone"
+          title="Tone"
+          summary={toneSummary(edit)}
+          badge={targetBadge}
+        >
+          {!target && (
+            <CurveEditor
+              edit={edit}
+              imageSrc={render.data?.cachePath}
+              photo={image.path}
+              onChange={set}
+            />
+          )}
           <SliderRow
             label="Exposure"
-            value={edit.exposure}
-            display={signed(edit.exposure, 2)}
+            value={values.exposure}
+            display={signed(values.exposure, 2)}
             min={-EXPOSURE_RANGE}
             max={EXPOSURE_RANGE}
             step={0.05}
             testid="exposure"
             resetLabel="Reset exposure"
             resetAction="exposure.reset"
-            onValue={(exposure) => set({ exposure })}
-            onReset={() => set({ exposure: 0 })}
+            onValue={(exposure) => adjust({ exposure })}
+            onReset={() => adjust({ exposure: 0 })}
           />
-          <SliderRows sliders={TONE_SLIDERS} edit={edit} set={set} />
+          <SliderRows
+            sliders={TONE_SLIDERS}
+            values={values}
+            onValue={(key, value) => adjust({ [key]: value })}
+          />
         </Group>
         <Separator />
+        {!target && (
+          <>
+            <Group
+              id="presence"
+              title="Presence"
+              summary={joined(sliderSummary(edit, PRESENCE_SLIDERS))}
+            >
+              <SliderRows
+                sliders={PRESENCE_SLIDERS}
+                values={edit}
+                onValue={(key, value) => set({ [key]: value })}
+              />
+            </Group>
+            <Separator />
+          </>
+        )}
         <Group
-          id="presence"
-          title="Presence"
-          summary={joined(sliderSummary(edit, PRESENCE_SLIDERS))}
+          id="color"
+          title="Color"
+          summary={colorSummary(edit, raw)}
+          badge={targetBadge}
         >
-          <SliderRows sliders={PRESENCE_SLIDERS} edit={edit} set={set} />
-        </Group>
-        <Separator />
-        <Group id="color" title="Color" summary={colorSummary(edit, raw)}>
-          {raw ? (
+          {kelvinScale ? (
             <SliderRow
               label="Temp"
               value={temperature}
@@ -266,8 +343,8 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
               testid="temperature"
               resetLabel="Reset to as shot"
               trackClassName="bg-gradient-to-r from-sky-500/70 via-white/20 to-amber-400/80"
-              onValue={(value) => set({ temperature: value })}
-              onReset={() => set({ temperature: null })}
+              onValue={setTemperature}
+              onReset={() => setTemperature(null)}
             />
           ) : (
             <SliderRow
@@ -280,30 +357,37 @@ export function EditPanel({ image, edit, onChange, crop }: Props) {
               testid="temperature"
               resetLabel="Reset temperature"
               trackClassName="bg-gradient-to-r from-sky-500/70 via-white/20 to-amber-400/80"
-              onValue={(value) =>
-                set({ temperature: value === 0 ? null : value })
-              }
-              onReset={() => set({ temperature: null })}
+              onValue={(value) => setTemperature(value === 0 ? null : value)}
+              onReset={() => setTemperature(null)}
             />
           )}
           <SliderRow
             label="Tint"
             value={tint}
             display={signed(tint)}
-            min={raw ? -150 : -100}
-            max={raw ? 150 : 100}
+            min={kelvinScale ? -150 : -100}
+            max={kelvinScale ? 150 : 100}
             step={1}
             testid="tint"
-            resetLabel={raw ? "Reset to as shot" : "Reset tint"}
+            resetLabel={kelvinScale ? "Reset to as shot" : "Reset tint"}
             trackClassName="bg-gradient-to-r from-green-500/70 via-white/20 to-fuchsia-500/70"
             onValue={(value) =>
-              set({ tint: !raw && value === 0 ? null : value })
+              setTint(!kelvinScale && value === 0 ? null : value)
             }
-            onReset={() => set({ tint: null })}
+            onReset={() => setTint(null)}
           />
-          <SliderRows sliders={COLOR_SLIDERS} edit={edit} set={set} />
+          <SliderRows
+            sliders={COLOR_SLIDERS}
+            values={values}
+            onValue={(key, value) => adjust({ [key]: value })}
+          />
         </Group>
-        {raw && (
+        {target && (
+          <p className="text-2xs text-muted-foreground">
+            Crop, curves, presence and denoise stay with the photo.
+          </p>
+        )}
+        {raw && !target && (
           <>
             <Separator />
             <Group id="detail" title="Detail" summary={detailSummary(edit)}>
@@ -410,6 +494,7 @@ export function EditSidebar({
   onCopySettings,
   onPasteSettings,
   onClose,
+  masks,
 }: Props & {
   onHold: () => void;
   split: boolean;
@@ -503,6 +588,7 @@ export function EditSidebar({
             edit={edit}
             onChange={onChange}
             crop={crop}
+            masks={masks}
           />
         ) : (
           <p

@@ -260,11 +260,29 @@ public final class LibraryService: @unchecked Sendable {
     public func render(
         path: String, edit: Edit, maxPixel: Int, viewport: CropRect? = nil,
         decoderVersion: Int? = nil
-    ) throws -> String {
-        try renderer.render(
+    ) throws -> Renderer.Preview {
+        try renderer.preview(
             file: recordUnderRoot(path: path), edit: edit, maxPixel: maxPixel,
-            viewport: viewport, decoderVersion: decoderVersion
+            viewport: viewport, decoderVersion: decoderVersion)
+    }
+
+    public func maskOverlay(
+        path: String, source: Mask.Source, points: [Mask.Point], inverted: Bool, edit: Edit,
+        maxPixel: Int
+    ) throws -> String {
+        try renderer.maskOverlay(
+            file: recordUnderRoot(path: path), source: source, points: points, inverted: inverted,
+            edit: edit, maxPixel: maxPixel
         ).path
+    }
+
+    public func maskAt(
+        path: String, edit: Edit, points: [Mask.Point], inverted: Bool, at framedSpot: CGPoint,
+        include: Bool, maxPixel: Int
+    ) throws -> Renderer.MaskPick {
+        try renderer.maskAt(
+            file: recordUnderRoot(path: path), edit: edit, points: points, inverted: inverted,
+            at: framedSpot, include: include, maxPixel: maxPixel)
     }
 
     public func rawDefaults(path: String, decoderVersion: Int? = nil) throws
@@ -372,6 +390,7 @@ public final class LibraryService: @unchecked Sendable {
         replace(settled, inShoot: shoot)
         scorer.restamp(image, to: settled)
         printer.restamp(image, to: settled)
+        renderer.restamp(image, to: settled)
         let index = lock.withLock { self.index }
         indexQueue.async { try? index?.upsert(shoot: shoot, files: [settled]) }
         return settled

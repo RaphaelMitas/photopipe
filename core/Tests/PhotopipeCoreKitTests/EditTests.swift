@@ -175,3 +175,32 @@ private let fixtureCases: [(name: String, points: [CurvePoint])] = [
         }
     }
 }
+
+@Test func anEditWithoutMasksEncodesAsItAlwaysDid() throws {
+    #expect(!Edit(exposure: 1).cacheKey.contains("masks"), "or every cached render goes stale")
+    let old = try JSONDecoder().decode(Edit.self, from: Data(#"{"exposure":1}"#.utf8))
+    #expect(old.masks.isEmpty)
+
+    func json(_ edit: Edit) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return String(decoding: try encoder.encode(edit), as: UTF8.self)
+    }
+    let masked = Edit(masks: [
+        Mask(id: "a", source: .subject, inverted: true, adjust: LocalAdjust(exposure: 0.5)),
+        Mask(id: "b", source: .people),
+    ])
+    #expect(
+        try json(masked).contains(
+            #""masks":[{"adjust":{"exposure":0.5},"id":"a","inverted":true,"source":"subject"},{"id":"b","source":"people"}]"#
+        ))
+    #expect(try JSONDecoder().decode(Edit.self, from: Data(json(masked).utf8)) == masked)
+
+    let clicked = Edit(masks: [
+        Mask(id: "c", source: .click, points: [Mask.Point(x: 0.5, y: 0.62, include: true)])
+    ])
+    #expect(
+        try json(clicked).contains(
+            #"{"id":"c","points":[{"include":true,"x":0.5,"y":0.62}],"source":"click"}"#))
+    #expect(try JSONDecoder().decode(Edit.self, from: Data(json(clicked).utf8)) == clicked)
+}

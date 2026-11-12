@@ -1,4 +1,5 @@
 import type { Box } from "./crop";
+import { clamp01 } from "./curve";
 
 /// Loupe zoom. `scale` is relative to the fitted view (1 = fit) and
 /// `tx`/`ty` translate the fitted layer, applied before the scale with a
@@ -57,6 +58,18 @@ export function zoomAt(
   return clampPan(next, photo, viewWidth, viewHeight);
 }
 
+export function photoFractionAt(
+  state: ZoomState | null,
+  cursor: { x: number; y: number },
+  photo: Box,
+) {
+  const { scale, tx, ty } = state ?? { scale: 1, tx: 0, ty: 0 };
+  return {
+    x: ((cursor.x - tx) / scale - photo.x) / photo.width,
+    y: ((cursor.y - ty) / scale - photo.y) / photo.height,
+  };
+}
+
 /// The visible part of the photo in photo-normalized coordinates (for the
 /// navigator's viewport rect).
 export function visibleRect(
@@ -65,22 +78,11 @@ export function visibleRect(
   viewWidth: number,
   viewHeight: number,
 ): Box {
-  const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1);
-  const left = clamp01(
-    (0 - (photo.x * state.scale + state.tx)) / (photo.width * state.scale),
-  );
-  const right = clamp01(
-    (viewWidth - (photo.x * state.scale + state.tx)) /
-      (photo.width * state.scale),
-  );
-  const top = clamp01(
-    (0 - (photo.y * state.scale + state.ty)) / (photo.height * state.scale),
-  );
-  const bottom = clamp01(
-    (viewHeight - (photo.y * state.scale + state.ty)) /
-      (photo.height * state.scale),
-  );
-  return { x: left, y: top, width: right - left, height: bottom - top };
+  const from = photoFractionAt(state, { x: 0, y: 0 }, photo);
+  const to = photoFractionAt(state, { x: viewWidth, y: viewHeight }, photo);
+  const x = clamp01(from.x);
+  const y = clamp01(from.y);
+  return { x, y, width: clamp01(to.x) - x, height: clamp01(to.y) - y };
 }
 
 export type ViewportRequest = {

@@ -57,12 +57,30 @@ public final class Dispatcher: Sendable {
                 path: request.string("path"), maxPixel: request.param("maxPixel")?.intValue ?? 256)
             return ["cachePath": cachePath]
         case "render":
-            let cachePath = try library.render(
+            return try library.render(
                 path: request.string("path"), edit: request.edit() ?? .identity,
                 maxPixel: request.param("maxPixel")?.intValue ?? 2000,
                 viewport: Self.viewport(from: request.param("viewport")),
                 decoderVersion: request.param("decoderVersion")?.intValue)
+        case "maskOverlay":
+            let cachePath = try library.maskOverlay(
+                path: request.string("path"),
+                source: required("source", Mask.Source(rawValue: request.string("source"))),
+                points: request.decoded("points") ?? [],
+                inverted: request.param("inverted")?.boolValue ?? false,
+                edit: request.edit() ?? .identity,
+                maxPixel: request.param("maxPixel")?.intValue ?? 2000)
             return ["cachePath": cachePath]
+        case "maskAt":
+            return try library.maskAt(
+                path: request.string("path"), edit: request.edit() ?? .identity,
+                points: request.decoded("points") ?? [],
+                inverted: request.param("inverted")?.boolValue ?? false,
+                at: CGPoint(x: request.fraction("x"), y: request.fraction("y")),
+                include: request.param("include")?.boolValue ?? true,
+                maxPixel: request.param("maxPixel")?.intValue ?? 2000)
+        case "maskSupport":
+            return ["clicks": Masker.isAvailable ? Mask.clickLimit : 0]
         case "setRating":
             return try library.setRating(
                 shoot: request.string("shoot"), path: request.string("path"),
@@ -160,12 +178,18 @@ extension Request {
         try required(key, param(key)?.intValue)
     }
 
+    fileprivate func fraction(_ key: String) throws -> Double {
+        try required(key, param(key)?.doubleValue.flatMap { (0...1).contains($0) ? $0 : nil })
+    }
+
     fileprivate func strings(_ key: String) throws -> [String] {
         try required(key, param(key)?.stringArrayValue)
     }
 
-    fileprivate func edit() throws -> Edit? {
-        guard let value = param("edit") else { return nil }
-        return try JSONDecoder().decode(Edit.self, from: JSONEncoder().encode(value))
+    fileprivate func decoded<Value: Decodable>(_ key: String) throws -> Value? {
+        guard let value = param(key) else { return nil }
+        return try JSONDecoder().decode(Value.self, from: JSONEncoder().encode(value))
     }
+
+    fileprivate func edit() throws -> Edit? { try decoded("edit") }
 }

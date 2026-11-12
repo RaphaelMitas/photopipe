@@ -1,5 +1,6 @@
 import CoreImage
 import Foundation
+import Synchronization
 import Testing
 import UniformTypeIdentifiers
 
@@ -1601,4 +1602,362 @@ private func oklab(_ rgb: [Double]) -> (lightness: Double, chroma: Double, hue: 
     // caches for the session, so a no here would stick after the copy lands.
     #expect(renderer.known(file: file, major: 9) == nil)
     #expect(renderer.supports(file: file, major: 9) == false)
+}
+
+/// White over the left half, in a shape that is not the photo's.
+private let leftHalf: Masker.Segment = { _, _, _ in
+    CIImage(color: .white).cropped(to: CGRect(x: 0, y: 0, width: 15, height: 40))
+        .composited(
+            over: CIImage(color: .black).cropped(to: CGRect(x: 0, y: 0, width: 30, height: 40)))
+}
+
+private let leftSide = CGRect(x: 0, y: 0, width: 24, height: 64)
+private let rightSide = CGRect(x: 40, y: 0, width: 24, height: 64)
+
+@Test func aMaskAdjustsItsRegionAndNothingElse() throws {
+    let cacheDir = tempCacheDir()
+    let jpeg = try writeSyntheticJPEG(color: gray(0.4))
+    defer {
+        try? FileManager.default.removeItem(at: cacheDir)
+        try? FileManager.default.removeItem(at: jpeg)
+    }
+    let segmented = Mutex(0)
+    let renderer = Renderer(cacheDir: cacheDir) { photo, source, points in
+        segmented.withLock { $0 += 1 }
+        return try leftHalf(photo, source, points)
+    }
+    let file = try imageFile(for: jpeg)
+    func luminance(_ masks: [Mask], _ region: CGRect) throws -> Double {
+        try meanLuminance(
+            of: renderer.render(file: file, edit: Edit(masks: masks), maxPixel: 64), region: region)
+    }
+    let brighter = LocalAdjust(exposure: 1)
+    let plain = try luminance([], leftSide)
+
+    let masked = [Mask(id: "a", source: .subject, adjust: brighter)]
+    #expect(try luminance(masked, leftSide) > plain + 20)
+    #expect(try abs(luminance(masked, rightSide) - plain) <= 1)
+
+    let inverted = [Mask(id: "a", source: .subject, inverted: true, adjust: brighter)]
+    #expect(try abs(luminance(inverted, leftSide) - plain) <= 1)
+    #expect(try luminance(inverted, rightSide) > plain + 20)
+
+    let hidden = [Mask(id: "a", source: .subject, hidden: true, adjust: brighter)]
+    #expect(try abs(luminance(hidden, leftSide) - plain) <= 1)
+
+    #expect(segmented.withLock { $0 } == 1, "one matte serves every edit of the photo")
+}
+
+@Test func aMatteKeepsItsHalfCoverageThroughTheCache() throws {
+    let cacheDir = tempCacheDir()
+    let jpeg = try writeSyntheticJPEG(color: gray(0.4))
+    defer {
+        try? FileManager.default.removeItem(at: cacheDir)
+        try? FileManager.default.removeItem(at: jpeg)
+    }
+    let masker = Masker(cache: CacheFolder(dir: cacheDir, maxBytes: 1 << 20)) { photo, _, _ in
+        CIImage(color: gray(0.5)).cropped(to: photo.extent)
+    }
+    let photo = CIImage(color: .black).cropped(to: CGRect(x: 0, y: 0, width: 64, height: 64))
+    for _ in 0..<2 {
+        let matte = try masker.matte(for: jpeg.path, source: .people, points: []) { photo }
+        var pixel = [UInt8](repeating: 0, count: 4)
+        CIContext(options: [.workingColorSpace: NSNull()]).render(
+            matte, toBitmap: &pixel, rowBytes: 4, bounds: CGRect(x: 32, y: 32, width: 1, height: 1),
+            format: .RGBA8, colorSpace: nil)
+        #expect(abs(Int(pixel[0]) - 128) <= 1)
+    }
+}
+
+@Test func aMaskThatDrawsNothingAsksForNoRender() throws {
+    let cacheDir = tempCacheDir()
+    let jpeg = try writeSyntheticJPEG(color: gray(0.4))
+    defer {
+        try? FileManager.default.removeItem(at: cacheDir)
+        try? FileManager.default.removeItem(at: jpeg)
+    }
+    let segmented = Mutex(0)
+    let renderer = Renderer(cacheDir: cacheDir) { photo, source, points in
+        segmented.withLock { $0 += 1 }
+        return try leftHalf(photo, source, points)
+    }
+    let file = try imageFile(for: jpeg)
+    func rendered(_ masks: [Mask]) throws -> URL {
+        try renderer.render(file: file, edit: Edit(exposure: 0.5, masks: masks), maxPixel: 64)
+    }
+    let plain = try rendered([])
+
+    #expect(try rendered([Mask(id: "new", source: .subject)]) == plain)
+    let hidden = Mask(id: "off", source: .people, hidden: true, adjust: LocalAdjust(exposure: 1))
+    #expect(try rendered([hidden]) == plain)
+    #expect(segmented.withLock { $0 } == 0)
+}
+
+@Test func aMatteOutlivesOurOwnMetadataWrite() throws {
+    let cacheDir = tempCacheDir()
+    let jpeg = try writeSyntheticJPEG(color: gray(0.4))
+    defer {
+        try? FileManager.default.removeItem(at: cacheDir)
+        try? FileManager.default.removeItem(at: jpeg)
+    }
+    let segmented = Mutex(0)
+    let renderer = Renderer(cacheDir: cacheDir) { photo, source, points in
+        segmented.withLock { $0 += 1 }
+        return try leftHalf(photo, source, points)
+    }
+    let edit = Edit(masks: [Mask(id: "a", source: .subject, adjust: LocalAdjust(exposure: 1))])
+    let before = try imageFile(for: jpeg)
+    let first = try renderer.render(file: before, edit: edit, maxPixel: 64)
+
+    try FileManager.default.setAttributes(
+        [.modificationDate: Date(timeIntervalSince1970: before.mtime + 60)], ofItemAtPath: jpeg.path)
+    let after = try imageFile(for: jpeg)
+    renderer.restamp(before, to: after)
+
+    #expect(try renderer.render(file: after, edit: edit, maxPixel: 64) == first)
+    let brighter = Edit(exposure: 1, masks: edit.masks)
+    #expect(try renderer.render(file: after, edit: brighter, maxPixel: 64) != first)
+    #expect(segmented.withLock { $0 } == 1)
+}
+
+@Test func aPreviewWithoutTheModelLosesItsMasksAndAnExportDoesNot() throws {
+    let cacheDir = tempCacheDir()
+    let out = tempCacheDir()
+    let jpeg = try writeSyntheticJPEG(color: gray(0.4))
+    defer {
+        try? FileManager.default.removeItem(at: cacheDir)
+        try? FileManager.default.removeItem(at: out)
+        try? FileManager.default.removeItem(at: jpeg)
+    }
+    try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+    let file = try imageFile(for: jpeg)
+    let masked = Edit(masks: [Mask(id: "a", source: .subject, adjust: LocalAdjust(exposure: 1))])
+
+    let noModel = Renderer(cacheDir: cacheDir, segment: leftHalf, maskModelArrives: { false })
+    let plain = try noModel.render(file: file, edit: .identity, maxPixel: 64)
+    let preview = try noModel.preview(file: file, edit: masked, maxPixel: 64)
+    #expect(preview.unmasked)
+    #expect(preview.cachePath == plain.path)
+    #expect(try !noModel.preview(file: file, edit: .identity, maxPixel: 64).unmasked)
+
+    let exported = out.appendingPathComponent("masked.jpg")
+    try noModel.exportJPEG(file: file, edit: masked, quality: 0.9, to: exported)
+    #expect(try meanLuminance(of: exported, region: leftSide) > meanLuminance(of: plain) + 20)
+
+    struct ModelFailed: Error {}
+    let uncut = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: uncut) }
+    let failing = Renderer(cacheDir: uncut) { _, _, _ in throw ModelFailed() }
+    #expect(try failing.preview(file: file, edit: masked, maxPixel: 64).unmasked)
+    #expect(throws: ModelFailed.self) {
+        try failing.exportJPEG(
+            file: file, edit: masked, quality: 0.9, to: out.appendingPathComponent("failed.jpg"))
+    }
+}
+
+private func alpha(of url: URL, at point: CGPoint) throws -> UInt8 {
+    alpha(of: try #require(CIImage(contentsOf: url)), at: point)
+}
+
+private func alpha(of image: CIImage, at point: CGPoint) -> UInt8 {
+    pixel(of: image, at: point)[3]
+}
+
+private func pixel(of image: CIImage, at point: CGPoint) -> [UInt8] {
+    var pixel = [UInt8](repeating: 0, count: 4)
+    CIContext().render(
+        image, toBitmap: &pixel, rowBytes: 4,
+        bounds: CGRect(x: point.x, y: point.y, width: 1, height: 1),
+        format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+    return pixel
+}
+
+@Test func theOverlayIsTheMatteInTheFrameOfTheEdit() throws {
+    let cacheDir = tempCacheDir()
+    let jpeg = try writeSyntheticJPEG(color: gray(0.4))
+    defer {
+        try? FileManager.default.removeItem(at: cacheDir)
+        try? FileManager.default.removeItem(at: jpeg)
+    }
+    let renderer = Renderer(cacheDir: cacheDir, segment: leftHalf)
+    let file = try imageFile(for: jpeg)
+    func overlay(_ edit: Edit, inverted: Bool = false) throws -> URL {
+        try renderer.maskOverlay(
+            file: file, source: .subject, points: [], inverted: inverted, edit: edit, maxPixel: 64)
+    }
+    let left = CGPoint(x: 8, y: 32)
+    let right = CGPoint(x: 56, y: 32)
+
+    #expect(try alpha(of: overlay(.identity), at: left) == 255)
+    #expect(try alpha(of: overlay(.identity), at: right) == 0)
+    #expect(try alpha(of: overlay(.identity, inverted: true), at: left) == 0)
+    #expect(try alpha(of: overlay(.identity, inverted: true), at: right) == 255)
+
+    let rightHalfCrop = Edit(crop: CropRect(left: 0.5, top: 0, right: 1, bottom: 1))
+    #expect(try alpha(of: overlay(rightHalfCrop), at: CGPoint(x: 8, y: 32)) == 0)
+
+    // clockwise, so the photo's left side is the top, which Core Image counts from below
+    let turned = try overlay(Edit(rotation: 90))
+    #expect(try alpha(of: turned, at: CGPoint(x: 32, y: 56)) == 255)
+    #expect(try alpha(of: turned, at: CGPoint(x: 32, y: 8)) == 0)
+
+    let graded = Edit(exposure: 1, masks: [Mask(id: "a", source: .subject)])
+    #expect(try overlay(graded) == overlay(.identity), "sliders do not move a mask")
+}
+
+private let aroundTheLastClick: Masker.Segment = { photo, _, points in
+    let nothing = CIImage(color: .black).cropped(to: photo.extent)
+    guard let last = points.last else { return nothing }
+    let side = photo.extent.width / 8
+    let square = CGRect(
+        x: last.x * photo.extent.width - side / 2,
+        y: (1 - last.y) * photo.extent.height - side / 2, width: side, height: side)
+    return CIImage(color: .white).cropped(to: square).composited(over: nothing)
+}
+
+@Test func aClickFindsWhatIsUnderTheCursorHoweverThePhotoIsFramed() throws {
+    let cacheDir = tempCacheDir()
+    let jpeg = try writeSyntheticJPEG(color: gray(0.4), width: 96, height: 64)
+    defer {
+        try? FileManager.default.removeItem(at: cacheDir)
+        try? FileManager.default.removeItem(at: jpeg)
+    }
+    let renderer = Renderer(cacheDir: cacheDir, segment: aroundTheLastClick)
+    let file = try imageFile(for: jpeg)
+    func pick(_ edit: Edit) throws -> Renderer.MaskPick {
+        try renderer.maskAt(
+            file: file, edit: edit, points: [], inverted: false, at: CGPoint(x: 0.3, y: 0.75),
+            include: true, maxPixel: 64)
+    }
+    let framings = [
+        Edit.identity, Edit(rotation: 90), Edit(cropAngle: 8),
+        Edit(
+            crop: CropRect(left: 0.2, top: 0.1, right: 0.9, bottom: 0.8), cropAngle: -6,
+            rotation: 270),
+    ]
+    for edit in framings {
+        let overlay = try #require(CIImage(data: try pick(edit).png))
+        let size = overlay.extent.size
+        // Core Image counts from below
+        let cursor = CGPoint(x: 0.3 * size.width, y: 0.25 * size.height)
+        let elsewhere = CGPoint(x: 0.8 * size.width, y: 0.8 * size.height)
+        #expect(alpha(of: overlay, at: cursor) == 255, "\(edit.cacheKey)")
+        #expect(alpha(of: overlay, at: elsewhere) == 0, "\(edit.cacheKey)")
+    }
+    #expect(try pick(.identity).point == Mask.Point(x: 0.3, y: 0.75, include: true))
+    #expect(
+        ((try? FileManager.default.contentsOfDirectory(atPath: cacheDir.path)) ?? []).isEmpty,
+        "the cursor asks on every move, and none of it is worth keeping")
+}
+
+@Test func aClickMaskIsFoundAgainOnlyWhenItsClicksChange() throws {
+    let cacheDir = tempCacheDir()
+    let jpeg = try writeSyntheticJPEG(color: gray(0.4))
+    defer {
+        try? FileManager.default.removeItem(at: cacheDir)
+        try? FileManager.default.removeItem(at: jpeg)
+    }
+    let segmented = Mutex(0)
+    let renderer = Renderer(cacheDir: cacheDir) { photo, source, points in
+        segmented.withLock { $0 += 1 }
+        return try aroundTheLastClick(photo, source, points)
+    }
+    let file = try imageFile(for: jpeg)
+    func overlay(_ points: [Mask.Point]) throws -> URL {
+        try renderer.maskOverlay(
+            file: file, source: .click, points: points, inverted: false, edit: .identity,
+            maxPixel: 64)
+    }
+    let left = Mask.Point(x: 0.25, y: 0.5, include: true)
+    let right = Mask.Point(x: 0.75, y: 0.5, include: true)
+
+    #expect(try alpha(of: overlay([left]), at: CGPoint(x: 16, y: 32)) == 255)
+    #expect(try alpha(of: overlay([left]), at: CGPoint(x: 48, y: 32)) == 0)
+    #expect(try alpha(of: overlay([left, right]), at: CGPoint(x: 48, y: 32)) == 255)
+    #expect(segmented.withLock { $0 } == 2)
+}
+
+@Test func aMaskIsLookedForInABrightenedCopyOfADarkPhoto() throws {
+    let cacheDir = tempCacheDir()
+    let jpeg = try writeSyntheticJPEG(color: gray(0.1))
+    defer {
+        try? FileManager.default.removeItem(at: cacheDir)
+        try? FileManager.default.removeItem(at: jpeg)
+    }
+    let centre = CGPoint(x: 32, y: 32)
+    let seen = Mutex<[Mask.Source: UInt8]>([:])
+    let renderer = Renderer(cacheDir: cacheDir) { photo, source, _ in
+        let red = pixel(of: photo, at: centre)[0]
+        seen.withLock { $0[source] = red }
+        return CIImage(color: .black).cropped(to: photo.extent)
+    }
+    let file = try imageFile(for: jpeg)
+    for source in [Mask.Source.subject, .people, .click] {
+        _ = try renderer.maskOverlay(
+            file: file, source: source, points: [], inverted: false, edit: .identity, maxPixel: 64)
+    }
+    let dark = pixel(of: try #require(CIImage(contentsOf: jpeg)), at: centre)[0]
+    let levels = seen.withLock { $0 }
+    #expect(levels.count == 3)
+    #expect(levels.values.allSatisfy { $0 > dark + 50 })
+}
+
+private func roughMask(white: [CGRect], in photo: CGRect) -> RoughMask {
+    RoughMask(
+        white.reduce(CIImage(color: .black).cropped(to: photo)) {
+            CIImage(color: .white).cropped(to: $1).composited(over: $0)
+        }, over: photo)
+}
+
+@Test func aRoughMaskCountsFromTheTopLikeAClick() throws {
+    let photo = CGRect(x: 0, y: 0, width: 640, height: 320)
+    let topLeftQuarter = CGRect(x: 0, y: 0, width: 0.5, height: 0.5)
+    // Core Image counts from below
+    let mask = roughMask(white: [CGRect(x: 0, y: 160, width: 320, height: 160)], in: photo)
+    let deepest = try #require(mask.deepest()).spot
+    #expect(deepest.x < 0.5 && deepest.y < 0.5)
+    #expect(mask.inside(topLeftQuarter) == mask)
+    #expect(mask.outside([topLeftQuarter]).count == 0)
+
+    let scribble = try mask.scribble(width: 640, height: 320)
+    let back = RoughMask(
+        CIImage(cvPixelBuffer: scribble, options: [.colorSpace: NSNull()]), over: photo)
+    #expect(back == mask)
+}
+
+@Test func theNextClickGoesWhereMostIsMissedAndStopsWhenLittleIs() throws {
+    let photo = CGRect(x: 0, y: 0, width: 320, height: 320)
+    let left = CGRect(x: 20, y: 100, width: 100, height: 100)
+    let right = CGRect(x: 200, y: 100, width: 100, height: 100)
+    let wanted = roughMask(white: [left, right], in: photo)
+    func next(found: [CGRect]) -> Mask.Point? {
+        wanted.spotMissed(by: roughMask(white: found, in: photo))
+    }
+
+    let click = try #require(next(found: [left]))
+    #expect(right.contains(CGPoint(x: click.x * 320, y: click.y * 320)))
+    #expect(next(found: [left, right.insetBy(dx: 3, dy: 3)]) == nil, "a rim is not worth a click")
+    #expect(
+        next(found: [left, right.divided(atDistance: 92, from: .minXEdge).slice]) == nil,
+        "nor is a twentieth of the mask")
+}
+
+@Test func aMaskOnARawAdjustsItsRegionToo() throws {
+    guard let fixture = rawFixture("sony-a7iv.arw") else { return }
+    let cacheDir = tempCacheDir()
+    defer { try? FileManager.default.removeItem(at: cacheDir) }
+    let renderer = Renderer(cacheDir: cacheDir, segment: leftHalf)
+    let file = try imageFile(for: fixture)
+    let plain = try renderer.render(file: file, edit: .identity, maxPixel: 256)
+    let masked = try renderer.render(
+        file: file,
+        edit: Edit(masks: [Mask(id: "a", source: .people, adjust: LocalAdjust(exposure: 1))]),
+        maxPixel: 256)
+    let size = try #require(CIImage(contentsOf: plain)).extent
+    let left = CGRect(x: 0, y: 0, width: size.width * 0.4, height: size.height)
+    let right = CGRect(x: size.width * 0.6, y: 0, width: size.width * 0.4, height: size.height)
+    #expect(try meanLuminance(of: masked, region: left) > meanLuminance(of: plain, region: left) + 10)
+    #expect(
+        try abs(meanLuminance(of: masked, region: right) - meanLuminance(of: plain, region: right))
+            <= 1)
 }

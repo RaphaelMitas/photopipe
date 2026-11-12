@@ -164,6 +164,61 @@ elsewhere, so it only crosses between photos of the same kind and the toast
 says when it was left behind. There is no scope dialog: paste takes
 everything it can, every time, and ⌘Z takes it back.
 
+Masks travel with it and replace the masks the photo had. A mask is stored as
+what to find, so each photo it lands on gets its own subject. A mask made by
+clicking is the exception: its clicks point at one photo, so it stays there,
+and a paste leaves the target's own click masks alone.
+
+## A mask borrows the photo's sliders
+
+Masks is the first group in the edit panel. A mask is a region the core
+finds, Subject, People, Background or the object under a click, and a row in
+that group. Picking a row
+points the Tone and Color sliders at that mask, and the group headers say so
+in pink; Photo points them back. There is no second panel of local sliders to
+learn. Crop, curves, presence and denoise stay with the photo and leave the
+panel while a mask has the sliders.
+
+**M** opens the field in the group, from the button or the key: three chips
+that preview on hover and become a mask on click, which owns the sliders at
+once. The overlay flashes when a mask is picked and shows while its row is
+hovered; **O** holds it.
+
+While the field is open the photo takes clicks too. Moving over it shows, in
+light blue, what a click would take; the click makes that a mask called
+Object. The field stays open so the next click starts another mask, and
+**Esc** hands the photo back to zoom and pan. That is why a plain click only
+masks with the field open: everywhere else a click and a drag already mean
+something. With a click mask selected, **Shift**-click adds what is under the
+cursor and **Option**-click takes it away, field open or not, and the preview
+shows the result before the click. A tap on iPad picks directly, with no
+preview. A mask takes 16 clicks.
+
+One model cuts every mask, the chips included, because it draws the best
+outline. It ships with macOS and iPadOS 27, so masking needs that system: on
+an older one the Masks group is not there.
+
+The system fetches that model on first use. While it is on its way, or when a
+cut fails, the loupe shows the photo without its masks, says **Masks not
+shown** in the corner and asks again every few seconds: a missing model must
+not cost you the photo. An export is the opposite. It waits for the model and
+fails the photo if the mask cannot be cut, because a file written without its
+mask looks finished and is not.
+
+The sidecar stores the definition, never the pixels: "the subject, inverted,
+half a stop up", or for a click mask the clicks themselves, as points on the
+uncropped photo. That is why a pasted mask fits the photo it lands on and why
+a mask survives a new crop. The price is that Lightroom does not see it. Temp
+and Tint on a mask are relative on every file, raws included, because a mask
+warms a region against the rest of the photo. A mask applies after the photo's
+exposure and white balance and before the rest of its grade, so contrast,
+curves and colour shape the masked region too.
+
+A mask this build cannot read, one a newer build wrote, stays in the sidecar
+untouched. It is not shown and not rendered, and it survives every save in
+its place among the others. On a system that cannot mask, every mask is
+treated the same way.
+
 ## Before is the look, not the framing
 
 **Y** splits the loupe: the photo as shot on the left of a divider, the edit
@@ -182,7 +237,9 @@ files were skipped".
 
 The core runs requests concurrently, and each request gets its own reply.
 Renders and thumbnails each have a newest-first lane that answers the oldest
-waiting request "superseded" once too many pile up; `setRoot` gets a thread of
+waiting request "superseded" once too many pile up; mask overlays, the
+hover and clicks share a one-worker lane, so a photo's rows cut one matte at a time;
+`setRoot` gets a thread of
 its own; everything else shares an 8-wide queue, so a long JPEG export occupies one slot while ratings keep
 flowing. Per-file export progress needs mid-request events the
 protocol doesn't have yet; until then the job shows an indeterminate state.
@@ -193,5 +250,7 @@ protocol doesn't have yet; until then the job shows an indeterminate state.
 - **Edit-aware thumbnails** — the grid shows the unedited thumbnail with a
   small ±EV badge; only the loupe renders the edit. Rendering every edited
   thumbnail through the raw pipeline is a cost the badge defers.
+- **Masks you type** — a click takes the whole object under it, usually the
+  whole person; naming a part ("hair", "dress") comes after.
 - **A catalogue.** Still the founding rule: the SQLite index is a rebuildable
   cache, never a source of truth.

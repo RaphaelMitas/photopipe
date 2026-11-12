@@ -31,10 +31,13 @@ import {
   editKey,
   type Flag,
   type ImageFile,
+  type MaskShape,
   normalizeEdit,
   normalizeImage,
   normalizeShoot,
   type StatusResult,
+  shapeKey,
+  unedited,
 } from "./core";
 import { useFeatures } from "./features";
 import { fileName } from "./fileName";
@@ -173,6 +176,41 @@ export function useThumbnail(
   });
 }
 
+// one size for the loupe overlay and the row thumbs, so they share a file
+const MASK_OVERLAY_MAX_PIXEL = 2048;
+
+export function useMaskOverlay(
+  file: { path: string; mtime: number } | undefined,
+  shape: MaskShape | null,
+  edit: Edit,
+) {
+  const frame = unedited(edit);
+  return useQuery({
+    queryKey: [
+      "maskOverlay",
+      file?.path,
+      file?.mtime,
+      shape && shapeKey(shape),
+      editKey(frame),
+    ],
+    queryFn:
+      file && shape
+        ? async () =>
+            (
+              await coreRequest("maskOverlay", {
+                path: file.path,
+                source: shape.source,
+                inverted: shape.inverted,
+                points: shape.points,
+                edit: frame,
+                maxPixel: MASK_OVERLAY_MAX_PIXEL,
+              })
+            ).cachePath
+        : skipToken,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
 type RenderFile = Pick<ImageFile, "path" | "mtime" | "isRaw"> | undefined;
 
 const PREVIEW_MAX_PIXEL = 2560;
@@ -206,21 +244,22 @@ function renderQueryOptions(
       decoderVersion ?? "",
     ],
     queryFn: file
-      ? async () =>
-          (
-            await coreRequest("render", {
-              path: file.path,
-              edit,
-              maxPixel,
-              ...(viewport ? { viewport } : {}),
-              ...(decoderVersion ? { decoderVersion } : {}),
-            })
-          ).cachePath
+      ? () =>
+          coreRequest("render", {
+            path: file.path,
+            edit,
+            maxPixel,
+            ...(viewport ? { viewport } : {}),
+            ...(decoderVersion ? { decoderVersion } : {}),
+          })
       : skipToken,
-    staleTime: Number.POSITIVE_INFINITY,
+    staleTime: (query) =>
+      query.state.data?.unmasked ? 0 : Number.POSITIVE_INFINITY,
     retry: renderRetry,
     retryDelay: (failures, error) =>
       superseded(error) ? 0 : 1000 * 2 ** failures,
+    // the model that cuts the masks may still be on its way
+    refetchInterval: (query) => (query.state.data?.unmasked ? 5000 : false),
   });
 }
 
@@ -234,7 +273,7 @@ export function useRender(file: RenderFile, edit: Edit) {
       undefined,
       renderDecoderVersion(file, decoder),
     ),
-    placeholderData: (previous: string | undefined, previousQuery) =>
+    placeholderData: (previous, previousQuery) =>
       previousQuery?.queryKey[1] === file?.path ? previous : undefined,
   });
 }
@@ -263,6 +302,7 @@ export function useViewportRender(
       request?.viewport,
       renderDecoderVersion(file, decoder),
     ),
+    select: (preview) => preview.cachePath,
     enabled: request !== null,
   });
 }
@@ -348,6 +388,19 @@ export function useRaw9Availability(enabled: boolean) {
     enabled,
     staleTime: Number.POSITIVE_INFINITY,
   });
+}
+
+export function useMaskClickLimit() {
+  const support = useQuery({
+    queryKey: ["maskSupport"],
+    queryFn: () => coreRequest("maskSupport"),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  return support.data?.clicks ?? 0;
+}
+
+export function useCanMask() {
+  return useMaskClickLimit() > 0;
 }
 
 const SET_RATING_KEY = ["setRating"];

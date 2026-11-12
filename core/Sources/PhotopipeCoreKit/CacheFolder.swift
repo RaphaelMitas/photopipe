@@ -29,21 +29,27 @@ final class CacheFolder: Sendable {
 
     private var headroom: Int { maxBytes / 10 }
 
-    func url(forKey key: String) -> URL {
+    private static let pathExtensions: Set = ["jpg", "png"]
+
+    func url(forKey key: String, pathExtension: String = "jpg") -> URL {
         let digest = SHA256.hash(data: Data(key.utf8))
             .map { String(format: "%02x", $0) }.joined().prefix(32)
-        return dir.appendingPathComponent("\(digest).jpg")
+        return dir.appendingPathComponent("\(digest).\(pathExtension)")
+    }
+
+    func isCached(_ url: URL) -> Bool {
+        Self.lock.withLock {
+            (try? FileManager.default.setAttributes(
+                [.modificationDate: Date()], ofItemAtPath: url.path)) != nil
+        }
     }
 
     func cachedFile(at url: URL, orWrite write: (URL) throws -> Void) throws -> URL {
+        if isCached(url) { return url }
         let fm = FileManager.default
-        let hit = Self.lock.withLock {
-            (try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)) != nil
-        }
-        if hit { return url }
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        // a reader never sees half a JPEG
-        let temp = dir.appendingPathComponent("tmp-\(UUID().uuidString).jpg")
+        // a reader never sees half a file
+        let temp = dir.appendingPathComponent("tmp-\(UUID().uuidString).\(url.pathExtension)")
         try write(temp)
         let bytes = (try? temp.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
         _ = try? fm.replaceItemAt(url, withItemAt: temp)
@@ -95,7 +101,7 @@ final class CacheFolder: Sendable {
                 at: dir, includingPropertiesForKeys: nil)
         else { return 0 }
         var kept: [(url: URL, modified: Date, size: Int)] = []
-        for var entry in entries where entry.pathExtension == "jpg" {
+        for var entry in entries where Self.pathExtensions.contains(entry.pathExtension) {
             entry.removeAllCachedResourceValues()
             Self.lock.withLock {
                 guard

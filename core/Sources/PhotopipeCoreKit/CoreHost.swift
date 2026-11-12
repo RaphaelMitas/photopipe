@@ -6,12 +6,18 @@ public final class CoreHost: Sendable {
     private let library: LibraryService
     private let dispatcher: Dispatcher
     private let work: OperationQueue
-    private let lanes = [
-        // measured: parallel cold renders share the machine and the newest lands later
-        "render": Lane(workers: 1, window: 4),
-        // about a large grid's mounted cells, so an on-screen thumbnail rarely waits on a retry
-        "thumbnail": Lane(workers: 8, window: 256),
-    ]
+    private let lanes: [String: Lane] = {
+        // a photo's rows ask together: off the queue ratings share, and wide enough to drop none
+        let masks = Lane(workers: 1, window: 64)
+        return [
+            // measured: parallel cold renders share the machine and the newest lands later
+            "render": Lane(workers: 1, window: 4),
+            // about a large grid's mounted cells, so an on-screen thumbnail rarely waits on a retry
+            "thumbnail": Lane(workers: 8, window: 256),
+            "maskOverlay": masks,
+            "maskAt": masks,
+        ]
+    }()
 
     public init() {
         library = LibraryService()

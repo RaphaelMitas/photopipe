@@ -46,7 +46,7 @@ describe("useRecordedWrites", () => {
   beforeEach(() => {
     clearHistory();
     invoke.mockReset();
-    invoke.mockResolvedValue({});
+    invoke.mockResolvedValue({ edit: {} });
   });
 
   it("records a rating whose undo writes the old one back", async () => {

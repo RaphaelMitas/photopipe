@@ -10,7 +10,20 @@ public final class Renderer: @unchecked Sendable {
         case encodeFailed
     }
 
+    public struct MaskPick: Encodable, Sendable {
+        public let png: Data
+        public let point: Mask.Point
+    }
+
+    public struct Preview: Encodable, Sendable {
+        public let cachePath: String
+        /// The photo has masks that could not be cut, and was rendered without any.
+        public let unmasked: Bool
+    }
+
     private let cache: CacheFolder
+    private let masker: Masker
+    private let maskModelArrives: @Sendable () -> Bool
     private let context = CIContext(options: [.cacheIntermediates: true])
     // an export renders each photo once, so there is nothing to reuse
     private let exportContext = CIContext(options: [.cacheIntermediates: false])
@@ -44,11 +57,22 @@ public final class Renderer: @unchecked Sendable {
     private var defaultsByPath: [String: (values: RawDefaults, mtime: Double)] = [:]
     private var supportsByCamera: [String: Bool] = [:]
     private var supportsByPath: [String: (supported: Bool, mtime: Double)] = [:]
+    private var pixelStampsByPath: [String: (mtime: Double, size: Int64, stamp: String)] = [:]
     // the loupe holds current, both neighbours and a zoom render at once
     private let filterCapacity = 6
 
-    public init(cacheDir: URL) {
+    public convenience init(cacheDir: URL) {
+        self.init(
+            cacheDir: cacheDir, segment: Masker.vision, maskModelArrives: TapToSegment.modelArrives)
+    }
+
+    init(
+        cacheDir: URL, segment: @escaping Masker.Segment,
+        maskModelArrives: @escaping @Sendable () -> Bool = { true }
+    ) {
         cache = CacheFolder(dir: cacheDir, maxBytes: 2 * 1024 * 1024 * 1024)
+        masker = Masker(cache: cache, segment: segment)
+        self.maskModelArrives = maskModelArrives
         cache.pruneInBackground()
     }
 
@@ -63,9 +87,54 @@ public final class Renderer: @unchecked Sendable {
     ) -> URL {
         let region = viewport.map { "|\($0.left),\($0.top),\($0.right),\($0.bottom)" } ?? ""
         let decoder = resolvedTag(for: file, requested: decoderVersion)
+        let masks = edit.masks.contains(where: \.changesPixels) ? "|m\(Masker.version)" : ""
         let key =
-            "\(file.path)|\(file.mtime)|\(file.size)|\(edit.cacheKey)|\(maxPixel)\(region)\(decoder)|v\(Self.pipelineVersion)"
+            "\(pixelStamp(of: file))|\(edit.cacheKey)|\(maxPixel)\(region)\(decoder)\(masks)|v\(Self.pipelineVersion)"
         return cache.url(forKey: key)
+    }
+
+    /// Our metadata writes move mtime and size without touching a pixel, so what was rendered and cut still holds.
+    public func restamp(_ before: ImageFile, to after: ImageFile) {
+        guard before.mtime != after.mtime || before.size != after.size else { return }
+        lock.withLock {
+            pixelStampsByPath[after.path] = (after.mtime, after.size, carriedStamp(of: before))
+        }
+    }
+
+    private func pixelStamp(of file: ImageFile) -> String {
+        lock.withLock { carriedStamp(of: file) }
+    }
+
+    private func carriedStamp(of file: ImageFile) -> String {
+        if let carried = pixelStampsByPath[file.path], carried.mtime == file.mtime,
+            carried.size == file.size
+        {
+            return carried.stamp
+        }
+        return "\(file.path)|\(file.mtime)|\(file.size)"
+    }
+
+    /// What the loupe shows. A mask that cannot be cut costs the photo its masks, not the photo.
+    public func preview(
+        file: ImageFile, edit: Edit, maxPixel: Int, viewport: CropRect? = nil,
+        decoderVersion: Int? = nil
+    ) throws -> Preview {
+        func rendered(_ edit: Edit) throws -> String {
+            try render(
+                file: file, edit: edit, maxPixel: maxPixel, viewport: viewport,
+                decoderVersion: decoderVersion
+            ).path
+        }
+        guard edit.masks.contains(where: \.changesPixels) else {
+            return Preview(cachePath: try rendered(edit), unmasked: false)
+        }
+        // asked first, so a model still downloading holds the render lane a second at most
+        if maskModelArrives(), let masked = try? rendered(edit) {
+            return Preview(cachePath: masked, unmasked: false)
+        }
+        var bare = edit
+        bare.masks = []
+        return Preview(cachePath: try rendered(bare), unmasked: true)
     }
 
     public func render(
@@ -132,6 +201,68 @@ public final class Renderer: @unchecked Sendable {
         }
     }
 
+    /// The mask as the alpha of a white image, framed like the render it lies over.
+    public func maskOverlay(
+        file: ImageFile, source: Mask.Source, points: [Mask.Point], inverted: Bool, edit: Edit,
+        maxPixel: Int
+    ) throws -> URL {
+        let framing = Edit(crop: edit.crop, cropAngle: edit.cropAngle, rotation: edit.rotation)
+        let key =
+            "\(pixelStamp(of: file))|overlay|\(source.rawValue)|\(inverted)|\(framing.cacheKey)|\(maxPixel)\(points.cacheKey)|m\(Masker.version)"
+        return try cache.cachedFile(at: cache.url(forKey: key, pathExtension: "png")) { temp in
+            let matte = try matte(for: file, source: source, points: points, inverted: inverted)
+            try overlayPNG(of: matte, framing: framing, maxPixel: maxPixel).write(to: temp)
+        }
+    }
+
+    /// Never cached: the cursor asks on every move.
+    public func maskAt(
+        file: ImageFile, edit: Edit, points: [Mask.Point], inverted: Bool, at framedSpot: CGPoint,
+        include: Bool, maxPixel: Int
+    ) throws -> MaskPick {
+        let photo = try masker.brightPhoto(for: pixelStamp(of: file)) { try neutral(for: file) }
+        let clicked = Self.unframed(framedSpot, of: photo, edit)
+        // a ten-thousandth is a fifth of a pixel of what the model sees
+        func stored(_ fraction: CGFloat) -> Double {
+            (Double(min(max(fraction, 0), 1)) * 10_000).rounded() / 10_000
+        }
+        let point = Mask.Point(x: stored(clicked.x), y: stored(clicked.y), include: include)
+        let matte = try masker.found(in: photo, source: .click, points: points + [point])
+        return MaskPick(
+            png: try overlayPNG(
+                of: inverted ? matte.applyingFilter("CIColorInvert") : matte, framing: edit,
+                maxPixel: maxPixel),
+            point: point)
+    }
+
+    private func overlayPNG(of matte: CIImage, framing: Edit, maxPixel: Int) throws -> Data {
+        guard maxPixel > 0 else { throw RenderError.encodeFailed }
+        let coverage = CIImage(color: .white).cropped(to: matte.extent)
+            .applyingFilter("CIBlendWithRedMask", parameters: [kCIInputMaskImageKey: matte])
+        guard
+            let png = context.pngRepresentation(
+                of: Self.fitted(
+                    Self.framed(coverage, framing, viewport: nil), longEdge: CGFloat(maxPixel)),
+                format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+        else { throw RenderError.encodeFailed }
+        return png
+    }
+
+    private func neutral(for file: ImageFile) throws -> CIImage {
+        try sourceImage(
+            for: file, raw: file.isRaw ? makeFilter(for: file) : nil, edit: .identity,
+            maxPixel: Masker.inputLongEdge)
+    }
+
+    private func matte(
+        for file: ImageFile, source: Mask.Source, points: [Mask.Point], inverted: Bool
+    ) throws -> CIImage {
+        let matte = try masker.matte(for: pixelStamp(of: file), source: source, points: points) {
+            try neutral(for: file)
+        }
+        return inverted ? matte.applyingFilter("CIColorInvert") : matte
+    }
+
     /// nil for non-raws, which have no neutral to offset against.
     public func rawDefaults(for file: ImageFile, decoderVersion: Int? = nil) throws -> RawDefaults? {
         guard file.isRaw else { return nil }
@@ -185,30 +316,56 @@ public final class Renderer: @unchecked Sendable {
             guard !base.extent.isEmpty else { throw RenderError.unreadable(file.path) }
             let scale = Self.sourceScale(
                 for: edit, orientedSize: base.extent.size, maxPixel: maxPixel, viewport: viewport)
-            image = Self.fitted(base, longEdge: base.longEdge * CGFloat(scale))
-            if edit.exposure != 0 {
-                image = image.applyingFilter(
-                    "CIExposureAdjust", parameters: ["inputEV": edit.exposure])
-            }
-            // 2^EV alone runs highlights past 1, where they clip to cyan skies and flat white
-            if edit.exposure > 0 {
-                image = Presence.shoulder(image, afterExposure: edit.exposure)
-            }
-            let temperature = edit.temperature ?? 0
-            let tint = edit.tint ?? 0
-            if temperature != 0 || tint != 0 {
-                // even mired steps look even, and a lower target neutral renders warmer,
-                // like a raw's higher temperature
-                let mired = 1e6 / 6500 + temperature / 100 * (1e6 / 4500 - 1e6 / 6500)
-                image = image.applyingFilter(
-                    "CITemperatureAndTint",
-                    parameters: [
-                        "inputNeutral": CIVector(x: 6500, y: 0),
-                        "inputTargetNeutral": CIVector(x: 1e6 / mired, y: -tint),
-                    ])
-            }
+            image = Self.incremental(
+                Self.fitted(base, longEdge: base.longEdge * CGFloat(scale)), edit)
         }
+        // after the photo's exposure and white balance, before its grade
+        for mask in edit.masks where mask.changesPixels {
+            let local = mask.adjust.edit
+            let matte = try matte(
+                for: file, source: mask.source, points: mask.points, inverted: mask.inverted)
+            image = graded(Self.incremental(image, local), local)
+                .applyingFilter(
+                    "CIBlendWithRedMask",
+                    parameters: [
+                        kCIInputBackgroundImageKey: image,
+                        kCIInputMaskImageKey: Masker.stretched(matte, over: image.extent),
+                    ]
+                )
+                .cropped(to: image.extent)
+        }
+        return Self.framed(graded(image, edit), edit, viewport: viewport)
+    }
 
+    /// Exposure and white balance as filters: for files without a raw decoder, and for every mask's region.
+    private static func incremental(_ source: CIImage, _ edit: Edit) -> CIImage {
+        var image = source
+        if edit.exposure != 0 {
+            image = image.applyingFilter(
+                "CIExposureAdjust", parameters: ["inputEV": edit.exposure])
+        }
+        // 2^EV alone runs highlights past 1, where they clip to cyan skies and flat white
+        if edit.exposure > 0 {
+            image = Presence.shoulder(image, afterExposure: edit.exposure)
+        }
+        let temperature = edit.temperature ?? 0
+        let tint = edit.tint ?? 0
+        if temperature != 0 || tint != 0 {
+            // even mired steps look even, and a lower target neutral renders warmer,
+            // like a raw's higher temperature
+            let mired = 1e6 / 6500 + temperature / 100 * (1e6 / 4500 - 1e6 / 6500)
+            image = image.applyingFilter(
+                "CITemperatureAndTint",
+                parameters: [
+                    "inputNeutral": CIVector(x: 6500, y: 0),
+                    "inputTargetNeutral": CIVector(x: 1e6 / mired, y: -tint),
+                ])
+        }
+        return image
+    }
+
+    private func graded(_ source: CIImage, _ edit: Edit) -> CIImage {
+        var image = source
         if edit.dehaze != 0 {
             image = Presence.dehaze(image, amount: edit.dehaze)
         }
@@ -233,11 +390,13 @@ public final class Renderer: @unchecked Sendable {
         if edit.vibrance != 0 || edit.saturation != 0 {
             image = Presence.chroma(image, vibrance: edit.vibrance, saturation: edit.saturation)
         }
-        switch edit.normalizedRotation {
-        case 90: image = image.oriented(forExifOrientation: 6)
-        case 180: image = image.oriented(forExifOrientation: 3)
-        case 270: image = image.oriented(forExifOrientation: 8)
-        default: break
+        return image
+    }
+
+    private static func framed(_ source: CIImage, _ edit: Edit, viewport: CropRect?) -> CIImage {
+        var image = source
+        if let turn = turn(edit) {
+            image = image.oriented(forExifOrientation: turn)
         }
         if edit.hasCropComponent {
             image = Self.applyCrop(edit, to: image)
@@ -246,6 +405,37 @@ public final class Renderer: @unchecked Sendable {
             image = Self.applyViewport(viewport, to: image)
         }
         return image
+    }
+
+    private static func turn(_ edit: Edit) -> Int32? {
+        switch edit.normalizedRotation {
+        case 90: 6
+        case 180: 3
+        case 270: 8
+        default: nil
+        }
+    }
+
+    /// Framed fraction to photo fraction, both from the top left.
+    static func unframed(_ point: CGPoint, of photo: CIImage, _ edit: Edit) -> CGPoint {
+        var toFrame = CGAffineTransform.identity
+        var frame = photo.extent
+        if let turn = turn(edit) {
+            toFrame = photo.orientationTransform(forExifOrientation: turn)
+            frame = frame.applying(toFrame)
+        }
+        if edit.hasCropComponent, let crop = saneCrop(edit) {
+            let rect = pixelRect(for: crop, in: frame)
+            toFrame = toFrame.concatenating(straightening(edit, in: frame))
+                .concatenating(.init(translationX: -rect.minX, y: -rect.minY))
+            frame = CGRect(origin: .zero, size: rect.size)
+        }
+        let inPhoto = CGPoint(
+            x: frame.minX + point.x * frame.width, y: frame.minY + (1 - point.y) * frame.height
+        ).applying(toFrame.inverted())
+        return CGPoint(
+            x: (inPhoto.x - photo.extent.minX) / photo.extent.width,
+            y: 1 - (inPhoto.y - photo.extent.minY) / photo.extent.height)
     }
 
     static func saneCrop(_ edit: Edit) -> CropRect? {
@@ -282,18 +472,20 @@ public final class Renderer: @unchecked Sendable {
         let rect = pixelRect(for: crop, in: extent)
         var result = image
         if edit.cropAngle != 0 {
-            // pivot on center, matching the UI where the photo stays put
-            let center = CGPoint(x: extent.midX, y: extent.midY)
-            // CI is y-up, so on-screen-clockwise negates here; CSS gets it raw
-            let angle = -edit.cropAngle * .pi / 180
-            result = Straighten.transformed(
-                result,
-                by: CGAffineTransform(translationX: center.x, y: center.y)
-                    .rotated(by: angle)
-                    .translatedBy(x: -center.x, y: -center.y))
+            result = Straighten.transformed(result, by: straightening(edit, in: extent))
         }
         return result.cropped(to: rect)
             .transformed(by: .init(translationX: -rect.minX, y: -rect.minY))
+    }
+
+    static func straightening(_ edit: Edit, in extent: CGRect) -> CGAffineTransform {
+        // pivot on center, matching the UI where the photo stays put
+        let center = CGPoint(x: extent.midX, y: extent.midY)
+        // CI is y-up, so on-screen-clockwise negates here; CSS gets it raw
+        let angle = -edit.cropAngle * .pi / 180
+        return CGAffineTransform(translationX: center.x, y: center.y)
+            .rotated(by: angle)
+            .translatedBy(x: -center.x, y: -center.y)
     }
 
     /// Clamped and whole pixels, or a part-transparent edge row blurs into a bright band.

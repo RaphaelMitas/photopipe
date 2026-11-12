@@ -3,25 +3,29 @@ import type { Edit } from "./core";
 export const EXPOSURE_STEP = 0.25;
 export const EXPOSURE_RANGE = 3;
 
-export type SliderSpec = {
-  key: keyof Pick<
-    Edit,
-    | "highlights"
-    | "shadows"
-    | "whites"
-    | "blacks"
-    | "texture"
-    | "clarity"
-    | "dehaze"
-    | "vibrance"
-    | "saturation"
-  >;
+type SliderKey = keyof Pick<
+  Edit,
+  | "highlights"
+  | "shadows"
+  | "whites"
+  | "blacks"
+  | "texture"
+  | "clarity"
+  | "dehaze"
+  | "vibrance"
+  | "saturation"
+>;
+
+export type SliderSpec<Key extends SliderKey = SliderKey> = {
+  key: Key;
   label: string;
   short: string;
   trackClassName?: string;
 };
 
-export const TONE_SLIDERS: SliderSpec[] = [
+export const TONE_SLIDERS: SliderSpec<
+  "highlights" | "shadows" | "whites" | "blacks"
+>[] = [
   { key: "highlights", label: "Highlights", short: "hl" },
   { key: "shadows", label: "Shadows", short: "sh" },
   { key: "whites", label: "Whites", short: "wh" },
@@ -34,7 +38,7 @@ export const PRESENCE_SLIDERS: SliderSpec[] = [
   { key: "dehaze", label: "Dehaze", short: "dh" },
 ];
 
-export const COLOR_SLIDERS: SliderSpec[] = [
+export const COLOR_SLIDERS: SliderSpec<"vibrance" | "saturation">[] = [
   {
     key: "vibrance",
     label: "Vibrance",
