@@ -147,15 +147,16 @@ launches from the store.
 ## CI
 
 Two jobs. `quick` on Ubuntu does lint, typecheck, Vitest and Playwright.
-`native` on macOS 26 does swift-format, `swift test`, clippy for macOS and the
+`native` on macOS 27 does swift-format, `swift test`, clippy for macOS and the
 iPad simulator, a simulator build of the iPad app, `cargo test`, then builds a
 real `.app` and smoke tests it. Caches: pnpm, cargo, SwiftPM,
 raw fixtures, vendored exiftool.
 
-CI and every release job use the runner image's default Xcode, a 26.x, so the
-shipped apps link the 26 SDKs and get Liquid Glass on macOS and iPadOS 26.
-The core needs Xcode 26 or later to build: it relies on Core Image types
-being Sendable.
+CI and every release job run on the `xcode-27` image with its default Xcode, a
+27.x, so the shipped apps link the 27 SDKs and carry masking. The core needs
+Xcode 26 or later to build: it relies on Core Image types being Sendable. On
+Xcode 26 it builds without masking. Xcode 27 corrupts a proc-macro dylib once
+rustc strips it, so the release profile keeps build dependencies unstripped.
 
 Real raw fixtures, two Sony bodies and one per other major raw format, are
 fetched by `fixtures/fetch.sh` (CC0, from raw.pixls.us) rather than committed
@@ -243,8 +244,7 @@ subject is a line in the store, and a change for one platform names it.
 A release whose subjects read badly in the store gets
 `fastlane/whats-new/<tag>-<platform>.txt` instead, which the script prints as is.
 
-The iPad shares the record. The `ipad` job builds it on Xcode 26, the only SDK
-the store takes iPad uploads from: unsigned and with no secrets first, then
+The iPad shares the record. The `ipad` job builds it on Xcode 27: unsigned and with no secrets first, then
 signed with `MAS_CERTIFICATE`'s Apple Distribution identity and
 `IOS_PROVISIONING_PROFILE`. Its build number goes in through
 `bundle.iOS.bundleVersion`, since `--build-number` appends a fourth component
