@@ -154,9 +154,7 @@ raw fixtures, vendored exiftool.
 
 CI and every release job run on the `xcode-27` image with its default Xcode, a
 27.x, so the shipped apps link the 27 SDKs and carry masking. The core needs
-Xcode 26 or later to build: it relies on Core Image types being Sendable. On
-Xcode 26 it builds without masking. Xcode 27 corrupts a proc-macro dylib once
-rustc strips it, so the release profile keeps build dependencies unstripped.
+Xcode 26 or later to build: it relies on Core Image types being Sendable.
 
 Real raw fixtures, two Sony bodies and one per other major raw format, are
 fetched by `fixtures/fetch.sh` (CC0, from raw.pixls.us) rather than committed
@@ -244,9 +242,9 @@ subject is a line in the store, and a change for one platform names it.
 A release whose subjects read badly in the store gets
 `fastlane/whats-new/<tag>-<platform>.txt` instead, which the script prints as is.
 
-The iPad shares the record. The `ipad` job builds it on Xcode 27: unsigned and with no secrets first, then
-signed with `MAS_CERTIFICATE`'s Apple Distribution identity and
-`IOS_PROVISIONING_PROFILE`. Its build number goes in through
+The iPad shares the record. The `ipad` job builds it unsigned and with no
+secrets first, then signed with `MAS_CERTIFICATE`'s Apple Distribution
+identity and `IOS_PROVISIONING_PROFILE`. Its build number goes in through
 `bundle.iOS.bundleVersion`, since `--build-number` appends a fourth component
 the store refuses. `ipad-review` submits it with
 `fastlane/ipad/description.txt` and the iPad screenshots. Both review jobs
