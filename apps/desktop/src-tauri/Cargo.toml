@@ -41,3 +41,6 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
     "NSUserDefaults",
 ] }
 
+# a proc-macro dylib that rustc strips under Xcode 27 fails to load ("mis-aligned LINKEDIT string pool")
+[profile.release.build-override]
+strip = false

@@ -1,4 +1,5 @@
 import CoreImage
+import CoreML
 import Foundation
 import Synchronization
 import Testing
@@ -1213,6 +1214,11 @@ private func oklab(_ rgb: [Double]) -> (lightness: Double, chroma: Double, hue: 
     }
 }
 
+// macOS 27 denoises a raw on the Neural Engine, which the CI virtual machine lacks
+private var hasNoNeuralEngine: Bool {
+    !MLComputeDevice.allComputeDevices.contains { if case .neuralEngine = $0 { true } else { false } }
+}
+
 @Test func denoiseOverridesTheDecoderDefault() throws {
     guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
@@ -1230,7 +1236,11 @@ private func oklab(_ rgb: [Double]) -> (lightness: Double, chroma: Double, hue: 
         contentsOf: renderer.render(file: file, edit: Edit(denoise: 0), maxPixel: native))
     let full = try Data(
         contentsOf: renderer.render(file: file, edit: Edit(denoise: 100), maxPixel: native))
-    #expect(off.count > full.count, "the denoise slider must reach the decoder")
+    withKnownIssue("this Mac has no Neural Engine to denoise with") {
+        #expect(off.count > full.count, "the denoise slider must reach the decoder")
+    } when: {
+        hasNoNeuralEngine
+    }
 }
 
 /// maxPixel crosses IPC unvalidated, and 0 must not read as "full sensor":

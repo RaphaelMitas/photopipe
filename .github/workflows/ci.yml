@@ -30,7 +30,7 @@ jobs:
 
   native:
     name: Swift, Rust & app build (macOS)
-    runs-on: macos-26
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/setup-desktop
@@ -40,8 +40,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: core/.build
-          key: swiftpm-macos-26-${{ hashFiles('core/Package.swift') }}
-          restore-keys: swiftpm-macos-26-
+          key: swiftpm-xcode-27-${{ hashFiles('core/Package.swift') }}
+          restore-keys: swiftpm-xcode-27-
       - name: Cache raw fixtures
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
