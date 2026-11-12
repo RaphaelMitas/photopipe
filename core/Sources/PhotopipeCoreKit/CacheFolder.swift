@@ -37,12 +37,16 @@ final class CacheFolder: Sendable {
         return dir.appendingPathComponent("\(digest).\(pathExtension)")
     }
 
-    func cachedFile(at url: URL, orWrite write: (URL) throws -> Void) throws -> URL {
-        let fm = FileManager.default
-        let hit = Self.lock.withLock {
-            (try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)) != nil
+    func isCached(_ url: URL) -> Bool {
+        Self.lock.withLock {
+            (try? FileManager.default.setAttributes(
+                [.modificationDate: Date()], ofItemAtPath: url.path)) != nil
         }
-        if hit { return url }
+    }
+
+    func cachedFile(at url: URL, orWrite write: (URL) throws -> Void) throws -> URL {
+        if isCached(url) { return url }
+        let fm = FileManager.default
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         // a reader never sees half a file
         let temp = dir.appendingPathComponent("tmp-\(UUID().uuidString).\(url.pathExtension)")

@@ -1029,7 +1029,7 @@ private let someMasks = [
     Mask(id: "b", source: .people, hidden: true),
 ]
 
-@Test func masksRoundTripThroughBothWriters() throws {
+@Test(.enabled(if: Masker.isAvailable)) func masksRoundTripThroughBothWriters() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
     let arw = dir.appendingPathComponent("DSC00010.ARW")
@@ -1054,14 +1054,16 @@ private let someMasks = [
     #expect(XMP.read(file: try image(arw)).rating == 3)
 }
 
-@Test func aMaskANewerBuildWroteSurvivesASaveHere() throws {
+private func masksTag(_ entries: [String]) -> [XMP.TagWrite] {
+    [XMP.TagWrite(.photopipe, "Masks", .scalar("[\(entries.joined(separator: ","))]"))]
+}
+
+@Test(.enabled(if: Masker.isAvailable)) func aMaskANewerBuildWroteSurvivesASaveHere() throws {
     let newer = [
         #"{"id":"sky","source":"sky"}"#,
         #"{"feather":20,"id":"soft","source":"subject"}"#,
+        #"{"id":"spot","points":[{"include":true,"radius":3,"x":0.5,"y":0.5}],"source":"click"}"#,
     ]
-    func tag(_ entries: [String]) -> [XMP.TagWrite] {
-        [XMP.TagWrite(.photopipe, "Masks", .scalar("[\(entries.joined(separator: ","))]"))]
-    }
     func stored(_ url: URL) throws -> String {
         try exiftoolTag("-XMP-photopipe:Masks", of: url)
     }
@@ -1072,7 +1074,7 @@ private let someMasks = [
     let sidecar = XMP.sidecarURL(forImagePath: arw.path)
     let ours = #"{"id":"b","source":"people"}"#
 
-    try XMP.writeText(tag(newer + [ours]), clearing: false, file: try image(arw))
+    try XMP.writeText(masksTag(newer + [ours]), clearing: false, file: try image(arw))
     #expect(XMP.read(file: try image(arw)).edit.masks == [Mask(id: "b", source: .people)])
     try writeTextEdit(Edit(exposure: 1), at: arw)
     #expect(try String(contentsOf: sidecar, encoding: .utf8).contains("feather"))
@@ -1080,28 +1082,119 @@ private let someMasks = [
 
     guard requireExifTool() else { return }
     try XMP.writeEdit(Edit(masks: [Mask(id: "b", source: .people)]), file: try image(arw))
-    #expect(try stored(sidecar) == "[\(([ours] + newer).joined(separator: ","))]")
+    #expect(try stored(sidecar) == "[\((newer + [ours]).joined(separator: ","))]")
     try XMP.writeEdit(.identity, file: try image(arw))
     #expect(try stored(sidecar) == "[\(newer.joined(separator: ","))]")
 
     let jpg = dir.appendingPathComponent("DSC00013.JPG")
     try writeGrayJPEG(to: jpg)
     try ExifTool.shared.write(
-        ["-overwrite_original"] + XMP.exiftoolArgs(tag(newer)) + [jpg.path])
+        ["-overwrite_original"] + XMP.exiftoolArgs(masksTag(newer)) + [jpg.path])
     try XMP.writeEdit(Edit(exposure: 1), file: try image(jpg))
     #expect(try stored(jpg) == "[\(newer.joined(separator: ","))]")
 
     let rated = dir.appendingPathComponent("DSC00014.JPG")
     try writeGrayJPEG(to: rated)
     try ExifTool.shared.write(
-        ["-overwrite_original"] + XMP.exiftoolArgs(tag(newer)) + [rated.path])
+        ["-overwrite_original"] + XMP.exiftoolArgs(masksTag(newer)) + [rated.path])
     try XMP.writeText(XMP.ratingTags(3), clearing: false, file: try image(rated))
     #expect(
         try stored(XMP.sidecarURL(forImagePath: rated.path)) == "[\(newer.joined(separator: ","))]",
         "on iPad a rating is the first write, and it starts a sidecar")
 }
 
-@Test func masksEmbeddedInAJPEGAreRead() throws {
+@Test func masksTooLongForOneJPEGSegmentSurviveASave() throws {
+    guard requireExifTool() else { return }
+    let long = #"{"id":"sky","note":"\#(String(repeating: "n", count: 70_000))","source":"sky"}"#
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    func jpeg(_ name: String) throws -> URL {
+        let jpg = dir.appendingPathComponent(name)
+        try writeGrayJPEG(to: jpg)
+        try ExifTool.shared.write(
+            ["-overwrite_original"] + XMP.exiftoolArgs(masksTag([long])) + [jpg.path])
+        return jpg
+    }
+
+    let edited = try jpeg("DSC00018.JPG")
+    try XMP.writeEdit(Edit(exposure: 1), file: try image(edited))
+    #expect(try exiftoolTag("-XMP-photopipe:Masks", of: edited) == "[\(long)]")
+
+    let rated = try jpeg("DSC00019.JPG")
+    try XMP.writeText(XMP.ratingTags(3), clearing: false, file: try image(rated))
+    #expect(
+        try exiftoolTag("-XMP-photopipe:Masks", of: XMP.sidecarURL(forImagePath: rated.path))
+            == "[\(long)]")
+}
+
+@Test(.enabled(if: Masker.isAvailable)) func aMaskThisBuildCannotReadKeepsItsPlaceAmongTheOthers() throws {
+    let entries = [
+        #"{"id":"kept1","source":"people"}"#, #"{"id":"future","source":"sky"}"#,
+        #"{"id":"kept2","source":"subject"}"#,
+    ]
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00017.ARW")
+    try Data("fake".utf8).write(to: arw)
+    func order() throws -> [String] {
+        let sidecar = try String(contentsOf: XMP.sidecarURL(forImagePath: arw.path), encoding: .utf8)
+        return ["kept1", "future", "kept2"]
+            .compactMap { id in sidecar.range(of: id).map { (id, $0.lowerBound) } }
+            .sorted { $0.1 < $1.1 }.map(\.0)
+    }
+
+    try XMP.writeText(masksTag(entries), clearing: false, file: try image(arw))
+    let shown = XMP.read(file: try image(arw)).edit.masks
+    try writeTextEdit(Edit(exposure: 1, masks: shown), at: arw)
+    #expect(try order() == ["kept1", "future", "kept2"])
+
+    try writeTextEdit(Edit(exposure: 1, masks: Array(shown.dropFirst())), at: arw)
+    #expect(try order() == ["future", "kept2"], "the mask before it is gone, the one after it is not")
+}
+
+@Test func aClickMaskIsShownOnlyWhereItCanBeFoundAndKeptEverywhere() throws {
+    let click = Mask(
+        id: "c", source: .click,
+        points: [Mask.Point(x: 0.5, y: 0.62, include: true), Mask.Point(x: 0.4, y: 0.3, include: false)],
+        adjust: LocalAdjust(exposure: 1))
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00015.ARW")
+    try Data("fake".utf8).write(to: arw)
+
+    try writeTextEdit(Edit(masks: [click]), at: arw)
+    let shown = XMP.read(file: try image(arw)).edit.masks
+    #expect(shown == (Masker.isAvailable ? [click] : []))
+
+    try writeTextEdit(Edit(exposure: 1, masks: shown), at: arw)
+    let sidecar = try String(contentsOf: XMP.sidecarURL(forImagePath: arw.path), encoding: .utf8)
+    #expect(sidecar.contains("0.62"))
+}
+
+@Test func aMaskWithMoreClicksThanItTakesStaysUnreadWhateverItsNeighbours() throws {
+    func click(_ id: String, _ count: Int) -> Mask {
+        Mask(
+            id: id, source: .click,
+            points: Array(repeating: Mask.Point(x: 0.5, y: 0.5, include: true), count: count))
+    }
+    let dir = try tempDir()
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let arw = dir.appendingPathComponent("DSC00016.ARW")
+    try Data("fake".utf8).write(to: arw)
+
+    let full = Mask.clickLimit
+    try writeTextEdit(
+        Edit(masks: [click("first", full), click("crowded", full + 1), click("last", full)]), at: arw)
+    let shown = XMP.read(file: try image(arw)).edit.masks
+    #expect(shown.map(\.id) == (Masker.isAvailable ? ["first", "last"] : []))
+
+    try writeTextEdit(Edit(exposure: 1, masks: Array(shown.dropFirst())), at: arw)
+    #expect(XMP.read(file: try image(arw)).edit.masks.map(\.id) == Array(shown.map(\.id).dropFirst()))
+    let sidecar = try String(contentsOf: XMP.sidecarURL(forImagePath: arw.path), encoding: .utf8)
+    #expect(sidecar.contains("crowded"))
+}
+
+@Test(.enabled(if: Masker.isAvailable)) func masksEmbeddedInAJPEGAreRead() throws {
     guard requireExifTool() else { return }
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
@@ -1112,7 +1205,7 @@ private let someMasks = [
     #expect(XMP.read(file: try image(jpg)).edit.masks == someMasks)
 }
 
-@Test func masksAnotherHandWroteCostNoMoreThanTheirLimit() {
+@Test(.enabled(if: Masker.isAvailable)) func masksAnotherHandWroteCostNoMoreThanTheirLimit() {
     func masks(_ json: String) -> [Mask] {
         parsed(
             """
@@ -1123,6 +1216,9 @@ private let someMasks = [
     }
     #expect(masks("not json").isEmpty)
     #expect(masks(#"[{"id":"a","source":"sky"}]"#).isEmpty, "a source this build cannot find")
+    #expect(
+        masks(#"[{"id":"a","source":"subject","points":[{"x":0.5,"y":0.5,"include":true}]}]"#).isEmpty,
+        "clicks on a mask that has nothing to click")
     #expect(
         masks(#"[-1e400,{"id":"a","source":"people","adjust":{"exposure":-1e400}}]"#).isEmpty,
         "-1e400 reads as -inf, which crashed the reader")

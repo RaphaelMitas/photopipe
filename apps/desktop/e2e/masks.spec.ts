@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { openZell } from "./open-shoot";
+import { openShoot, openZell } from "./open-shoot";
 
 test("a chip becomes a mask that owns the sliders until Photo takes them back", async ({
   page,
@@ -93,4 +93,120 @@ test("a new mask flashes its overlay, and the flash ends by itself", async ({
   await page.getByTestId("mask-invert").press("Enter");
   await expect(overlay).toBeVisible();
   await expect(overlay).toHaveCount(0);
+});
+
+test("a click on the photo becomes a mask, and Shift-click refines it without adding a row", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("thumb").first().click();
+  const photo = page.getByTestId("loupe-image");
+  const preview = page.getByTestId("mask-preview");
+  const rows = page.getByRole("button", { name: "Object", exact: true });
+  await photo.hover();
+  await expect(photo).toBeVisible();
+  await expect(preview).toHaveCount(0);
+
+  await page.keyboard.press("m");
+  await expect(page.getByTestId("mask-field")).toContainText("click the photo");
+  await photo.hover({ position: { x: 200, y: 150 } });
+  await expect(preview).toBeVisible();
+
+  await photo.click({ position: { x: 200, y: 150 } });
+  await expect(rows).toHaveCount(1);
+  await expect(rows).toHaveAttribute("aria-pressed", "true");
+  await expect(preview).toHaveCount(0);
+  await expect(page.getByTestId("mask-overlay")).toBeVisible();
+  await expect(page.getByTestId("mask-field")).toBeVisible();
+  await expect(page.getByTestId("history-undo")).toBeEnabled();
+
+  const overlay = page.getByTestId("mask-overlay");
+  await expect(overlay).toHaveCount(0);
+  await rows.hover();
+  await expect(overlay).toBeVisible();
+
+  await photo.dblclick({ position: { x: 260, y: 150 } });
+  await expect(page.getByTestId("zoom-level")).toHaveCount(0);
+  await expect(rows).toHaveCount(2);
+
+  await photo.hover({ position: { x: 270, y: 150 } });
+  await expect(preview).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("mask-field")).toHaveCount(0);
+  await expect(preview).toHaveCount(0);
+  await photo.click({ position: { x: 300, y: 150 } });
+  await photo.hover({ position: { x: 310, y: 150 } });
+  await expect(preview).toHaveCount(0);
+  const history = page.getByTestId("history-popover").getByRole("button");
+  await page.getByTestId("history-toggle").click();
+  await expect(history).toHaveCount(3);
+  await page.keyboard.press("Escape");
+
+  await page.keyboard.down("Shift");
+  await photo.hover({ position: { x: 320, y: 150 } });
+  await expect(preview).toBeVisible();
+  await photo.click({ position: { x: 320, y: 150 }, modifiers: ["Shift"] });
+  await page.keyboard.up("Shift");
+  await expect(preview).toHaveCount(0);
+  await expect(rows).toHaveCount(2);
+
+  await page.getByTestId("history-toggle").click();
+  await expect(history).toHaveCount(4);
+});
+
+test("with the split on, only the edited half previews and takes a click", async ({
+  page,
+}) => {
+  await openZell(page);
+  await page.getByTestId("thumb").first().click();
+  const photo = page.getByTestId("loupe-image");
+  const preview = page.getByTestId("mask-preview");
+  const rows = page.getByRole("button", { name: "Object", exact: true });
+  await page.keyboard.press("y");
+  await expect(page.getByTestId("loupe-before-image")).toBeVisible();
+  await page.keyboard.press("m");
+  const box = await photo.boundingBox();
+  if (!box) throw new Error("no photo on the stage");
+
+  const before = { x: box.width * 0.25, y: box.height / 2 };
+  const edited = { x: box.width * 0.75, y: box.height / 2 };
+
+  await photo.hover({ position: edited });
+  await expect(preview).toBeVisible();
+  await photo.hover({ position: before });
+  await expect(preview).toHaveCount(0);
+
+  await photo.click({ position: before });
+  await photo.click({ position: edited });
+  await expect(rows).toHaveCount(1);
+});
+
+test("a photo whose masks cannot be cut still shows, and says they are missing", async ({
+  page,
+}) => {
+  await openShoot(page, "2026-07-12_zell", { url: "/?nomodel" });
+  await page.getByTestId("thumb").first().click();
+  await page.keyboard.press("m");
+  await page.getByTestId("mask-chip-subject").click();
+  await expect(page.getByTestId("loupe-unmasked")).toHaveCount(0);
+
+  await page.keyboard.press("ArrowUp");
+  await expect(page.getByTestId("loupe-unmasked")).toHaveText(
+    "Masks not shown",
+  );
+  await expect(page.getByTestId("loupe-image")).toBeVisible();
+
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByTestId("loupe-unmasked")).toHaveCount(0);
+});
+
+test("a system that cannot mask has no Masks group and M opens nothing", async ({
+  page,
+}) => {
+  await openShoot(page, "2026-07-12_zell", { url: "/?nomasks" });
+  await page.getByTestId("thumb").first().click();
+  await expect(page.getByTestId("exposure")).toBeVisible();
+  await page.keyboard.press("m");
+  await expect(page.getByTestId("mask-add")).toHaveCount(0);
+  await expect(page.getByTestId("mask-field")).toHaveCount(0);
 });

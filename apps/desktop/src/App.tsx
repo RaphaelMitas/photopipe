@@ -50,7 +50,7 @@ import {
   identityEdit,
   isIdentityEdit,
 } from "@/lib/core";
-import { type EditClipboard, pasteEdit } from "@/lib/editClipboard";
+import { type EditClipboard, pasteEdit, travels } from "@/lib/editClipboard";
 import { useFeatures } from "@/lib/features";
 import { fileName } from "@/lib/fileName";
 import {
@@ -70,6 +70,7 @@ import { flagPref } from "@/lib/pref";
 import {
   cachedImage,
   jobStatus,
+  useCanMask,
   useEnriched,
   useExportJobs,
   useImages,
@@ -496,6 +497,7 @@ export default function App() {
   const crop = useCropSession(loupePhoto, loupeEdit, changeEdit);
   const cropping = crop.draft !== null;
   const masks = useMaskSession(loupePhoto, loupeEdit, changeEdit, editOpen);
+  const canMask = useCanMask();
 
   // a filtered-out photo is not in the browser, so land on the nearest one that is
   const focusPath = useMemo(() => {
@@ -519,10 +521,9 @@ export default function App() {
       if (!readable(image)) return;
       const edit = editOf(image);
       setClipboard({ path: image.path, edit, raw: image.isRaw });
+      const carried = edit.masks.filter(travels).length;
       const what =
-        edit.masks.length > 0
-          ? `settings and ${pluralize(edit.masks.length, "mask")}`
-          : "settings";
+        carried > 0 ? `settings and ${pluralize(carried, "mask")}` : "settings";
       toast(`Copied ${what} from ${fileName(image.path)}`, {
         id: "clipboard",
       });
@@ -683,6 +684,7 @@ export default function App() {
     "export.open": () => (openShoot ? openExport() : false),
     "editPanel.toggle": editPanelPref.toggle,
     "mask.add": () => {
+      if (!canMask) return false;
       editPanelPref.set(true);
       editGroupPref("masks").set(true);
       masks.toggleField();

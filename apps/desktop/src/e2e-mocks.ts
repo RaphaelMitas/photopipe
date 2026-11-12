@@ -335,6 +335,9 @@ type CoreHandlers = {
   ) => CoreMethods[K]["result"];
 };
 
+const OPAQUE_PIXEL_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGP4DwABAQEAsTj2FAAAAABJRU5ErkJggg==";
+
 const E2E_HANDLERS: CoreHandlers = {
   listShoots: () => ({
     shoots: shoots.map((shoot) => ({ ...shoot, indexed: !indexing })),
@@ -358,13 +361,26 @@ const E2E_HANDLERS: CoreHandlers = {
   maskOverlay: ({ path, source, inverted }) => ({
     cachePath: `/fake/masks/${source}-${inverted}/${path}.png`,
   }),
+  maskAt: ({ x, y, include }) => ({
+    png: OPAQUE_PIXEL_PNG,
+    point: { x, y, include },
+  }),
+  maskSupport: () => ({
+    clicks: location.search.includes("nomasks") ? 0 : 16,
+  }),
   render: ({ path, edit, viewport }) => {
+    const unmasked =
+      location.search.includes("nomodel") &&
+      edit.masks.some((mask) => mask.adjust.exposure !== 0);
     const real = storeSrc(path, editKey(edit) !== editKey(identityEdit));
-    if (real) return { cachePath: real };
+    if (real) return { cachePath: real, unmasked };
     const region = viewport
       ? `@${viewport.left},${viewport.top},${viewport.right},${viewport.bottom}`
       : "";
-    return { cachePath: `/fake/renders/${editKey(edit)}${region}/${path}.jpg` };
+    return {
+      cachePath: `/fake/renders/${editKey(edit)}${region}/${path}.jpg`,
+      unmasked,
+    };
   },
   setRating: (params) => {
     const target = allImages().find((entry) => entry.path === params.path);

@@ -22,15 +22,51 @@ Stack, testing strategy, CI and releases.
   the one inside a CR3. A raw other than a DNG gets Lightroom's
   `DSC0001.xmp`; anything else keeps its extension
   (`DSC0001.HEIC.photopipe.xmp`), and from then on the Mac uses it too.
-- **Masks** come from Vision: person segmentation for People, foreground
-  instances for Subject, and Background is Subject inverted. The edit carries
-  each mask's definition and sliders as one JSON value in
-  `photopipe:Masks`, a namespace exiftool only writes because the core starts
-  it with a config that declares it. The matte is a PNG in the rebuildable
-  cache, one per photo and source, found on the unedited photo so every edit
-  of it shares one. The reader keeps every entry it cannot decode, and a mask
-  with a key it does not know, as raw JSON, and the writer puts them back: an
-  older build must never delete a newer build's mask.
+- **Masks** are all cut by one model, Vision's tap to segment
+  (`GenerateIterativeSegmentationRequest`), because it draws the best
+  outline. It has to be told where to look, so a chip asks an older Vision
+  model first. Subject takes the foreground instances and clicks for itself:
+  the deepest spot of that mask, then the deepest spot the answer still
+  misses, until little is missed or eight clicks are spent. People takes the
+  person segmentation inside each detected body's box as a scribble, one
+  answer a person, since a box or a point drops a dancer when two overlap;
+  what the person segmentation has outside every box goes in as one more
+  scribble, and the answers are joined. Background is Subject inverted. A
+  click mask replays its stored points. The edit carries each mask's
+  definition and sliders as one JSON value in `photopipe:Masks`, a namespace
+  exiftool only writes because the core starts it with a config that
+  declares it. The matte is a PNG in the rebuildable cache, one per photo
+  and source, and per list of clicks for a click mask, found on the unedited
+  photo so every edit of it shares one, on a copy brightened toward middle
+  grey, by at most four stops, because the models miss edges on a dark
+  frame. Cuts run one at a time and look in the cache first, so a render
+  and a mask row that want the same matte cut it once. Mattes and renders
+  are keyed by a stamp of the photo's pixels, and a write of our own into a
+  file that embeds its XMP carries the old stamp over to the new mtime and
+  size, for the session, so a slider release does not cut every matte
+  again. A mask that is hidden or has no adjustment draws nothing and is
+  left out of the render's key. Before the loupe renders a photo with
+  masks, the core asks whether the model is there, starts the fetch if not
+  and waits a second for it at most, since a new process calls a model on
+  disk missing until one request has fetched it. Without the model, or when
+  the cut throws, `render` answers the photo without masks and
+  `unmasked: true`; the export calls the model itself and throws. Every
+  click is a pass of the model, so a mask takes 16 and a
+  sidecar's mask with more stays unread. The request only exists in the 27
+  SDK, so the call sits behind `#if compiler(>=6.4)` and `#available`: an
+  older toolchain or system gets a core without masks, `maskSupport` answers
+  zero clicks, the UI drops the Masks group, and every mask in a sidecar is
+  an unread entry. The index rebuilds its file rows when the core gains or
+  loses masking, since the same sidecar reads differently on each. The hover
+  preview goes through `maskAt`, which answers with the overlay as bytes and
+  never touches the cache. The reader keeps every entry it cannot decode, and a
+  mask with a key it does not know, as raw JSON, and the writer puts them
+  back behind the masks the file had before them, since masks render in
+  order: an older build must never delete or move a newer build's mask.
+  Whether an entry is read depends on that entry alone, never on its
+  neighbours: the writer works the unread ones out again from the file, so a
+  mask that turned readable when another was deleted would be in neither the
+  edit nor the kept entries, and the save would drop it.
 - **Formats** come from ImageIO at runtime: every extension whose type it
   reads and calls a camera raw, plus JPEG, PNG, TIFF, HEIC/HEIF, AVIF, JPEG XL
   and WebP. A camera a new OS learns needs no release.
@@ -71,7 +107,7 @@ A method name and JSON params in, the result as JSON or the error as
 and waits on a blocking thread until it fires, exactly once, or for 10 s
 (120 s for `setRoot` and `rescan`) and fails the request. A timed-out request keeps running
 and its late answer is dropped; a walk that finishes after a newer `setRoot`
-does not install its root. Renders and thumbnails go through newest-first
+does not install its root. Renders, thumbnails and mask requests go through newest-first
 lanes, `setRoot` and `rescan` get a thread of their own so a walk of a hung
 volume cannot hold a slot, and everything else runs on a bounded queue. Quitting waits up to
 three seconds for running work and then exits regardless; an exit hook stops

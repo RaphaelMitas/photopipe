@@ -57,6 +57,8 @@ const noMasks: MaskSession = {
   hoverChip: vi.fn(),
   hoverRow: vi.fn(),
   add: vi.fn(),
+  click: vi.fn(),
+  refine: vi.fn(),
   select: vi.fn(),
   toggleHidden: vi.fn(),
   invert: vi.fn(),

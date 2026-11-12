@@ -37,6 +37,7 @@ import {
 } from "@/lib/editSliders";
 import { flagPref } from "@/lib/pref";
 import {
+  useCanMask,
   useDeferredEdit,
   useRaw9Availability,
   useRawDefaults,
@@ -223,20 +224,25 @@ export function EditPanel({ image, edit, onChange, crop, masks }: Props) {
     : (edit.tint ?? (raw ? asShotTint : 0));
   const denoise = edit.denoise ?? rawDefaults.data?.denoise ?? 0;
   const whileCropping = crop.draft && "pointer-events-none opacity-40";
+  const canMask = useCanMask();
 
   return (
     <div className="flex flex-col gap-3">
-      <div className={cn(whileCropping)}>
-        <Group
-          id="masks"
-          title="Masks"
-          badge={edit.masks.length || null}
-          onToggle={masks.cancel}
-        >
-          <MaskList image={image} edit={edit} masks={masks} />
-        </Group>
-      </div>
-      <Separator />
+      {canMask && (
+        <>
+          <div className={cn(whileCropping)}>
+            <Group
+              id="masks"
+              title="Masks"
+              badge={edit.masks.length || null}
+              onToggle={masks.cancel}
+            >
+              <MaskList image={image} edit={edit} masks={masks} />
+            </Group>
+          </div>
+          <Separator />
+        </>
+      )}
       {!target && (
         <>
           {crop.draft ? (
@@ -279,7 +285,7 @@ export function EditPanel({ image, edit, onChange, crop, masks }: Props) {
           {!target && (
             <CurveEditor
               edit={edit}
-              imageSrc={render.data}
+              imageSrc={render.data?.cachePath}
               photo={image.path}
               onChange={set}
             />

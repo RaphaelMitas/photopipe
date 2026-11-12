@@ -17,9 +17,9 @@ import type { MaskSession } from "@/lib/useMaskSession";
 import { ShortcutTooltip } from "./ShortcutTooltip";
 
 const CHIPS: MaskShape[] = [
-  { source: "subject", inverted: false },
-  { source: "people", inverted: false },
-  { source: "subject", inverted: true },
+  { source: "subject", inverted: false, points: [] },
+  { source: "people", inverted: false, points: [] },
+  { source: "subject", inverted: true, points: [] },
 ];
 
 const reveal = (field: HTMLElement | null) =>
@@ -75,7 +75,7 @@ export function MaskList({ image, edit, masks }: Props) {
             ))}
           </div>
           <p className="flex items-center text-2xs text-muted-foreground">
-            Pick what to mask
+            Pick one, or click the photo
             <button
               type="button"
               aria-label="Cancel"

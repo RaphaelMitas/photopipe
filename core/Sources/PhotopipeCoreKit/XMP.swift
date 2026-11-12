@@ -79,36 +79,50 @@ public enum XMP {
         var hasCrop: Bool? { text("HasCrop").map { $0.lowercased() == "true" } }
     }
 
-    // a sidecar is anyone's to write, and every mask costs a render pass
+    // a sidecar is anyone's to write, and each mask can cost a cut by the model
     static let maskLimit = 32
+
+    private struct UnreadMask {
+        let json: String
+        let follows: [String]
+    }
 
     // a key from a newer build would be dropped when the mask is written back
     private static func hasOnlyKnownKeys(_ entry: Any) -> Bool {
         guard let entry = entry as? [String: Any] else { return false }
         let adjust = entry["adjust"] as? [String: Any] ?? [:]
+        let points = entry["points"] as? [[String: Any]] ?? []
         return entry.keys.allSatisfy { Mask.CodingKeys(stringValue: $0) != nil }
             && adjust.keys.allSatisfy { LocalAdjust.CodingKeys(stringValue: $0) != nil }
+            && points.allSatisfy { point in
+                point.keys.allSatisfy { Mask.Point.CodingKeys(stringValue: $0) != nil }
+            }
     }
 
-    // an entry this build cannot read is a newer build's mask, kept as written for the next save
-    private static func masks(fromJSON text: String?) -> (read: [Mask], unread: [String]) {
+    // an entry this build or OS cannot read is kept for the next save
+    private static func masks(fromJSON text: String?) -> (read: [Mask], unread: [UnreadMask]) {
         guard let text,
             let entries = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [Any]
         else { return ([], []) }
         var read: [Mask] = []
-        var unread: [String] = []
+        var unread: [UnreadMask] = []
         for entry in entries.prefix(maskLimit) {
             // a number too large for a Double reads as infinity, and writing that raises past try?
             guard JSONSerialization.isValidJSONObject([entry]),
                 let json = try? JSONSerialization.data(
                     withJSONObject: entry, options: [.sortedKeys, .fragmentsAllowed])
             else { continue }
-            guard hasOnlyKnownKeys(entry), let mask = try? JSONDecoder().decode(Mask.self, from: json)
+            guard hasOnlyKnownKeys(entry),
+                let mask = try? JSONDecoder().decode(Mask.self, from: json),
+                Masker.isAvailable,
+                mask.points.count <= (mask.source == .click ? Mask.clickLimit : 0)
             else {
-                unread.append(String(decoding: json, as: UTF8.self))
+                unread.append(
+                    UnreadMask(json: String(decoding: json, as: UTF8.self), follows: read.map(\.id)))
                 continue
             }
-            if !read.contains(where: { $0.id == mask.id }) { read.append(mask) }
+            guard !read.contains(where: { $0.id == mask.id }) else { continue }
+            read.append(mask)
         }
         return (read, unread)
     }
@@ -291,18 +305,28 @@ public enum XMP {
         return nil
     }
 
+    private static func metadata(at url: URL) -> CGImageMetadata? {
+        CGImageSourceCreateWithURL(url as CFURL, nil).flatMap {
+            CGImageSourceCopyMetadataAtIndex($0, 0, nil)
+        }
+    }
+
+    // not embeddedXMPProperties: a JPEG's long XMP spills into extended segments it does not follow
+    private static func embeddedMasks(in metadata: CGImageMetadata?) -> String? {
+        metadata.flatMap {
+            CGImageMetadataCopyStringValueWithPath($0, nil, "photopipe:Masks" as CFString) as String?
+        }
+    }
+
     static func embedded(_ file: ImageFile) -> Judgment {
         let url = URL(fileURLWithPath: file.path)
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-            let metadata = CGImageSourceCopyMetadataAtIndex(source, 0, nil)
-        else { return (nil, nil, .identity) }
+        guard let metadata = metadata(at: url) else { return (nil, nil, .identity) }
         let rating = validRating(
             CGImageMetadataCopyStringValueWithPath(metadata, nil, "xmp:Rating" as CFString)
                 as String?)
         // a sidecar-only raw is never written into, so its XMP holds just what the camera put there
         guard !file.sidecarOnly else { return (rating, nil, .identity) }
         var pick: Int?
-        var masks: String?
         var texts: [String: String] = [:]
         var curves: [String: [CurvePoint]] = [:]
         CGImageMetadataEnumerateTagsUsingBlock(metadata, nil, nil) { _, tag in
@@ -311,9 +335,6 @@ public enum XMP {
             let value = CGImageMetadataTagCopyValue(tag)
             if namespace == TagWrite.Namespace.xmpDM.uri && name == "pick" {
                 pick = validFlag(value as? String)
-            }
-            if namespace == TagWrite.Namespace.photopipe.uri && name == "Masks" {
-                masks = value as? String
             }
             guard namespace == TagWrite.Namespace.crs.uri else { return true }
             if name.hasPrefix("ToneCurvePV2012") {
@@ -335,7 +356,7 @@ public enum XMP {
             rotation: rotation(
                 fromXMP: embeddedXMPOrientation(at: url),
                 base: baseOrientation(at: url) ?? 1),
-            masks: masks)
+            masks: embeddedMasks(in: metadata))
         return (rating, pick, edit)
     }
 
@@ -551,16 +572,22 @@ public enum XMP {
         curve("ToneCurvePV2012Blue", edit.curveBlue)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        let unread = unreadMasks(in: written)
-        let known = try edit.masks.prefix(maskLimit - unread.count).map {
-            try String(decoding: encoder.encode($0), as: UTF8.self)
+        let unread = masks(
+            fromJSON: inSidecar
+                ? written?.value(.photopipe, "Masks") : embeddedMasks(in: metadata(at: fileURL))
+        ).unread
+        let known = edit.masks.prefix(maskLimit - unread.count)
+        // masks render in order, so an unread one goes back behind the masks the file had before it
+        let behind = Dictionary(grouping: unread) { entry in
+            known.lastIndex(where: { entry.follows.contains($0.id) }) ?? -1
         }
-        tags.append(masksTag(known + unread))
+        var entries = behind[-1, default: []].map(\.json)
+        for (index, mask) in known.enumerated() {
+            try entries.append(String(decoding: encoder.encode(mask), as: UTF8.self))
+            entries += behind[index, default: []].map(\.json)
+        }
+        tags.append(masksTag(entries))
         return (tags, exifOrientationPin)
-    }
-
-    private static func unreadMasks(in written: XMPProperties?) -> [String] {
-        masks(fromJSON: written?.value(.photopipe, "Masks")).unread
     }
 
     private static func masksTag(_ entries: [String]) -> TagWrite {
@@ -602,14 +629,15 @@ public enum XMP {
     /// with the rating, flag and edit the file carried.
     static func embeddedTags(_ file: ImageFile) throws -> [TagWrite] {
         let (rating, flag, edit) = embedded(file)
-        // a mask only a newer build can read leaves the edit an identity, and still moves to the sidecar
+        // a mask this build or OS cannot read is not in edit, so the identity check alone would drop it
         let unread =
             file.sidecarOnly
-            ? [] : unreadMasks(in: embeddedXMPProperties(at: URL(fileURLWithPath: file.path)))
+            ? [] : masks(fromJSON: embeddedMasks(in: metadata(at: URL(fileURLWithPath: file.path)))).unread
         guard (rating ?? 0) != 0 || (flag ?? 0) != 0 || !edit.isIdentity || !unread.isEmpty
         else { return [] }
         // an untouched raw would otherwise start its sidecar with a WhiteBalance nobody set
-        let carriedEdit = try edit.isIdentity ? [masksTag(unread)] : editTags(edit, file: file).tags
+        let carriedEdit =
+            try edit.isIdentity ? [masksTag(unread.map(\.json))] : editTags(edit, file: file).tags
         return ratingTags(rating ?? 0) + flagTags(flag ?? 0) + carriedEdit
     }
 }

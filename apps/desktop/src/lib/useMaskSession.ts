@@ -5,6 +5,7 @@ import {
   identityAdjust,
   type LocalAdjust,
   type Mask,
+  type MaskPoint,
   type MaskShape,
 } from "./core";
 
@@ -59,27 +60,41 @@ export function useMaskSession(
       ),
     );
 
-  const held = byId(current?.row) ?? (overlay ? target : null);
-  const shown: MaskShape | null = creating
-    ? (current?.chip ?? null)
-    : (held ?? byId(flash));
+  const append = (shape: MaskShape) => {
+    const id = crypto.randomUUID().slice(0, 8);
+    write([
+      ...edit.masks,
+      { ...shape, id, hidden: false, adjust: identityAdjust },
+    ]);
+    return id;
+  };
+
+  const held: MaskShape | null =
+    (creating ? current?.chip : null) ??
+    byId(current?.row) ??
+    (overlay ? target : null);
 
   return {
     target,
     creating,
-    shown,
-    fading: !creating && held === null,
+    shown: held ?? byId(flash),
+    fading: held === null,
     toggleField: () => patch({ creating: !creating, chip: null }),
     cancel: () => patch({ creating: false, chip: null }),
-    hoverChip: (chip: MaskShape | null) => patch({ chip }),
+    hoverChip: (chip: MaskShape | null) => patch({ chip, flash: null }),
     hoverRow: (row: string | null) => patch({ row, flash: null }),
     add: (shape: MaskShape) => {
-      const id = crypto.randomUUID().slice(0, 8);
-      write([
-        ...edit.masks,
-        { ...shape, id, hidden: false, adjust: identityAdjust },
-      ]);
+      const id = append(shape);
       patch({ target: id, creating: false, chip: null, flash: id });
+    },
+    // the field stays open, so the next click on the photo starts another mask
+    click: (point: MaskPoint) => {
+      const id = append({ source: "click", inverted: false, points: [point] });
+      patch({ target: id, flash: id });
+    },
+    refine: (mask: Mask, point: MaskPoint) => {
+      change(mask.id, { points: [...mask.points, point] });
+      patch({ flash: mask.id });
     },
     select: (id: string | null) =>
       patch({ target: id, creating: false, chip: null, flash: id }),

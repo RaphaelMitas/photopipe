@@ -111,6 +111,7 @@ describe("pasteEdit", () => {
     const mask: Mask = {
       id: "a1b2c3d4",
       source: "subject",
+      points: [],
       inverted: true,
       hidden: false,
       adjust: { ...identityAdjust, exposure: -0.5, temperature: 20, tint: -5 },
@@ -127,6 +128,34 @@ describe("pasteEdit", () => {
     );
 
     expect(pasted.masks).toEqual([mask]);
+  });
+
+  const click = (id: string): Mask => ({
+    id,
+    source: "click",
+    points: [{ x: 0.5, y: 0.5, include: true }],
+    inverted: false,
+    hidden: false,
+    adjust: identityAdjust,
+  });
+  const chip: Mask = { ...click("chip"), source: "people", points: [] };
+
+  it("changes nothing when pasted back onto its own photo", () => {
+    const edit: Edit = { ...source, masks: [click("own"), chip] };
+
+    const pasted = pasteEdit(edit, { ...clipboard, edit }, true);
+
+    expect(pasted.masks).toEqual(edit.masks);
+  });
+
+  it("leaves a click mask on the photo it was clicked on", () => {
+    const pasted = pasteEdit(
+      { ...identityEdit, masks: [click("own")] },
+      { ...clipboard, edit: { ...source, masks: [click("theirs"), chip] } },
+      true,
+    );
+
+    expect(pasted.masks).toEqual([chip, click("own")]);
   });
 
   it("carries white balance between two non-raw photos", () => {

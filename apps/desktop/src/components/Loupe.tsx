@@ -7,6 +7,7 @@ import {
   type Flag,
   fileSrc,
   type ImageFile,
+  shapeKey,
   unedited,
 } from "@/lib/core";
 import {
@@ -39,10 +40,12 @@ import {
 } from "@/lib/shortcuts";
 import { type Stack, stackRatingLabel, step, sweepStack } from "@/lib/stacks";
 import type { CropSession } from "@/lib/useCropSession";
+import { useMaskPick } from "@/lib/useMaskPick";
 import type { MaskSession } from "@/lib/useMaskSession";
 import {
   centerOn,
   clampPan,
+  photoFractionAt,
   viewportKey,
   viewportRequest,
   visibleRect,
@@ -146,6 +149,7 @@ export function Loupe({
   );
   // Queries fetch in call order and an idle lane usually starts on the first, so the edit asks first.
   const render = useRender(image, previewEdit);
+  const unmasked = render.data?.unmasked ?? false;
   const beforeEdit = useMemo(() => unedited(deferredEdit), [deferredEdit]);
   const before = useRender(comparing ? image : undefined, beforeEdit);
   const thumb = useThumbnail(image);
@@ -208,6 +212,18 @@ export function Loupe({
     enabled: !cropping && !!image,
     resetKey: zoomKey,
   });
+  const [divider, setDivider] = useState(0.5);
+  const pick = useMaskPick(image, edit, masks, (cursor) => {
+    const node = stageRef.current;
+    if (!node || cropping || photoBox.width <= 0) return null;
+    const at = cursorIn(node, cursor);
+    // the before half covers the preview, and a click there would mask unseen
+    if (comparing && at.x < divider * node.clientWidth) return null;
+    const spot = photoFractionAt(zoom.state, at, photoBox);
+    const onPhoto =
+      Math.min(spot.x, spot.y) >= 0 && Math.max(spot.x, spot.y) <= 1;
+    return onPhoto ? spot : null;
+  });
   const wanted = useMemo(() => {
     const request = viewportRequest(
       zoom.state,
@@ -234,7 +250,6 @@ export function Loupe({
     current,
   ).data;
   const sharpening = wanted !== null && (!sharp || (comparing && !sharpBefore));
-  const [divider, setDivider] = useState(0.5);
 
   // Key repeat outruns re-rendering, so a nudge composes on the ref instead of
   // the draft this handler closed over.
@@ -327,7 +342,7 @@ export function Loupe({
   // in — the overlay and CSS rotation would not line up with it. Fall back to
   // the (uncropped) thumbnail until the full-frame render lands.
   const freshRender =
-    cropping && render.isPlaceholderData ? undefined : render.data;
+    cropping && render.isPlaceholderData ? undefined : render.data?.cachePath;
   // The slice sits outside the zoom transform, laid out at its own on-screen
   // size, so it is never a scaled-up copy of the fitted render.
   const sliceRect = zoom.state
@@ -336,6 +351,24 @@ export function Loupe({
   const zoomTransform = zoom.state
     ? `translate(${zoom.state.tx}px, ${zoom.state.ty}px) scale(${zoom.state.scale})`
     : undefined;
+  const overlays = [
+    maskOverlay && masks.shown
+      ? {
+          key: `${shapeKey(masks.shown)}|${masks.fading}`,
+          testid: "mask-overlay",
+          look: cn("bg-mask/50", masks.fading && "animate-mask-flash"),
+          src: fileSrc(maskOverlay),
+        }
+      : null,
+    pick.preview
+      ? {
+          key: "preview",
+          testid: "mask-preview",
+          look: "bg-mask-pick/50",
+          src: `data:image/png;base64,${pick.preview}`,
+        }
+      : null,
+  ].filter((overlay) => overlay !== null);
   const ratio = cropDraft
     ? aspectRatioFor(
         cropDraft.aspect,
@@ -366,10 +399,22 @@ export function Loupe({
                   draftWithAngle(cropDraft, 0, displayWidth, displayHeight),
                 ),
             }
-          : zoom.stageProps)}
+          : {
+              ...zoom.stageProps,
+              onClick: pick.onClick,
+              onDoubleClick: (event: React.MouseEvent) => {
+                if (!pick.claims(event)) zoom.stageProps.onDoubleClick(event);
+              },
+              style: {
+                cursor: pick.crosshair
+                  ? "crosshair"
+                  : zoom.stageProps.style.cursor,
+              },
+            })}
       >
         <div
           className="absolute inset-0"
+          {...pick.photoProps}
           style={{
             transformOrigin: photoCenter
               ? `${photoCenter.x}px ${photoCenter.y}px`
@@ -407,28 +452,27 @@ export function Loupe({
           rect={sliceRect}
           alt={image.rel}
         />
-        {maskOverlay && masks.shown && (
+        {overlays.length > 0 && (
           <div
             className="pointer-events-none absolute inset-0"
             style={{ transformOrigin: "0 0", transform: zoomTransform }}
           >
-            <div
-              key={`${masks.shown.source}|${masks.shown.inverted}|${masks.fading}`}
-              data-testid="mask-overlay"
-              onAnimationEnd={masks.endFlash}
-              className={cn(
-                "mask-no-repeat absolute bg-mask/50",
-                masks.fading && "animate-mask-flash",
-              )}
-              style={{
-                left: photoBox.x,
-                top: photoBox.y,
-                width: photoBox.width,
-                height: photoBox.height,
-                maskImage: `url("${fileSrc(maskOverlay)}")`,
-                maskSize: "100% 100%",
-              }}
-            />
+            {overlays.map((overlay) => (
+              <div
+                key={overlay.key}
+                data-testid={overlay.testid}
+                onAnimationEnd={masks.endFlash}
+                className={cn("mask-no-repeat absolute", overlay.look)}
+                style={{
+                  left: photoBox.x,
+                  top: photoBox.y,
+                  width: photoBox.width,
+                  height: photoBox.height,
+                  maskImage: `url("${overlay.src}")`,
+                  maskSize: "100% 100%",
+                }}
+              />
+            ))}
           </div>
         )}
         {comparing && (
@@ -445,7 +489,7 @@ export function Loupe({
                 {before.data && (
                   <img
                     data-testid="loupe-before-image"
-                    src={fileSrc(before.data)}
+                    src={fileSrc(before.data.cachePath)}
                     alt={image.rel}
                     draggable={false}
                     className="h-full w-full object-contain select-none"
@@ -498,7 +542,7 @@ export function Loupe({
               // The preview render has the crop and turn baked in, so it maps
               // onto the navigator box without any stretch arithmetic.
               <Navigator
-                src={fileSrc(render.data)}
+                src={fileSrc(render.data.cachePath)}
                 pixelWidth={pixelWidth}
                 pixelHeight={pixelHeight}
                 visible={visibleRect(
@@ -512,6 +556,14 @@ export function Loupe({
             )}
           </>
         )}
+        {unmasked && (
+          <div
+            data-testid="loupe-unmasked"
+            className={`${CHIP} pointer-events-none absolute right-3 bottom-3`}
+          >
+            Masks not shown
+          </div>
+        )}
         {multiFrame && !cropping && (
           <StackOverlay
             stacks={stacks}
@@ -524,6 +576,7 @@ export function Loupe({
         )}
         {(render.isFetching ||
           !render.data ||
+          pick.busy ||
           (comparing && (before.isFetching || !before.data))) && (
           <div className="absolute top-3 right-3 h-2 w-2 animate-pulse rounded-full bg-primary" />
         )}

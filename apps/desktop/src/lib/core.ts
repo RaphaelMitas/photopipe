@@ -25,9 +25,16 @@ const ADJUST_KEYS = [
 // every slider is relative, temperature and tint included, on raws too
 export type LocalAdjust = Record<(typeof ADJUST_KEYS)[number], number>;
 
-export type MaskSource = "subject" | "people";
+export type MaskSource = "subject" | "people" | "click";
 
-export type MaskShape = { source: MaskSource; inverted: boolean };
+// on the uncropped photo, in fractions from its top left
+export type MaskPoint = { x: number; y: number; include: boolean };
+
+export type MaskShape = {
+  source: MaskSource;
+  inverted: boolean;
+  points: MaskPoint[];
+};
 
 export type Mask = MaskShape & {
   id: string;
@@ -49,7 +56,8 @@ export const identityAdjust: LocalAdjust = Object.freeze({
 
 export function maskName({ source, inverted }: MaskShape): string {
   if (source === "subject") return inverted ? "Background" : "Subject";
-  return inverted ? "Not people" : "People";
+  if (source === "people") return inverted ? "Not people" : "People";
+  return inverted ? "Not object" : "Object";
 }
 
 // Mirrors core Edit.swift, which documents the units. The core omits null
@@ -119,6 +127,12 @@ export function isIdentityEdit(edit: Edit): boolean {
   return editKey(edit) === editKey(identityEdit);
 }
 
+const pointsKey = (points: MaskPoint[]) =>
+  points.map((point) => `${point.x}:${point.y}:${point.include}`).join("/");
+
+export const shapeKey = ({ source, inverted, points }: MaskShape) =>
+  `${source}|${inverted}|${pointsKey(points)}`;
+
 // Stable string for react-query keys and mock cache paths.
 export function editKey(edit: Edit): string {
   const curve = (points: CurvePoint[]) =>
@@ -129,8 +143,7 @@ export function editKey(edit: Edit): string {
   const mask = (entry: Mask) =>
     [
       entry.id,
-      entry.source,
-      entry.inverted,
+      shapeKey(entry),
       entry.hidden,
       ...ADJUST_KEYS.map((key) => entry.adjust[key]),
     ].join(",");
@@ -204,6 +217,7 @@ type WireImage = Omit<ImageFile, "score" | "captured" | "stack" | "edit"> & {
 };
 
 type WireMask = Pick<Mask, "id" | "source"> & {
+  points?: MaskPoint[];
   inverted?: boolean;
   hidden?: boolean;
   adjust?: Partial<LocalAdjust>;
@@ -219,6 +233,7 @@ export function normalizeEdit({ masks = [], ...edit }: WireEdit): Edit {
     ...edit,
     masks: masks.map((mask) => ({
       ...mask,
+      points: mask.points ?? [],
       inverted: mask.inverted ?? false,
       hidden: mask.hidden ?? false,
       adjust: { ...identityAdjust, ...mask.adjust },
@@ -310,12 +325,24 @@ export type CoreMethods = {
       viewport?: CropRect;
       decoderVersion?: number;
     };
-    result: CachePath;
+    // unmasked: the masks could not be cut, and the photo was drawn without any
+    result: CachePath & { unmasked: boolean };
   };
   maskOverlay: {
     params: MaskShape & { path: string; edit: Edit; maxPixel: number };
     result: CachePath;
   };
+  maskAt: {
+    params: MaskPoint & {
+      path: string;
+      edit: Edit;
+      points: MaskPoint[];
+      inverted: boolean;
+      maxPixel: number;
+    };
+    result: { png: string; point: MaskPoint };
+  };
+  maskSupport: { params: undefined; result: { clicks: number } };
   rawDefaults: {
     params: { path: string; decoderVersion: number };
     result: {
