@@ -6,7 +6,7 @@ public typealias Scorer = Analyzer<Double>
 
 extension Analyzer where Value == Double {
     public convenience init() {
-        self.init(version: 1, concurrency: 6, analyze: Self.score)
+        self.init(version: 1, concurrency: 6) { await Self.score(path: $0.path) }
     }
 
     static func score(path: String) async -> Double? {

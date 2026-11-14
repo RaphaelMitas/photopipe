@@ -282,12 +282,7 @@ public final class SQLiteIndex: @unchecked Sendable {
             "INSERT OR REPLACE INTO faces (path, faces, mtime, size, version) VALUES (?,?,?,?,?)",
             rows
         ) { statement, faces in
-            if let faces, let json = try? encoder.encode(faces) {
-                sqlite3_bind_text(
-                    statement, 2, String(decoding: json, as: UTF8.self), -1, transientDestructor)
-            } else {
-                sqlite3_bind_null(statement, 2)
-            }
+            try bindJSON(statement, 2, faces, unless: nil)
         }
     }
 
@@ -353,7 +348,7 @@ public final class SQLiteIndex: @unchecked Sendable {
     /// whatever sits between.
     private func saveRows<Value>(
         _ sql: String, _ rows: [(String, AnalysisRow<Value>)],
-        bind: (OpaquePointer?, Value?) -> Void
+        bind: (OpaquePointer?, Value?) throws -> Void
     ) throws {
         guard !rows.isEmpty else { return }
         try write {
@@ -362,7 +357,7 @@ public final class SQLiteIndex: @unchecked Sendable {
                 for (path, row) in rows {
                     sqlite3_reset(statement)
                     sqlite3_bind_text(statement, 1, path, -1, transientDestructor)
-                    bind(statement, row.value)
+                    try bind(statement, row.value)
                     sqlite3_bind_double(statement, last - 2, row.mtime)
                     sqlite3_bind_int64(statement, last - 1, row.size)
                     sqlite3_bind_int64(statement, last, Int64(row.version))

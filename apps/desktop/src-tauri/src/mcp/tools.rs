@@ -80,7 +80,7 @@ fn catalog() -> Vec<Tool> {
             name: "faces",
             see: See::Details,
             act: Act::Off,
-            description: "Faces Photopipe finds in photos, read on this Mac: where each face is (fractions of the photo as shot, from the top left), Vision's face capture quality (0 to 1: sharpness, light, expression and pose together) and a sharpness number that only compares between frames of the same scene, higher is sharper. The four biggest faces per photo. Found once and remembered.",
+            description: "Faces Photopipe finds in photos, read on this Mac: where each face is (fractions of the photo as shot, from the top left), Vision's face capture quality (0 to 1: sharpness, light, expression and pose together) and a sharpness number that only compares between frames of the same scene, higher is sharper. The four biggest faces per photo. Found once and remembered. Photos not done within a minute and a half come back pending; ask again later.",
             input: || {
                 json!({
                     "type": "object",
@@ -571,9 +571,12 @@ fn per_photo(method: &str, args: &Value, each: fn(&Value) -> Value) -> Result<Co
 }
 
 fn faces(args: &Value, _: &Bridge) -> Result<Content, String> {
-    per_photo("faces", args, |photo| match &photo["faces"] {
-        Value::Null => json!({ "unreadable": true }),
-        faces => json!({ "faces": faces }),
+    per_photo("faces", args, |photo| {
+        match (&photo["faces"], photo["done"].as_bool()) {
+            (_, Some(false)) => json!({ "pending": true }),
+            (Value::Null, _) => json!({ "unreadable": true }),
+            (faces, _) => json!({ "faces": faces }),
+        }
     })
 }
 
@@ -593,6 +596,9 @@ fn look(args: &Value, _: &Bridge) -> Result<Content, String> {
     }
     let paths = paths_of(ids)?;
     if args.version == Version::Raw {
+        if args.region != Region::Frame || args.at.is_some() {
+            return Err("raw returns the original files, so region and at do not apply".into());
+        }
         let originals = core("originals", json!({ "paths": paths }))?;
         let files: Vec<Value> = ids
             .iter()

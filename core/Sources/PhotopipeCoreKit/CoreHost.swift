@@ -55,7 +55,7 @@ public final class CoreHost: Sendable {
     /// exiftool is stopped by its atexit hook, not here.
     public func shutdown() {
         work.waitUntilAllOperationsAreFinished()
-        // an agent's look, faces or description can run for minutes, and nobody is left to read its answer
+        // an agent request can run for minutes, and nobody is left to read its answer
         for lane in lanes.values where lane !== lanes["look"] { lane.waitUntilIdle() }
         library.stopExports()
     }

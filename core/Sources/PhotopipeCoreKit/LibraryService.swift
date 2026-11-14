@@ -301,7 +301,10 @@ public final class LibraryService: @unchecked Sendable {
     private func faceSheet(of files: [ImageFile], longEdge: Int, maxBytes: Int) throws
         -> Look.Shown
     {
-        let found = try faces(paths: files.map(\.path))
+        // leaves the crops time to render before the host gives up on the request
+        let found = try faces(paths: files.map(\.path), wait: 60)
+        let pending = found.count { !$0.done }
+        guard pending == 0 else { throw Look.LookError.facesPending(pending) }
         let tiles = zip(files, found).enumerated().flatMap { index, pair in
             (pair.1.faces ?? []).enumerated().map { face, spot in
                 (
@@ -349,21 +352,33 @@ public final class LibraryService: @unchecked Sendable {
 
     public struct PhotoFaces: Sendable, Encodable {
         public let path: String
-        /// nil when the photo could not be read.
+        /// nil when the photo could not be read or is not done.
         public let faces: [FaceSpot]?
+        public let done: Bool
     }
 
-    /// Found now for photos not looked at yet, and remembered like Instinct scores.
-    public func faces(paths: [String]) throws -> [PhotoFaces] {
-        let files = try knownImages(paths: paths)
-        let pass = "agent-\(UUID().uuidString)"
-        facer.start(shoot: pass, files: files)
-        let deadline = Date().addingTimeInterval(100)
-        while facer.progress(shoot: pass, files: files).running, Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.1)
+    /// Runs a face pass over photos not analyzed yet and waits for it; cached like Instinct scores.
+    public func faces(paths: [String], wait: TimeInterval = 90) throws -> [PhotoFaces] {
+        guard paths.count <= Look.sheetLimit else {
+            throw Look.LookError.tooMany(paths.count, limit: Look.sheetLimit)
         }
-        let answers = facer.answers(for: files)
-        return files.map { PhotoFaces(path: $0.path, faces: answers[$0.path] ?? nil) }
+        let deadline = Date().addingTimeInterval(wait)
+        func answered() throws -> ([ImageFile], [String: [FaceSpot]?]) {
+            // read again each time, since a rating mid-pass moves the stamp the answer is under
+            let files = try knownImages(paths: paths)
+            return (files, facer.answers(for: files))
+        }
+        var (files, answers) = try answered()
+        while !files.allSatisfy({ answers.keys.contains($0.path) }), Date() < deadline {
+            // one shared pass, so asking again after a timeout joins the pass still running
+            facer.start(shoot: "agent", files: files)
+            Thread.sleep(forTimeInterval: 0.25)
+            (files, answers) = try answered()
+        }
+        return files.map {
+            PhotoFaces(
+                path: $0.path, faces: answers[$0.path] ?? nil, done: answers.keys.contains($0.path))
+        }
     }
 
     public struct Description: Sendable, Encodable {
@@ -372,7 +387,6 @@ public final class LibraryService: @unchecked Sendable {
         public let error: String?
     }
 
-    /// By the on-device model, which only ever sees a 1024 px render of the edited photo.
     public func describe(paths: [String]) throws -> [Description] {
         guard paths.count <= Look.separateLimit else {
             throw Look.LookError.tooMany(paths.count, limit: Look.separateLimit)
@@ -383,7 +397,9 @@ public final class LibraryService: @unchecked Sendable {
                 let still = try still(of: file, edited: true, tile: 1024, at: nil)
                 return Description(path: file.path, text: try Describer.describe(still), error: nil)
             } catch {
-                return Description(path: file.path, text: nil, error: "\(error)")
+                // a render error names the original's path, which is for agents that see pictures
+                let error = error is Renderer.RenderError ? "could not read this photo" : "\(error)"
+                return Description(path: file.path, text: nil, error: error)
             }
         }
     }

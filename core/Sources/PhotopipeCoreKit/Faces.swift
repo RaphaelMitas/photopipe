@@ -6,9 +6,9 @@ import Vision
 public struct FaceSpot: Codable, Equatable, Sendable {
     /// Fractions of the photo from the top left.
     public let box: CropRect
-    /// Vision's face capture quality, 0 to 1: sharpness, lighting, expression and pose together.
+    /// Vision's face capture quality, 0 to 1.
     public let quality: Double?
-    /// Energy of edges in the face at native pixels. Only comparable between frames of the same scene.
+    /// Edge energy at up to native pixels; only comparable between frames of the same scene.
     public let sharpness: Double?
 }
 
@@ -21,22 +21,14 @@ extension Analyzer where Value == [FaceSpot] {
     static let cropEdge = 1024
 
     public convenience init(renderer: Renderer) {
-        self.init(version: 1, concurrency: 2) { path in
-            try? Self.faces(in: Self.file(at: path), renderer: renderer)
+        self.init(version: 1, concurrency: 2) { file in
+            try? await Self.faces(in: file, renderer: renderer)
         }
     }
 
-    static func file(at path: String) throws -> ImageFile {
-        let attrs = try FileManager.default.attributesOfItem(atPath: path)
-        return ImageFile(
-            path: path, rel: (path as NSString).lastPathComponent,
-            ext: (path as NSString).pathExtension, size: (attrs[.size] as? Int64) ?? 0,
-            mtime: ((attrs[.modificationDate] as? Date) ?? .distantPast).timeIntervalSince1970)
-    }
-
-    static func faces(in file: ImageFile, renderer: Renderer) throws -> [FaceSpot] {
+    static func faces(in file: ImageFile, renderer: Renderer) async throws -> [FaceSpot] {
         let photo = try renderer.still(file: file, edit: .identity, longEdge: findEdge)
-        let found = try awaited { try await DetectFaceCaptureQualityRequest().perform(on: photo) }
+        let found = try await DetectFaceCaptureQualityRequest().perform(on: photo)
         return
             found
             .sorted {

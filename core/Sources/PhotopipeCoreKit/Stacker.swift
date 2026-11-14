@@ -16,7 +16,7 @@ public typealias Printer = Analyzer<Print>
 
 extension Analyzer where Value == Print {
     public convenience init() {
-        self.init(version: 1, concurrency: 6, analyze: Self.print)
+        self.init(version: 1, concurrency: 6) { await Self.print(path: $0.path) }
     }
 
     static func print(path: String) async -> Print? {
