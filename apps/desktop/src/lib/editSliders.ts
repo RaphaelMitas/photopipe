@@ -1,8 +1,13 @@
 import type { Edit } from "./core";
 
 export const EXPOSURE_STEP = 0.25;
-export const EXPOSURE_RANGE = 3;
+export const EXPOSURE_RANGE = { min: -3, max: 3 };
 export const SLIDER_RANGE = 100;
+
+export const clamp = (
+  value: number,
+  { min, max }: { min: number; max: number },
+) => Math.min(Math.max(value, min), max);
 export const SIGNED_RANGE = { min: -SLIDER_RANGE, max: SLIDER_RANGE };
 export const DENOISE_RANGE = { min: 0, max: SLIDER_RANGE };
 

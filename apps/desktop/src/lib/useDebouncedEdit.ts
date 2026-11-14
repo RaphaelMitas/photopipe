@@ -73,5 +73,7 @@ export function useDebouncedEdit(
 
   useEffect(() => () => flush(), [flush]);
 
-  return { draft, scrub, flush, cancel, hold };
+  const holding = useCallback(() => held.current, []);
+
+  return { draft, scrub, flush, cancel, hold, holding };
 }

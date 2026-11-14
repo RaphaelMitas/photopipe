@@ -21,6 +21,7 @@ import {
 } from "./crop";
 import {
   COLOR_SLIDERS,
+  clamp,
   DENOISE_RANGE,
   EXPOSURE_RANGE,
   PRESENCE_SLIDERS,
@@ -68,7 +69,8 @@ export type AgentView = {
   ) => Promise<{ id: string } | null>;
   trash: (paths: string[]) => Promise<number>;
   trashBlocked: boolean;
-  editing: boolean;
+  editing: () => boolean;
+  save: () => void;
 };
 
 export type AgentExport = {
@@ -111,8 +113,13 @@ const FLAG_NAMES = ["rejected", "unflagged", "picked"];
 export const AGENT_EDIT = { icon: Bot, label: "Agent edit" };
 
 const idOf = (shoot: string, image: ImageFile) => `${shoot}/${image.rel}`;
+const PASS_SHOOT = "Pass its shoot to show as well.";
 
-function photosIn(view: AgentView, ids: string[]): ImageFile[] {
+function photosIn(
+  view: AgentView,
+  ids: string[],
+  elsewhere = "Open its shoot with show first.",
+): ImageFile[] {
   const shoot = view.shoot;
   if (shoot === null || view.images === undefined) {
     throw new Error("No shoot is open. Open one with show first.");
@@ -121,9 +128,7 @@ function photosIn(view: AgentView, ids: string[]): ImageFile[] {
   return ids.map((id) => {
     const slash = id.indexOf("/");
     if (id.slice(0, slash) !== shoot) {
-      throw new Error(
-        `${id} is not in the open shoot ${shoot}. Open its shoot with show first.`,
-      );
+      throw new Error(`${id} is not in the open shoot ${shoot}. ${elsewhere}`);
     }
     const image = byRel.get(id.slice(slash + 1));
     if (!image) throw new Error(`No photo ${id} in ${shoot}.`);
@@ -131,13 +136,15 @@ function photosIn(view: AgentView, ids: string[]): ImageFile[] {
   });
 }
 
-/// Moving the view under a drag would carry the drag onto another photo, and leaving the loupe drops a crop.
-function busy(view: AgentView) {
-  if (view.editing) {
+/// Moving the view under a drag would carry it onto another photo, and leaving the loupe drops a crop; a
+/// change merely waiting to save is saved first, as its own step.
+function settle(view: AgentView) {
+  if (view.editing()) {
     throw new Error(
       "The user is editing a photo right now. Try again in a moment.",
     );
   }
+  view.save();
 }
 
 function settled(photos: ImageFile[]) {
@@ -148,9 +155,6 @@ function settled(photos: ImageFile[]) {
   }
   return photos;
 }
-
-const clamp = (value: number, { min, max }: { min: number; max: number }) =>
-  Math.min(Math.max(value, min), max);
 
 const SLIDERS = [...TONE_SLIDERS, ...PRESENCE_SLIDERS, ...COLOR_SLIDERS].map(
   (slider) => slider.key,
@@ -168,10 +172,7 @@ export function agentEdit(
     if (value !== undefined) next[key] = clamp(value, SIGNED_RANGE);
   }
   if (set.exposure !== undefined) {
-    next.exposure = clamp(set.exposure, {
-      min: -EXPOSURE_RANGE,
-      max: EXPOSURE_RANGE,
-    });
+    next.exposure = clamp(set.exposure, EXPOSURE_RANGE);
   }
   if (typeof set.temperature === "number") {
     next.temperature = storedBalance(
@@ -303,7 +304,7 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
         case "get_view":
           return viewOf(view);
         case "show": {
-          busy(view);
+          settle(view);
           const { shoot, photo, select } = call.args;
           if (shoot !== null && shoot !== view.shoot) {
             if (!view.shoots?.some((known) => known.name === shoot)) {
@@ -318,9 +319,13 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
             );
           }
           const target =
-            photo === null ? null : photosIn(current.current, [photo])[0];
+            photo === null
+              ? null
+              : photosIn(current.current, [photo], PASS_SHOOT)[0];
           const chosen =
-            select === null ? null : photosIn(current.current, select);
+            select === null
+              ? null
+              : photosIn(current.current, select, PASS_SHOOT);
           const shown = [...(target ? [target] : []), ...(chosen ?? [])];
           const visible = new Set(
             current.current.visible.map((image) => image.path),
@@ -356,6 +361,7 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
           return { changed: changes.size };
         }
         case "edit": {
+          settle(view);
           const photos = settled(photosIn(view, call.args.photos));
           const { temperature, tint } = call.args.set;
           const raws = new Set(photos.map((photo) => photo.isRaw));
@@ -391,7 +397,7 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
         case "ui_action": {
           const { action } = call.args;
           if (!isActionId(action)) throw new Error(`No action ${action}.`);
-          busy(view);
+          settle(view);
           if (isModalOpen()) {
             throw new Error(
               "A dialog is open in Photopipe; ask the user to close it.",
@@ -403,7 +409,9 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
               `${action} does nothing in the ${activeContext()} view. These work here: ${here.join(", ")}.`,
             );
           }
+          // a key like exposure.up leaves a draft; the agent's own change saves at once
           await rendered();
+          current.current.save();
           return viewOf(current.current);
         }
         case "export": {

@@ -298,8 +298,7 @@ export function EditPanel({ image, edit, onChange, crop, masks }: Props) {
             label="Exposure"
             value={values.exposure}
             display={signed(values.exposure, 2)}
-            min={-EXPOSURE_RANGE}
-            max={EXPOSURE_RANGE}
+            {...EXPOSURE_RANGE}
             step={0.05}
             testid="exposure"
             resetLabel="Reset exposure"

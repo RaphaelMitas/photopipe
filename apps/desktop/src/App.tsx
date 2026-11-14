@@ -296,6 +296,7 @@ export default function App() {
     flush: flushEdit,
     cancel: cancelEdit,
     hold: holdEdit,
+    holding: holdingEdit,
   } = useDebouncedEdit(writes.writeEdit, EDIT_COMMIT_MS);
   // Before the core has read the file, an edit is relative to a blank
   // placeholder and would erase the real one.
@@ -793,7 +794,8 @@ export default function App() {
       ),
     trash: trashFiles,
     trashBlocked,
-    editing: cropping || editDraft !== null,
+    editing: () => cropping || holdingEdit(),
+    save: flushEdit,
   });
 
   // Settings is reachable from the menu bar at any time, including before a

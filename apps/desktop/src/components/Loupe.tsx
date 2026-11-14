@@ -20,7 +20,7 @@ import {
   signedAngle,
 } from "@/lib/crop";
 import { clamp01 } from "@/lib/curve";
-import { EXPOSURE_RANGE, EXPOSURE_STEP } from "@/lib/editSliders";
+import { clamp, EXPOSURE_RANGE, EXPOSURE_STEP } from "@/lib/editSliders";
 import { pluralize } from "@/lib/plural";
 import { capturePointer, cursorIn, normalizedIn, useDrag } from "@/lib/pointer";
 import { flagPref } from "@/lib/pref";
@@ -304,8 +304,7 @@ export function Loupe({
     masks.target
       ? masks.adjust({ exposure })
       : onEditChange({ ...edit, exposure });
-  const exposeBy = (by: number) =>
-    expose(Math.max(-EXPOSURE_RANGE, Math.min(exposure + by, EXPOSURE_RANGE)));
+  const exposeBy = (by: number) => expose(clamp(exposure + by, EXPOSURE_RANGE));
   useShortcuts(
     image
       ? {
