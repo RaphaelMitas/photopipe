@@ -51,9 +51,10 @@ impl Bridge {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         let (sender, receiver) = sync_channel(1);
         self.pending.lock().unwrap().insert(id, sender);
+        // a little before the wait ends, so a call the window drops is still answered as dropped
         let deadline = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_or(0, |now| (now + timeout).as_millis());
+            .map_or(0, |now| (now + timeout.mul_f32(0.9)).as_millis());
         let asked =
             (self.emit)(json!({ "id": id, "tool": tool, "args": args, "deadline": deadline }));
         let outcome = asked.and_then(|()| {

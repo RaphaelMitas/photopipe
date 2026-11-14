@@ -54,7 +54,7 @@ test("an agent's rating lands like a keypress and undoes like one", async ({
       photos: ["2026-08-01_dolomites/DSC01200.ARW"],
       rating: 2,
     }),
-  ).toMatchObject({ ok: false });
+  ).toMatchObject({ ok: false, value: expect.stringContaining("show") });
 });
 
 test("an agent opens a photo in the loupe and reads the view back", async ({

@@ -531,6 +531,18 @@ export default function App() {
     [editOf, readable],
   );
 
+  // a batch write takes over the photo being edited, so its pending draft goes
+  const writeEdits = useCallback(
+    (
+      edits: Map<string, Edit>,
+      described?: Parameters<typeof writes.paste>[1],
+    ) => {
+      if (editDraft && edits.has(editDraft.path)) cancelEdit();
+      return writes.paste(edits, described);
+    },
+    [editDraft, cancelEdit, writes.paste],
+  );
+
   const pasteSettings = useCallback(
     async (targets: ImageFile[]) => {
       if (!clipboard) {
@@ -568,10 +580,7 @@ export default function App() {
         );
         return;
       }
-      if (editDraft && pasted.has(editDraft.path)) {
-        cancelEdit();
-      }
-      const result = await writes.paste(pasted).catch(() => null);
+      const result = await writeEdits(pasted).catch(() => null);
       if (!result) {
         toast.error("Pasting settings failed", { id: "clipboard" });
         return;
@@ -590,7 +599,7 @@ export default function App() {
         { description: notes.length > 0 ? notes.join(" · ") : undefined },
       );
     },
-    [clipboard, editDraft, editOf, cancelEdit, writes.paste],
+    [clipboard, editOf, writeEdits],
   );
 
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -766,10 +775,7 @@ export default function App() {
     resetFilter: filter.reset,
     rate: writes.rateMany,
     flag: writes.flagMany,
-    edit: (edits) => {
-      if (editDraft && edits.has(editDraft.path)) cancelEdit();
-      return writes.paste(edits, AGENT_EDIT);
-    },
+    edit: (edits) => writeEdits(edits, AGENT_EDIT),
     step: travel,
     exportPhotos: (paths, { destination, format, quality, longEdge, zip }) =>
       runExport(

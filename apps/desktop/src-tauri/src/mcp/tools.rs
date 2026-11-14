@@ -168,8 +168,7 @@ pub fn call(params: &Value, store: &AccessStore, bridge: &Bridge) -> Result<Valu
     let outcome = allowed()
         .and_then(|()| ready())
         .and_then(|()| (tool.run)(arguments, bridge))
-        // asked again before reading out: the user may have turned access down while a look ran;
-        // a write has landed by now and is reported as it is
+        // a look is asked again in case access went down mid-call; a landed write is reported as is
         .and_then(|content| {
             if tool.act == Act::Off {
                 allowed().map(|()| content)
