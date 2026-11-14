@@ -458,7 +458,7 @@ export type CropDraft = {
 // wrap-safe accumulation.
 export const STRAIGHTEN_RANGE = 180;
 // Fine enough to level a horizon by finger; Turn 90° covers larger turns.
-export const STRAIGHTEN_SLIDER_RANGE = 45;
+export const STRAIGHTEN_SLIDER_RANGE = { min: -45, max: 45 };
 
 export const signedAngle = (angle: number) =>
   `${angle > 0 ? "+" : ""}${angle.toFixed(1)}°`;

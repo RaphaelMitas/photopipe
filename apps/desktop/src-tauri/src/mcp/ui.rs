@@ -17,7 +17,7 @@ pub fn catalog() -> Vec<Tool> {
             name: "get_view",
             see: See::Details,
             act: Act::Off,
-            description: "What the user is looking at in Photopipe right now: the open shoot, grid or loupe, the photo in the loupe, the selection, the rating filter, the recent history and the keyboard actions that work here.",
+            description: "What the user is looking at in Photopipe right now: the open shoot, grid or loupe, the photo in the loupe, the selection, the rating filter and sort, the recent history and the keyboard actions that work here.",
             input: || json!({ "type": "object", "properties": {} }),
             run: |args, bridge| forward::<Nothing>("get_view", args, bridge),
         },

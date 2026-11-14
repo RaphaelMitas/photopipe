@@ -138,8 +138,7 @@ export function CropPanel({
         label="Angle"
         value={draft.angle}
         display={signedAngle(draft.angle)}
-        min={-STRAIGHTEN_SLIDER_RANGE}
-        max={STRAIGHTEN_SLIDER_RANGE}
+        {...STRAIGHTEN_SLIDER_RANGE}
         step={0.1}
         testid="crop-angle"
         resetLabel="Reset angle"

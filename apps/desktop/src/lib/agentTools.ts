@@ -70,7 +70,7 @@ export type AgentView = {
   trash: (paths: string[]) => Promise<number>;
   trashBlocked: boolean;
   editing: () => boolean;
-  save: () => void;
+  save: () => Promise<unknown>;
 };
 
 export type AgentExport = {
@@ -136,15 +136,14 @@ function photosIn(
   });
 }
 
-/// Moving the view under a drag would carry it onto another photo, and leaving the loupe drops a crop; a
-/// change merely waiting to save is saved first, as its own step.
-function settle(view: AgentView) {
+/// The user's held slider or open crop wins; a change merely waiting to save is saved first, as its own step.
+async function waitForUser(view: AgentView) {
   if (view.editing()) {
     throw new Error(
       "The user is editing a photo right now. Try again in a moment.",
     );
   }
-  view.save();
+  await view.save().catch(() => {});
 }
 
 function settled(photos: ImageFile[]) {
@@ -219,10 +218,7 @@ export function agentEdit(
   const angle =
     set.cropAngle === undefined
       ? draft.angle
-      : clamp(set.cropAngle, {
-          min: -STRAIGHTEN_SLIDER_RANGE,
-          max: STRAIGHTEN_SLIDER_RANGE,
-        });
+      : clamp(set.cropAngle, STRAIGHTEN_SLIDER_RANGE);
   return {
     ...next,
     ...commitDraft(draftWithAngle(draft, angle, width, height)),
@@ -304,7 +300,7 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
         case "get_view":
           return viewOf(view);
         case "show": {
-          settle(view);
+          await waitForUser(view);
           const { shoot, photo, select } = call.args;
           if (shoot !== null && shoot !== view.shoot) {
             if (!view.shoots?.some((known) => known.name === shoot)) {
@@ -361,7 +357,7 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
           return { changed: changes.size };
         }
         case "edit": {
-          settle(view);
+          await waitForUser(view);
           const photos = settled(photosIn(view, call.args.photos));
           const { temperature, tint } = call.args.set;
           const raws = new Set(photos.map((photo) => photo.isRaw));
@@ -397,7 +393,7 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
         case "ui_action": {
           const { action } = call.args;
           if (!isActionId(action)) throw new Error(`No action ${action}.`);
-          settle(view);
+          await waitForUser(view);
           if (isModalOpen()) {
             throw new Error(
               "A dialog is open in Photopipe; ask the user to close it.",
@@ -411,7 +407,7 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
           }
           // a key like exposure.up leaves a draft; the agent's own change saves at once
           await rendered();
-          current.current.save();
+          await current.current.save().catch(() => {});
           return viewOf(current.current);
         }
         case "export": {
@@ -422,6 +418,7 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
           return { id: job.id };
         }
         case "trash": {
+          await waitForUser(view);
           const paths = photosIn(view, call.args.photos).map(
             (photo) => photo.path,
           );
