@@ -3,13 +3,12 @@ import type { Edit } from "./core";
 export const EXPOSURE_STEP = 0.25;
 export const EXPOSURE_RANGE = 3;
 export const SLIDER_RANGE = 100;
+export const SIGNED_RANGE = { min: -SLIDER_RANGE, max: SLIDER_RANGE };
 export const DENOISE_RANGE = { min: 0, max: SLIDER_RANGE };
 
 // kelvin for a raw's own white balance; masks and other files are an offset from neutral
 export const temperatureRange = (kelvin: boolean) =>
-  kelvin
-    ? { min: 2000, max: 12000 }
-    : { min: -SLIDER_RANGE, max: SLIDER_RANGE };
+  kelvin ? { min: 2000, max: 12000 } : SIGNED_RANGE;
 
 export const tintRange = (kelvin: boolean) => {
   const reach = kelvin ? 150 : SLIDER_RANGE;

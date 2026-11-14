@@ -24,7 +24,7 @@ import {
   DENOISE_RANGE,
   EXPOSURE_RANGE,
   PRESENCE_SLIDERS,
-  SLIDER_RANGE,
+  SIGNED_RANGE,
   TONE_SLIDERS,
   temperatureRange,
   tintRange,
@@ -144,7 +144,6 @@ const clamp = (value: number, { min, max }: { min: number; max: number }) =>
 const SLIDERS = [...TONE_SLIDERS, ...PRESENCE_SLIDERS, ...COLOR_SLIDERS].map(
   (slider) => slider.key,
 );
-const SIGNED = { min: -SLIDER_RANGE, max: SLIDER_RANGE };
 
 /// Held to the editor's own ranges, and framed the way the crop tool frames.
 export function agentEdit(
@@ -155,7 +154,7 @@ export function agentEdit(
   const next: Edit = { ...base };
   for (const key of SLIDERS) {
     const value = set[key];
-    if (value !== undefined) next[key] = clamp(value, SIGNED);
+    if (value !== undefined) next[key] = clamp(value, SIGNED_RANGE);
   }
   if (set.exposure !== undefined) {
     next.exposure = clamp(set.exposure, {

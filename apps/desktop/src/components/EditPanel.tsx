@@ -32,7 +32,7 @@ import {
   EXPOSURE_RANGE,
   kelvin,
   PRESENCE_SLIDERS,
-  SLIDER_RANGE,
+  SIGNED_RANGE,
   type SliderSpec,
   signed,
   TONE_SLIDERS,
@@ -84,8 +84,7 @@ function SliderRows<Key extends SliderSpec["key"]>({
       label={label}
       value={values[key]}
       display={signed(values[key])}
-      min={-SLIDER_RANGE}
-      max={SLIDER_RANGE}
+      {...SIGNED_RANGE}
       step={1}
       testid={key}
       resetLabel={`Reset ${label.toLowerCase()}`}

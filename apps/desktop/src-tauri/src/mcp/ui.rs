@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-/// Opening a shoot waits for its photos to load.
+/// Long enough for a call queued behind others in the webview, and for opening a shoot.
 const UI_WAIT: Duration = Duration::from_secs(60);
 const EXPORT_WAIT: Duration = Duration::from_secs(30 * 60);
 
