@@ -114,27 +114,29 @@ public final class Renderer: @unchecked Sendable {
         return "\(file.path)|\(file.mtime)|\(file.size)"
     }
 
-    /// What the loupe shows. A mask that cannot be cut costs the photo its masks, not the photo.
+    /// What the loupe shows.
     public func preview(
         file: ImageFile, edit: Edit, maxPixel: Int, viewport: CropRect? = nil,
         decoderVersion: Int? = nil
     ) throws -> Preview {
-        func rendered(_ edit: Edit) throws -> String {
+        let (rendered, unmasked) = try maskedOrBare(edit) { edit in
             try render(
                 file: file, edit: edit, maxPixel: maxPixel, viewport: viewport,
-                decoderVersion: decoderVersion
-            ).path
+                decoderVersion: decoderVersion)
         }
-        guard edit.masks.contains(where: \.changesPixels) else {
-            return Preview(cachePath: try rendered(edit), unmasked: false)
-        }
+        return Preview(cachePath: rendered.path, unmasked: unmasked)
+    }
+
+    /// A mask that cannot be cut costs the photo its masks, not the photo; `unmasked` says it happened.
+    private func maskedOrBare<Value>(_ edit: Edit, _ render: (Edit) throws -> Value) throws -> (
+        Value, unmasked: Bool
+    ) {
+        guard edit.masks.contains(where: \.changesPixels) else { return (try render(edit), false) }
         // asked first, so a model still downloading holds the render lane a second at most
-        if maskModelArrives(), let masked = try? rendered(edit) {
-            return Preview(cachePath: masked, unmasked: false)
-        }
+        if maskModelArrives(), let masked = try? render(edit) { return (masked, false) }
         var bare = edit
         bare.masks = []
-        return Preview(cachePath: try rendered(bare), unmasked: true)
+        return (try render(bare), true)
     }
 
     public func render(
@@ -171,25 +173,17 @@ public final class Renderer: @unchecked Sendable {
     ) throws {
         // past any sensor, and doubling it must not overflow
         if let longEdge, !(1...100_000).contains(longEdge) { throw RenderError.encodeFailed }
-        // an export is decoded once; caching it would evict the loupe's warm filters
-        let raw = try file.isRaw ? makeFilter(for: file, decoderVersion: decoderVersion) : nil
         // decoding straight at the target comes out visibly soft
-        var image = try sourceImage(
-            for: file, raw: raw, edit: edit, maxPixel: longEdge.map { $0 * 2 })
-        if let longEdge { image = Self.fitted(image, longEdge: CGFloat(longEdge)) }
-        // An export render holds on to surfaces the context will happily
-        // keep for the next one. Nothing else reuses them, and about a hundred
-        // in they stop being handed out at all: every render after that comes
-        // back nil while memory still looks fine.
-        defer { exportContext.clearCaches() }
-        guard
-            let jpeg = exportContext.jpegRepresentation(
+        let jpeg = try decodedOnce(
+            file: file, edit: edit, decodeEdge: longEdge.map { $0 * 2 }, longEdge: longEdge,
+            decoderVersion: decoderVersion
+        ) { context, image in
+            context.jpegRepresentation(
                 of: image, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
                 options: [
-                    kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption:
-                        quality
+                    kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: quality
                 ])
-        else { throw RenderError.encodeFailed }
+        }
         let temp = destination.deletingLastPathComponent()
             .appendingPathComponent("\(FileActions.tempPrefix)\(UUID().uuidString).jpg")
         try jpeg.write(to: temp)
@@ -201,35 +195,37 @@ public final class Renderer: @unchecked Sendable {
         }
     }
 
-    /// Decoded once like an export, so an agent going through a shoot leaves the loupe's warm filters alone.
     public func still(
         file: ImageFile, edit: Edit, longEdge: Int, viewport: CropRect? = nil
-    ) throws -> CGImage {
-        do {
-            return try decodedStill(file: file, edit: edit, longEdge: longEdge, viewport: viewport)
-        } catch  where edit.masks.contains(where: \.changesPixels) {
-            var bare = edit
-            bare.masks = []
-            return try decodedStill(file: file, edit: bare, longEdge: longEdge, viewport: viewport)
+    ) throws -> (image: CGImage, unmasked: Bool) {
+        guard longEdge > 0 else { throw RenderError.encodeFailed }
+        return try maskedOrBare(edit) { edit in
+            try decodedOnce(
+                file: file, edit: edit, decodeEdge: longEdge, longEdge: longEdge, viewport: viewport
+            ) { context, image in
+                context.createCGImage(
+                    image, from: image.extent, format: .RGBA8,
+                    colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+            }
         }
     }
 
-    private func decodedStill(
-        file: ImageFile, edit: Edit, longEdge: Int, viewport: CropRect?
-    ) throws -> CGImage {
-        guard longEdge > 0 else { throw RenderError.encodeFailed }
-        let raw = try file.isRaw ? makeFilter(for: file) : nil
-        let image = Self.fitted(
-            try sourceImage(
-                for: file, raw: raw, edit: edit, maxPixel: longEdge, viewport: viewport),
-            longEdge: CGFloat(longEdge))
+    /// Off the filter cache, so an export or an agent going through a shoot leaves the loupe's warm filters alone.
+    private func decodedOnce<Output>(
+        file: ImageFile, edit: Edit, decodeEdge: Int?, longEdge: Int?, viewport: CropRect? = nil,
+        decoderVersion: Int? = nil, draw: (CIContext, CIImage) -> Output?
+    ) throws -> Output {
+        let raw = try file.isRaw ? makeFilter(for: file, decoderVersion: decoderVersion) : nil
+        var image = try sourceImage(
+            for: file, raw: raw, edit: edit, maxPixel: decodeEdge, viewport: viewport)
+        if let longEdge { image = Self.fitted(image, longEdge: CGFloat(longEdge)) }
+        // A render here holds on to surfaces the context will happily
+        // keep for the next one. Nothing else reuses them, and about a hundred
+        // in they stop being handed out at all: every render after that comes
+        // back nil while memory still looks fine.
         defer { exportContext.clearCaches() }
-        guard
-            let still = exportContext.createCGImage(
-                image, from: image.extent, format: .RGBA8,
-                colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
-        else { throw RenderError.encodeFailed }
-        return still
+        guard let output = draw(exportContext, image) else { throw RenderError.encodeFailed }
+        return output
     }
 
     /// The mask as the alpha of a white image, framed like the render it lies over.

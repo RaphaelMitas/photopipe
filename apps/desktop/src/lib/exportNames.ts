@@ -1,6 +1,5 @@
 import type { ExportFormat, ImageFile } from "./core";
 import { fileName, splitRel } from "./fileName";
-import { takenAt } from "./sort";
 
 export const NAME_TOKENS = [
   "date",
@@ -73,8 +72,8 @@ function tokenValue(
   count: number,
   shoot: string,
 ): string {
-  // takenAt is the camera's wall clock expressed as UTC, so the ISO form reads it as is
-  const taken = new Date(takenAt(image) * 1000).toISOString();
+  // taken is a wall clock expressed as UTC, so the ISO form reads it as is
+  const taken = new Date(image.taken * 1000).toISOString();
   switch (token) {
     case "date":
       return taken.slice(0, 10);
