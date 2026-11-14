@@ -27,6 +27,13 @@ private func meanChannels(
     guard let image = CIImage(contentsOf: url) else {
         throw Renderer.RenderError.unreadable(url.path)
     }
+    return meanChannels(of: image, region: region, colorSpace: colorSpace)
+}
+
+func meanChannels(
+    of image: CIImage, region: CGRect? = nil,
+    colorSpace: CGColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+) -> (red: Double, green: Double, blue: Double) {
     let average = image.applyingFilter(
         "CIAreaAverage",
         parameters: [kCIInputExtentKey: CIVector(cgRect: region ?? image.extent)])

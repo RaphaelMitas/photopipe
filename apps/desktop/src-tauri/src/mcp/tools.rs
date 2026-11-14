@@ -130,20 +130,18 @@ pub fn call(params: &Value, store: &AccessStore) -> Result<Value, (i64, String)>
             }
         )
     };
-    let outcome = if tool.see > store.get().see {
-        Err(refused())
-    } else {
-        // asked again after the work: the user may have turned access down while a look ran
-        ready()
-            .and_then(|()| (tool.run)(arguments))
-            .and_then(|content| {
-                if tool.see > store.get().see {
-                    Err(refused())
-                } else {
-                    Ok(content)
-                }
-            })
+    let allowed = || {
+        if tool.see > store.get().see {
+            Err(refused())
+        } else {
+            Ok(())
+        }
     };
+    let outcome = allowed()
+        .and_then(|()| ready())
+        .and_then(|()| (tool.run)(arguments))
+        // asked again after the work: the user may have turned access down while a look ran
+        .and_then(|content| allowed().map(|()| content));
     Ok(match outcome {
         Ok(content) => json!({ "content": content, "isError": false }),
         Err(message) => json!({ "content": [text(message)], "isError": true }),
@@ -199,6 +197,7 @@ impl Flag {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ListPhotos {
     shoot: String,
     min_rating: Option<i64>,
@@ -210,6 +209,7 @@ struct ListPhotos {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct GetPhoto {
     photo: String,
 }
@@ -240,12 +240,14 @@ enum Layout {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Spot {
     x: f64,
     y: f64,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Look {
     photos: Vec<String>,
     #[serde(default)]
@@ -572,6 +574,7 @@ mod tests {
         assert!(parse::<Look>(&json!({ "photos": [], "version": "original" })).is_err());
         assert!(parse::<Look>(&json!({ "photos": [], "at": { "x": 0.2 } })).is_err());
         assert!(parse::<Look>(&json!({ "photos": [], "size": "2000" })).is_err());
+        assert!(parse::<Look>(&json!({ "photos": [], "verison": "unedited" })).is_err());
     }
 
     #[test]

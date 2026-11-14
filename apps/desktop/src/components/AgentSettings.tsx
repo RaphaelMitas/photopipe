@@ -23,7 +23,7 @@ const SEE_DETAIL: Record<AgentSee, string> = {
   details:
     "Projects, ratings, flags, capture times, camera settings and edits. No pixels leave Photopipe.",
   pictures:
-    "Also the photos themselves, rendered on this Mac and sent to the agent, which may send them on to its model's provider.",
+    "Also the photos themselves, rendered on this Mac and sent to the agent, which may send them on to its model's provider, and where the original files are.",
 };
 
 function Snippet({ label, text }: { label: string; text: string }) {

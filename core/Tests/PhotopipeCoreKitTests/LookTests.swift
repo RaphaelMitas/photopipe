@@ -12,15 +12,10 @@ private func decoded(_ shown: Look.Shown) throws -> CGImage {
 }
 
 private func blueShare(of image: CGImage) -> Double {
-    let ci = CIImage(cgImage: image)
-    let average = ci.applyingFilter(
-        "CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: ci.extent)])
-    var pixel = [UInt8](repeating: 0, count: 4)
-    CIContext().render(
-        average, toBitmap: &pixel, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
-        // the average is taken in linear light, so read it out linear
-        format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.linearSRGB)!)
-    return Double(pixel[2]) / Double(Int(pixel[0]) + Int(pixel[2]))
+    // the average is taken in linear light, so read it out linear
+    let mean = meanChannels(
+        of: CIImage(cgImage: image), colorSpace: CGColorSpace(name: CGColorSpace.linearSRGB)!)
+    return mean.blue / (mean.red + mean.blue)
 }
 
 private func withShoot(
