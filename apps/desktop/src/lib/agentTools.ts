@@ -70,8 +70,7 @@ export type AgentView = {
   ) => Promise<{ id: string } | null>;
   trash: (paths: string[]) => Promise<number>;
   trashBlocked: boolean;
-  editing: () => boolean;
-  unsaved: () => boolean;
+  busy: () => boolean;
   save: () => Promise<unknown>;
 };
 
@@ -150,21 +149,13 @@ const entryBelow = (id: number) => {
   return at > 0 ? entries[at - 1].id : undefined;
 };
 
-const userIsEditing = (): never => {
-  throw new Error(
-    "The user is editing a photo right now. Try again in a moment.",
-  );
-};
-
-/// The user's held slider or open crop wins; a change merely waiting to save is saved first, as its own step.
-async function waitForUser(now: () => AgentView, walksHistory: boolean) {
-  // walking History back would undo the very change it saved
-  if (now().editing() || (walksHistory && now().unsaved())) userIsEditing();
-  await now()
-    .save()
-    .catch(() => {});
-  const view = now();
-  if (view.editing() || view.unsaved()) userIsEditing();
+/// Agents act only while the user is idle: no held slider, no open crop, no change still waiting to save.
+function whenIdle(view: AgentView) {
+  if (view.busy()) {
+    throw new Error(
+      "The user is editing a photo right now. Try again in a moment.",
+    );
+  }
   return view;
 }
 
@@ -336,12 +327,7 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
 
     const handle = async (call: AgentCall) => {
       const view = GUARDED.has(call.tool)
-        ? await waitForUser(
-            () => current.current,
-            call.tool === "undo" ||
-              (call.tool === "ui_action" &&
-                call.args.action.startsWith("history.")),
-          )
+        ? whenIdle(current.current)
         : current.current;
       switch (call.tool) {
         case "get_view":
@@ -432,7 +418,7 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
           for (let step = 0; step < call.args.steps; step++) {
             // a change the user makes meanwhile is theirs, not a step for the agent to walk back
             const now = current.current;
-            if (now.editing() || now.unsaved()) break;
+            if (now.busy()) break;
             if (topOfHistory() !== expected) break;
             const entry = await now.step(direction);
             if (!entry) break;
@@ -475,9 +461,7 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
             () => !current.current.trashBlocked,
             "waiting for pending writes",
           );
-          const after = current.current;
-          if (after.editing() || after.unsaved()) userIsEditing();
-          return { files: await current.current.trash(paths) };
+          return { files: await whenIdle(current.current).trash(paths) };
         }
       }
     };

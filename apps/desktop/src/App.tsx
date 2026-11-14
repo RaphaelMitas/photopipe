@@ -795,8 +795,7 @@ export default function App() {
       ),
     trash: trashFiles,
     trashBlocked,
-    editing: () => cropping || holdingEdit(),
-    unsaved: unsavedEdit,
+    busy: () => cropping || holdingEdit() || unsavedEdit(),
     save: flushEdit,
   });
 
