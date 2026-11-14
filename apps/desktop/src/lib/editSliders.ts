@@ -2,7 +2,7 @@ import type { Edit } from "./core";
 
 export const EXPOSURE_STEP = 0.25;
 export const EXPOSURE_RANGE = { min: -3, max: 3 };
-export const SLIDER_RANGE = 100;
+const SLIDER_RANGE = 100;
 
 export const clamp = (
   value: number,

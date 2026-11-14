@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Bot } from "lucide-react";
 import { useEffect, useRef } from "react";
+import { toast } from "sonner";
 import {
   type CropRect,
   type Edit,
@@ -32,12 +33,7 @@ import {
   temperatureRange,
   tintRange,
 } from "./editSliders";
-import {
-  type HistoryDirection,
-  type HistoryEntry,
-  historyLabel,
-  historyState,
-} from "./history";
+import { historyLabel, historyState, jumpHistory } from "./history";
 import { type Context, isActionId } from "./keymap";
 import { isModalOpen } from "./modal";
 import type { BatchResult } from "./queries";
@@ -63,7 +59,6 @@ export type AgentView = {
   rate: (values: Map<string, number>, before: ImageFile[]) => Promise<unknown>;
   flag: (values: Map<string, Flag>, before: ImageFile[]) => Promise<unknown>;
   edit: (edits: Map<string, Edit>) => Promise<BatchResult>;
-  step: (direction: HistoryDirection) => Promise<HistoryEntry | null>;
   exportPhotos: (
     paths: string[],
     request: AgentExport,
@@ -137,16 +132,9 @@ function photosIn(
   });
 }
 
-const topOfHistory = () => {
+const topOfHistory = (): number | undefined => {
   const { entries, cursor } = historyState();
   return entries[cursor - 1]?.id;
-};
-
-/// Where the top of History should be once `id` is undone; a user's push in between makes it differ.
-const entryBelow = (id: number) => {
-  const { entries } = historyState();
-  const at = entries.findIndex((entry) => entry.id === id);
-  return at > 0 ? entries[at - 1].id : undefined;
 };
 
 /// Agents act only while the user is idle: no held slider, no open crop, no change still waiting to save.
@@ -414,16 +402,23 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
         case "undo": {
           const direction = call.args.redo ? "redo" : "undo";
           const steps: string[] = [];
-          let expected: number | undefined = topOfHistory();
+          let expected = topOfHistory();
           for (let step = 0; step < call.args.steps; step++) {
             // a change the user makes meanwhile is theirs, not a step for the agent to walk back
-            const now = current.current;
-            if (now.busy()) break;
-            if (topOfHistory() !== expected) break;
-            const entry = await now.step(direction);
-            if (!entry) break;
-            expected = direction === "undo" ? entryBelow(entry.id) : entry.id;
-            steps.push(historyLabel(entry));
+            if (current.current.busy() || topOfHistory() !== expected) break;
+            const { entries, cursor } = historyState();
+            const target = entries[direction === "undo" ? cursor - 1 : cursor];
+            if (!target) break;
+            // a landing, not a step: a step the user's own Cmd-Z already took turns this into no move
+            const landing =
+              direction === "undo" ? (entries[cursor - 2] ?? null) : target;
+            if ((await jumpHistory(landing)) === 0) break;
+            steps.push(historyLabel(target));
+            expected = landing?.id;
+          }
+          if (steps.length > 0) {
+            const verb = direction === "undo" ? "Undid" : "Redid";
+            toast(`${verb} ${steps.join(", ")}`, { id: "history" });
           }
           return { [direction === "undo" ? "undid" : "redid"]: steps };
         }
@@ -441,9 +436,9 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
               `${action} does nothing in the ${activeContext()} view. These work here: ${here.join(", ")}.`,
             );
           }
-          // a key like exposure.up leaves a draft; the agent's own change saves at once
+          // a key like exposure.up leaves a draft; saved before the user can grab a slider of their own
+          await view.save().catch(() => {});
           await rendered();
-          await current.current.save().catch(() => {});
           return viewOf(current.current);
         }
         case "export": {

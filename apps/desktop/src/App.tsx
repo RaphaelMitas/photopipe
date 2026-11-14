@@ -296,8 +296,7 @@ export default function App() {
     flush: flushEdit,
     cancel: cancelEdit,
     hold: holdEdit,
-    holding: holdingEdit,
-    waiting: unsavedEdit,
+    busy: editBusy,
   } = useDebouncedEdit(writes.writeEdit, EDIT_COMMIT_MS);
   // Before the core has read the file, an edit is relative to a blank
   // placeholder and would erase the real one.
@@ -642,12 +641,10 @@ export default function App() {
   const travel = useCallback(
     (direction: HistoryDirection) => {
       flushEdit();
-      return stepHistory(direction, showPhoto).then((entry) => {
-        if (entry) {
-          const verb = direction === "undo" ? "Undid" : "Redid";
-          toast(`${verb} ${historyLabel(entry)}`, { id: "history" });
-        }
-        return entry;
+      void stepHistory(direction, showPhoto).then((entry) => {
+        if (!entry) return;
+        const verb = direction === "undo" ? "Undid" : "Redid";
+        toast(`${verb} ${historyLabel(entry)}`, { id: "history" });
       });
     },
     [flushEdit, showPhoto],
@@ -778,7 +775,6 @@ export default function App() {
     rate: writes.rateMany,
     flag: writes.flagMany,
     edit: (edits) => writeEdits(edits, AGENT_EDIT),
-    step: travel,
     exportPhotos: (paths, { destination, format, quality, longEdge, zip }) =>
       runExport(
         paths,
@@ -795,7 +791,7 @@ export default function App() {
       ),
     trash: trashFiles,
     trashBlocked,
-    busy: () => cropping || holdingEdit() || unsavedEdit(),
+    busy: () => cropping || editBusy(),
     save: flushEdit,
   });
 
