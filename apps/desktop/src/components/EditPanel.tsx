@@ -35,6 +35,7 @@ import {
   SIGNED_RANGE,
   type SliderSpec,
   signed,
+  storedBalance,
   TONE_SLIDERS,
   temperatureRange,
   tintRange,
@@ -358,7 +359,7 @@ export function EditPanel({ image, edit, onChange, crop, masks }: Props) {
               testid="temperature"
               resetLabel="Reset temperature"
               trackClassName="bg-gradient-to-r from-sky-500/70 via-white/20 to-amber-400/80"
-              onValue={(value) => setTemperature(value === 0 ? null : value)}
+              onValue={(value) => setTemperature(storedBalance(false, value))}
               onReset={() => setTemperature(null)}
             />
           )}
@@ -371,9 +372,7 @@ export function EditPanel({ image, edit, onChange, crop, masks }: Props) {
             testid="tint"
             resetLabel={kelvinScale ? "Reset to as shot" : "Reset tint"}
             trackClassName="bg-gradient-to-r from-green-500/70 via-white/20 to-fuchsia-500/70"
-            onValue={(value) =>
-              setTint(!kelvinScale && value === 0 ? null : value)
-            }
+            onValue={(value) => setTint(storedBalance(kelvinScale, value))}
             onReset={() => setTint(null)}
           />
           <SliderRows

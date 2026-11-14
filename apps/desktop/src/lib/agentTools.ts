@@ -25,6 +25,7 @@ import {
   EXPOSURE_RANGE,
   PRESENCE_SLIDERS,
   SIGNED_RANGE,
+  storedBalance,
   TONE_SLIDERS,
   temperatureRange,
   tintRange,
@@ -67,6 +68,7 @@ export type AgentView = {
   ) => Promise<{ id: string } | null>;
   trash: (paths: string[]) => Promise<number>;
   trashBlocked: boolean;
+  editing: boolean;
 };
 
 export type AgentExport = {
@@ -129,6 +131,15 @@ function photosIn(view: AgentView, ids: string[]): ImageFile[] {
   });
 }
 
+/// Moving the view under a drag would carry the drag onto another photo, and leaving the loupe drops a crop.
+function busy(view: AgentView) {
+  if (view.editing) {
+    throw new Error(
+      "The user is editing a photo right now. Try again in a moment.",
+    );
+  }
+}
+
 function settled(photos: ImageFile[]) {
   if (photos.some((photo) => !photo.enriched)) {
     throw new Error(
@@ -162,16 +173,17 @@ export function agentEdit(
       max: EXPOSURE_RANGE,
     });
   }
-  // off a raw, neutral is stored as none, as the editor does
-  const neutral = (value: number) =>
-    !photo.isRaw && value === 0 ? null : value;
   if (typeof set.temperature === "number") {
-    next.temperature = neutral(
+    next.temperature = storedBalance(
+      photo.isRaw,
       clamp(set.temperature, temperatureRange(photo.isRaw)),
     );
   }
   if (typeof set.tint === "number") {
-    next.tint = neutral(clamp(set.tint, tintRange(photo.isRaw)));
+    next.tint = storedBalance(
+      photo.isRaw,
+      clamp(set.tint, tintRange(photo.isRaw)),
+    );
   }
   if (typeof set.denoise === "number") {
     next.denoise = clamp(set.denoise, DENOISE_RANGE);
@@ -291,6 +303,7 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
         case "get_view":
           return viewOf(view);
         case "show": {
+          busy(view);
           const { shoot, photo, select } = call.args;
           if (shoot !== null && shoot !== view.shoot) {
             if (!view.shoots?.some((known) => known.name === shoot)) {
@@ -344,6 +357,13 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
         }
         case "edit": {
           const photos = settled(photosIn(view, call.args.photos));
+          const { temperature, tint } = call.args.set;
+          const raws = new Set(photos.map((photo) => photo.isRaw));
+          if ((temperature != null || tint != null) && raws.size > 1) {
+            throw new Error(
+              "temperature and tint are kelvin on raws and an offset on other files; edit the two in separate calls.",
+            );
+          }
           const edits = new Map<string, Edit>();
           for (const photo of photos) {
             const now = view.editOf(photo);
@@ -371,6 +391,7 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
         case "ui_action": {
           const { action } = call.args;
           if (!isActionId(action)) throw new Error(`No action ${action}.`);
+          busy(view);
           if (isModalOpen()) {
             throw new Error(
               "A dialog is open in Photopipe; ask the user to close it.",
@@ -419,7 +440,8 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
         void answer(false, "Photopipe was busy; this call was dropped.");
       }, deadline - Date.now());
       const run = queue.then(async () => {
-        if (dropped) return;
+        // a throttled timer can fire after its turn comes; it still answers the call as dropped
+        if (dropped || Date.now() > deadline) return;
         started = true;
         clearTimeout(drop);
         try {

@@ -793,6 +793,7 @@ export default function App() {
       ),
     trash: trashFiles,
     trashBlocked,
+    editing: cropping || editDraft !== null,
   });
 
   // Settings is reachable from the menu bar at any time, including before a

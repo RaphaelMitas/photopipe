@@ -25,7 +25,7 @@ pub fn catalog() -> Vec<Tool> {
             name: "show",
             see: See::Details,
             act: Act::Cull,
-            description: "Open a shoot in Photopipe, a photo in the loupe, or select photos in the grid. Changes work on the open shoot, so open it first. Switching shoots clears the app's undo history, as it does when the user switches.",
+            description: "Open a shoot in Photopipe, a photo in the loupe, or select photos in the grid. Changes work on the open shoot, so open it first. Switching shoots clears the app's undo history, as it does when the user switches, and a photo hidden by the user's rating filter clears that filter.",
             input: || {
                 json!({
                     "type": "object",
