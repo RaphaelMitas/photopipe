@@ -19,10 +19,8 @@ export const temperatureRange = (kelvin: boolean) =>
 export const storedBalance = (kelvin: boolean, value: number) =>
   !kelvin && value === 0 ? null : value;
 
-export const tintRange = (kelvin: boolean) => {
-  const reach = kelvin ? 150 : SLIDER_RANGE;
-  return { min: -reach, max: reach };
-};
+export const tintRange = (kelvin: boolean) =>
+  kelvin ? { min: -150, max: 150 } : SIGNED_RANGE;
 
 type SliderKey = keyof Pick<
   Edit,

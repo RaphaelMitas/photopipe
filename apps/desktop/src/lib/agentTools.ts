@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import {
   type CropRect,
   type Edit,
+  type ExportFormat,
   editKey,
   type Flag,
   type ImageFile,
@@ -76,7 +77,7 @@ export type AgentView = {
 
 export type AgentExport = {
   destination: string;
-  format: "original" | "jpeg";
+  format: ExportFormat;
   quality?: number;
   longEdge?: number;
   zip: boolean;
@@ -144,8 +145,9 @@ const userIsEditing = (): never => {
 };
 
 /// The user's held slider or open crop wins; a change merely waiting to save is saved first, as its own step.
-async function waitForUser(now: () => AgentView) {
-  if (now().editing()) userIsEditing();
+async function waitForUser(now: () => AgentView, tool: string) {
+  // undo would walk back the very change it saved
+  if (now().editing() || (tool === "undo" && now().unsaved())) userIsEditing();
   await now()
     .save()
     .catch(() => {});
@@ -322,7 +324,7 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
 
     const handle = async (call: AgentCall) => {
       const view = GUARDED.has(call.tool)
-        ? await waitForUser(() => current.current)
+        ? await waitForUser(() => current.current, call.tool)
         : current.current;
       switch (call.tool) {
         case "get_view":
@@ -410,7 +412,10 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
           const direction = call.args.redo ? "redo" : "undo";
           const steps: string[] = [];
           for (let step = 0; step < call.args.steps; step++) {
-            const entry = await view.step(direction);
+            // a change the user makes meanwhile is theirs, not a step for the agent to walk back
+            const now = current.current;
+            if (now.editing() || now.unsaved()) break;
+            const entry = await now.step(direction);
             if (!entry) break;
             steps.push(historyLabel(entry));
           }
