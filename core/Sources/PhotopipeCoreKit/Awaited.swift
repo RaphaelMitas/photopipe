@@ -1,8 +1,8 @@
 import Foundation
 import Synchronization
 
-/// For a synchronous core request that has to use an async API. Blocks the caller, so a caller on Swift's
-/// pool, like an export, must leave a thread free for the task.
+/// Blocks the caller; an export waits here on Swift's pool, which spares a thread for the task only while
+/// exports stay utility.
 func awaited<Value: Sendable>(_ work: @escaping @Sendable () async throws -> Value) throws -> Value {
     let done = DispatchSemaphore(value: 0)
     let answer = Mutex<Result<Value, any Error>?>(nil)

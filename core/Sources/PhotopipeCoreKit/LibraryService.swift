@@ -305,17 +305,17 @@ public final class LibraryService: @unchecked Sendable {
         let found = try faces(paths: files.map(\.path), wait: 60)
         let pending = found.count { !$0.done }
         guard pending == 0 else { throw Look.LookError.facesPending(pending) }
-        let tiles = zip(files, found).enumerated().flatMap { index, pair in
+        let crops = zip(files, found).enumerated().flatMap { index, pair in
             (pair.1.faces ?? []).enumerated().map { face, spot in
                 (
                     file: pair.0, box: Look.around(spot.box),
                     label: "\(index + 1).\(face + 1)  \(Self.stem(pair.0))"
                 )
             }
-        }.prefix(Look.sheetLimit)
-        guard !tiles.isEmpty else { throw Look.LookError.noFaces }
-        let tile = Look.grid(count: tiles.count, longEdge: longEdge).cell
-        let crops = Array(tiles)
+        }
+        guard !crops.isEmpty else { throw Look.LookError.noFaces }
+        guard crops.count <= Look.sheetLimit else { throw Look.LookError.tooManyFaces(crops.count) }
+        let tile = Look.grid(count: crops.count, longEdge: longEdge).cell
         let rendered = try renderInBatches(crops.count) { index in
             try self.renderer.still(
                 file: crops[index].file, edit: .identity, longEdge: tile, viewport: crops[index].box)
@@ -357,23 +357,21 @@ public final class LibraryService: @unchecked Sendable {
         public let done: Bool
     }
 
-    /// Runs a face pass over photos not analyzed yet and waits for it; cached like Instinct scores.
+    /// Waits up to `wait` for the shared face pass; cached like Instinct scores.
     public func faces(paths: [String], wait: TimeInterval = 90) throws -> [PhotoFaces] {
         guard paths.count <= Look.sheetLimit else {
             throw Look.LookError.tooMany(paths.count, limit: Look.sheetLimit)
         }
         let deadline = Date().addingTimeInterval(wait)
-        func answered() throws -> ([ImageFile], [String: [FaceSpot]?]) {
-            // read again each time, since a rating mid-pass moves the stamp the answer is under
-            let files = try knownImages(paths: paths)
-            return (files, facer.answers(for: files))
-        }
-        var (files, answers) = try answered()
+        var files = try knownImages(paths: paths)
+        var answers = facer.answers(for: files)
         while !files.allSatisfy({ answers.keys.contains($0.path) }), Date() < deadline {
             // one shared pass, so asking again after a timeout joins the pass still running
             facer.start(shoot: "agent", files: files)
             Thread.sleep(forTimeInterval: 0.25)
-            (files, answers) = try answered()
+            // a rating mid-pass moves the stamp the answer is under; a photo gone since is answered unreadable
+            files = (try? knownImages(paths: paths)) ?? files
+            answers = facer.answers(for: files)
         }
         return files.map {
             PhotoFaces(

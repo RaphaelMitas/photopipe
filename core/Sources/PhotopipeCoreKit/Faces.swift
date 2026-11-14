@@ -6,9 +6,8 @@ import Vision
 public struct FaceSpot: Codable, Equatable, Sendable {
     /// Fractions of the photo from the top left.
     public let box: CropRect
-    /// Vision's face capture quality, 0 to 1.
     public let quality: Double?
-    /// Edge energy at up to native pixels; only comparable between frames of the same scene.
+    /// Only comparable between frames of the same scene.
     public let sharpness: Double?
 }
 
@@ -47,11 +46,13 @@ extension Analyzer where Value == [FaceSpot] {
 
     /// Vision's lower-left rect to the renderer's top-left fractions.
     static func box(_ rect: CGRect) -> CropRect {
-        CropRect(
+        // a face cut off at the edge reaches past the frame
+        let rect = rect.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+        return CropRect(
             left: rect.minX, top: 1 - rect.maxY, right: rect.maxX, bottom: 1 - rect.minY)
     }
 
-    /// Mean squared Laplacian of the grey image, scaled up to read as a plain number.
+    /// Mean squared Laplacian, scaled up to read as a plain number.
     static func sharpness(of image: CGImage) -> Double {
         let grey = CIImage(cgImage: image)
             .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0])

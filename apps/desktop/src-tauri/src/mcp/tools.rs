@@ -4,6 +4,7 @@ use super::ui;
 use crate::swift_core;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Map, Value};
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 pub type Content = Vec<Value>;
@@ -378,6 +379,21 @@ fn paths_of(ids: &[String]) -> Result<Vec<String>, String> {
         .collect()
 }
 
+/// Refuses an unknown id before the core can name the folder it would be in, which only pictures may see.
+fn known_paths(ids: &[String]) -> Result<Vec<String>, String> {
+    let mut listed: HashMap<&str, Vec<Value>> = HashMap::new();
+    for id in ids {
+        let (shoot, rel) = split_id(id)?;
+        if !listed.contains_key(shoot) {
+            listed.insert(shoot, images(shoot)?);
+        }
+        if !listed[shoot].iter().any(|image| image["rel"] == rel) {
+            return Err(format!("no photo {id}"));
+        }
+    }
+    paths_of(ids)
+}
+
 fn id_of(shoot: &str, image: &Value) -> String {
     format!("{shoot}/{}", image["rel"].as_str().unwrap_or_default())
 }
@@ -556,7 +572,7 @@ fn per_photo(method: &str, args: &Value, each: fn(&Value) -> Value) -> Result<Co
     if args.photos.is_empty() {
         return Err("photos is required".into());
     }
-    let answered = on_agent_lane(method, json!({ "paths": paths_of(&args.photos)? }))?;
+    let answered = on_agent_lane(method, json!({ "paths": known_paths(&args.photos)? }))?;
     let photos: Vec<Value> = args
         .photos
         .iter()
@@ -653,17 +669,12 @@ fn look(args: &Value, _: &Bridge) -> Result<Content, String> {
                 .enumerate()
                 .map(|(i, id)| format!("{} = {id}", i + 1))
                 .collect();
-            if faces {
-                format!(
-                    "Faces sheet: cell n.f is face f of photo n, left to right, top to bottom, where {}",
-                    cells.join(", ")
-                )
+            let lead = if faces {
+                "Faces sheet: cell n.f is face f of photo n, left to right, top to bottom, where"
             } else {
-                format!(
-                    "Sheet, cells numbered left to right, top to bottom: {}",
-                    cells.join(", ")
-                )
-            }
+                "Sheet, cells numbered left to right, top to bottom:"
+            };
+            format!("{lead} {}", cells.join(", "))
         } else {
             photos.join(", ")
         }));

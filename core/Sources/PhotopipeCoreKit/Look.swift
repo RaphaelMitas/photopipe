@@ -18,6 +18,7 @@ public enum Look {
         case nothingToShow
         case noFaces
         case facesPending(Int)
+        case tooManyFaces(Int)
         case encodeFailed
     }
 
@@ -146,7 +147,14 @@ extension Look.LookError: WireError {
         case .tooMany(let count, let limit):
             ResponseError(code: "too_many", message: "\(count) photos, at most \(limit) per look")
         case .nothingToShow: ResponseError(code: "invalid_params", message: "paths required")
-        case .noFaces: ResponseError(code: "no_faces", message: "no faces found in these photos")
+        case .noFaces:
+            ResponseError(code: "no_faces", message: "no faces found in these photos, or none could be read")
+        case .tooManyFaces(let count):
+            ResponseError(
+                code: "too_many",
+                message:
+                    "\(count) faces in these photos, at most \(Look.sheetLimit) per sheet; ask for fewer photos"
+            )
         case .facesPending(let count):
             ResponseError(
                 code: "faces_pending",
