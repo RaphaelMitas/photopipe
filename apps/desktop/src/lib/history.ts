@@ -170,9 +170,15 @@ async function travel(target: number, asked: Asked, onStart?: OnStart) {
   return run;
 }
 
-export function stepHistory(direction: HistoryDirection, onStart?: OnStart) {
+/// `from`, when given, is the entry an agent expects on top: anything else moved History first, so no move.
+export function stepHistory(
+  direction: HistoryDirection,
+  onStart?: OnStart,
+  from?: { id: number | undefined },
+) {
   const asked = { pushes, clears };
   return enqueue(async () => {
+    if (from && state.entries[state.cursor - 1]?.id !== from.id) return null;
     const target = state.cursor + (direction === "undo" ? -1 : 1);
     const [entry = null] = await travel(target, asked, onStart);
     return entry;

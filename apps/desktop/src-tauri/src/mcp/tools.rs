@@ -181,7 +181,7 @@ pub fn call(params: &Value, store: &AccessStore, bridge: &Bridge) -> Result<Valu
     })
 }
 
-pub fn text(text: impl Into<String>) -> Value {
+fn text(text: impl Into<String>) -> Value {
     json!({ "type": "text", "text": text.into() })
 }
 

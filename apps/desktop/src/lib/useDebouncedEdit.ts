@@ -77,7 +77,6 @@ export function useDebouncedEdit(
     [flush],
   );
 
-  /// A slider held, or a change still waiting to save.
   const busy = useCallback(() => held.current || pending.current !== null, []);
 
   return { draft, scrub, flush, cancel, hold, busy };

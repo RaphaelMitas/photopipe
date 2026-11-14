@@ -33,7 +33,7 @@ import {
   temperatureRange,
   tintRange,
 } from "./editSliders";
-import { historyLabel, historyState, jumpHistory } from "./history";
+import { historyLabel, historyState, stepHistory } from "./history";
 import { type Context, isActionId } from "./keymap";
 import { isModalOpen } from "./modal";
 import type { BatchResult } from "./queries";
@@ -135,6 +135,12 @@ function photosIn(
 const topOfHistory = (): number | undefined => {
   const { entries, cursor } = historyState();
   return entries[cursor - 1]?.id;
+};
+
+const entryBelow = (id: number): number | undefined => {
+  const { entries } = historyState();
+  const at = entries.findIndex((entry) => entry.id === id);
+  return at > 0 ? entries[at - 1].id : undefined;
 };
 
 /// Agents act only while the user is idle: no held slider, no open crop, no change still waiting to save.
@@ -402,19 +408,14 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
         case "undo": {
           const direction = call.args.redo ? "redo" : "undo";
           const steps: string[] = [];
-          let expected = topOfHistory();
+          let top = topOfHistory();
           for (let step = 0; step < call.args.steps; step++) {
-            // a change the user makes meanwhile is theirs, not a step for the agent to walk back
-            if (current.current.busy() || topOfHistory() !== expected) break;
-            const { entries, cursor } = historyState();
-            const target = entries[direction === "undo" ? cursor - 1 : cursor];
-            if (!target) break;
-            // a landing, not a step: a step the user's own Cmd-Z already took turns this into no move
-            const landing =
-              direction === "undo" ? (entries[cursor - 2] ?? null) : target;
-            if ((await jumpHistory(landing)) === 0) break;
-            steps.push(historyLabel(target));
-            expected = landing?.id;
+            if (current.current.busy()) break;
+            // checked in History's own queue, so a move the user queued first means no move
+            const entry = await stepHistory(direction, undefined, { id: top });
+            if (!entry) break;
+            steps.push(historyLabel(entry));
+            top = direction === "undo" ? entryBelow(entry.id) : entry.id;
           }
           if (steps.length > 0) {
             const verb = direction === "undo" ? "Undid" : "Redid";

@@ -36,7 +36,7 @@ const ACT: readonly [AgentAct, string][] = [
 
 const ACT_DETAIL: Record<AgentAct, string> = {
   off: "Agents can only read.",
-  cull: "Open shoots and photos, rate, flag, edit and undo. Each change is a step in History you can undo, and agents need to see at least details to make one.",
+  cull: "Open shoots and photos, rate, flag, edit, undo and press the app's keys. Each change is a step in History you can undo, and agents need to see at least details to make one.",
   everything: "Also export, and move photos to the Trash.",
 };
 
