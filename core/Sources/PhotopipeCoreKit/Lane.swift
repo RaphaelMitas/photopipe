@@ -15,12 +15,14 @@ public final class Lane: Sendable {
 
     private let workers: Int
     private let window: Int
+    private let qos: DispatchQoS.QoSClass
     private let state = Mutex(State())
     private let busy = DispatchGroup()
 
-    public init(workers: Int, window: Int) {
+    public init(workers: Int, window: Int, qos: DispatchQoS.QoSClass = .userInitiated) {
         self.workers = workers
         self.window = window
+        self.qos = qos
     }
 
     /// Calls exactly one of the two.
@@ -41,7 +43,7 @@ public final class Lane: Sendable {
             busy.leave()
         }
         if startWorker {
-            DispatchQueue.global(qos: .userInitiated).async { self.work() }
+            DispatchQueue.global(qos: qos).async { self.work() }
         }
     }
 

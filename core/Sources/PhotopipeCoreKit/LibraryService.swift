@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import Synchronization
 
 /// Reached from the dispatcher's worker pool, the watcher's queue and the
 /// enricher's; every field below is guarded by `lock`.
@@ -264,6 +266,93 @@ public final class LibraryService: @unchecked Sendable {
         try renderer.preview(
             file: recordUnderRoot(path: path), edit: edit, maxPixel: maxPixel,
             viewport: viewport, decoderVersion: decoderVersion)
+    }
+
+    /// `at` is a spot in the framed photo, from the top left; with it every tile is native pixels around that spot.
+    public func look(
+        ids: [String], edited: Bool, longEdge: Int, at spot: CGPoint?, sheet: Bool,
+        maxBytes: Int
+    ) throws -> Look.Reply {
+        guard !ids.isEmpty else { throw Look.LookError.nothingToShow }
+        let limit = sheet ? Look.sheetLimit : Look.separateLimit
+        guard ids.count <= limit else { throw Look.LookError.tooMany(ids.count, limit: limit) }
+        let files = try readImages(ids: ids)
+        let longEdge = min(max(longEdge, Look.longEdges.lowerBound), Look.longEdges.upperBound)
+        let tile = sheet ? Look.grid(count: files.count, longEdge: longEdge).cell : longEdge
+
+        let stills = Mutex([(image: CGImage, unmasked: Bool)?](repeating: nil, count: files.count))
+        let failure = Mutex<Error?>(nil)
+        // a few at a time: each raw decode is a whole sensor's worth of memory
+        for start in stride(from: 0, to: files.count, by: 3) {
+            let batch = Array(start..<min(start + 3, files.count))
+            DispatchQueue.concurrentPerform(iterations: batch.count) { slot in
+                let index = batch[slot]
+                do {
+                    let still = try self.still(of: files[index], edited: edited, tile: tile, at: spot)
+                    stills.withLock { $0[index] = still }
+                } catch {
+                    failure.withLock { $0 = $0 ?? error }
+                }
+            }
+            if let error = failure.withLock({ $0 }) { throw error }
+        }
+        let rendered = stills.withLock { $0 }.compactMap { $0 }
+        let unmasked = rendered.indices.filter { rendered[$0].unmasked }
+        if sheet {
+            let labels = files.enumerated().map { index, file in
+                "\(index + 1)  \((file.rel as NSString).lastPathComponent)"
+            }
+            let canvas = try Look.sheet(rendered.map(\.image), labels: labels, longEdge: longEdge)
+            return Look.Reply(images: [try Look.shown(canvas, maxBytes: maxBytes)], unmasked: unmasked)
+        }
+        return Look.Reply(
+            images: try rendered.map { try Look.shown($0.image, maxBytes: maxBytes / rendered.count) },
+            unmasked: unmasked)
+    }
+
+    private func still(of file: ImageFile, edited: Bool, tile: Int, at spot: CGPoint?) throws
+        -> (image: CGImage, unmasked: Bool)
+    {
+        let edit = edited ? file.edit : .identity
+        let viewport = spot.map {
+            Look.viewport(around: $0, tile: tile, framed: Look.framedSize(of: file, edit: edit))
+        }
+        return try renderer.still(file: file, edit: edit, longEdge: tile, viewport: viewport)
+    }
+
+    public struct Original: Sendable, Encodable {
+        public let path: String
+        public let sidecar: String?
+    }
+
+    public func originals(ids: [String]) throws -> [Original] {
+        try knownImages(ids: ids).map { image in
+            let sidecar = XMP.sidecarURL(forImagePath: image.path)
+            return Original(
+                path: image.path,
+                sidecar: (try? XMP.isOwnSidecar(sidecar)) == true ? sidecar.path : nil)
+        }
+    }
+
+    /// A placeholder is read here but not stored, so a write landing meanwhile is never undone.
+    private func readImages(ids: [String]) throws -> [ImageFile] {
+        try knownImages(ids: ids).map { $0.enriched ? $0 : enrich($0) }
+    }
+
+    /// An agent's id for a photo is its shoot's name, a slash, and its path inside the shoot.
+    private func knownImages(ids: [String]) throws -> [ImageFile] {
+        var shoots: [String: [String: ImageFile]] = [:]
+        return try ids.map { id in
+            let parts = id.split(separator: "/", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { throw ServiceError.unknownImage(id) }
+            if shoots[parts[0]] == nil {
+                shoots[parts[0]] = Dictionary(
+                    try snapshotImages(inShoot: parts[0]).map { ($0.rel, $0) },
+                    uniquingKeysWith: { $1 })
+            }
+            guard let image = shoots[parts[0]]?[parts[1]] else { throw ServiceError.unknownImage(id) }
+            return image
+        }
     }
 
     public func maskOverlay(

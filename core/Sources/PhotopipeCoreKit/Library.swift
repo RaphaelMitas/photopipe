@@ -65,6 +65,11 @@ public struct ImageFile: Encodable, Equatable, Sendable {
     public let sidecarMtime: Double
     /// Encoded so the UI never keeps a list of its own.
     public let isRaw: Bool
+    /// Encoded for the MCP tools, which get the edit as JSON and cannot tell an identity edit by its fields.
+    public let edited: Bool
+    /// What sorting by date uses, in the app and for agents. Like `captured`, a wall clock read as UTC, so a
+    /// file without one sorts by the local time it was written.
+    public let taken: Double
 
     public init(
         path: String, rel: String, ext: String, size: Int64, mtime: Double,
@@ -90,6 +95,10 @@ public struct ImageFile: Encodable, Equatable, Sendable {
         self.enriched = enriched
         self.sidecarMtime = sidecarMtime
         self.isRaw = rawExtensions.contains(ext.lowercased())
+        self.edited = !edit.isIdentity
+        taken =
+            captured
+            ?? mtime + Double(TimeZone.current.secondsFromGMT(for: Date(timeIntervalSince1970: mtime)))
     }
 
     var sidecarOnly: Bool {

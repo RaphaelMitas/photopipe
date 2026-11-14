@@ -200,6 +200,8 @@ export type ImageFile = {
   score: number | null;
   // seconds, the camera clock read as if it were UTC
   captured: number | null;
+  // what Date sorts by: captured, or the local time the file was written, read as UTC the same way
+  taken: number;
   exif: Exif;
   // path of the first photo in its stack, its own when alone, null until analyzed
   stack: string | null;

@@ -27,6 +27,13 @@ private func meanChannels(
     guard let image = CIImage(contentsOf: url) else {
         throw Renderer.RenderError.unreadable(url.path)
     }
+    return meanChannels(of: image, region: region, colorSpace: colorSpace)
+}
+
+func meanChannels(
+    of image: CIImage, region: CGRect? = nil,
+    colorSpace: CGColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+) -> (red: Double, green: Double, blue: Double) {
     let average = image.applyingFilter(
         "CIAreaAverage",
         parameters: [kCIInputExtentKey: CIVector(cgRect: region ?? image.extent)])
@@ -442,17 +449,20 @@ private func writeSyntheticJPEG(
     return url
 }
 
-private func writeHalvesJPEG(
+@discardableResult
+func writeHalvesJPEG(
     left: CIColor = CIColor(red: 1, green: 0, blue: 0),
     right: CIColor = CIColor(red: 0, green: 0, blue: 1),
-    width: Int = 64, height: Int = 64
+    width: Int = 64, height: Int = 64,
+    at url: URL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("photopipe-halves-\(UUID().uuidString).jpg")
 ) throws -> URL {
     let leftHalf = CIImage(color: left)
         .cropped(to: CGRect(x: 0, y: 0, width: width, height: height))
     let rightHalf = CIImage(color: right)
         .cropped(to: CGRect(x: width / 2, y: 0, width: width / 2, height: height))
-    let url = FileManager.default.temporaryDirectory
-        .appendingPathComponent("photopipe-halves-\(UUID().uuidString).jpg")
+    try FileManager.default.createDirectory(
+        at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     try CIContext().writeJPEGRepresentation(
         of: rightHalf.composited(over: leftHalf), to: url,
         colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
@@ -1749,6 +1759,7 @@ private let rightSide = CGRect(x: 40, y: 0, width: 24, height: 64)
     #expect(preview.unmasked)
     #expect(preview.cachePath == plain.path)
     #expect(try !noModel.preview(file: file, edit: .identity, maxPixel: 64).unmasked)
+    #expect(try noModel.still(file: file, edit: masked, longEdge: 64).unmasked)
 
     let exported = out.appendingPathComponent("masked.jpg")
     try noModel.exportJPEG(file: file, edit: masked, quality: 0.9, to: exported)
@@ -1759,6 +1770,7 @@ private let rightSide = CGRect(x: 40, y: 0, width: 24, height: 64)
     defer { try? FileManager.default.removeItem(at: uncut) }
     let failing = Renderer(cacheDir: uncut) { _, _, _ in throw ModelFailed() }
     #expect(try failing.preview(file: file, edit: masked, maxPixel: 64).unmasked)
+    #expect(try failing.still(file: file, edit: masked, longEdge: 64).unmasked)
     #expect(throws: ModelFailed.self) {
         try failing.exportJPEG(
             file: file, edit: masked, quality: 0.9, to: out.appendingPathComponent("failed.jpg"))

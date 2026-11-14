@@ -7,6 +7,7 @@ export type Features = {
   photoLibrary: boolean;
   reveal: boolean;
   trash: boolean;
+  agents: boolean;
 };
 
 const NONE: Features = {
@@ -15,6 +16,7 @@ const NONE: Features = {
   photoLibrary: false,
   reveal: false,
   trash: false,
+  agents: false,
 };
 
 export function useFeatures(): Features {

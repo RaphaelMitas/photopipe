@@ -1,8 +1,7 @@
 use crate::bookmark::{self, Failure, Live};
+use crate::defaults;
 use objc2::rc::Retained;
-use objc2::runtime::AnyObject;
-use objc2::AllocAnyThread;
-use objc2_foundation::{NSString, NSUserDefaults};
+use objc2_foundation::NSUserDefaults;
 use serde::Serialize;
 use std::collections::HashSet;
 use std::path::Path;
@@ -51,19 +50,9 @@ pub struct Roots {
 
 impl Roots {
     pub fn load(suite: Option<&str>) -> Self {
-        let defaults = match suite {
-            Some(suite) => NSUserDefaults::initWithSuiteName(
-                NSUserDefaults::alloc(),
-                Some(&NSString::from_str(suite)),
-            )
-            .expect("suite defaults"),
-            None => NSUserDefaults::standardUserDefaults(),
-        };
+        let defaults = defaults::open(suite);
         // only a change to Live makes this unparseable; starting empty beats refusing to launch
-        let stored: Vec<Live> = defaults
-            .stringForKey(&NSString::from_str(KEY))
-            .and_then(|json| serde_json::from_str(&json.to_string()).ok())
-            .unwrap_or_default();
+        let stored: Vec<Live> = defaults::read(&defaults, KEY).unwrap_or_default();
         // resolving a bookmark can stall on a slow volume, so launch leaves it to the first listing
         let pending = |live| Entry {
             live,
@@ -77,12 +66,7 @@ impl Roots {
 
     fn write(&self, entries: &[Entry]) {
         let stored: Vec<&Live> = entries.iter().map(|entry| &entry.live).collect();
-        let json = NSString::from_str(&serde_json::to_string(&stored).expect("roots json"));
-        let object: &AnyObject = &json;
-        unsafe {
-            self.defaults
-                .setObject_forKey(Some(object), &NSString::from_str(KEY));
-        }
+        defaults::write(&self.defaults, KEY, &stored);
     }
 
     pub fn list(&self) -> Vec<Listing> {
@@ -154,13 +138,8 @@ impl Roots {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn suite(tag: &str) -> String {
-        let suite = format!("net.photopipe.desktop.tests.{tag}");
-        NSUserDefaults::standardUserDefaults()
-            .removePersistentDomainForName(&NSString::from_str(&suite));
-        suite
-    }
+    use crate::defaults::{remove_suite, test_suite as suite};
+    use objc2_foundation::NSString;
 
     fn folder(tag: &str) -> std::path::PathBuf {
         let dir =
@@ -200,8 +179,7 @@ mod tests {
         for dir in [old, new] {
             let _ = std::fs::remove_dir_all(dir);
         }
-        NSUserDefaults::standardUserDefaults()
-            .removePersistentDomainForName(&NSString::from_str(&suite));
+        remove_suite(&suite);
     }
 
     #[test]
@@ -226,8 +204,7 @@ mod tests {
         assert!(reloaded.reopen(&path).unwrap().is_ok());
         assert_eq!(reloaded.list()[0].status, "ok");
         let _ = std::fs::remove_dir_all(&dir);
-        NSUserDefaults::standardUserDefaults()
-            .removePersistentDomainForName(&NSString::from_str(&suite));
+        remove_suite(&suite);
     }
 
     #[test]
@@ -246,8 +223,7 @@ mod tests {
         assert_eq!(listed[0].status, "ok");
         assert!(same(&listed[0].path, &after));
         let _ = std::fs::remove_dir_all(&after);
-        NSUserDefaults::standardUserDefaults()
-            .removePersistentDomainForName(&NSString::from_str(&suite));
+        remove_suite(&suite);
     }
 
     #[test]
@@ -264,8 +240,7 @@ mod tests {
         let stored = Roots::load(Some(&suite));
         assert_eq!(stored.entries.lock().unwrap()[0].live.path, listed[0].path);
         let _ = std::fs::remove_dir_all(&after);
-        NSUserDefaults::standardUserDefaults()
-            .removePersistentDomainForName(&NSString::from_str(&suite));
+        remove_suite(&suite);
     }
 
     #[test]
@@ -304,7 +279,6 @@ mod tests {
             "untouched"
         );
         let _ = std::fs::remove_dir_all(&dir);
-        NSUserDefaults::standardUserDefaults()
-            .removePersistentDomainForName(&NSString::from_str(&suite));
+        remove_suite(&suite);
     }
 }

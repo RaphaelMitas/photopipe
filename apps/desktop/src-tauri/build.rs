@@ -12,5 +12,11 @@ fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
         println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
     }
+    println!("cargo::rustc-check-cfg=cfg(agents)");
+    if std::env::var_os("CARGO_FEATURE_AGENTS").is_some()
+        && std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos")
+    {
+        println!("cargo:rustc-cfg=agents");
+    }
     tauri_build::build()
 }
