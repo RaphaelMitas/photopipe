@@ -18,7 +18,7 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
     /// Rows cached under another version are ignored, so a bump replaces the cache without a migration.
     private let version: Int
     private let concurrency: Int
-    private let analyze: @Sendable (String) async -> Value?
+    private let analyze: @Sendable (ImageFile) async -> Value?
     private let flushEvery = 32
 
     private let lock = NSLock()
@@ -34,7 +34,7 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
     private var gone: Set<String> = []
 
     public init(
-        version: Int, concurrency: Int, analyze: @escaping @Sendable (String) async -> Value?
+        version: Int, concurrency: Int, analyze: @escaping @Sendable (ImageFile) async -> Value?
     ) {
         self.version = version
         self.concurrency = concurrency
@@ -126,7 +126,7 @@ public final class Analyzer<Value: Sendable>: @unchecked Sendable {
             return buffer.compactMap { path in cache[path].map { (path, $0) } }
         }
         await forEachConcurrently(pending, width: concurrency) { file in
-            (file, await analyze(file.path))
+            (file, await analyze(file))
         } onResult: { answered, cancelled in
             let (file, value) = answered
             // Vision reports a cancelled read like an unreadable file; recording it would write it off.

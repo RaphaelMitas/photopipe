@@ -39,6 +39,7 @@ public final class LibraryService: @unchecked Sendable {
     private let renderer: Renderer
     private let scorer: Scorer
     private let printer: Printer
+    private let facer: Facer
     private let exporter = Exporter()
     private let rescanQueue = DispatchQueue(label: "photopipe.rescan")
     /// One connection, one writer: enrichment batches and full saves both land
@@ -57,6 +58,7 @@ public final class LibraryService: @unchecked Sendable {
         self.renderer = renderer
         self.scorer = scorer
         self.printer = printer
+        facer = Facer(renderer: renderer)
     }
 
     public static func defaultIndexPath() -> String {
@@ -269,38 +271,29 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     /// `at` is a spot in the framed photo, from the top left; with it every tile is native pixels around that spot.
+    /// `faces` sheets every face found at up to native pixels, unedited, since faces are found in the photo as shot.
     public func look(
         ids: [String], edited: Bool, longEdge: Int, at spot: CGPoint?, sheet: Bool,
-        maxBytes: Int
+        faces: Bool = false, maxBytes: Int
     ) throws -> Look.Reply {
         guard !ids.isEmpty else { throw Look.LookError.nothingToShow }
-        let limit = sheet ? Look.sheetLimit : Look.separateLimit
+        let limit = sheet || faces ? Look.sheetLimit : Look.separateLimit
         guard ids.count <= limit else { throw Look.LookError.tooMany(ids.count, limit: limit) }
         let files = try readImages(ids: ids)
         let longEdge = min(max(longEdge, Look.longEdges.lowerBound), Look.longEdges.upperBound)
-        let tile = sheet ? Look.grid(count: files.count, longEdge: longEdge).cell : longEdge
-
-        let stills = Mutex([(image: CGImage, unmasked: Bool)?](repeating: nil, count: files.count))
-        let failure = Mutex<Error?>(nil)
-        // a few at a time: each raw decode is a whole sensor's worth of memory
-        for start in stride(from: 0, to: files.count, by: 3) {
-            let batch = Array(start..<min(start + 3, files.count))
-            DispatchQueue.concurrentPerform(iterations: batch.count) { slot in
-                let index = batch[slot]
-                do {
-                    let still = try self.still(of: files[index], edited: edited, tile: tile, at: spot)
-                    stills.withLock { $0[index] = still }
-                } catch {
-                    failure.withLock { $0 = $0 ?? error }
-                }
-            }
-            if let error = failure.withLock({ $0 }) { throw error }
+        if faces {
+            return Look.Reply(
+                images: [try faceSheet(of: files, ids: ids, longEdge: longEdge, maxBytes: maxBytes)],
+                unmasked: [])
         }
-        let rendered = stills.withLock { $0 }.compactMap { $0 }
+        let tile = sheet ? Look.grid(count: files.count, longEdge: longEdge).cell : longEdge
+        let rendered = try renderInBatches(files.count) { index in
+            try self.still(of: files[index], edited: edited, tile: tile, at: spot)
+        }
         let unmasked = rendered.indices.filter { rendered[$0].unmasked }
         if sheet {
             let labels = files.enumerated().map { index, file in
-                "\(index + 1)  \((file.rel as NSString).lastPathComponent)"
+                "\(index + 1)  \(Self.stem(file))"
             }
             let canvas = try Look.sheet(rendered.map(\.image), labels: labels, longEdge: longEdge)
             return Look.Reply(images: [try Look.shown(canvas, maxBytes: maxBytes)], unmasked: unmasked)
@@ -308,6 +301,111 @@ public final class LibraryService: @unchecked Sendable {
         return Look.Reply(
             images: try rendered.map { try Look.shown($0.image, maxBytes: maxBytes / rendered.count) },
             unmasked: unmasked)
+    }
+
+    private func faceSheet(of files: [ImageFile], ids: [String], longEdge: Int, maxBytes: Int) throws
+        -> Look.Shown
+    {
+        // leaves the crops time to render before the host gives up on the request
+        let found = try self.faces(ids: ids, wait: 60)
+        let pending = found.count { !$0.done }
+        guard pending == 0 else { throw Look.LookError.facesPending(pending) }
+        let crops = zip(files, found).enumerated().flatMap { index, pair in
+            (pair.1.faces ?? []).enumerated().map { face, spot in
+                (
+                    file: pair.0, box: Look.around(spot.box),
+                    label: "\(index + 1).\(face + 1)  \(Self.stem(pair.0))"
+                )
+            }
+        }
+        guard !crops.isEmpty else { throw Look.LookError.noFaces }
+        guard crops.count <= Look.sheetLimit else { throw Look.LookError.tooManyFaces(crops.count) }
+        let tile = Look.grid(count: crops.count, longEdge: longEdge).cell
+        let rendered = try renderInBatches(crops.count) { index in
+            try self.renderer.still(
+                file: crops[index].file, edit: .identity, longEdge: tile, viewport: crops[index].box
+            ).image
+        }
+        let canvas = try Look.sheet(rendered, labels: crops.map(\.label), longEdge: longEdge)
+        return try Look.shown(canvas, maxBytes: maxBytes)
+    }
+
+    private static func stem(_ file: ImageFile) -> String {
+        (file.rel as NSString).lastPathComponent
+    }
+
+    /// A few at a time: each raw decode is a whole sensor's worth of memory.
+    private func renderInBatches<Still: Sendable>(
+        _ count: Int, _ render: @escaping @Sendable (Int) throws -> Still
+    ) throws -> [Still] {
+        let stills = Mutex([Still?](repeating: nil, count: count))
+        let failure = Mutex<Error?>(nil)
+        for start in stride(from: 0, to: count, by: 3) {
+            let batch = Array(start..<min(start + 3, count))
+            DispatchQueue.concurrentPerform(iterations: batch.count) { slot in
+                let index = batch[slot]
+                do {
+                    let still = try render(index)
+                    stills.withLock { $0[index] = still }
+                } catch {
+                    failure.withLock { $0 = $0 ?? error }
+                }
+            }
+            if let error = failure.withLock({ $0 }) { throw error }
+        }
+        return stills.withLock { $0 }.compactMap { $0 }
+    }
+
+    public struct PhotoFaces: Sendable, Encodable {
+        /// nil when the photo could not be read or is not done.
+        public let faces: [FaceSpot]?
+        public let done: Bool
+    }
+
+    /// Joins the shared face pass; cached like Instinct scores.
+    public func faces(ids: [String], wait: TimeInterval = 90) throws -> [PhotoFaces] {
+        guard ids.count <= Look.sheetLimit else {
+            throw Look.LookError.tooMany(ids.count, limit: Look.sheetLimit)
+        }
+        let deadline = Date().addingTimeInterval(wait)
+        var files = try knownImages(ids: ids)
+        var answers = facer.answers(for: files)
+        while !files.allSatisfy({ answers.keys.contains($0.path) }), Date() < deadline {
+            // one shared pass, so asking again after a timeout joins the pass still running
+            facer.start(shoot: "agent", files: files)
+            Thread.sleep(forTimeInterval: 0.25)
+            // a rating mid-pass moves the stamp the answer is under; a photo gone or another root ends the wait
+            guard let fresh = try? knownImages(ids: ids) else { break }
+            files = fresh
+            answers = facer.answers(for: files)
+        }
+        return files.map {
+            PhotoFaces(faces: answers[$0.path] ?? nil, done: answers.keys.contains($0.path))
+        }
+    }
+
+    public struct Description: Sendable, Encodable {
+        public let text: String?
+        public let error: String?
+        public let unmasked: Bool
+    }
+
+    public func describe(ids: [String]) throws -> [Description] {
+        guard ids.count <= Look.separateLimit else {
+            throw Look.LookError.tooMany(ids.count, limit: Look.separateLimit)
+        }
+        guard Describer.isAvailable else { throw Describer.Unavailable() }
+        return try readImages(ids: ids).map { file in
+            do {
+                let still = try still(of: file, edited: true, tile: 1024, at: nil)
+                return Description(
+                    text: try Describer.describe(still.image), error: nil, unmasked: still.unmasked)
+            } catch {
+                // a render error names the original's path, which is for agents that see pictures
+                let error = error is Renderer.RenderError ? "could not read this photo" : "\(error)"
+                return Description(text: nil, error: error, unmasked: false)
+            }
+        }
     }
 
     private func still(of file: ImageFile, edited: Bool, tile: Int, at spot: CGPoint?) throws
@@ -479,6 +577,7 @@ public final class LibraryService: @unchecked Sendable {
         replace(settled, inShoot: shoot)
         scorer.restamp(image, to: settled)
         printer.restamp(image, to: settled)
+        facer.restamp(image, to: settled)
         renderer.restamp(image, to: settled)
         let index = lock.withLock { self.index }
         indexQueue.async { try? index?.upsert(shoot: shoot, files: [settled]) }
@@ -757,6 +856,9 @@ public final class LibraryService: @unchecked Sendable {
             }
             printer.use(cache: (try? index?.loadPrints(under: root)) ?? [:]) { rows in
                 queue.async { try? index?.savePrints(rows) }
+            }
+            facer.use(cache: (try? index?.loadFaces(under: root)) ?? [:]) { rows in
+                queue.async { try? index?.saveFaces(rows) }
             }
         }
     }

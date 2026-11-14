@@ -16,6 +16,7 @@ import {
   resizeCrop,
   rotatedSize,
   STRAIGHTEN_RANGE,
+  STRAIGHTEN_SLIDER_RANGE,
   signedAngle,
   transposeCrop,
   turnCrop,
@@ -23,9 +24,6 @@ import {
 import { capturePointer, cursorIn } from "@/lib/pointer";
 import { ShortcutTooltip } from "./ShortcutTooltip";
 import { SliderRow } from "./SliderRow";
-
-// Fine enough to level a horizon by finger; Turn 90° covers larger turns.
-const ANGLE_SLIDER_RANGE = 45;
 
 type PanelProps = {
   image: ImageFile;
@@ -140,8 +138,7 @@ export function CropPanel({
         label="Angle"
         value={draft.angle}
         display={signedAngle(draft.angle)}
-        min={-ANGLE_SLIDER_RANGE}
-        max={ANGLE_SLIDER_RANGE}
+        {...STRAIGHTEN_SLIDER_RANGE}
         step={0.1}
         testid="crop-angle"
         resetLabel="Reset angle"

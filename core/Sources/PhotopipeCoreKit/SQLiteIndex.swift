@@ -89,6 +89,13 @@ public final class SQLiteIndex: @unchecked Sendable {
                 size INTEGER NOT NULL,
                 version INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS faces (
+                path TEXT PRIMARY KEY,
+                faces TEXT,
+                mtime REAL NOT NULL,
+                size INTEGER NOT NULL,
+                version INTEGER NOT NULL
+            );
             """)
         try exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema', '\(Self.schemaVersion)')")
         try exec("SELECT count(*) FROM files")
@@ -266,6 +273,19 @@ public final class SQLiteIndex: @unchecked Sendable {
         }
     }
 
+    public func loadFaces(under root: String) throws -> [String: Facer.Row] {
+        try loadRows("faces", from: "faces", under: root) { columnJSON([FaceSpot].self, $0, 1) }
+    }
+
+    public func saveFaces(_ rows: [(String, Facer.Row)]) throws {
+        try saveRows(
+            "INSERT OR REPLACE INTO faces (path, faces, mtime, size, version) VALUES (?,?,?,?,?)",
+            rows
+        ) { statement, faces in
+            try bindJSON(statement, 2, faces, unless: nil)
+        }
+    }
+
     /// NULL for the default keeps the index small.
     private func bindJSON<Value: Encodable & Equatable>(
         _ statement: OpaquePointer?, _ index: Int32, _ value: Value, unless empty: Value
@@ -328,7 +348,7 @@ public final class SQLiteIndex: @unchecked Sendable {
     /// whatever sits between.
     private func saveRows<Value>(
         _ sql: String, _ rows: [(String, AnalysisRow<Value>)],
-        bind: (OpaquePointer?, Value?) -> Void
+        bind: (OpaquePointer?, Value?) throws -> Void
     ) throws {
         guard !rows.isEmpty else { return }
         try write {
@@ -337,7 +357,7 @@ public final class SQLiteIndex: @unchecked Sendable {
                 for (path, row) in rows {
                     sqlite3_reset(statement)
                     sqlite3_bind_text(statement, 1, path, -1, transientDestructor)
-                    bind(statement, row.value)
+                    try bind(statement, row.value)
                     sqlite3_bind_double(statement, last - 2, row.mtime)
                     sqlite3_bind_int64(statement, last - 1, row.size)
                     sqlite3_bind_int64(statement, last, Int64(row.version))

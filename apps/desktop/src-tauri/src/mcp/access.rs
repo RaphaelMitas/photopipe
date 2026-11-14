@@ -13,13 +13,24 @@ pub enum See {
     #[default]
     Off,
     Details,
+    Descriptions,
     Pictures,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Act {
+    #[default]
+    Off,
+    Cull,
+    Everything,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Access {
     pub see: See,
+    pub act: Act,
 }
 
 type Listener = Box<dyn Fn() + Send>;
@@ -78,13 +89,16 @@ mod tests {
         store.on_change(move || {
             counter.fetch_add(1, Ordering::SeqCst);
         });
-        let pictures = Access { see: See::Pictures };
+        let pictures = Access {
+            see: See::Pictures,
+            act: Act::Cull,
+        };
         store.set(pictures);
         store.set(pictures);
         assert_eq!(heard.load(Ordering::SeqCst), 1);
         assert_eq!(AccessStore::load(Some(&suite)).get(), pictures);
 
-        AccessStore::load(Some(&suite)).set(Access { see: See::Off });
+        AccessStore::load(Some(&suite)).set(Access::default());
         assert_eq!(
             store.get().see,
             See::Off,

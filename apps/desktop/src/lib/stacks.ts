@@ -90,6 +90,9 @@ const changesTo = <V>(
 export const ratedTo = (photos: ImageFile[], rating: number) =>
   changesTo(photos, (photo) => photo.rating, rating);
 
+export const flaggedTo = (photos: ImageFile[], flag: Flag) =>
+  changesTo<Flag>(photos, (photo) => photo.flag, flag);
+
 export const sharedFlag = (photos: ImageFile[]): Flag =>
   photos.every((photo) => photo.flag === photos[0]?.flag)
     ? (photos[0]?.flag ?? 0)
@@ -102,7 +105,7 @@ export const toggledFlag = (photos: ImageFile[], flag: Flag) =>
   toggled(sharedFlag(photos), flag);
 
 export const toggledFlags = (photos: ImageFile[], flag: Flag) =>
-  changesTo<Flag>(photos, (photo) => photo.flag, toggledFlag(photos, flag));
+  flaggedTo(photos, toggledFlag(photos, flag));
 
 export const sweepStack = (stack: Stack) =>
   changesTo<Flag>(

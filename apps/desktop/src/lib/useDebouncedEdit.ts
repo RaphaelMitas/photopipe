@@ -37,13 +37,12 @@ export function useDebouncedEdit(
 
   const flush = useCallback(() => {
     const next = takePending();
-    if (!next) return;
+    if (!next) return Promise.resolve();
     // The optimistic patch lands async, so the draft stays until the write settles.
     const settled = () => setDraft((draft) => (draft === next ? null : draft));
-    Promise.resolve(commitRef.current(next.path, next.edit)).then(
-      settled,
-      settled,
-    );
+    const written = Promise.resolve(commitRef.current(next.path, next.edit));
+    written.then(settled, settled);
+    return written;
   }, [takePending]);
 
   // A drag saves once, on release; everything else saves at rest.
@@ -71,7 +70,14 @@ export function useDebouncedEdit(
     [flush, delayMs],
   );
 
-  useEffect(() => () => flush(), [flush]);
+  useEffect(
+    () => () => {
+      void flush();
+    },
+    [flush],
+  );
 
-  return { draft, scrub, flush, cancel, hold };
+  const busy = useCallback(() => held.current || pending.current !== null, []);
+
+  return { draft, scrub, flush, cancel, hold, busy };
 }

@@ -32,6 +32,8 @@ const landed = (batch: Promise<BatchResult>) =>
     }
   });
 
+const PASTED = { icon: ClipboardPaste, label: "Paste settings" };
+
 const ratingDetail = (rating: number) =>
   rating === 0 ? "cleared" : "★".repeat(rating);
 
@@ -166,13 +168,15 @@ export function useRecordedWrites(shoot: string | null) {
   );
 
   const paste = useCallback(
-    (pasted: Map<string, Edit>): Promise<BatchResult> => {
+    (
+      pasted: Map<string, Edit>,
+      described: { icon: LucideIcon; label: string } = PASTED,
+    ): Promise<BatchResult> => {
       const batch = pasteEdits(pasted);
       // Recorded up front: ⌘Z during a long paste has to mean this paste.
       void edits.record(
         {
-          icon: ClipboardPaste,
-          label: "Paste settings",
+          ...described,
           paths: [...pasted.keys()],
           written: batch.then((result) => {
             if (result.written === 0) throw new Error("nothing pasted");

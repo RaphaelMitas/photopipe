@@ -276,7 +276,31 @@ let roots: RootEntry[] =
     : [];
 
 let picked: string | null = null;
-let agentAccess: unknown = { see: "off" };
+let agentAccess: unknown = { see: "off", act: "off" };
+const agentReplies: unknown[] = [];
+let nextAgentRequest = 1;
+
+export async function askAgent(tool: string, args: unknown) {
+  const id = nextAgentRequest++;
+  const { emit } = await import("@tauri-apps/api/event");
+  await emit("agent:request", {
+    id,
+    tool,
+    args,
+    deadline: Date.now() + 60_000,
+  });
+  for (let tries = 0; tries < 200; tries++) {
+    const reply = agentReplies.find(
+      (candidate) =>
+        typeof candidate === "object" &&
+        candidate !== null &&
+        Reflect.get(candidate, "id") === id,
+    );
+    if (reply) return reply;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`no reply to ${tool}`);
+}
 
 function stringArg(args: unknown, key: string): string | undefined {
   if (typeof args !== "object" || args === null || !(key in args)) return;
@@ -303,6 +327,10 @@ export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
     }
   },
   agent_command: () => "/Applications/Photopipe.app/Contents/MacOS/Photopipe",
+  agent_attach: () => null,
+  agent_reply: (args) => {
+    agentReplies.push(args);
+  },
   pick_folder: (args) => {
     picked =
       stringArg(args, "title") === "Export to folder"

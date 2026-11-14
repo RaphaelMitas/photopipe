@@ -67,6 +67,19 @@ describe("history", () => {
     expect(await stepHistory("redo")).toBeNull();
   });
 
+  it("an agent's step expecting a top that the user's queued move changed does not move", async () => {
+    set(1);
+    set(2);
+    await tick();
+    const top = historyState().entries[1].id;
+    const user = stepHistory("undo");
+    const agent = stepHistory("undo", undefined, { id: top });
+    await user;
+    expect(await agent).toBeNull();
+    expect(disk.get("a.arw")).toBe(1);
+    expect(historyState().cursor).toBe(1);
+  });
+
   it("runs quick presses one after the other", async () => {
     set(1);
     set(2);

@@ -1,31 +1,42 @@
-use super::access::{Access, AccessStore, See};
+use super::access::{Access, AccessStore, Act, See};
+use super::bridge::Bridge;
+use super::ui;
 use crate::swift_core;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::time::{Duration, Instant};
 
-type Content = Vec<Value>;
+pub type Content = Vec<Value>;
 
-struct Tool {
-    name: &'static str,
-    see: See,
-    description: &'static str,
-    input: fn() -> Value,
-    run: fn(&Value) -> Result<Content, String>,
+pub struct Tool {
+    pub name: &'static str,
+    pub see: See,
+    pub act: Act,
+    pub description: &'static str,
+    pub input: fn() -> Value,
+    pub run: fn(&Value, &Bridge) -> Result<Content, String>,
 }
 
 /// Raw JPEG bytes; a third larger as base64, still under Claude Desktop's 1 MB reply cap.
 const LOOK_BUDGET: usize = 600_000;
 
-/// The look lane runs newest first, so a queued look would time out.
-static LOOKING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+/// The core's agent lane runs newest first, so a request queued there would time out.
+static AGENT_LANE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn on_agent_lane(method: &str, params: Value) -> Result<Value, String> {
+    let _turn = AGENT_LANE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    core(method, params)
+}
 const PAGE: usize = 200;
 
-fn catalog() -> [Tool; 4] {
-    [
+fn catalog() -> Vec<Tool> {
+    let mut tools = vec![
         Tool {
             name: "list_shoots",
             see: See::Details,
+            act: Act::Off,
             description: "The projects (shoots) in the library open in Photopipe, with their day, photo count and notes.",
             input: || json!({ "type": "object", "properties": {} }),
             run: list_shoots,
@@ -33,6 +44,7 @@ fn catalog() -> [Tool; 4] {
         Tool {
             name: "list_photos",
             see: See::Details,
+            act: Act::Off,
             description: "Photos in one shoot in capture order, a page at a time. Each row has the photo's id (use it in every other tool), capture time, star rating 0 to 5, flag, whether it is edited, Photopipe's Instinct score (-1 to 1, Apple's aesthetics model; measured at chance at picking the photographer's keepers, so treat it as weak) and the id of the first photo of its stack of near-identical frames.",
             input: || {
                 json!({
@@ -53,6 +65,7 @@ fn catalog() -> [Tool; 4] {
         Tool {
             name: "get_photo",
             see: See::Details,
+            act: Act::Off,
             description: "Everything Photopipe knows about one photo: capture time, rating, flag, camera, lens and exposure, size, its edit and the other frames in its stack.",
             input: || {
                 json!({
@@ -64,8 +77,37 @@ fn catalog() -> [Tool; 4] {
             run: get_photo,
         },
         Tool {
+            name: "faces",
+            see: See::Details,
+            act: Act::Off,
+            description: "Faces Photopipe finds in photos, read on this Mac: where each face is (fractions of the photo as shot, from the top left), Vision's face capture quality (0 to 1: sharpness, light, expression and pose together) and a sharpness number that only compares between frames of the same scene, higher is sharper. The four biggest faces per photo. Found once and remembered. Photos not done within a minute and a half come back pending; ask again later.",
+            input: || {
+                json!({
+                    "type": "object",
+                    "properties": { "photos": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 64 } },
+                    "required": ["photos"]
+                })
+            },
+            run: faces,
+        },
+        Tool {
+            name: "describe",
+            see: See::Descriptions,
+            act: Act::Off,
+            description: "A short description of each photo by Apple's on-device model, written on this Mac without sending pixels anywhere: who is in it and what they do, expressions and eyes, composition, and visible flaws. Needs macOS 27 with Apple Intelligence on; a few seconds a photo.",
+            input: || {
+                json!({
+                    "type": "object",
+                    "properties": { "photos": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 8 } },
+                    "required": ["photos"]
+                })
+            },
+            run: describe,
+        },
+        Tool {
             name: "look",
             see: See::Pictures,
+            act: Act::Off,
             description: "See photos, rendered on this Mac. Measured on real event shoots: picking the better frame of a burst works best from two whole frames at 1024 px side by side, less well from a 2x2 sheet; focus and noise do not show at that size or on any sheet, so judge them from region \"crop\" (100% pixels) at a face. Bigger sheets number every cell; use them to survey, not to judge.",
             input: || {
                 json!({
@@ -73,7 +115,7 @@ fn catalog() -> [Tool; 4] {
                     "properties": {
                         "photos": { "type": "array", "items": { "type": "string" }, "minItems": 1, "description": "Photo ids. At most 8 separate, 64 on a sheet." },
                         "version": { "type": "string", "enum": ["edited", "unedited", "raw"], "description": "edited (default) applies the photo's crop and adjustments; raw returns the original file's path instead of pixels." },
-                        "region": { "type": "string", "enum": ["frame", "crop"], "description": "frame (default) is the whole picture; crop is native pixels around `at`." },
+                        "region": { "type": "string", "enum": ["frame", "crop", "faces"], "description": "frame (default) is the whole picture; crop is native pixels around `at`; faces is one sheet of every face found, at up to native pixels and unedited: the way to judge focus and eyes across a burst." },
                         "at": {
                             "type": "object",
                             "properties": { "x": { "type": "number", "minimum": 0, "maximum": 1 }, "y": { "type": "number", "minimum": 0, "maximum": 1 } },
@@ -88,32 +130,45 @@ fn catalog() -> [Tool; 4] {
             },
             run: look,
         },
-    ]
+    ];
+    tools.extend(ui::catalog());
+    tools
 }
 
 pub fn instructions(access: Access) -> String {
     if access.see == See::Off {
         return "Photopipe has agent access turned off. The user can turn it on in Photopipe > Settings > Agents, then reconnect.".into();
     }
-    "Photopipe is a photo culling and editing app on this Mac. Photo ids look like \"<shoot>/<file>\": get them from list_photos, then pass them to the other tools.".into()
+    let mut text = "Photopipe is a photo culling and editing app on this Mac. Photo ids look like \"<shoot>/<file>\": get them from list_photos, then pass them to the other tools.".to_owned();
+    if access.act > Act::Off {
+        text.push_str(" Changes go through the app the user is looking at: open a shoot with show before rating, flagging or editing in it. Ratings, flags and edits are each one step in the app's history, so the user can undo them.");
+    }
+    if access.act == Act::Everything {
+        text.push_str(" Exports and trash are not undoable in the app.");
+    }
+    text
 }
 
 pub fn list(access: Access) -> Vec<Value> {
     catalog()
         .iter()
-        .filter(|tool| tool.see <= access.see)
+        .filter(|tool| tool.see <= access.see && tool.act <= access.act)
         .map(|tool| {
             json!({
                 "name": tool.name,
                 "description": tool.description,
                 "inputSchema": (tool.input)(),
-                "annotations": { "readOnlyHint": true, "openWorldHint": false },
+                "annotations": {
+                    "readOnlyHint": tool.act == Act::Off,
+                    "destructiveHint": tool.act == Act::Everything,
+                    "openWorldHint": false,
+                },
             })
         })
         .collect()
 }
 
-pub fn call(params: &Value, store: &AccessStore) -> Result<Value, (i64, String)> {
+pub fn call(params: &Value, store: &AccessStore, bridge: &Bridge) -> Result<Value, (i64, String)> {
     let name = params["name"].as_str().unwrap_or_default();
     let tool = catalog()
         .into_iter()
@@ -121,27 +176,40 @@ pub fn call(params: &Value, store: &AccessStore) -> Result<Value, (i64, String)>
         .ok_or((-32602, format!("unknown tool {name}")))?;
     let empty = Value::Object(Map::new());
     let arguments = params.get("arguments").unwrap_or(&empty);
-    let refused = || {
-        format!(
-            "{name} needs Photopipe > Settings > Agents set to let agents see {}.",
-            match tool.see {
-                See::Pictures => "pictures",
-                _ => "details",
-            }
-        )
-    };
     let allowed = || {
-        if tool.see > store.get().see {
-            Err(refused())
+        let access = store.get();
+        let needs = |what: &str| {
+            Err(format!(
+                "{name} needs Photopipe > Settings > Agents set to let agents {what}."
+            ))
+        };
+        if tool.see > access.see {
+            needs(match tool.see {
+                See::Pictures => "see pictures",
+                See::Descriptions => "see descriptions",
+                _ => "see details",
+            })
+        } else if tool.act > access.act {
+            needs(if tool.act == Act::Everything {
+                "do everything"
+            } else {
+                "do cull and edit"
+            })
         } else {
             Ok(())
         }
     };
     let outcome = allowed()
         .and_then(|()| ready())
-        .and_then(|()| (tool.run)(arguments))
-        // asked again after the work: the user may have turned access down while a look ran
-        .and_then(|content| allowed().map(|()| content));
+        .and_then(|()| (tool.run)(arguments, bridge))
+        // a read is checked again in case access went down mid-call; a landed write is reported as is
+        .and_then(|content| {
+            if tool.act == Act::Off {
+                allowed().map(|()| content)
+            } else {
+                Ok(content)
+            }
+        });
     Ok(match outcome {
         Ok(content) => json!({ "content": content, "isError": false }),
         Err(message) => json!({ "content": [text(message)], "isError": true }),
@@ -152,11 +220,11 @@ fn text(text: impl Into<String>) -> Value {
     json!({ "type": "text", "text": text.into() })
 }
 
-fn json_text(value: &Value) -> Value {
+pub fn json_text(value: &Value) -> Value {
     text(value.to_string())
 }
 
-fn core(method: &str, params: Value) -> Result<Value, String> {
+pub fn core(method: &str, params: Value) -> Result<Value, String> {
     swift_core::request(method, Some(params))
 }
 
@@ -174,13 +242,13 @@ fn ready() -> Result<(), String> {
     }
 }
 
-fn parse<T: DeserializeOwned>(args: &Value) -> Result<T, String> {
+pub fn parse<T: DeserializeOwned>(args: &Value) -> Result<T, String> {
     T::deserialize(args).map_err(|e| format!("invalid arguments: {e}"))
 }
 
 #[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-enum Flag {
+pub enum Flag {
     Picked,
     Rejected,
     Unflagged,
@@ -229,6 +297,7 @@ enum Region {
     #[default]
     Frame,
     Crop,
+    Faces,
 }
 
 #[derive(Default, PartialEq, Deserialize)]
@@ -339,7 +408,7 @@ fn row(shoot: &str, image: &Value, stack: Option<String>) -> Value {
     Value::Object(row)
 }
 
-fn list_shoots(_: &Value) -> Result<Content, String> {
+fn list_shoots(_: &Value, _: &Bridge) -> Result<Content, String> {
     let rows: Vec<Value> = shoots()?
         .iter()
         .map(|shoot| {
@@ -361,7 +430,7 @@ fn list_shoots(_: &Value) -> Result<Content, String> {
     Ok(vec![json_text(&json!({ "shoots": rows }))])
 }
 
-fn list_photos(args: &Value) -> Result<Content, String> {
+fn list_photos(args: &Value, _: &Bridge) -> Result<Content, String> {
     let args: ListPhotos = parse(args)?;
     let shoot = args.shoot.as_str();
     let images = images(shoot)?;
@@ -413,7 +482,7 @@ fn list_photos(args: &Value) -> Result<Content, String> {
     Ok(vec![json_text(&answer)])
 }
 
-fn get_photo(args: &Value) -> Result<Content, String> {
+fn get_photo(args: &Value, _: &Bridge) -> Result<Content, String> {
     let args: GetPhoto = parse(args)?;
     let id = args.photo.as_str();
     let (shoot, rel) = split_id(id)?;
@@ -444,13 +513,63 @@ fn get_photo(args: &Value) -> Result<Content, String> {
     Ok(vec![json_text(&answer)])
 }
 
-fn look(args: &Value) -> Result<Content, String> {
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Photos {
+    photos: Vec<String>,
+}
+
+/// The core answers per photo in the order asked.
+fn per_photo(method: &str, args: &Value, each: fn(&Value) -> Value) -> Result<Content, String> {
+    let args: Photos = parse(args)?;
+    if args.photos.is_empty() {
+        return Err("photos is required".into());
+    }
+    let answered = on_agent_lane(method, json!({ "ids": args.photos }))?;
+    let photos: Vec<Value> = args
+        .photos
+        .iter()
+        .zip(answered["photos"].as_array().into_iter().flatten())
+        .map(|(id, photo)| {
+            let mut row = each(photo);
+            row["id"] = id.clone().into();
+            row
+        })
+        .collect();
+    Ok(vec![json_text(&json!({ "photos": photos }))])
+}
+
+fn faces(args: &Value, _: &Bridge) -> Result<Content, String> {
+    per_photo("faces", args, |photo| {
+        match (&photo["faces"], photo["done"].as_bool()) {
+            (_, Some(false)) => json!({ "pending": true }),
+            (Value::Null, _) => json!({ "unreadable": true }),
+            (faces, _) => json!({ "faces": faces }),
+        }
+    })
+}
+
+fn describe(args: &Value, _: &Bridge) -> Result<Content, String> {
+    per_photo("describe", args, |photo| {
+        let mut row = json!({ "description": photo["text"], "error": photo["error"] });
+        if photo["unmasked"] == true {
+            row["note"] =
+                "described without its masks, which could not be cut on this Mac right now".into();
+        }
+        row
+    })
+}
+
+fn look(args: &Value, _: &Bridge) -> Result<Content, String> {
     let args: Look = parse(args)?;
     let ids = &args.photos;
     if ids.is_empty() {
         return Err("photos is required".into());
     }
     if args.version == Version::Raw {
+        if args.region != Region::Frame || args.at.is_some() {
+            return Err("raw returns the original files, so region and at do not apply".into());
+        }
         let originals = core("originals", json!({ "ids": ids }))?;
         let files: Vec<Value> = ids
             .iter()
@@ -461,7 +580,8 @@ fn look(args: &Value) -> Result<Content, String> {
             .collect();
         return Ok(vec![json_text(&json!({ "files": files }))]);
     }
-    let sheet = args.layout == Layout::Sheet;
+    let faces = args.region == Region::Faces;
+    let sheet = args.layout == Layout::Sheet || faces;
     let mut params = json!({
         "ids": ids,
         "edited": args.version == Version::Edited,
@@ -475,15 +595,13 @@ fn look(args: &Value) -> Result<Content, String> {
             params["x"] = at.x.into();
             params["y"] = at.y.into();
         }
-        (Region::Frame, Some(_)) => return Err("at only applies to region \"crop\"".into()),
+        (Region::Faces, None) => params["faces"] = true.into(),
+        (Region::Frame | Region::Faces, Some(_)) => {
+            return Err("at only applies to region \"crop\"".into())
+        }
         (Region::Frame, None) => {}
     }
-    let shown = {
-        let _turn = LOOKING
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        core("look", params)?
-    };
+    let shown = on_agent_lane("look", params)?;
     let mut content = Vec::new();
     let mut spent = 0;
     let mut left_out = Vec::new();
@@ -506,10 +624,12 @@ fn look(args: &Value) -> Result<Content, String> {
                 .enumerate()
                 .map(|(i, id)| format!("{} = {id}", i + 1))
                 .collect();
-            format!(
-                "Sheet, cells numbered left to right, top to bottom: {}",
-                cells.join(", ")
-            )
+            let lead = if faces {
+                "Faces sheet: cell n.f is face f of photo n, left to right, top to bottom, where"
+            } else {
+                "Sheet, cells numbered left to right, top to bottom:"
+            };
+            format!("{lead} {}", cells.join(", "))
         } else {
             photos.join(", ")
         }));

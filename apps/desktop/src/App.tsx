@@ -20,11 +20,7 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { BrowserPane } from "@/components/BrowserPane";
 import { Dashboard } from "@/components/Dashboard";
 import { EditSidebar, editGroupPref } from "@/components/EditPanel";
-import {
-  ExportDrawer,
-  type ExportOptions,
-  exportLabel,
-} from "@/components/ExportDrawer";
+import { ExportDrawer, exportLabel } from "@/components/ExportDrawer";
 import { HistoryControls } from "@/components/HistoryControls";
 import { IndexingStatus } from "@/components/IndexingStatus";
 import { Loupe } from "@/components/Loupe";
@@ -42,7 +38,9 @@ import { ShootSettingsDialog } from "@/components/ShootSettingsDialog";
 import { ShortcutSheet } from "@/components/ShortcutSheet";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { ShowSidebarTrigger } from "@/components/ShowSidebarTrigger";
+import { AGENT_EDIT, useAgentTools } from "@/lib/agentTools";
 import {
+  type CoreMethods,
   type Edit,
   editKey,
   type Flag,
@@ -80,7 +78,9 @@ import {
   useShoots,
   useStacking,
   useTrash,
+  useTrashBlocked,
 } from "@/lib/queries";
+import { rawDecoderVersion } from "@/lib/rawDecoder";
 import {
   defaultLibrary,
   openRoot,
@@ -136,6 +136,11 @@ const undoHint = () => {
 };
 
 const editPanelPref = flagPref("photopipe.editPanel", "shown", "hidden", true);
+
+type ExportSettings = Omit<
+  CoreMethods["exportFiles"]["params"],
+  "shoot" | "paths" | "destination"
+>;
 
 export default function App() {
   const [rootState, setRootState] = useState<RootState>({
@@ -237,10 +242,12 @@ export default function App() {
   const enriched = useEnriched(openShoot, ready);
   const writes = useRecordedWrites(openShoot);
   const reveal = useReveal();
-  const revealPaths = useFeatures().reveal
+  const features = useFeatures();
+  const revealPaths = features.reveal
     ? (paths: string[]) => reveal.mutate(paths)
     : undefined;
   const trash = useTrash(openShoot);
+  const trashBlocked = useTrashBlocked();
   const exports = useExportJobs();
   const scan = useLibrarySync(ready, ready ? rootState.generation : null);
 
@@ -289,6 +296,7 @@ export default function App() {
     flush: flushEdit,
     cancel: cancelEdit,
     hold: holdEdit,
+    busy: editBusy,
   } = useDebouncedEdit(writes.writeEdit, EDIT_COMMIT_MS);
   // Before the core has read the file, an edit is relative to a blank
   // placeholder and would erase the real one.
@@ -348,25 +356,18 @@ export default function App() {
     }
   };
 
-  const runExport = (options: ExportOptions, destination: string) => {
-    if (!openShoot) return;
-    void exports.start({
-      method: "exportFiles",
-      label: exportLabel(selectedImages.length, options.format),
-      request: {
-        shoot: openShoot,
-        paths: selectedImages.map((image) => image.path),
-        destination,
-        zip: options.zip,
-        flatten: options.flatten,
-        format: options.format,
-        quality: options.quality,
-        longEdge: options.longEdge,
-        decoderVersion: options.decoderVersion,
-        names: options.names,
-      },
-    });
-  };
+  const runExport = (
+    paths: string[],
+    settings: ExportSettings,
+    destination: string,
+  ) =>
+    openShoot === null
+      ? Promise.resolve(null)
+      : exports.start({
+          method: "exportFiles",
+          label: exportLabel(paths.length, settings.format),
+          request: { ...settings, shoot: openShoot, paths, destination },
+        });
 
   // Keyed on the sort you chose, not the one in force: a scoring pass finishing
   // must not re-order the loupe under you mid-visit.
@@ -531,6 +532,18 @@ export default function App() {
     [editOf, readable],
   );
 
+  // a batch write takes over the photo being edited, so its pending draft goes
+  const writeEdits = useCallback(
+    (
+      edits: Map<string, Edit>,
+      described?: Parameters<typeof writes.paste>[1],
+    ) => {
+      if (editDraft && edits.has(editDraft.path)) cancelEdit();
+      return writes.paste(edits, described);
+    },
+    [editDraft, cancelEdit, writes.paste],
+  );
+
   const pasteSettings = useCallback(
     async (targets: ImageFile[]) => {
       if (!clipboard) {
@@ -568,10 +581,7 @@ export default function App() {
         );
         return;
       }
-      if (editDraft && pasted.has(editDraft.path)) {
-        cancelEdit();
-      }
-      const result = await writes.paste(pasted).catch(() => null);
+      const result = await writeEdits(pasted).catch(() => null);
       if (!result) {
         toast.error("Pasting settings failed", { id: "clipboard" });
         return;
@@ -590,7 +600,7 @@ export default function App() {
         { description: notes.length > 0 ? notes.join(" · ") : undefined },
       );
     },
-    [clipboard, editDraft, editOf, cancelEdit, writes.paste],
+    [clipboard, editOf, writeEdits],
   );
 
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -708,12 +718,14 @@ export default function App() {
     "browser",
   );
 
-  const trashPhotos = (paths: string[]) =>
-    // even a failed trash may have moved some of them
-    void trash
+  const trashFiles = (paths: string[]) =>
+    trash
       .mutateAsync(paths)
-      .catch(() => {})
+      .then((result) => result.files)
+      // even a failed trash may have moved some of them
       .finally(() => forgetHistoryPaths(paths));
+  const trashPhotos = (paths: string[]) =>
+    void trashFiles(paths).catch(() => {});
   const rejects = useMemo(
     () => allImages.filter((image) => image.flag === -1),
     [allImages],
@@ -729,6 +741,59 @@ export default function App() {
     filter.reset();
     selection.clear();
   };
+
+  const openPhoto = (path: string | null) => {
+    // A new visit walks the browser's order as it stands now.
+    held.current = NO_HELD;
+    setCurrentPath(path);
+    // closing, a grid undo or a shoot switch can leave an anchor behind, so opening decides it fresh
+    setInsideAnchor(
+      anchorFor(
+        path && stacksOn ? stackOf(groupStacks(allImages), path) : undefined,
+        path,
+      ),
+    );
+    setLoupeOpen(true);
+  };
+
+  useAgentTools(features.agents && ready, {
+    shoots: shoots.data,
+    shoot: openShoot,
+    images: images.data,
+    visible: filteredImages,
+    loupe: loupePhoto,
+    selected: selectedImages,
+    filter,
+    sort: activeSort,
+    live: (path) => cachedImage(queryClient, openShoot, path),
+    editOf,
+    enter: enterShoot,
+    open: openPhoto,
+    close: () => setLoupeOpen(false),
+    select: selection.select,
+    resetFilter: filter.reset,
+    rate: writes.rateMany,
+    flag: writes.flagMany,
+    edit: (edits) => writeEdits(edits, AGENT_EDIT),
+    exportPhotos: (paths, { destination, format, quality, longEdge, zip }) =>
+      runExport(
+        paths,
+        {
+          format,
+          quality: quality ?? 90,
+          longEdge: longEdge ?? null,
+          zip,
+          flatten: true,
+          decoderVersion: rawDecoderVersion(),
+          names: null,
+        },
+        destination,
+      ),
+    trash: trashFiles,
+    trashBlocked,
+    busy: () => cropping || editBusy(),
+    save: flushEdit,
+  });
 
   // Settings is reachable from the menu bar at any time, including before a
   // photos folder is picked, so it lives outside the browser chrome.
@@ -842,22 +907,7 @@ export default function App() {
       revealed={revealed}
       rejects={rejects}
       onTrashRejects={() => trashPhotos(rejects.map((image) => image.path))}
-      onOpen={(index) => {
-        // A new visit walks the browser's order as it stands now.
-        held.current = NO_HELD;
-        // closing, a grid undo or a shoot switch can leave an anchor behind, so opening decides it fresh
-        const path = filteredImages[index]?.path ?? null;
-        setCurrentPath(path);
-        setInsideAnchor(
-          anchorFor(
-            path && stacksOn
-              ? stackOf(groupStacks(allImages), path)
-              : undefined,
-            path,
-          ),
-        );
-        setLoupeOpen(true);
-      }}
+      onOpen={(index) => openPhoto(filteredImages[index]?.path ?? null)}
       onImport={runImport}
     />
   );
@@ -1100,7 +1150,13 @@ export default function App() {
                   filter.reset();
                   selection.select(allImages.map((image) => image.path));
                 }}
-                onExport={runExport}
+                onExport={(options, destination) =>
+                  void runExport(
+                    selectedImages.map((image) => image.path),
+                    options,
+                    destination,
+                  )
+                }
                 onCancel={exports.cancel}
                 onReveal={revealPaths && ((path) => revealPaths([path]))}
                 onClose={() => setDrawerOpen(false)}

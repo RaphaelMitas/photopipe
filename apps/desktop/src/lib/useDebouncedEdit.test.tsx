@@ -69,7 +69,9 @@ describe("useDebouncedEdit", () => {
     const { result } = renderHook(() => useDebouncedEdit(commit, 400));
 
     act(() => result.current.scrub("/r/a.arw", editWith(1)));
-    act(() => result.current.flush());
+    act(() => {
+      void result.current.flush();
+    });
     expect(result.current.draft?.edit).toEqual(editWith(1));
 
     await act(async () => land());

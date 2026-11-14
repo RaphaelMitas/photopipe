@@ -22,6 +22,9 @@ public enum Look {
     public enum LookError: Error {
         case tooMany(Int, limit: Int)
         case nothingToShow
+        case noFaces
+        case facesPending(Int)
+        case tooManyFaces(Int)
         case encodeFailed
     }
 
@@ -41,6 +44,14 @@ public enum Look {
         Renderer.framedSize(
             CGSize(width: file.width, height: file.height), edit,
             crop: Renderer.saneCrop(edit) ?? .full)
+    }
+
+    /// A face with some hair and shoulder around it, kept inside the photo.
+    static func around(_ face: CropRect) -> CropRect {
+        let pad = 0.25 * max(face.width, face.height)
+        return CropRect(
+            left: max(face.left - pad, 0), top: max(face.top - pad, 0),
+            right: min(face.right + pad, 1), bottom: min(face.bottom + pad, 1))
     }
 
     /// Slid inside the frame rather than cut off at its edge.
@@ -142,6 +153,18 @@ extension Look.LookError: WireError {
         case .tooMany(let count, let limit):
             ResponseError(code: "too_many", message: "\(count) photos, at most \(limit) per look")
         case .nothingToShow: ResponseError(code: "invalid_params", message: "paths required")
+        case .noFaces:
+            ResponseError(code: "no_faces", message: "no faces found in these photos, or none could be read")
+        case .tooManyFaces(let count):
+            ResponseError(
+                code: "too_many",
+                message:
+                    "\(count) faces in these photos, at most \(Look.sheetLimit) per sheet; ask for fewer photos"
+            )
+        case .facesPending(let count):
+            ResponseError(
+                code: "faces_pending",
+                message: "still finding faces in \(count) of these photos; ask again in a minute")
         case .encodeFailed: ResponseError(code: "encode_failed", message: "could not draw the look")
         }
     }

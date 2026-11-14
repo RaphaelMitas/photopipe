@@ -1,4 +1,5 @@
 use super::access::AccessStore;
+use super::bridge::Bridge;
 use super::tools;
 use serde_json::{json, Value};
 use std::io::{self, BufRead, BufReader, Write};
@@ -17,13 +18,15 @@ const PROTOCOL: &str = "2025-06-18";
 
 pub struct Server {
     access: Arc<AccessStore>,
+    bridge: Arc<Bridge>,
     clients: Mutex<Vec<Weak<Mutex<UnixStream>>>>,
 }
 
 impl Server {
-    pub fn new(access: Arc<AccessStore>) -> Arc<Self> {
+    pub fn new(access: Arc<AccessStore>, bridge: Arc<Bridge>) -> Arc<Self> {
         Arc::new(Server {
             access,
+            bridge,
             clients: Mutex::new(Vec::new()),
         })
     }
@@ -107,7 +110,7 @@ impl Server {
             })),
             "ping" => Ok(json!({})),
             "tools/list" => Ok(json!({ "tools": tools::list(access) })),
-            "tools/call" => tools::call(params, &self.access),
+            "tools/call" => tools::call(params, &self.access, &self.bridge),
             _ => Err((-32601, format!("unknown method {method}"))),
         };
         Some(reply(id, result))
@@ -145,15 +148,23 @@ fn send(writer: &Mutex<UnixStream>, message: &Value) {
 
 #[cfg(test)]
 mod tests {
-    use super::super::access::{Access, See};
+    use super::super::access::{Access, Act, See};
     use super::*;
     use crate::defaults::{remove_suite, test_suite};
+
+    fn seeing(see: See) -> Access {
+        Access {
+            see,
+            ..Access::default()
+        }
+    }
 
     fn server(tag: &str, see: See) -> (Arc<Server>, String) {
         let suite = test_suite(&format!("mcp-{tag}"));
         let access = Arc::new(AccessStore::load(Some(&suite)));
-        access.set(Access { see });
-        (Server::new(access), suite)
+        access.set(seeing(see));
+        let bridge = Arc::new(Bridge::new(|_| Err("no window in tests".into())));
+        (Server::new(access, bridge), suite)
     }
 
     fn names(server: &Server) -> Vec<String> {
@@ -195,11 +206,38 @@ mod tests {
     fn only_the_tools_the_access_level_allows_are_listed() {
         let (server, suite) = server("levels", See::Off);
         assert!(names(&server).is_empty());
-        server.access.set(Access { see: See::Details });
-        assert!(names(&server).contains(&"list_photos".to_owned()));
+        server.access.set(seeing(See::Details));
+        assert!(names(&server).contains(&"faces".to_owned()));
+        assert!(!names(&server).contains(&"describe".to_owned()));
+        server.access.set(seeing(See::Descriptions));
+        assert!(names(&server).contains(&"describe".to_owned()));
         assert!(!names(&server).contains(&"look".to_owned()));
-        server.access.set(Access { see: See::Pictures });
+        server.access.set(seeing(See::Pictures));
         assert!(names(&server).contains(&"look".to_owned()));
+        remove_suite(&suite);
+    }
+
+    #[test]
+    fn what_agents_can_do_adds_tools_level_by_level() {
+        let (server, suite) = server("act", See::Pictures);
+        assert!(!names(&server).contains(&"rate".to_owned()));
+        let doing = |act| Access {
+            see: See::Pictures,
+            act,
+        };
+        server.access.set(doing(Act::Cull));
+        assert!(names(&server).contains(&"rate".to_owned()));
+        assert!(!names(&server).contains(&"trash".to_owned()));
+        let refused = server
+            .handle(&json!({
+                "jsonrpc": "2.0", "id": 4, "method": "tools/call",
+                "params": { "name": "trash", "arguments": { "photos": ["a/b.jpg"] } }
+            }))
+            .unwrap();
+        let text = refused["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("do everything"), "{text}");
+        server.access.set(doing(Act::Everything));
+        assert!(names(&server).contains(&"trash".to_owned()));
         remove_suite(&suite);
     }
 
@@ -228,7 +266,7 @@ mod tests {
         writeln!(&client, r#"{{"jsonrpc":"2.0","id":1,"method":"ping"}}"#).unwrap();
         assert!(lines.next().unwrap().unwrap().contains(r#""id":1"#));
 
-        server.access.set(Access { see: See::Details });
+        server.access.set(seeing(See::Details));
         assert!(lines
             .next()
             .unwrap()

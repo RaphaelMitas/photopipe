@@ -11,8 +11,8 @@ const TIMEOUT: Duration = Duration::from_secs(10);
 /// slow external disk can take a while.
 const WALK_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// A sheet decodes up to 64 raws, a few at a time.
-const LOOK_TIMEOUT: Duration = Duration::from_secs(120);
+/// A sheet decodes up to 64 raws, a few at a time; faces and descriptions take seconds a photo.
+const AGENT_TIMEOUT: Duration = Duration::from_secs(120);
 
 type Reply = extern "C" fn(*mut c_void, bool, *const c_char);
 type Answer = (bool, Option<String>);
@@ -59,7 +59,7 @@ pub fn request(method: &str, params: Option<Value>) -> Result<Value, String> {
         .map_or(std::ptr::null(), |params| params.as_ptr());
     let timeout = match method {
         "setRoot" | "rescan" => WALK_TIMEOUT,
-        "look" => LOOK_TIMEOUT,
+        "look" | "faces" | "describe" => AGENT_TIMEOUT,
         _ => TIMEOUT,
     };
     let (ok, text) = call(|context, reply| unsafe {
