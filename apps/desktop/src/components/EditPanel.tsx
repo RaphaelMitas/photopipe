@@ -28,6 +28,7 @@ import {
 import { CURVE_CHANNELS, isIdentityCurve } from "@/lib/curve";
 import {
   COLOR_SLIDERS,
+  DENOISE_RANGE,
   EXPOSURE_RANGE,
   kelvin,
   PRESENCE_SLIDERS,
@@ -395,8 +396,7 @@ export function EditPanel({ image, edit, onChange, crop, masks }: Props) {
                 label="Denoise"
                 value={denoise}
                 display={`${Math.round(denoise)}`}
-                min={0}
-                max={100}
+                {...DENOISE_RANGE}
                 step={1}
                 testid="denoise"
                 resetLabel="Reset to as decoded"

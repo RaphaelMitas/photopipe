@@ -3,8 +3,9 @@ import type { Edit } from "./core";
 export const EXPOSURE_STEP = 0.25;
 export const EXPOSURE_RANGE = 3;
 export const SLIDER_RANGE = 100;
+export const DENOISE_RANGE = { min: 0, max: SLIDER_RANGE };
 
-/// A raw keeps its as-shot kelvin and a wider tint; anything else is an offset from neutral.
+// kelvin for a raw's own white balance; masks and other files are an offset from neutral
 export const temperatureRange = (kelvin: boolean) =>
   kelvin
     ? { min: 2000, max: 12000 }

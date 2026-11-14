@@ -18,6 +18,9 @@ pub struct Bridge {
 /// The relay may have just started the app, and its window loads a moment after the server listens.
 const ATTACH_WAIT: Duration = Duration::from_secs(20);
 
+/// The one failure after which the window may still be carrying out the call.
+pub const UNANSWERED: &str = "Photopipe's window did not answer in time.";
+
 impl Bridge {
     pub fn new(emit: impl Fn(Value) -> Result<(), String> + Send + Sync + 'static) -> Self {
         Bridge {
@@ -56,7 +59,7 @@ impl Bridge {
         let outcome = asked.and_then(|()| {
             receiver
                 .recv_timeout(timeout)
-                .unwrap_or_else(|_| Err("Photopipe's window did not answer in time.".into()))
+                .unwrap_or_else(|_| Err(UNANSWERED.into()))
         });
         self.pending.lock().unwrap().remove(&id);
         outcome

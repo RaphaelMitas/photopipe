@@ -106,7 +106,10 @@ pub fn instructions(access: Access) -> String {
     }
     let mut text = "Photopipe is a photo culling and editing app on this Mac. Photo ids look like \"<shoot>/<file>\": get them from list_photos, then pass them to the other tools.".to_owned();
     if access.act > Act::Off {
-        text.push_str(" Changes go through the app the user is looking at: open a shoot with show before rating, flagging or editing in it. Ratings, flags and edits are each one step in the app's history, so the user can undo them; exports and trash are not.");
+        text.push_str(" Changes go through the app the user is looking at: open a shoot with show before rating, flagging or editing in it. Ratings, flags and edits are each one step in the app's history, so the user can undo them.");
+    }
+    if access.act == Act::Everything {
+        text.push_str(" Exports and trash are not undoable in the app.");
     }
     text
 }
@@ -155,7 +158,7 @@ pub fn call(params: &Value, store: &AccessStore, bridge: &Bridge) -> Result<Valu
                 if tool.act == Act::Everything {
                     "everything"
                 } else {
-                    "culling and editing"
+                    "cull and edit"
                 }
             ))
         } else {

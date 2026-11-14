@@ -148,7 +148,7 @@ fn send(writer: &Mutex<UnixStream>, message: &Value) {
 
 #[cfg(test)]
 mod tests {
-    use super::super::access::{Access, See};
+    use super::super::access::{Access, Act, See};
     use super::*;
     use crate::defaults::{remove_suite, test_suite};
 
@@ -211,6 +211,30 @@ mod tests {
         assert!(!names(&server).contains(&"look".to_owned()));
         server.access.set(seeing(See::Pictures));
         assert!(names(&server).contains(&"look".to_owned()));
+        remove_suite(&suite);
+    }
+
+    #[test]
+    fn what_agents_can_do_adds_tools_level_by_level() {
+        let (server, suite) = server("act", See::Pictures);
+        assert!(!names(&server).contains(&"rate".to_owned()));
+        let doing = |act| Access {
+            see: See::Pictures,
+            act,
+        };
+        server.access.set(doing(Act::Cull));
+        assert!(names(&server).contains(&"rate".to_owned()));
+        assert!(!names(&server).contains(&"trash".to_owned()));
+        let refused = server
+            .handle(&json!({
+                "jsonrpc": "2.0", "id": 4, "method": "tools/call",
+                "params": { "name": "trash", "arguments": { "photos": ["a/b.jpg"] } }
+            }))
+            .unwrap();
+        let text = refused["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("do everything"), "{text}");
+        server.access.set(doing(Act::Everything));
+        assert!(names(&server).contains(&"trash".to_owned()));
         remove_suite(&suite);
     }
 

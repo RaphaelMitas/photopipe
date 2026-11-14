@@ -21,6 +21,7 @@ import {
 } from "./crop";
 import {
   COLOR_SLIDERS,
+  DENOISE_RANGE,
   EXPOSURE_RANGE,
   PRESENCE_SLIDERS,
   SLIDER_RANGE,
@@ -174,7 +175,7 @@ export function agentEdit(
     next.tint = neutral(clamp(set.tint, tintRange(photo.isRaw)));
   }
   if (typeof set.denoise === "number") {
-    next.denoise = clamp(set.denoise, { min: 0, max: SLIDER_RANGE });
+    next.denoise = clamp(set.denoise, DENOISE_RANGE);
   }
   if (
     set.crop === undefined &&

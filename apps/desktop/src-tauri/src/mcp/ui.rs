@@ -1,5 +1,5 @@
 use super::access::{Act, See};
-use super::bridge::Bridge;
+use super::bridge::{Bridge, UNANSWERED};
 use super::tools::{core, json_text, parse, Content, Flag, Tool};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -25,7 +25,7 @@ pub fn catalog() -> Vec<Tool> {
             name: "show",
             see: See::Details,
             act: Act::Cull,
-            description: "Open a shoot in Photopipe, a photo in the loupe, or select photos in the grid. Rating, flagging, editing, exporting and trashing work on the open shoot, so open it first. Switching shoots clears the app's undo history, as it does when the user switches.",
+            description: "Open a shoot in Photopipe, a photo in the loupe, or select photos in the grid. Changes work on the open shoot, so open it first. Switching shoots clears the app's undo history, as it does when the user switches.",
             input: || {
                 json!({
                     "type": "object",
@@ -76,7 +76,7 @@ pub fn catalog() -> Vec<Tool> {
             name: "edit",
             see: See::Details,
             act: Act::Cull,
-            description: "Set adjustments on photos in the open shoot, keeping the ones not named. One undoable step in the app. Look at the result with look before going on.",
+            description: "Set adjustments on photos in the open shoot, keeping the ones not named. One undoable step in the app. If look is available, check the result with it before going on.",
             input: || {
                 let slider = json!({ "type": "number", "minimum": -100, "maximum": 100 });
                 json!({
@@ -346,11 +346,17 @@ fn export(args: &Value, bridge: &Bridge) -> Result<Content, String> {
     let mut reserved = Reserved(None);
     export.destination = destination(&export.destination, shoot, export.zip, &mut reserved)?;
     let args = serde_json::to_value(export).map_err(|e| e.to_string())?;
-    let started = bridge.ask("export", &args, UI_WAIT)?;
+    let started = bridge.ask("export", &args, UI_WAIT).inspect_err(|error| {
+        // the job may have started and will write the archive onto the reservation
+        if error == UNANSWERED {
+            reserved.0 = None;
+        }
+    })?;
     let id = started["id"].as_str().ok_or("the export did not start")?;
     let deadline = Instant::now() + EXPORT_WAIT;
     loop {
-        let progress = core("exportStatus", json!({ "id": id }))?;
+        let progress =
+            core("exportStatus", json!({ "id": id })).inspect_err(|_| reserved.0 = None)?;
         if progress["running"] == false {
             return Ok(vec![json_text(&json!({
                 "exported": progress["done"],
