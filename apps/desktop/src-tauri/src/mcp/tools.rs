@@ -163,6 +163,17 @@ fn ready() -> Result<(), String> {
     }
 }
 
+/// The first option when the argument is left out.
+fn choice<'a>(args: &'a Value, key: &str, options: &[&'a str]) -> Result<&'a str, String> {
+    match &args[key] {
+        Value::Null => Ok(options[0]),
+        value => value
+            .as_str()
+            .filter(|value| options.contains(value))
+            .ok_or_else(|| format!("{key} must be one of {}", options.join(", "))),
+    }
+}
+
 fn string<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
     args[key]
         .as_str()
@@ -412,7 +423,7 @@ fn look(args: &Value) -> Result<Content, String> {
         return Err("photos is required".into());
     }
     let paths = paths_of(&ids)?;
-    let version = args["version"].as_str().unwrap_or("edited");
+    let version = choice(args, "version", &["edited", "unedited", "raw"])?;
     if version == "raw" {
         let originals = core("originals", json!({ "paths": paths }))?;
         let files: Vec<Value> = ids
@@ -424,8 +435,11 @@ fn look(args: &Value) -> Result<Content, String> {
             .collect();
         return Ok(vec![json_text(&json!({ "files": files }))]);
     }
-    let sheet = args["layout"].as_str() == Some("sheet");
-    let crop = args["region"].as_str() == Some("crop");
+    let sheet = choice(args, "layout", &["separate", "sheet"])? == "sheet";
+    let crop = choice(args, "region", &["frame", "crop"])? == "crop";
+    if !crop && !args["at"].is_null() {
+        return Err("at only applies to region \"crop\"".into());
+    }
     let mut params = json!({
         "paths": paths,
         "edited": version != "unedited",
@@ -434,11 +448,8 @@ fn look(args: &Value) -> Result<Content, String> {
         "maxBytes": LOOK_BUDGET,
     });
     if crop {
-        params["at"] = if args["at"].is_object() {
-            args["at"].clone()
-        } else {
-            json!({ "x": 0.5, "y": 0.5 })
-        };
+        params["x"] = args["at"].get("x").cloned().unwrap_or(json!(0.5));
+        params["y"] = args["at"].get("y").cloned().unwrap_or(json!(0.5));
     }
     let shown = {
         let _turn = LOOKING
@@ -446,23 +457,16 @@ fn look(args: &Value) -> Result<Content, String> {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         core("look", params)?
     };
-    let by_path = |path: &Value| {
-        paths
-            .iter()
-            .position(|p| p == path)
-            .map_or_else(String::new, |index| ids[index].clone())
-    };
     let mut content = Vec::new();
     let mut spent = 0;
     let mut left_out = Vec::new();
-    for image in shown["images"].as_array().into_iter().flatten() {
+    for (index, image) in shown["images"].as_array().into_iter().flatten().enumerate() {
         let jpeg = image["jpeg"].as_str().unwrap_or_default();
-        let photos: Vec<String> = image["paths"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .map(by_path)
-            .collect();
+        let photos = if sheet {
+            ids.clone()
+        } else {
+            vec![ids[index].clone()]
+        };
         // the first image always goes out, or a single oversized sheet would show nothing at all
         if !content.is_empty() && spent + jpeg.len() > LOOK_BUDGET * 4 / 3 {
             left_out.extend(photos);
@@ -502,6 +506,17 @@ mod tests {
         assert_eq!(clock(0.0), "1970-01-01 00:00:00");
         assert_eq!(clock(1_786_219_265.4), "2026-08-08 20:01:05");
         assert_eq!(clock(951_782_400.0), "2000-02-29 00:00:00");
+    }
+
+    #[test]
+    fn a_choice_left_out_takes_the_default_and_a_misspelled_one_is_refused() {
+        let options = ["edited", "unedited", "raw"];
+        assert_eq!(choice(&json!({}), "version", &options), Ok("edited"));
+        assert_eq!(
+            choice(&json!({ "version": "raw" }), "version", &options),
+            Ok("raw")
+        );
+        assert!(choice(&json!({ "version": "original" }), "version", &options).is_err());
     }
 
     #[test]

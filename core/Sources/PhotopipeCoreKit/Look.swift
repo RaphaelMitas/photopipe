@@ -5,10 +5,10 @@ import ImageIO
 import UniformTypeIdentifiers
 
 public enum Look {
+    /// In the order asked: one per photo, or one for the whole sheet.
     public struct Shown: Encodable, Sendable {
         /// Base64, so the reply can go into an MCP image block as it is.
         public let jpeg: String
-        public let paths: [String]
         public let width: Int
         public let height: Int
     }
@@ -123,9 +123,9 @@ public enum Look {
         throw LookError.encodeFailed
     }
 
-    static func shown(_ image: CGImage, paths: [String], maxBytes: Int) throws -> Shown {
+    static func shown(_ image: CGImage, maxBytes: Int) throws -> Shown {
         Shown(
-            jpeg: try jpeg(image, maxBytes: maxBytes).base64EncodedString(), paths: paths,
+            jpeg: try jpeg(image, maxBytes: maxBytes).base64EncodedString(),
             width: image.width, height: image.height)
     }
 }

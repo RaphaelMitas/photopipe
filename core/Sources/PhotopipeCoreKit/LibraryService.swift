@@ -297,17 +297,14 @@ public final class LibraryService: @unchecked Sendable {
             if let error = failure.withLock({ $0 }) { throw error }
         }
         let rendered = stills.withLock { $0 }.compactMap { $0 }
-        let paths = files.map(\.path)
         if sheet {
             let labels = files.enumerated().map { index, file in
                 "\(index + 1)  \((file.rel as NSString).lastPathComponent)"
             }
             let canvas = try Look.sheet(rendered, labels: labels, longEdge: longEdge)
-            return [try Look.shown(canvas, paths: paths, maxBytes: maxBytes)]
+            return [try Look.shown(canvas, maxBytes: maxBytes)]
         }
-        return try zip(rendered, paths).map { still, path in
-            try Look.shown(still, paths: [path], maxBytes: maxBytes / rendered.count)
-        }
+        return try rendered.map { try Look.shown($0, maxBytes: maxBytes / rendered.count) }
     }
 
     private func still(of file: ImageFile, edited: Bool, tile: Int, at spot: CGPoint?) throws

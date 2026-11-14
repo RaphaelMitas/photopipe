@@ -68,7 +68,9 @@ public final class Dispatcher: Sendable {
                     paths: request.strings("paths"),
                     edited: request.param("edited")?.boolValue ?? true,
                     longEdge: request.param("longEdge")?.intValue ?? 1024,
-                    at: try request.spot("at"),
+                    at: try request.param("x").map { _ in
+                        CGPoint(x: try request.fraction("x"), y: try request.fraction("y"))
+                    },
                     sheet: request.param("sheet")?.boolValue ?? false,
                     maxBytes: request.int("maxBytes"))
             ]
@@ -192,14 +194,6 @@ extension Request {
 
     fileprivate func fraction(_ key: String) throws -> Double {
         try required(key, param(key)?.doubleValue.flatMap { (0...1).contains($0) ? $0 : nil })
-    }
-
-    fileprivate func spot(_ key: String) throws -> CGPoint? {
-        guard let value = param(key) else { return nil }
-        guard let x = value["x"]?.doubleValue, let y = value["y"]?.doubleValue,
-            (0...1).contains(x), (0...1).contains(y)
-        else { throw DispatchError.invalidParams(key) }
-        return CGPoint(x: x, y: y)
     }
 
     fileprivate func strings(_ key: String) throws -> [String] {
