@@ -10,7 +10,6 @@ async function prepare() {
     const { mockIPC } = await import("@tauri-apps/api/mocks");
     const { answerCoreRequest, askAgent, E2E_COMMANDS, isCoreRequest } =
       await import("./e2e-mocks");
-    // what the host's agent server would send, for e2e to call
     Reflect.set(window, "askAgent", askAgent);
     mockIPC(
       (cmd, args) => {

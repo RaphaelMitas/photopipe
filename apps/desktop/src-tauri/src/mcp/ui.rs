@@ -9,7 +9,6 @@ use std::time::{Duration, Instant};
 /// Opening a shoot waits for its photos to load.
 const UI_WAIT: Duration = Duration::from_secs(60);
 const EXPORT_WAIT: Duration = Duration::from_secs(30 * 60);
-static EXPORTING: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Tools the webview answers, because the open shoot, selection and history only live there.
 pub fn catalog() -> Vec<Tool> {
@@ -233,7 +232,6 @@ struct FlagPhotos {
     flag: Flag,
 }
 
-/// Agent-facing names in, the webview's edit field names out.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct Adjust {
@@ -339,17 +337,14 @@ struct Export {
 
 /// The webview starts the job so it shows in the app's export list; progress is polled from the core.
 fn export(args: &Value, bridge: &Bridge) -> Result<Content, String> {
-    // one at a time, or two zips of a shoot would pick the same free name and the later replace the earlier
-    let _turn = EXPORTING
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut export: Export = parse(args)?;
     let shoot = export
         .photos
         .first()
         .and_then(|id| id.split_once('/'))
         .map_or("photos", |(shoot, _)| shoot);
-    export.destination = destination(&export.destination, shoot, export.zip)?;
+    let mut reserved = Reserved(None);
+    export.destination = destination(&export.destination, shoot, export.zip, &mut reserved)?;
     let args = serde_json::to_value(export).map_err(|e| e.to_string())?;
     let started = bridge.ask("export", &args, UI_WAIT)?;
     let id = started["id"].as_str().ok_or("the export did not start")?;
@@ -366,6 +361,8 @@ fn export(args: &Value, bridge: &Bridge) -> Result<Content, String> {
             }))]);
         }
         if Instant::now() > deadline {
+            // still running: the archive lands on the reservation later
+            reserved.0 = None;
             return Ok(vec![json_text(
                 &json!({ "running": true, "done": progress["done"], "total": progress["total"] }),
             )]);
@@ -375,7 +372,12 @@ fn export(args: &Value, bridge: &Bridge) -> Result<Content, String> {
 }
 
 /// The core writes a zip to exactly the path it is given, replacing whatever is there; an agent only ever gets a new file.
-fn destination(folder: &str, shoot: &str, zip: bool) -> Result<String, String> {
+fn destination(
+    folder: &str,
+    shoot: &str,
+    zip: bool,
+    reserved: &mut Reserved,
+) -> Result<String, String> {
     let folder = Path::new(folder);
     if !folder.is_absolute() || !folder.is_dir() {
         return Err(format!("{} is not an existing folder", folder.display()));
@@ -387,12 +389,13 @@ fn destination(folder: &str, shoot: &str, zip: bool) -> Result<String, String> {
     if inside(folder, &root) {
         return Err("Export into a folder outside the library; inside it the copies would show up as new photos.".into());
     }
-    let path = if zip {
-        new_zip(folder, shoot)
-    } else {
-        folder.to_path_buf()
-    };
-    Ok(path.to_string_lossy().into_owned())
+    if !zip {
+        return Ok(folder.to_string_lossy().into_owned());
+    }
+    let path = reserve_zip(folder, shoot).map_err(|e| e.to_string())?;
+    let destination = path.to_string_lossy().into_owned();
+    reserved.0 = Some(path);
+    Ok(destination)
 }
 
 /// By file identity, not path: a firmlink like /System/Volumes/Data names the library under another path.
@@ -409,14 +412,37 @@ fn inside(folder: &Path, root: &Path) -> bool {
     })
 }
 
-fn new_zip(folder: &Path, shoot: &str) -> PathBuf {
-    (1..)
-        .map(|n| match n {
+/// Claimed on disk at once, so a second export picking a name right after, even one still running, sees it taken.
+fn reserve_zip(folder: &Path, shoot: &str) -> std::io::Result<PathBuf> {
+    for n in 1.. {
+        let path = match n {
             1 => folder.join(format!("{shoot}.zip")),
             n => folder.join(format!("{shoot} {n}.zip")),
-        })
-        .find(|path| !path.exists())
-        .expect("some name is free")
+        };
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(_) => return Ok(path),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    unreachable!("some name is free")
+}
+
+/// The empty placeholder goes again if the export never wrote over it.
+struct Reserved(Option<PathBuf>);
+
+impl Drop for Reserved {
+    fn drop(&mut self) {
+        if let Some(path) = &self.0 {
+            if std::fs::metadata(path).is_ok_and(|placeholder| placeholder.len() == 0) {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -441,8 +467,19 @@ mod tests {
         let folder = std::env::temp_dir().join(format!("pp-zip-{}", std::process::id()));
         std::fs::create_dir_all(folder.join("Shoot.zip")).unwrap();
         std::fs::write(folder.join("Shoot 2.zip"), b"older export").unwrap();
-        assert_eq!(new_zip(&folder, "Shoot"), folder.join("Shoot 3.zip"));
-        assert!(destination("relative/folder", "Shoot", true).is_err());
+        let first = Reserved(Some(reserve_zip(&folder, "Shoot").unwrap()));
+        let second = reserve_zip(&folder, "Shoot").unwrap();
+        assert_eq!(
+            first.0.as_deref(),
+            Some(folder.join("Shoot 3.zip").as_path())
+        );
+        assert_eq!(second, folder.join("Shoot 4.zip"));
+        drop(first);
+        assert!(
+            !folder.join("Shoot 3.zip").exists(),
+            "an unused reservation is given back"
+        );
+        assert!(destination("relative/folder", "Shoot", true, &mut Reserved(None)).is_err());
         assert!(inside(&folder.join("Shoot.zip"), &folder));
         assert!(!inside(&folder, &folder.join("Shoot.zip")));
         let _ = std::fs::remove_dir_all(&folder);

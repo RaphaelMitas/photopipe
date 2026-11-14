@@ -396,7 +396,6 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
           const paths = photosIn(view, call.args.photos).map(
             (photo) => photo.path,
           );
-          // like the trash dialog: an undo still writing could un-reject a photo already in the Trash
           await until(
             () => !current.current.trashBlocked,
             "waiting for pending writes",
@@ -427,10 +426,12 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
           }),
       );
     });
+    let gone = false;
     subscription
-      .then(() => invoke("agent_attach", { attached: true }))
+      .then(() => gone || invoke("agent_attach", { attached: true }))
       .catch(() => {});
     return () => {
+      gone = true;
       void invoke("agent_attach", { attached: false }).catch(() => {});
       void subscription.then((unlisten) => unlisten()).catch(() => {});
     };

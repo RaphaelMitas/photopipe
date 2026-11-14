@@ -106,7 +106,7 @@ pub fn instructions(access: Access) -> String {
     }
     let mut text = "Photopipe is a photo culling and editing app on this Mac. Photo ids look like \"<shoot>/<file>\": get them from list_photos, then pass them to the other tools.".to_owned();
     if access.act > Act::Off {
-        text.push_str(" Changes go through the app the user is looking at: open a shoot with show before rating, flagging or editing in it. Every change is one step in the app's history, so the user can undo it.");
+        text.push_str(" Changes go through the app the user is looking at: open a shoot with show before rating, flagging or editing in it. Ratings, flags and edits are each one step in the app's history, so the user can undo them; exports and trash are not.");
     }
     text
 }
