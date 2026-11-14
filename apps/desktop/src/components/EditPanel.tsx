@@ -31,9 +31,12 @@ import {
   EXPOSURE_RANGE,
   kelvin,
   PRESENCE_SLIDERS,
+  SLIDER_RANGE,
   type SliderSpec,
   signed,
   TONE_SLIDERS,
+  temperatureRange,
+  tintRange,
 } from "@/lib/editSliders";
 import { flagPref } from "@/lib/pref";
 import {
@@ -80,8 +83,8 @@ function SliderRows<Key extends SliderSpec["key"]>({
       label={label}
       value={values[key]}
       display={signed(values[key])}
-      min={-100}
-      max={100}
+      min={-SLIDER_RANGE}
+      max={SLIDER_RANGE}
       step={1}
       testid={key}
       resetLabel={`Reset ${label.toLowerCase()}`}
@@ -337,8 +340,7 @@ export function EditPanel({ image, edit, onChange, crop, masks }: Props) {
               label="Temp"
               value={temperature}
               display={kelvin(temperature)}
-              min={2000}
-              max={12000}
+              {...temperatureRange(true)}
               step={50}
               testid="temperature"
               resetLabel="Reset to as shot"
@@ -351,8 +353,7 @@ export function EditPanel({ image, edit, onChange, crop, masks }: Props) {
               label="Temp"
               value={temperature}
               display={signed(temperature)}
-              min={-100}
-              max={100}
+              {...temperatureRange(false)}
               step={1}
               testid="temperature"
               resetLabel="Reset temperature"
@@ -365,8 +366,7 @@ export function EditPanel({ image, edit, onChange, crop, masks }: Props) {
             label="Tint"
             value={tint}
             display={signed(tint)}
-            min={kelvinScale ? -150 : -100}
-            max={kelvinScale ? 150 : 100}
+            {...tintRange(kelvinScale)}
             step={1}
             testid="tint"
             resetLabel={kelvinScale ? "Reset to as shot" : "Reset tint"}

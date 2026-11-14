@@ -8,7 +8,6 @@ use std::time::Duration;
 type Emit = Box<dyn Fn(Value) -> Result<(), String> + Send + Sync>;
 type Outcome = Result<Value, String>;
 
-/// Hands a tool call to the webview, where selection, history and the open shoot live, and waits for its answer.
 pub struct Bridge {
     emit: Emit,
     pending: Mutex<HashMap<u64, SyncSender<Outcome>>>,
@@ -29,9 +28,10 @@ impl Bridge {
         }
     }
 
-    pub fn attach(&self) {
+    /// False when the webview's listener goes away, so a call waits for the next one instead of timing out on nobody.
+    pub fn attach(&self, on: bool) {
         let (attached, ready) = &self.attached;
-        *attached.lock().unwrap() = true;
+        *attached.lock().unwrap() = on;
         ready.notify_all();
     }
 
@@ -74,7 +74,7 @@ mod tests {
     #[test]
     fn an_answer_reaches_the_call_that_asked_and_a_late_one_is_dropped() {
         let bridge = Arc::new(Bridge::new(|_| Ok(())));
-        bridge.attach();
+        bridge.attach(true);
         let answering = Arc::clone(&bridge);
         let asked =
             std::thread::spawn(move || answering.ask("rate", &json!({}), Duration::from_secs(5)));
@@ -94,7 +94,7 @@ mod tests {
     #[test]
     fn a_window_that_cannot_be_reached_fails_the_call_at_once() {
         let bridge = Bridge::new(|_| Err("no window".into()));
-        bridge.attach();
+        bridge.attach(true);
         assert_eq!(
             bridge.ask("rate", &json!({}), Duration::from_secs(5)),
             Err("no window".into())

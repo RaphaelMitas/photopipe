@@ -3,6 +3,7 @@ use super::bridge::Bridge;
 use super::tools::{core, json_text, parse, Content, Flag, Tool};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 /// Opening a shoot waits for its photos to load.
@@ -24,7 +25,7 @@ pub fn catalog() -> Vec<Tool> {
             name: "show",
             see: See::Details,
             act: Act::Cull,
-            description: "Open a shoot in Photopipe, a photo in the loupe, or select photos in the grid. Rating, flagging, editing, exporting and trashing work on the open shoot, so open it first.",
+            description: "Open a shoot in Photopipe, a photo in the loupe, or select photos in the grid. Rating, flagging, editing, exporting and trashing work on the open shoot, so open it first. Switching shoots clears the app's undo history, as it does when the user switches.",
             input: || {
                 json!({
                     "type": "object",
@@ -141,15 +142,15 @@ pub fn catalog() -> Vec<Tool> {
         },
         Tool {
             name: "export",
-            see: See::Details,
+            see: See::Pictures,
             act: Act::Everything,
-            description: "Export photos from the open shoot to a folder, shown in the app's export list, and wait for it to finish.",
+            description: "Export photos from the open shoot into a folder outside the library, shown in the app's export list, and wait for it to finish. With zip the photos go into a new <shoot>.zip in that folder.",
             input: || {
                 json!({
                     "type": "object",
                     "properties": {
                         "photos": photos_schema(),
-                        "destination": { "type": "string", "description": "Absolute path of an existing folder." },
+                        "destination": { "type": "string", "description": "Absolute path of an existing folder outside the library." },
                         "format": { "type": "string", "enum": ["original", "jpeg"], "description": "original (default) copies the files; jpeg renders them with their edits." },
                         "quality": { "type": "integer", "minimum": 1, "maximum": 100, "description": "JPEG only. Default 90." },
                         "long_edge": { "type": "integer", "minimum": 256, "description": "JPEG only. Leave out for full size." },
@@ -337,7 +338,13 @@ struct Export {
 
 /// The webview starts the job so it shows in the app's export list; waiting for it is the core's business.
 fn export(args: &Value, bridge: &Bridge) -> Result<Content, String> {
-    let export: Export = parse(args)?;
+    let mut export: Export = parse(args)?;
+    let shoot = export
+        .photos
+        .first()
+        .and_then(|id| id.split_once('/'))
+        .map_or("photos", |(shoot, _)| shoot);
+    export.destination = destination(&export.destination, shoot, export.zip)?;
     let args = serde_json::to_value(export).map_err(|e| e.to_string())?;
     let started = bridge.ask("export", &args, UI_WAIT)?;
     let id = started["id"].as_str().ok_or("the export did not start")?;
@@ -362,6 +369,38 @@ fn export(args: &Value, bridge: &Bridge) -> Result<Content, String> {
     }
 }
 
+/// The core writes a zip to exactly the path it is given, replacing whatever is there; an agent only ever gets a new file.
+fn destination(folder: &str, shoot: &str, zip: bool) -> Result<String, String> {
+    let folder = Path::new(folder);
+    if !folder.is_absolute() || !folder.is_dir() {
+        return Err(format!("{} is not an existing folder", folder.display()));
+    }
+    let root = core("status", json!({}))?["root"]
+        .as_str()
+        .map(PathBuf::from)
+        .ok_or("Photopipe has no folder open")?;
+    let real = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    if real(folder).starts_with(real(&root)) {
+        return Err("Export into a folder outside the library; inside it the copies would show up as new photos.".into());
+    }
+    let path = if zip {
+        new_zip(folder, shoot)
+    } else {
+        folder.to_path_buf()
+    };
+    Ok(path.to_string_lossy().into_owned())
+}
+
+fn new_zip(folder: &Path, shoot: &str) -> PathBuf {
+    (1..)
+        .map(|n| match n {
+            1 => folder.join(format!("{shoot}.zip")),
+            n => folder.join(format!("{shoot} {n}.zip")),
+        })
+        .find(|path| !path.exists())
+        .expect("some name is free")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -377,6 +416,16 @@ mod tests {
             json!({ "photos": ["S/a.ARW"], "set": { "exposure": 0.5, "cropAngle": 2.0 }, "reset": false })
         );
         assert!(parse::<EditPhotos>(&json!({ "photos": [], "set": { "contrast": 10 } })).is_err());
+    }
+
+    #[test]
+    fn a_zip_never_lands_on_something_that_is_already_there() {
+        let folder = std::env::temp_dir().join(format!("pp-zip-{}", std::process::id()));
+        std::fs::create_dir_all(folder.join("Shoot.zip")).unwrap();
+        std::fs::write(folder.join("Shoot 2.zip"), b"older export").unwrap();
+        assert_eq!(new_zip(&folder, "Shoot"), folder.join("Shoot 3.zip"));
+        assert!(destination("relative/folder", "Shoot", true).is_err());
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]

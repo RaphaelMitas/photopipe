@@ -12,6 +12,22 @@ import {
   type Shoot,
 } from "./core";
 import {
+  commitDraft,
+  draftFromEdit,
+  draftWithAngle,
+  rotatedSize,
+  STRAIGHTEN_SLIDER_RANGE,
+} from "./crop";
+import {
+  COLOR_SLIDERS,
+  EXPOSURE_RANGE,
+  PRESENCE_SLIDERS,
+  SLIDER_RANGE,
+  TONE_SLIDERS,
+  temperatureRange,
+  tintRange,
+} from "./editSliders";
+import {
   type HistoryDirection,
   type HistoryEntry,
   historyLabel,
@@ -23,7 +39,6 @@ import type { BatchResult } from "./queries";
 import { activeContext, availableActions, runAction } from "./shortcuts";
 import { flaggedTo, ratedTo } from "./stacks";
 
-/// Everything an agent's call needs from the app, read fresh on every render.
 export type AgentView = {
   shoots: Shoot[] | undefined;
   shoot: string | null;
@@ -119,59 +134,75 @@ function settled(photos: ImageFile[]) {
   return photos;
 }
 
-const clamp = (value: number, low: number, high: number) =>
-  Math.min(Math.max(value, low), high);
+const clamp = (value: number, { min, max }: { min: number; max: number }) =>
+  Math.min(Math.max(value, min), max);
 
-/// The editor's own slider ranges; temperature and tint are kelvin and wider on raws.
-export function agentEdit(base: Edit, set: Partial<Edit>, raw: boolean): Edit {
+const SLIDERS = [...TONE_SLIDERS, ...PRESENCE_SLIDERS, ...COLOR_SLIDERS].map(
+  (slider) => slider.key,
+);
+const SIGNED = { min: -SLIDER_RANGE, max: SLIDER_RANGE };
+
+/// Held to the editor's own ranges, and framed the way the crop tool frames.
+export function agentEdit(
+  base: Edit,
+  set: Partial<Edit>,
+  photo: ImageFile,
+): Edit {
   const next: Edit = { ...base };
-  const sliders = [
-    "highlights",
-    "shadows",
-    "whites",
-    "blacks",
-    "texture",
-    "clarity",
-    "dehaze",
-    "vibrance",
-    "saturation",
-  ] as const;
-  for (const key of sliders) {
+  for (const key of SLIDERS) {
     const value = set[key];
-    if (typeof value === "number") next[key] = clamp(value, -100, 100);
+    if (value !== undefined) next[key] = clamp(value, SIGNED);
   }
-  if (typeof set.exposure === "number") {
-    next.exposure = clamp(set.exposure, -3, 3);
+  if (set.exposure !== undefined) {
+    next.exposure = clamp(set.exposure, {
+      min: -EXPOSURE_RANGE,
+      max: EXPOSURE_RANGE,
+    });
   }
   if (typeof set.temperature === "number") {
-    next.temperature = raw
-      ? clamp(set.temperature, 2000, 12000)
-      : clamp(set.temperature, -100, 100);
+    next.temperature = clamp(set.temperature, temperatureRange(photo.isRaw));
   }
   if (typeof set.tint === "number") {
-    next.tint = raw ? clamp(set.tint, -150, 150) : clamp(set.tint, -100, 100);
+    next.tint = clamp(set.tint, tintRange(photo.isRaw));
   }
   if (typeof set.denoise === "number") {
-    next.denoise = clamp(set.denoise, 0, 100);
+    next.denoise = clamp(set.denoise, { min: 0, max: SLIDER_RANGE });
   }
-  if (typeof set.cropAngle === "number") {
-    next.cropAngle = clamp(set.cropAngle, -45, 45);
+  if (
+    set.crop === undefined &&
+    set.cropAngle === undefined &&
+    set.rotation === undefined
+  ) {
+    return next;
   }
-  if (set.rotation !== undefined) {
-    if (![0, 90, 180, 270].includes(set.rotation)) {
-      throw new Error("rotation is 0, 90, 180 or 270");
-    }
-    next.rotation = set.rotation;
+  const rotation = set.rotation ?? base.rotation ?? 0;
+  if (![0, 90, 180, 270].includes(rotation)) {
+    throw new Error("rotation is 0, 90, 180 or 270");
   }
-  if (set.crop) next.crop = saneCrop(set.crop);
-  return next;
+  const draft = draftFromEdit(
+    {
+      crop: set.crop ? checkedCrop(set.crop) : base.crop,
+      cropAngle: base.cropAngle,
+      rotation,
+    },
+    photo.width,
+    photo.height,
+  );
+  const [width, height] = rotatedSize(photo.width, photo.height, rotation);
+  const angle = clamp(set.cropAngle ?? draft.angle, {
+    min: -STRAIGHTEN_SLIDER_RANGE,
+    max: STRAIGHTEN_SLIDER_RANGE,
+  });
+  return {
+    ...next,
+    ...commitDraft(draftWithAngle(draft, angle, width, height)),
+  };
 }
 
-function saneCrop(crop: CropRect): CropRect {
+function checkedCrop(crop: CropRect): CropRect {
   const { left, top, right, bottom } = crop;
-  const fractions = [left, top, right, bottom];
   if (
-    fractions.some((value) => value < 0 || value > 1) ||
+    [left, top, right, bottom].some((value) => value < 0 || value > 1) ||
     right <= left ||
     bottom <= top
   ) {
@@ -299,7 +330,7 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
             const next = agentEdit(
               call.args.reset ? identityEdit : now,
               call.args.set,
-              photo.isRaw,
+              photo,
             );
             if (editKey(next) !== editKey(now)) edits.set(photo.path, next);
           }
@@ -350,9 +381,13 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
       }
     };
 
+    // one at a time, so a second call reads what the first one wrote
+    let queue: Promise<unknown> = Promise.resolve();
     const subscription = listen<Request>("agent:request", ({ payload }) => {
       const { id } = payload;
-      handle(payload).then(
+      const done = queue.then(() => handle(payload));
+      queue = done.catch(() => undefined);
+      done.then(
         (value) => invoke("agent_reply", { id, ok: true, value }),
         (error: unknown) =>
           invoke("agent_reply", {
@@ -362,8 +397,11 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
           }),
       );
     });
-    subscription.then(() => invoke("agent_attach")).catch(() => {});
+    subscription
+      .then(() => invoke("agent_attach", { attached: true }))
+      .catch(() => {});
     return () => {
+      void invoke("agent_attach", { attached: false }).catch(() => {});
       void subscription.then((unlisten) => unlisten()).catch(() => {});
     };
   }, [enabled]);

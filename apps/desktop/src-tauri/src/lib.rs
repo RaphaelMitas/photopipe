@@ -205,8 +205,8 @@ fn set_agent_access(store: State<'_, Arc<AccessStore>>, access: Access) {
 }
 
 #[tauri::command]
-fn agent_attach(bridge: State<'_, Arc<Bridge>>) {
-    bridge.attach();
+fn agent_attach(bridge: State<'_, Arc<Bridge>>, attached: bool) {
+    bridge.attach(attached);
 }
 
 #[tauri::command]

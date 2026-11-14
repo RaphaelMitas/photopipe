@@ -2,6 +2,18 @@ import type { Edit } from "./core";
 
 export const EXPOSURE_STEP = 0.25;
 export const EXPOSURE_RANGE = 3;
+export const SLIDER_RANGE = 100;
+
+/// A raw keeps its as-shot kelvin and a wider tint; anything else is an offset from neutral.
+export const temperatureRange = (kelvin: boolean) =>
+  kelvin
+    ? { min: 2000, max: 12000 }
+    : { min: -SLIDER_RANGE, max: SLIDER_RANGE };
+
+export const tintRange = (kelvin: boolean) => {
+  const reach = kelvin ? 150 : SLIDER_RANGE;
+  return { min: -reach, max: reach };
+};
 
 type SliderKey = keyof Pick<
   Edit,

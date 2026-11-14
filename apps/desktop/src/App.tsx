@@ -20,11 +20,7 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { BrowserPane } from "@/components/BrowserPane";
 import { Dashboard } from "@/components/Dashboard";
 import { EditSidebar, editGroupPref } from "@/components/EditPanel";
-import {
-  ExportDrawer,
-  type ExportOptions,
-  exportLabel,
-} from "@/components/ExportDrawer";
+import { ExportDrawer, exportLabel } from "@/components/ExportDrawer";
 import { HistoryControls } from "@/components/HistoryControls";
 import { IndexingStatus } from "@/components/IndexingStatus";
 import { Loupe } from "@/components/Loupe";
@@ -44,6 +40,7 @@ import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { ShowSidebarTrigger } from "@/components/ShowSidebarTrigger";
 import { AGENT_EDIT, useAgentTools } from "@/lib/agentTools";
 import {
+  type CoreMethods,
   type Edit,
   editKey,
   type Flag,
@@ -138,6 +135,11 @@ const undoHint = () => {
 };
 
 const editPanelPref = flagPref("photopipe.editPanel", "shown", "hidden", true);
+
+type ExportSettings = Omit<
+  CoreMethods["exportFiles"]["params"],
+  "shoot" | "paths" | "destination"
+>;
 
 export default function App() {
   const [rootState, setRootState] = useState<RootState>({
@@ -351,25 +353,18 @@ export default function App() {
     }
   };
 
-  const runExport = (options: ExportOptions, destination: string) => {
-    if (!openShoot) return;
-    void exports.start({
-      method: "exportFiles",
-      label: exportLabel(selectedImages.length, options.format),
-      request: {
-        shoot: openShoot,
-        paths: selectedImages.map((image) => image.path),
-        destination,
-        zip: options.zip,
-        flatten: options.flatten,
-        format: options.format,
-        quality: options.quality,
-        longEdge: options.longEdge,
-        decoderVersion: options.decoderVersion,
-        names: options.names,
-      },
-    });
-  };
+  const runExport = (
+    paths: string[],
+    settings: ExportSettings,
+    destination: string,
+  ) =>
+    openShoot === null
+      ? Promise.resolve(null)
+      : exports.start({
+          method: "exportFiles",
+          label: exportLabel(paths.length, settings.format),
+          request: { ...settings, shoot: openShoot, paths, destination },
+        });
 
   // Keyed on the sort you chose, not the one in force: a scoring pass finishing
   // must not re-order the loupe under you mid-visit.
@@ -775,24 +770,19 @@ export default function App() {
     },
     step: travel,
     exportPhotos: (paths, { destination, format, quality, longEdge, zip }) =>
-      openShoot === null
-        ? Promise.resolve(null)
-        : exports.start({
-            method: "exportFiles",
-            label: exportLabel(paths.length, format),
-            request: {
-              shoot: openShoot,
-              paths,
-              destination,
-              zip,
-              flatten: true,
-              format,
-              quality: quality ?? 90,
-              longEdge: longEdge ?? null,
-              decoderVersion: rawDecoderVersion(),
-              names: null,
-            },
-          }),
+      runExport(
+        paths,
+        {
+          format,
+          quality: quality ?? 90,
+          longEdge: longEdge ?? null,
+          zip,
+          flatten: true,
+          decoderVersion: rawDecoderVersion(),
+          names: null,
+        },
+        destination,
+      ),
     trash: trashFiles,
   });
 
@@ -1151,7 +1141,13 @@ export default function App() {
                   filter.reset();
                   selection.select(allImages.map((image) => image.path));
                 }}
-                onExport={runExport}
+                onExport={(options, destination) =>
+                  void runExport(
+                    selectedImages.map((image) => image.path),
+                    options,
+                    destination,
+                  )
+                }
                 onCancel={exports.cancel}
                 onReveal={revealPaths && ((path) => revealPaths([path]))}
                 onClose={() => setDrawerOpen(false)}

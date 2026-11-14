@@ -165,8 +165,15 @@ pub fn call(params: &Value, store: &AccessStore, bridge: &Bridge) -> Result<Valu
     let outcome = allowed()
         .and_then(|()| ready())
         .and_then(|()| (tool.run)(arguments, bridge))
-        // asked again after the work: the user may have turned access down while a look ran
-        .and_then(|content| allowed().map(|()| content));
+        // asked again before reading out: the user may have turned access down while a look ran;
+        // a write has landed by now and is reported as it is
+        .and_then(|content| {
+            if tool.act == Act::Off {
+                allowed().map(|()| content)
+            } else {
+                Ok(content)
+            }
+        });
     Ok(match outcome {
         Ok(content) => json!({ "content": content, "isError": false }),
         Err(message) => json!({ "content": [text(message)], "isError": true }),

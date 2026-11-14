@@ -234,7 +234,7 @@ function handlerFor(id: ActionId, context: Context): Handler | undefined {
   }
 }
 
-/// For an agent: what the key would do in the view the user has open; false when nothing here handles it.
+/// What the key would do in the view the user has open; false when nothing here handles it.
 export function runAction(id: ActionId): boolean {
   const context = activeContext();
   const handler = ACTIONS[id].contexts.includes(context)
