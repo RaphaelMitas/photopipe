@@ -324,10 +324,10 @@ public final class LibraryService: @unchecked Sendable {
 
     public func originals(paths: [String]) throws -> [Original] {
         try knownImages(paths: paths).map { image in
-            let sidecar = XMP.sidecarURL(forImagePath: image.path).path
+            let sidecar = XMP.sidecarURL(forImagePath: image.path)
             return Original(
                 path: image.path,
-                sidecar: FileManager.default.fileExists(atPath: sidecar) ? sidecar : nil)
+                sidecar: (try? XMP.isOwnSidecar(sidecar)) == true ? sidecar.path : nil)
         }
     }
 
