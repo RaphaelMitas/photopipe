@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{sync_channel, SyncSender};
 use std::sync::{Condvar, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 type Emit = Box<dyn Fn(Value) -> Result<(), String> + Send + Sync>;
 type Outcome = Result<Value, String>;
@@ -48,7 +48,11 @@ impl Bridge {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         let (sender, receiver) = sync_channel(1);
         self.pending.lock().unwrap().insert(id, sender);
-        let asked = (self.emit)(json!({ "id": id, "tool": tool, "args": args }));
+        let deadline = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |now| (now + timeout).as_millis());
+        let asked =
+            (self.emit)(json!({ "id": id, "tool": tool, "args": args, "deadline": deadline }));
         let outcome = asked.and_then(|()| {
             receiver
                 .recv_timeout(timeout)
@@ -58,7 +62,6 @@ impl Bridge {
         outcome
     }
 
-    /// A late answer to a request that already timed out is dropped.
     pub fn answer(&self, id: u64, outcome: Outcome) {
         if let Some(sender) = self.pending.lock().unwrap().remove(&id) {
             let _ = sender.send(outcome);

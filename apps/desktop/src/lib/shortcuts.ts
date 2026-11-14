@@ -225,6 +225,7 @@ function ignored(event: KeyboardEvent): boolean {
 }
 
 function handlerFor(id: ActionId, context: Context): Handler | undefined {
+  if (!ACTIONS[id].contexts.includes(context)) return;
   for (let at = registrations.length - 1; at >= 0; at--) {
     const registration = registrations[at].current;
     const handler =
@@ -234,22 +235,17 @@ function handlerFor(id: ActionId, context: Context): Handler | undefined {
   }
 }
 
-/// What the key would do in the view the user has open; false when nothing here handles it.
+/// Does what the key does in the view the user has open; false when nothing here handles it.
 export function runAction(id: ActionId): boolean {
-  const context = activeContext();
-  const handler = ACTIONS[id].contexts.includes(context)
-    ? handlerFor(id, context)
-    : undefined;
+  const handler = handlerFor(id, activeContext());
   return handler !== undefined && handler() !== false;
 }
 
 export const availableActions = () => {
   const context = activeContext();
-  return ACTION_IDS.filter(
-    (id) =>
-      ACTIONS[id].contexts.includes(context) &&
-      handlerFor(id, context) !== undefined,
-  ).map((id) => ({ id, label: ACTIONS[id].label }));
+  return ACTION_IDS.filter((id) => handlerFor(id, context) !== undefined).map(
+    (id) => ({ id, label: ACTIONS[id].label }),
+  );
 };
 
 function dispatch(event: KeyboardEvent) {
@@ -259,7 +255,6 @@ function dispatch(event: KeyboardEvent) {
   const overrides = overridesPref.get();
   for (const id of ACTION_IDS) {
     const action = ACTIONS[id];
-    if (!action.contexts.includes(context)) continue;
     const bindings = bindingsOf(id, overrides);
     if (!chords.some((chord) => bindings.includes(chord))) continue;
     const handler = handlerFor(id, context);

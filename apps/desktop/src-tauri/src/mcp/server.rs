@@ -152,13 +152,17 @@ mod tests {
     use super::*;
     use crate::defaults::{remove_suite, test_suite};
 
+    fn seeing(see: See) -> Access {
+        Access {
+            see,
+            ..Access::default()
+        }
+    }
+
     fn server(tag: &str, see: See) -> (Arc<Server>, String) {
         let suite = test_suite(&format!("mcp-{tag}"));
         let access = Arc::new(AccessStore::load(Some(&suite)));
-        access.set(Access {
-            see,
-            ..Access::default()
-        });
+        access.set(seeing(see));
         let bridge = Arc::new(Bridge::new(|_| Err("no window in tests".into())));
         (Server::new(access, bridge), suite)
     }
@@ -202,16 +206,10 @@ mod tests {
     fn only_the_tools_the_access_level_allows_are_listed() {
         let (server, suite) = server("levels", See::Off);
         assert!(names(&server).is_empty());
-        server.access.set(Access {
-            see: See::Details,
-            ..Access::default()
-        });
+        server.access.set(seeing(See::Details));
         assert!(names(&server).contains(&"list_photos".to_owned()));
         assert!(!names(&server).contains(&"look".to_owned()));
-        server.access.set(Access {
-            see: See::Pictures,
-            ..Access::default()
-        });
+        server.access.set(seeing(See::Pictures));
         assert!(names(&server).contains(&"look".to_owned()));
         remove_suite(&suite);
     }
@@ -241,10 +239,7 @@ mod tests {
         writeln!(&client, r#"{{"jsonrpc":"2.0","id":1,"method":"ping"}}"#).unwrap();
         assert!(lines.next().unwrap().unwrap().contains(r#""id":1"#));
 
-        server.access.set(Access {
-            see: See::Details,
-            ..Access::default()
-        });
+        server.access.set(seeing(See::Details));
         assert!(lines
             .next()
             .unwrap()

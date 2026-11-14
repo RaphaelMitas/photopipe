@@ -17,6 +17,7 @@ import {
   draftWithAngle,
   rotatedSize,
   STRAIGHTEN_SLIDER_RANGE,
+  turnCrop,
 } from "./crop";
 import {
   COLOR_SLIDERS,
@@ -64,6 +65,7 @@ export type AgentView = {
     request: AgentExport,
   ) => Promise<{ id: string } | null>;
   trash: (paths: string[]) => Promise<number>;
+  trashBlocked: boolean;
 };
 
 export type AgentExport = {
@@ -98,7 +100,8 @@ type AgentCall =
   | { tool: "export"; args: AgentExport & { photos: string[] } }
   | { tool: "trash"; args: { photos: string[] } };
 
-type Request = AgentCall & { id: number };
+/// `deadline` is when the host stops waiting; a call still queued then is dropped, not run late.
+type Request = AgentCall & { id: number; deadline: number };
 
 const FLAGS: Record<FlagName, Flag> = { picked: 1, rejected: -1, unflagged: 0 };
 const FLAG_NAMES = ["rejected", "unflagged", "picked"];
@@ -159,11 +162,16 @@ export function agentEdit(
       max: EXPOSURE_RANGE,
     });
   }
+  // off a raw, neutral is stored as none, as the editor does
+  const neutral = (value: number) =>
+    !photo.isRaw && value === 0 ? null : value;
   if (typeof set.temperature === "number") {
-    next.temperature = clamp(set.temperature, temperatureRange(photo.isRaw));
+    next.temperature = neutral(
+      clamp(set.temperature, temperatureRange(photo.isRaw)),
+    );
   }
   if (typeof set.tint === "number") {
-    next.tint = clamp(set.tint, tintRange(photo.isRaw));
+    next.tint = neutral(clamp(set.tint, tintRange(photo.isRaw)));
   }
   if (typeof set.denoise === "number") {
     next.denoise = clamp(set.denoise, { min: 0, max: SLIDER_RANGE });
@@ -175,24 +183,33 @@ export function agentEdit(
   ) {
     return next;
   }
-  const rotation = set.rotation ?? base.rotation ?? 0;
+  const before = base.rotation ?? 0;
+  const rotation = set.rotation ?? before;
   if (![0, 90, 180, 270].includes(rotation)) {
     throw new Error("rotation is 0, 90, 180 or 270");
   }
+  // the crop lives in the turned frame, so a turn carries it round like the crop tool's Turn
+  let crop = set.crop ? checkedCrop(set.crop) : (base.crop ?? null);
+  for (
+    let turn = before;
+    !set.crop && crop && turn !== rotation;
+    turn = (turn + 90) % 360
+  ) {
+    crop = turnCrop(crop);
+  }
   const draft = draftFromEdit(
-    {
-      crop: set.crop ? checkedCrop(set.crop) : base.crop,
-      cropAngle: base.cropAngle,
-      rotation,
-    },
+    { crop, cropAngle: base.cropAngle, rotation },
     photo.width,
     photo.height,
   );
   const [width, height] = rotatedSize(photo.width, photo.height, rotation);
-  const angle = clamp(set.cropAngle ?? draft.angle, {
-    min: -STRAIGHTEN_SLIDER_RANGE,
-    max: STRAIGHTEN_SLIDER_RANGE,
-  });
+  const angle =
+    set.cropAngle === undefined
+      ? draft.angle
+      : clamp(set.cropAngle, {
+          min: -STRAIGHTEN_SLIDER_RANGE,
+          max: STRAIGHTEN_SLIDER_RANGE,
+        });
   return {
     ...next,
     ...commitDraft(draftWithAngle(draft, angle, width, height)),
@@ -292,7 +309,10 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
           const chosen =
             select === null ? null : photosIn(current.current, select);
           const shown = [...(target ? [target] : []), ...(chosen ?? [])];
-          if (shown.some((image) => !current.current.visible.includes(image))) {
+          const visible = new Set(
+            current.current.visible.map((image) => image.path),
+          );
+          if (shown.some((image) => !visible.has(image.path))) {
             current.current.resetFilter();
             await rendered();
           }
@@ -376,7 +396,12 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
           const paths = photosIn(view, call.args.photos).map(
             (photo) => photo.path,
           );
-          return { files: await view.trash(paths) };
+          // like the trash dialog: an undo still writing could un-reject a photo already in the Trash
+          await until(
+            () => !current.current.trashBlocked,
+            "waiting for pending writes",
+          );
+          return { files: await current.current.trash(paths) };
         }
       }
     };
@@ -384,8 +409,13 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
     // one at a time, so a second call reads what the first one wrote
     let queue: Promise<unknown> = Promise.resolve();
     const subscription = listen<Request>("agent:request", ({ payload }) => {
-      const { id } = payload;
-      const done = queue.then(() => handle(payload));
+      const { id, deadline } = payload;
+      const done = queue.then(() => {
+        if (Date.now() > deadline) {
+          throw new Error("Photopipe was busy; this call was dropped.");
+        }
+        return handle(payload);
+      });
       queue = done.catch(() => undefined);
       done.then(
         (value) => invoke("agent_reply", { id, ok: true, value }),

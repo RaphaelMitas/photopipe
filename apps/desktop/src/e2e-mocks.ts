@@ -283,7 +283,12 @@ let nextAgentRequest = 1;
 export async function askAgent(tool: string, args: unknown) {
   const id = nextAgentRequest++;
   const { emit } = await import("@tauri-apps/api/event");
-  await emit("agent:request", { id, tool, args });
+  await emit("agent:request", {
+    id,
+    tool,
+    args,
+    deadline: Date.now() + 60_000,
+  });
   for (let tries = 0; tries < 200; tries++) {
     const reply = agentReplies.find(
       (candidate) =>

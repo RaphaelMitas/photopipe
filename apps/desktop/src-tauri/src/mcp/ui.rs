@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 /// Opening a shoot waits for its photos to load.
 const UI_WAIT: Duration = Duration::from_secs(60);
 const EXPORT_WAIT: Duration = Duration::from_secs(30 * 60);
+static EXPORTING: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Tools the webview answers, because the open shoot, selection and history only live there.
 pub fn catalog() -> Vec<Tool> {
@@ -336,8 +337,12 @@ struct Export {
     zip: bool,
 }
 
-/// The webview starts the job so it shows in the app's export list; waiting for it is the core's business.
+/// The webview starts the job so it shows in the app's export list; progress is polled from the core.
 fn export(args: &Value, bridge: &Bridge) -> Result<Content, String> {
+    // one at a time, or two zips of a shoot would pick the same free name and the later replace the earlier
+    let _turn = EXPORTING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut export: Export = parse(args)?;
     let shoot = export
         .photos
@@ -379,8 +384,7 @@ fn destination(folder: &str, shoot: &str, zip: bool) -> Result<String, String> {
         .as_str()
         .map(PathBuf::from)
         .ok_or("Photopipe has no folder open")?;
-    let real = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    if real(folder).starts_with(real(&root)) {
+    if inside(folder, &root) {
         return Err("Export into a folder outside the library; inside it the copies would show up as new photos.".into());
     }
     let path = if zip {
@@ -389,6 +393,20 @@ fn destination(folder: &str, shoot: &str, zip: bool) -> Result<String, String> {
         folder.to_path_buf()
     };
     Ok(path.to_string_lossy().into_owned())
+}
+
+/// By file identity, not path: a firmlink like /System/Volumes/Data names the library under another path.
+fn inside(folder: &Path, root: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let Ok(root) = std::fs::metadata(root) else {
+        return false;
+    };
+    let folder = folder
+        .canonicalize()
+        .unwrap_or_else(|_| folder.to_path_buf());
+    folder.ancestors().any(|dir| {
+        std::fs::metadata(dir).is_ok_and(|dir| dir.dev() == root.dev() && dir.ino() == root.ino())
+    })
 }
 
 fn new_zip(folder: &Path, shoot: &str) -> PathBuf {
@@ -425,6 +443,8 @@ mod tests {
         std::fs::write(folder.join("Shoot 2.zip"), b"older export").unwrap();
         assert_eq!(new_zip(&folder, "Shoot"), folder.join("Shoot 3.zip"));
         assert!(destination("relative/folder", "Shoot", true).is_err());
+        assert!(inside(&folder.join("Shoot.zip"), &folder));
+        assert!(!inside(&folder, &folder.join("Shoot.zip")));
         let _ = std::fs::remove_dir_all(&folder);
     }
 

@@ -78,6 +78,7 @@ import {
   useShoots,
   useStacking,
   useTrash,
+  useTrashBlocked,
 } from "@/lib/queries";
 import { rawDecoderVersion } from "@/lib/rawDecoder";
 import {
@@ -246,6 +247,7 @@ export default function App() {
     ? (paths: string[]) => reveal.mutate(paths)
     : undefined;
   const trash = useTrash(openShoot);
+  const trashBlocked = useTrashBlocked();
   const exports = useExportJobs();
   const scan = useLibrarySync(ready, ready ? rootState.generation : null);
 
@@ -784,6 +786,7 @@ export default function App() {
         destination,
       ),
     trash: trashFiles,
+    trashBlocked,
   });
 
   // Settings is reachable from the menu bar at any time, including before a
