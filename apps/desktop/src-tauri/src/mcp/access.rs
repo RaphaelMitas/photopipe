@@ -27,35 +27,29 @@ type Listener = Box<dyn Fn() + Send>;
 /// Not the webview's: the relay may start the app and ask before the UI loads.
 pub struct AccessStore {
     defaults: Retained<NSUserDefaults>,
-    current: Mutex<Access>,
     listeners: Mutex<Vec<Listener>>,
 }
 
 impl AccessStore {
     pub fn load(suite: Option<&str>) -> Self {
-        let defaults = defaults::open(suite);
-        let current = defaults::read(&defaults, KEY).unwrap_or_default();
         AccessStore {
-            defaults,
-            current: Mutex::new(current),
+            defaults: defaults::open(suite),
             listeners: Mutex::new(Vec::new()),
         }
     }
 
+    /// Read on every ask, so turning access down in a second copy of the app reaches the one serving agents.
     pub fn get(&self) -> Access {
-        *self.current.lock().unwrap()
+        defaults::read(&self.defaults, KEY).unwrap_or_default()
     }
 
     pub fn set(&self, access: Access) {
-        {
-            let mut current = self.current.lock().unwrap();
-            if *current == access {
-                return;
-            }
-            *current = access;
-            defaults::write(&self.defaults, KEY, &access);
+        let listeners = self.listeners.lock().unwrap();
+        if self.get() == access {
+            return;
         }
-        for listener in self.listeners.lock().unwrap().iter() {
+        defaults::write(&self.defaults, KEY, &access);
+        for listener in listeners.iter() {
             listener();
         }
     }
@@ -89,6 +83,13 @@ mod tests {
         store.set(pictures);
         assert_eq!(heard.load(Ordering::SeqCst), 1);
         assert_eq!(AccessStore::load(Some(&suite)).get(), pictures);
+
+        AccessStore::load(Some(&suite)).set(Access { see: See::Off });
+        assert_eq!(
+            store.get().see,
+            See::Off,
+            "a change made elsewhere reaches this store"
+        );
         remove_suite(&suite);
     }
 }
