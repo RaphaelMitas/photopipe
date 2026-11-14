@@ -78,6 +78,7 @@ export function useDebouncedEdit(
   );
 
   const holding = useCallback(() => held.current, []);
+  const waiting = useCallback(() => pending.current !== null, []);
 
-  return { draft, scrub, flush, cancel, hold, holding };
+  return { draft, scrub, flush, cancel, hold, holding, waiting };
 }

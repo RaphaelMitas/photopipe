@@ -70,6 +70,7 @@ export type AgentView = {
   trash: (paths: string[]) => Promise<number>;
   trashBlocked: boolean;
   editing: () => boolean;
+  unsaved: () => boolean;
   save: () => Promise<unknown>;
 };
 
@@ -136,15 +137,25 @@ function photosIn(
   });
 }
 
+const userIsEditing = (): never => {
+  throw new Error(
+    "The user is editing a photo right now. Try again in a moment.",
+  );
+};
+
 /// The user's held slider or open crop wins; a change merely waiting to save is saved first, as its own step.
-async function waitForUser(view: AgentView) {
-  if (view.editing()) {
-    throw new Error(
-      "The user is editing a photo right now. Try again in a moment.",
-    );
-  }
-  await view.save().catch(() => {});
+async function waitForUser(now: () => AgentView) {
+  if (now().editing()) userIsEditing();
+  await now()
+    .save()
+    .catch(() => {});
+  const view = now();
+  if (view.editing() || view.unsaved()) userIsEditing();
+  return view;
 }
+
+/// The tools that change or move what the user may be editing.
+const GUARDED = new Set(["show", "edit", "undo", "ui_action", "trash"]);
 
 function settled(photos: ImageFile[]) {
   if (photos.some((photo) => !photo.enriched)) {
@@ -225,6 +236,21 @@ export function agentEdit(
   };
 }
 
+/// What an agent cannot set, so a reset leaves it alone.
+const beyondReach = ({
+  curveRGB,
+  curveRed,
+  curveGreen,
+  curveBlue,
+  masks,
+}: Edit) => ({
+  curveRGB,
+  curveRed,
+  curveGreen,
+  curveBlue,
+  masks,
+});
+
 function checkedCrop(crop: CropRect): CropRect {
   const { left, top, right, bottom } = crop;
   if (
@@ -295,12 +321,13 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
     };
 
     const handle = async (call: AgentCall) => {
-      const view = current.current;
+      const view = GUARDED.has(call.tool)
+        ? await waitForUser(() => current.current)
+        : current.current;
       switch (call.tool) {
         case "get_view":
           return viewOf(view);
         case "show": {
-          await waitForUser(view);
           const { shoot, photo, select } = call.args;
           if (shoot !== null && shoot !== view.shoot) {
             if (!view.shoots?.some((known) => known.name === shoot)) {
@@ -357,7 +384,6 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
           return { changed: changes.size };
         }
         case "edit": {
-          await waitForUser(view);
           const photos = settled(photosIn(view, call.args.photos));
           const { temperature, tint } = call.args.set;
           const raws = new Set(photos.map((photo) => photo.isRaw));
@@ -370,7 +396,7 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
           for (const photo of photos) {
             const now = view.editOf(photo);
             const next = agentEdit(
-              call.args.reset ? identityEdit : now,
+              call.args.reset ? { ...identityEdit, ...beyondReach(now) } : now,
               call.args.set,
               photo,
             );
@@ -393,7 +419,6 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
         case "ui_action": {
           const { action } = call.args;
           if (!isActionId(action)) throw new Error(`No action ${action}.`);
-          await waitForUser(view);
           if (isModalOpen()) {
             throw new Error(
               "A dialog is open in Photopipe; ask the user to close it.",
@@ -418,7 +443,6 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
           return { id: job.id };
         }
         case "trash": {
-          await waitForUser(view);
           const paths = photosIn(view, call.args.photos).map(
             (photo) => photo.path,
           );

@@ -83,7 +83,7 @@ pub fn catalog() -> Vec<Tool> {
                     "type": "object",
                     "properties": {
                         "photos": photos_schema(),
-                        "reset": { "type": "boolean", "description": "Start from no edit instead of the photo's current one." },
+                        "reset": { "type": "boolean", "description": "Start from no adjustments instead of the photo's current ones. Curves and masks stay." },
                         "set": {
                             "type": "object",
                             "properties": {
