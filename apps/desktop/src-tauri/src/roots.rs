@@ -138,14 +138,8 @@ impl Roots {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::defaults::{remove_suite, test_suite as suite};
     use objc2_foundation::NSString;
-
-    fn suite(tag: &str) -> String {
-        let suite = format!("net.photopipe.desktop.tests.{tag}");
-        NSUserDefaults::standardUserDefaults()
-            .removePersistentDomainForName(&NSString::from_str(&suite));
-        suite
-    }
 
     fn folder(tag: &str) -> std::path::PathBuf {
         let dir =
@@ -185,8 +179,7 @@ mod tests {
         for dir in [old, new] {
             let _ = std::fs::remove_dir_all(dir);
         }
-        NSUserDefaults::standardUserDefaults()
-            .removePersistentDomainForName(&NSString::from_str(&suite));
+        remove_suite(&suite);
     }
 
     #[test]
@@ -211,8 +204,7 @@ mod tests {
         assert!(reloaded.reopen(&path).unwrap().is_ok());
         assert_eq!(reloaded.list()[0].status, "ok");
         let _ = std::fs::remove_dir_all(&dir);
-        NSUserDefaults::standardUserDefaults()
-            .removePersistentDomainForName(&NSString::from_str(&suite));
+        remove_suite(&suite);
     }
 
     #[test]
@@ -231,8 +223,7 @@ mod tests {
         assert_eq!(listed[0].status, "ok");
         assert!(same(&listed[0].path, &after));
         let _ = std::fs::remove_dir_all(&after);
-        NSUserDefaults::standardUserDefaults()
-            .removePersistentDomainForName(&NSString::from_str(&suite));
+        remove_suite(&suite);
     }
 
     #[test]
@@ -249,8 +240,7 @@ mod tests {
         let stored = Roots::load(Some(&suite));
         assert_eq!(stored.entries.lock().unwrap()[0].live.path, listed[0].path);
         let _ = std::fs::remove_dir_all(&after);
-        NSUserDefaults::standardUserDefaults()
-            .removePersistentDomainForName(&NSString::from_str(&suite));
+        remove_suite(&suite);
     }
 
     #[test]
@@ -289,7 +279,6 @@ mod tests {
             "untouched"
         );
         let _ = std::fs::remove_dir_all(&dir);
-        NSUserDefaults::standardUserDefaults()
-            .removePersistentDomainForName(&NSString::from_str(&suite));
+        remove_suite(&suite);
     }
 }

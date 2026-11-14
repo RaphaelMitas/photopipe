@@ -16,7 +16,6 @@ pub fn open(suite: Option<&str>) -> Retained<NSUserDefaults> {
     }
 }
 
-/// Stored as a JSON string; a value that no longer parses reads as missing.
 pub fn read<T: DeserializeOwned>(defaults: &NSUserDefaults, key: &str) -> Option<T> {
     defaults
         .stringForKey(&NSString::from_str(key))
@@ -29,4 +28,18 @@ pub fn write<T: Serialize>(defaults: &NSUserDefaults, key: &str, value: &T) {
     unsafe {
         defaults.setObject_forKey(Some(object), &NSString::from_str(key));
     }
+}
+
+/// An emptied suite for one test's values.
+#[cfg(test)]
+pub fn test_suite(tag: &str) -> String {
+    let suite = format!("net.photopipe.desktop.tests.{tag}");
+    remove_suite(&suite);
+    suite
+}
+
+#[cfg(test)]
+pub fn remove_suite(suite: &str) {
+    NSUserDefaults::standardUserDefaults()
+        .removePersistentDomainForName(&NSString::from_str(suite));
 }

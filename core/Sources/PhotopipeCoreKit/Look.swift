@@ -23,7 +23,7 @@ public enum Look {
     public static let separateLimit = 8
     public static let sheetLimit = 64
     static let longEdges = 256...2576
-    /// Lowest last: past it a frame is not worth looking at, so a reply over budget is dropped by the caller instead.
+    /// Below the last a frame is not worth looking at; the caller drops what is still over budget.
     static let qualities = [0.85, 0.7, 0.55, 0.4]
 
     static func grid(count: Int, longEdge: Int) -> (columns: Int, rows: Int, cell: Int) {
@@ -32,18 +32,13 @@ public enum Look {
         return (columns, rows, longEdge / columns)
     }
 
-    /// The photo's edited frame in pixels, which the crop fractions are against.
     static func framedSize(of file: ImageFile, edit: Edit) -> CGSize {
-        var width = Double(file.width)
-        var height = Double(file.height)
-        if edit.normalizedRotation == 90 || edit.normalizedRotation == 270 {
-            swap(&width, &height)
-        }
-        let crop = Renderer.saneCrop(edit) ?? .full
-        return CGSize(width: width * crop.width, height: height * crop.height)
+        Renderer.framedSize(
+            CGSize(width: file.width, height: file.height), edit,
+            crop: Renderer.saneCrop(edit) ?? .full)
     }
 
-    /// A tile-sized window of native pixels around `spot`, slid inside the frame rather than cut off at its edge.
+    /// Slid inside the frame rather than cut off at its edge.
     static func viewport(around spot: CGPoint, tile: Int, framed: CGSize) -> CropRect {
         let width = min(Double(tile) / max(framed.width, 1), 1)
         let height = min(Double(tile) / max(framed.height, 1), 1)

@@ -69,19 +69,14 @@ impl AccessStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use objc2_foundation::NSString;
+    use crate::defaults::{remove_suite, test_suite};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
     #[test]
     fn access_starts_off_survives_a_relaunch_and_announces_only_real_changes() {
-        let suite = "net.photopipe.desktop.tests.agent-access";
-        let clear = || {
-            NSUserDefaults::standardUserDefaults()
-                .removePersistentDomainForName(&NSString::from_str(suite))
-        };
-        clear();
-        let store = AccessStore::load(Some(suite));
+        let suite = test_suite("agent-access");
+        let store = AccessStore::load(Some(&suite));
         assert_eq!(store.get().see, See::Off);
 
         let heard = Arc::new(AtomicUsize::new(0));
@@ -93,7 +88,7 @@ mod tests {
         store.set(pictures);
         store.set(pictures);
         assert_eq!(heard.load(Ordering::SeqCst), 1);
-        assert_eq!(AccessStore::load(Some(suite)).get(), pictures);
-        clear();
+        assert_eq!(AccessStore::load(Some(&suite)).get(), pictures);
+        remove_suite(&suite);
     }
 }

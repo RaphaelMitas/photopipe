@@ -92,7 +92,7 @@ public struct ImageFile: Encodable, Equatable, Sendable {
         self.enriched = enriched
         self.sidecarMtime = sidecarMtime
         self.isRaw = rawExtensions.contains(ext.lowercased())
-        self.edited = edit != .identity
+        self.edited = !edit.isIdentity
     }
 
     var sidecarOnly: Bool {

@@ -276,7 +276,7 @@ public final class LibraryService: @unchecked Sendable {
         guard !paths.isEmpty else { throw Look.LookError.nothingToShow }
         let limit = sheet ? Look.sheetLimit : Look.separateLimit
         guard paths.count <= limit else { throw Look.LookError.tooMany(paths.count, limit: limit) }
-        let files = try settledImages(paths: paths)
+        let files = try readImages(paths: paths)
         let longEdge = min(max(longEdge, Look.longEdges.lowerBound), Look.longEdges.upperBound)
         let tile = sheet ? Look.grid(count: files.count, longEdge: longEdge).cell : longEdge
 
@@ -317,32 +317,40 @@ public final class LibraryService: @unchecked Sendable {
         let viewport = spot.map {
             Look.viewport(around: $0, tile: tile, framed: Look.framedSize(of: file, edit: edit))
         }
-        do {
-            return try renderer.still(file: file, edit: edit, longEdge: tile, viewport: viewport)
-        } catch  where edit.masks.contains(where: \.changesPixels) {
-            // like the loupe: a mask that cannot be cut costs the photo its masks, not the photo
-            var bare = edit
-            bare.masks = []
-            return try renderer.still(file: file, edit: bare, longEdge: tile, viewport: viewport)
+        return try renderer.still(file: file, edit: edit, longEdge: tile, viewport: viewport)
+    }
+
+    public struct Original: Sendable, Encodable {
+        public let path: String
+        public let sidecar: String?
+    }
+
+    /// The files themselves, for an agent that reads them with its own tools.
+    public func originals(paths: [String]) throws -> [Original] {
+        try knownImages(paths: paths).map { image in
+            let sidecar = XMP.sidecarURL(forImagePath: image.path).path
+            return Original(
+                path: image.path,
+                sidecar: FileManager.default.fileExists(atPath: sidecar) ? sidecar : nil)
         }
     }
 
-    /// From any shoot, read now if enrichment has not reached them yet.
-    private func settledImages(paths: [String]) throws -> [ImageFile] {
+    /// From any shoot. A placeholder is read here but not stored, so a write landing meanwhile is never undone.
+    private func readImages(paths: [String]) throws -> [ImageFile] {
+        try knownImages(paths: paths).map { $0.enriched ? $0 : enrich($0) }
+    }
+
+    private func knownImages(paths: [String]) throws -> [ImageFile] {
         try requireRoot()
-        let byShoot = lock.withLock { snapshot.imagesByShoot }
-        var shootOf: [String: String] = [:]
-        for (shoot, images) in byShoot {
-            for image in images { shootOf[image.path] = shoot }
-        }
+        let byPath = Self.byPath(lock.withLock { snapshot.imagesByShoot.values.joined() })
         // the walk keeps /private and canonical() drops it
         lazy var byCanonical = Dictionary(
-            shootOf.keys.map { (Self.canonical($0), $0) }, uniquingKeysWith: { $1 })
+            byPath.values.map { (Self.canonical($0.path), $0) }, uniquingKeysWith: { $1 })
         return try paths.map { path in
-            guard let stored = shootOf[path] != nil ? path : byCanonical[Self.canonical(path)],
-                let shoot = shootOf[stored]
-            else { throw ServiceError.unknownImage(path) }
-            return try settledImage(shoot: shoot, path: stored)
+            guard let image = byPath[path] ?? byCanonical[Self.canonical(path)] else {
+                throw ServiceError.unknownImage(path)
+            }
+            return image
         }
     }
 

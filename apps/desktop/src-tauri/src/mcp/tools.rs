@@ -13,8 +13,11 @@ struct Tool {
     run: fn(&Value) -> Result<Content, String>,
 }
 
-/// Raw JPEG bytes per look. Base64 makes it a third larger, which keeps a reply under Claude Desktop's 1 MB cap.
+/// Raw JPEG bytes; a third larger as base64, still under Claude Desktop's 1 MB reply cap.
 const LOOK_BUDGET: usize = 600_000;
+
+/// One look at a time: the core's look lane runs newest first, and a look waiting behind others would time out.
+static LOOKING: std::sync::Mutex<()> = std::sync::Mutex::new(());
 const PAGE: usize = 200;
 
 fn catalog() -> [Tool; 4] {
@@ -178,7 +181,7 @@ fn images(shoot: &str) -> Result<Vec<Value>, String> {
         .as_array()
         .cloned()
         .unwrap_or_default();
-    // undated photos last, then by name, like a camera's own numbering
+    // by capture time, undated last; ties by file name, like a camera's numbering
     images.sort_by(|a, b| {
         let key = |image: &Value| {
             (
@@ -200,8 +203,7 @@ fn split_id(id: &str) -> Result<(&str, &str), String> {
         .ok_or_else(|| format!("{id} is not a photo id; ids look like \"<shoot>/<file>\""))
 }
 
-/// Ids to file paths, checked against the shoots that exist.
-fn locate(ids: &[String]) -> Result<Vec<String>, String> {
+fn paths_of(ids: &[String]) -> Result<Vec<String>, String> {
     let shoots = shoots()?;
     ids.iter()
         .map(|id| {
@@ -250,7 +252,6 @@ fn clock(seconds: f64) -> String {
     )
 }
 
-/// Members of a stack of one are not worth a field.
 fn stack_sizes(images: &[Value]) -> std::collections::HashMap<&str, usize> {
     let mut sizes = std::collections::HashMap::new();
     for stack in images.iter().filter_map(|image| image["stack"].as_str()) {
@@ -344,6 +345,7 @@ fn list_photos(args: &Value) -> Result<Content, String> {
         .skip(offset)
         .take(limit)
         .map(|image| {
+            // a stack of one is not worth a field
             let stacked = image["stack"]
                 .as_str()
                 .is_some_and(|stack| sizes[stack] > 1);
@@ -360,7 +362,7 @@ fn list_photos(args: &Value) -> Result<Content, String> {
         .filter(|image| image["enriched"] == false)
         .count();
     if indexing > 0 {
-        answer["note"] = format!("{indexing} photos are still being indexed; their ratings and flags are not read yet, so filters count them as unrated").into();
+        answer["note"] = format!("{indexing} photos are still being indexed: their ratings and flags are not read yet, so filters count them as unrated, and their order can still change between pages").into();
     }
     Ok(vec![json_text(&answer)])
 }
@@ -373,21 +375,11 @@ fn get_photo(args: &Value) -> Result<Content, String> {
         .iter()
         .find(|image| image["rel"] == rel)
         .ok_or_else(|| format!("no photo {id}"))?;
-    let mut answer = json!({
-        "id": id,
-        "file": image["path"],
-        "width": image["width"],
-        "height": image["height"],
-        "rating": image["rating"],
-        "flag": flag_name(image["flag"].as_i64().unwrap_or(0)),
-        "camera": image["exif"],
-    });
-    if let Some(captured) = image["captured"].as_f64() {
-        answer["time"] = clock(captured).into();
-    }
-    if let Some(score) = image["score"].as_f64() {
-        answer["instinct"] = ((score * 100.0).round() / 100.0).into();
-    }
+    let mut answer = row(shoot, image, &|_| None, false);
+    answer["file"] = image["path"].clone();
+    answer["width"] = image["width"].clone();
+    answer["height"] = image["height"].clone();
+    answer["camera"] = image["exif"].clone();
     if image["edited"] == true {
         answer["edit"] = image["edit"].clone();
     }
@@ -417,15 +409,15 @@ fn look(args: &Value) -> Result<Content, String> {
     if ids.is_empty() {
         return Err("photos is required".into());
     }
-    let paths = locate(&ids)?;
+    let paths = paths_of(&ids)?;
     let version = args["version"].as_str().unwrap_or("edited");
     if version == "raw" {
+        let originals = core("originals", json!({ "paths": paths }))?;
         let files: Vec<Value> = ids
             .iter()
-            .zip(&paths)
-            .map(|(id, path)| {
-                let sidecar = std::path::Path::new(path).with_extension("xmp");
-                json!({ "id": id, "file": path, "sidecar": sidecar.exists().then(|| sidecar.to_string_lossy().into_owned()) })
+            .zip(originals["files"].as_array().into_iter().flatten())
+            .map(|(id, original)| {
+                json!({ "id": id, "file": original["path"], "sidecar": original["sidecar"] })
             })
             .collect();
         return Ok(vec![json_text(&json!({ "files": files }))]);
@@ -446,7 +438,12 @@ fn look(args: &Value) -> Result<Content, String> {
             json!({ "x": 0.5, "y": 0.5 })
         };
     }
-    let shown = core("look", params)?;
+    let shown = {
+        let _turn = LOOKING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        core("look", params)?
+    };
     let by_path = |path: &Value| {
         paths
             .iter()
@@ -501,7 +498,6 @@ mod tests {
     #[test]
     fn the_camera_clock_reads_back_as_written() {
         assert_eq!(clock(0.0), "1970-01-01 00:00:00");
-        // 2026-08-08 20:01:05 on the camera
         assert_eq!(clock(1_786_219_265.4), "2026-08-08 20:01:05");
         assert_eq!(clock(951_782_400.0), "2000-02-29 00:00:00");
     }

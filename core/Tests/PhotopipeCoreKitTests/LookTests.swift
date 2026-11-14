@@ -113,6 +113,19 @@ private func withShoot(
     }
 }
 
+@Test func originalsNameTheSidecarPhotopipeActuallyWrites() throws {
+    try withShoot(photos: 1) { service, paths in
+        #expect(try service.originals(paths: paths)[0].sidecar == nil)
+        let sidecar = XMP.sidecarURL(forImagePath: paths[0])
+        try Data("<x/>".utf8).write(to: sidecar)
+        // a JPEG's is IMG_1.jpg.photopipe.xmp, not the IMG_1.xmp a raw would get
+        #expect(try service.originals(paths: paths)[0].sidecar == sidecar.path)
+        #expect(throws: LibraryService.ServiceError.self) {
+            try service.originals(paths: [paths[0] + "/../../elsewhere.jpg"])
+        }
+    }
+}
+
 @Test func theGridKeepsSheetsRoughlySquare() {
     #expect(Look.grid(count: 6, longEdge: 1500) == (3, 2, 500))
     #expect(Look.grid(count: 48, longEdge: 2100) == (7, 7, 300))

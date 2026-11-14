@@ -7,8 +7,12 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::sync::{Arc, Mutex, Weak};
 use std::thread;
+use std::time::Duration;
 
-/// Answered when a client names none; one that names its own gets it back, since the server uses nothing newer versions changed.
+/// A client that stops reading must not hold its writer, and with it the setting change that announces to it, for good.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// For a client that names none; one that names its own gets it back, since nothing used here changed between versions.
 const PROTOCOL: &str = "2025-06-18";
 
 pub struct Server {
@@ -40,16 +44,23 @@ impl Server {
         let listener = UnixListener::bind(path)?;
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
         let weak = Arc::downgrade(self);
+        // off the caller's thread, which is the UI's when Settings changes the level
         self.access.on_change(move || {
             if let Some(server) = weak.upgrade() {
-                server.announce_tools();
+                thread::spawn(move || server.announce_tools());
             }
         });
         let server = Arc::clone(self);
         thread::spawn(move || {
-            for stream in listener.incoming().map_while(Result::ok) {
-                let server = Arc::clone(&server);
-                thread::spawn(move || server.serve(stream));
+            for stream in listener.incoming() {
+                match stream {
+                    Ok(stream) => {
+                        let server = Arc::clone(&server);
+                        thread::spawn(move || server.serve(stream));
+                    }
+                    // a client that hung up before accept, or a moment out of descriptors
+                    Err(_) => thread::sleep(Duration::from_millis(100)),
+                }
             }
         });
         Ok(())
@@ -59,6 +70,7 @@ impl Server {
         let Ok(writer) = stream.try_clone() else {
             return;
         };
+        let _ = writer.set_write_timeout(Some(WRITE_TIMEOUT));
         let writer = Arc::new(Mutex::new(writer));
         self.clients.lock().unwrap().push(Arc::downgrade(&writer));
         for line in BufReader::new(stream).lines() {
@@ -103,9 +115,12 @@ impl Server {
 
     fn announce_tools(&self) {
         let notice = json!({ "jsonrpc": "2.0", "method": "notifications/tools/list_changed" });
-        let mut clients = self.clients.lock().unwrap();
-        clients.retain(|client| client.strong_count() > 0);
-        for client in clients.iter().filter_map(Weak::upgrade) {
+        let live: Vec<_> = {
+            let mut clients = self.clients.lock().unwrap();
+            clients.retain(|client| client.strong_count() > 0);
+            clients.iter().filter_map(Weak::upgrade).collect()
+        };
+        for client in live {
             send(&client, &notice);
         }
     }
@@ -129,20 +144,13 @@ fn send(writer: &Mutex<UnixStream>, message: &Value) {
 mod tests {
     use super::super::access::{Access, See};
     use super::*;
-    use objc2_foundation::{NSString, NSUserDefaults};
+    use crate::defaults::{remove_suite, test_suite};
 
     fn server(tag: &str, see: See) -> (Arc<Server>, String) {
-        let suite = format!("net.photopipe.desktop.tests.mcp-{tag}");
-        NSUserDefaults::standardUserDefaults()
-            .removePersistentDomainForName(&NSString::from_str(&suite));
+        let suite = test_suite(&format!("mcp-{tag}"));
         let access = Arc::new(AccessStore::load(Some(&suite)));
         access.set(Access { see });
         (Server::new(access), suite)
-    }
-
-    fn forget(suite: &str) {
-        NSUserDefaults::standardUserDefaults()
-            .removePersistentDomainForName(&NSString::from_str(suite));
     }
 
     fn names(server: &Server) -> Vec<String> {
@@ -177,7 +185,7 @@ mod tests {
                 .unwrap()["error"]["code"],
             -32601
         );
-        forget(&suite);
+        remove_suite(&suite);
     }
 
     #[test]
@@ -189,7 +197,7 @@ mod tests {
         assert!(!names(&server).contains(&"look".to_owned()));
         server.access.set(Access { see: See::Pictures });
         assert!(names(&server).contains(&"look".to_owned()));
-        forget(&suite);
+        remove_suite(&suite);
     }
 
     #[test]
@@ -204,7 +212,7 @@ mod tests {
         assert_eq!(answer["result"]["isError"], true);
         let text = answer["result"]["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("Settings"), "{text}");
-        forget(&suite);
+        remove_suite(&suite);
     }
 
     #[test]
@@ -228,6 +236,6 @@ mod tests {
             "a second server must not take over a live socket"
         );
         let _ = std::fs::remove_file(&path);
-        forget(&suite);
+        remove_suite(&suite);
     }
 }

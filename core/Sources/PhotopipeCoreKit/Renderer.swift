@@ -205,6 +205,18 @@ public final class Renderer: @unchecked Sendable {
     public func still(
         file: ImageFile, edit: Edit, longEdge: Int, viewport: CropRect? = nil
     ) throws -> CGImage {
+        do {
+            return try decodedStill(file: file, edit: edit, longEdge: longEdge, viewport: viewport)
+        } catch  where edit.masks.contains(where: \.changesPixels) {
+            var bare = edit
+            bare.masks = []
+            return try decodedStill(file: file, edit: bare, longEdge: longEdge, viewport: viewport)
+        }
+    }
+
+    private func decodedStill(
+        file: ImageFile, edit: Edit, longEdge: Int, viewport: CropRect?
+    ) throws -> CGImage {
         guard longEdge > 0 else { throw RenderError.encodeFailed }
         let raw = try file.isRaw ? makeFilter(for: file) : nil
         let image = Self.fitted(
@@ -533,17 +545,21 @@ public final class Renderer: @unchecked Sendable {
         for edit: Edit, orientedSize: CGSize, maxPixel: Int?, viewport: CropRect? = nil
     ) -> Float {
         guard let maxPixel, maxPixel > 0, let crop = saneCrop(edit) else { return 1 }
+        let framed = framedSize(orientedSize, edit, crop: crop)
+        let region = viewport?.sanitized() ?? .full
+        let longEdge = max(framed.width * region.width, framed.height * region.height)
+        guard longEdge > 0 else { return 1 }
+        return Float(min(CGFloat(maxPixel) / longEdge, 1))
+    }
+
+    static func framedSize(_ orientedSize: CGSize, _ edit: Edit, crop: CropRect) -> CGSize {
         var width = orientedSize.width
         var height = orientedSize.height
         // the turn comes before the crop, so the fractions are against it
         if edit.normalizedRotation == 90 || edit.normalizedRotation == 270 {
             swap(&width, &height)
         }
-        let region = viewport?.sanitized() ?? .full
-        let longEdge = max(
-            width * crop.width * region.width, height * crop.height * region.height)
-        guard longEdge > 0 else { return 1 }
-        return Float(min(CGFloat(maxPixel) / longEdge, 1))
+        return CGSize(width: width * crop.width, height: height * crop.height)
     }
 
     private func rawFilter(

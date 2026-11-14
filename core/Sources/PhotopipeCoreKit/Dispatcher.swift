@@ -70,8 +70,10 @@ public final class Dispatcher: Sendable {
                     longEdge: request.param("longEdge")?.intValue ?? 1024,
                     at: try request.spot("at"),
                     sheet: request.param("sheet")?.boolValue ?? false,
-                    maxBytes: request.param("maxBytes")?.intValue ?? 700_000)
+                    maxBytes: request.int("maxBytes"))
             ]
+        case "originals":
+            return ["files": try library.originals(paths: request.strings("paths"))]
         case "maskOverlay":
             let cachePath = try library.maskOverlay(
                 path: request.string("path"),

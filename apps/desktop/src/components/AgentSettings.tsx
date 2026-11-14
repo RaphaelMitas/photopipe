@@ -76,8 +76,8 @@ export function AgentSettings() {
             <Label>Connect an agent</Label>
             <p className="text-muted-foreground text-xs">
               Agents talk to Photopipe while it's open, and open it in the
-              background when it isn't. Reconnect the agent after you change
-              what it can see.
+              background when it isn't. Reconnect the agent after you let it see
+              more.
             </p>
           </div>
           <Snippet label="Claude Code" text={claudeCodeCommand(executable)} />
