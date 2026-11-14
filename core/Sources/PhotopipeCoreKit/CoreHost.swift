@@ -52,7 +52,7 @@ public final class CoreHost: Sendable {
     /// exiftool is stopped by its atexit hook, not here.
     public func shutdown() {
         work.waitUntilAllOperationsAreFinished()
-        // a look runs for up to two minutes and its answer is thrown away anyway
+        // a look can run for minutes, and nobody is left to read its answer
         for (method, lane) in lanes where method != "look" { lane.waitUntilIdle() }
         library.stopExports()
     }

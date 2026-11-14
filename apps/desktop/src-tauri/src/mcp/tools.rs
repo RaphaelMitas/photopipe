@@ -1,5 +1,6 @@
-use super::access::{Access, See};
+use super::access::{Access, AccessStore, See};
 use crate::swift_core;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::time::{Duration, Instant};
 
@@ -112,7 +113,7 @@ pub fn list(access: Access) -> Vec<Value> {
         .collect()
 }
 
-pub fn call(params: &Value, access: Access) -> Result<Value, (i64, String)> {
+pub fn call(params: &Value, store: &AccessStore) -> Result<Value, (i64, String)> {
     let name = params["name"].as_str().unwrap_or_default();
     let tool = catalog()
         .into_iter()
@@ -120,16 +121,28 @@ pub fn call(params: &Value, access: Access) -> Result<Value, (i64, String)> {
         .ok_or((-32602, format!("unknown tool {name}")))?;
     let empty = Value::Object(Map::new());
     let arguments = params.get("arguments").unwrap_or(&empty);
-    let outcome = if tool.see > access.see {
-        Err(format!(
+    let refused = || {
+        format!(
             "{name} needs Photopipe > Settings > Agents set to let agents see {}.",
             match tool.see {
                 See::Pictures => "pictures",
                 _ => "details",
             }
-        ))
+        )
+    };
+    let outcome = if tool.see > store.get().see {
+        Err(refused())
     } else {
-        ready().and_then(|()| (tool.run)(arguments))
+        // asked again after the work: the user may have turned access down while a look ran
+        ready()
+            .and_then(|()| (tool.run)(arguments))
+            .and_then(|content| {
+                if tool.see > store.get().see {
+                    Err(refused())
+                } else {
+                    Ok(content)
+                }
+            })
     };
     Ok(match outcome {
         Ok(content) => json!({ "content": content, "isError": false }),
@@ -163,21 +176,86 @@ fn ready() -> Result<(), String> {
     }
 }
 
-/// The first option when the argument is left out.
-fn choice<'a>(args: &'a Value, key: &str, options: &[&'a str]) -> Result<&'a str, String> {
-    match &args[key] {
-        Value::Null => Ok(options[0]),
-        value => value
-            .as_str()
-            .filter(|value| options.contains(value))
-            .ok_or_else(|| format!("{key} must be one of {}", options.join(", "))),
+fn parse<T: DeserializeOwned>(args: &Value) -> Result<T, String> {
+    T::deserialize(args).map_err(|e| format!("invalid arguments: {e}"))
+}
+
+#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Flag {
+    Picked,
+    Rejected,
+    Unflagged,
+}
+
+impl Flag {
+    fn of(image: &Value) -> Flag {
+        match image["flag"].as_i64() {
+            Some(1) => Flag::Picked,
+            Some(-1) => Flag::Rejected,
+            _ => Flag::Unflagged,
+        }
     }
 }
 
-fn string<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
-    args[key]
-        .as_str()
-        .ok_or_else(|| format!("{key} is required"))
+#[derive(Deserialize)]
+struct ListPhotos {
+    shoot: String,
+    min_rating: Option<i64>,
+    flag: Option<Flag>,
+    edited: Option<bool>,
+    #[serde(default)]
+    offset: usize,
+    limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+struct GetPhoto {
+    photo: String,
+}
+
+#[derive(Default, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Version {
+    #[default]
+    Edited,
+    Unedited,
+    Raw,
+}
+
+#[derive(Default, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Region {
+    #[default]
+    Frame,
+    Crop,
+}
+
+#[derive(Default, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Layout {
+    #[default]
+    Separate,
+    Sheet,
+}
+
+#[derive(Deserialize)]
+struct Spot {
+    x: f64,
+    y: f64,
+}
+
+#[derive(Deserialize)]
+struct Look {
+    photos: Vec<String>,
+    #[serde(default)]
+    version: Version,
+    #[serde(default)]
+    region: Region,
+    at: Option<Spot>,
+    #[serde(default)]
+    layout: Layout,
+    size: Option<u32>,
 }
 
 fn shoots() -> Result<Vec<Value>, String> {
@@ -233,14 +311,6 @@ fn id_of(shoot: &str, image: &Value) -> String {
     format!("{shoot}/{}", image["rel"].as_str().unwrap_or_default())
 }
 
-fn flag_name(flag: i64) -> &'static str {
-    match flag {
-        1 => "picked",
-        -1 => "rejected",
-        _ => "unflagged",
-    }
-}
-
 /// Seconds read off the camera clock as if it were UTC, so no zone is claimed.
 fn clock(seconds: f64) -> String {
     let secs = seconds.floor() as i64;
@@ -271,12 +341,7 @@ fn stack_sizes(images: &[Value]) -> std::collections::HashMap<&str, usize> {
     sizes
 }
 
-fn row(
-    shoot: &str,
-    image: &Value,
-    by_path: &dyn Fn(&str) -> Option<String>,
-    stacked: bool,
-) -> Value {
+fn row(shoot: &str, image: &Value, stack: Option<String>) -> Value {
     let mut row = Map::new();
     row.insert("id".into(), id_of(shoot, image).into());
     if let Some(captured) = image["captured"].as_f64() {
@@ -286,9 +351,9 @@ fn row(
         row.insert("indexing".into(), true.into());
     } else {
         row.insert("rating".into(), image["rating"].clone());
-        let flag = image["flag"].as_i64().unwrap_or(0);
-        if flag != 0 {
-            row.insert("flag".into(), flag_name(flag).into());
+        let flag = Flag::of(image);
+        if flag != Flag::Unflagged {
+            row.insert("flag".into(), json!(flag));
         }
         if image["edited"] == true {
             row.insert("edited".into(), true.into());
@@ -297,10 +362,8 @@ fn row(
     if let Some(score) = image["score"].as_f64() {
         row.insert("instinct".into(), ((score * 100.0).round() / 100.0).into());
     }
-    if stacked {
-        if let Some(head) = image["stack"].as_str().and_then(by_path) {
-            row.insert("stack".into(), head.into());
-        }
+    if let Some(head) = stack {
+        row.insert("stack".into(), head.into());
     }
     Value::Object(row)
 }
@@ -328,39 +391,39 @@ fn list_shoots(_: &Value) -> Result<Content, String> {
 }
 
 fn list_photos(args: &Value) -> Result<Content, String> {
-    let shoot = string(args, "shoot")?;
+    let args: ListPhotos = parse(args)?;
+    let shoot = args.shoot.as_str();
     let images = images(shoot)?;
     let sizes = stack_sizes(&images);
     let ids: std::collections::HashMap<&str, String> = images
         .iter()
         .filter_map(|image| Some((image["path"].as_str()?, id_of(shoot, image))))
         .collect();
-    let by_path = |path: &str| ids.get(path).cloned();
-    let min_rating = args["min_rating"].as_i64();
-    let flag = args["flag"].as_str();
-    let edited = args["edited"].as_bool();
     let matching: Vec<&Value> = images
         .iter()
-        .filter(|image| min_rating.is_none_or(|min| image["rating"].as_i64().unwrap_or(0) >= min))
         .filter(|image| {
-            flag.is_none_or(|flag| flag_name(image["flag"].as_i64().unwrap_or(0)) == flag)
+            args.min_rating
+                .is_none_or(|min| image["rating"].as_i64().unwrap_or(0) >= min)
         })
-        .filter(|image| edited.is_none_or(|edited| image["edited"].as_bool() == Some(edited)))
+        .filter(|image| args.flag.is_none_or(|flag| Flag::of(image) == flag))
+        .filter(|image| {
+            args.edited
+                .is_none_or(|edited| image["edited"].as_bool() == Some(edited))
+        })
         .collect();
-    let offset = args["offset"].as_u64().unwrap_or(0).min(usize::MAX as u64) as usize;
-    let limit = args["limit"]
-        .as_u64()
-        .map_or(PAGE, |limit| limit.clamp(1, 1000) as usize);
+    let offset = args.offset;
+    let limit = args.limit.map_or(PAGE, |limit| limit.clamp(1, 1000));
     let page: Vec<Value> = matching
         .iter()
         .skip(offset)
         .take(limit)
         .map(|image| {
             // a stack of one is not worth a field
-            let stacked = image["stack"]
+            let stack = image["stack"]
                 .as_str()
-                .is_some_and(|stack| sizes[stack] > 1);
-            row(shoot, image, &by_path, stacked)
+                .filter(|stack| sizes[stack] > 1)
+                .and_then(|stack| ids.get(stack).cloned());
+            row(shoot, image, stack)
         })
         .collect();
     let mut answer =
@@ -380,14 +443,15 @@ fn list_photos(args: &Value) -> Result<Content, String> {
 }
 
 fn get_photo(args: &Value) -> Result<Content, String> {
-    let id = string(args, "photo")?;
+    let args: GetPhoto = parse(args)?;
+    let id = args.photo.as_str();
     let (shoot, rel) = split_id(id)?;
     let images = images(shoot)?;
     let image = images
         .iter()
         .find(|image| image["rel"] == rel)
         .ok_or_else(|| format!("no photo {id}"))?;
-    let mut answer = row(shoot, image, &|_| None, false);
+    let mut answer = row(shoot, image, None);
     if image["enriched"] == true {
         answer["width"] = image["width"].clone();
         answer["height"] = image["height"].clone();
@@ -410,21 +474,13 @@ fn get_photo(args: &Value) -> Result<Content, String> {
 }
 
 fn look(args: &Value) -> Result<Content, String> {
-    let ids: Vec<String> = args["photos"]
-        .as_array()
-        .map(|photos| {
-            photos
-                .iter()
-                .filter_map(|p| p.as_str().map(str::to_owned))
-                .collect()
-        })
-        .unwrap_or_default();
+    let args: Look = parse(args)?;
+    let ids = &args.photos;
     if ids.is_empty() {
         return Err("photos is required".into());
     }
-    let paths = paths_of(&ids)?;
-    let version = choice(args, "version", &["edited", "unedited", "raw"])?;
-    if version == "raw" {
+    let paths = paths_of(ids)?;
+    if args.version == Version::Raw {
         let originals = core("originals", json!({ "paths": paths }))?;
         let files: Vec<Value> = ids
             .iter()
@@ -435,21 +491,22 @@ fn look(args: &Value) -> Result<Content, String> {
             .collect();
         return Ok(vec![json_text(&json!({ "files": files }))]);
     }
-    let sheet = choice(args, "layout", &["separate", "sheet"])? == "sheet";
-    let crop = choice(args, "region", &["frame", "crop"])? == "crop";
-    if !crop && !args["at"].is_null() {
-        return Err("at only applies to region \"crop\"".into());
-    }
+    let sheet = args.layout == Layout::Sheet;
     let mut params = json!({
         "paths": paths,
-        "edited": version != "unedited",
+        "edited": args.version == Version::Edited,
         "sheet": sheet,
-        "longEdge": args["size"].as_u64().unwrap_or(if sheet { 1568 } else { 1024 }),
+        "longEdge": args.size.unwrap_or(if sheet { 1568 } else { 1024 }),
         "maxBytes": LOOK_BUDGET,
     });
-    if crop {
-        params["x"] = args["at"].get("x").cloned().unwrap_or(json!(0.5));
-        params["y"] = args["at"].get("y").cloned().unwrap_or(json!(0.5));
+    match (args.region, args.at) {
+        (Region::Crop, at) => {
+            let at = at.unwrap_or(Spot { x: 0.5, y: 0.5 });
+            params["x"] = at.x.into();
+            params["y"] = at.y.into();
+        }
+        (Region::Frame, Some(_)) => return Err("at only applies to region \"crop\"".into()),
+        (Region::Frame, None) => {}
     }
     let shown = {
         let _turn = LOOKING
@@ -509,14 +566,12 @@ mod tests {
     }
 
     #[test]
-    fn a_choice_left_out_takes_the_default_and_a_misspelled_one_is_refused() {
-        let options = ["edited", "unedited", "raw"];
-        assert_eq!(choice(&json!({}), "version", &options), Ok("edited"));
-        assert_eq!(
-            choice(&json!({ "version": "raw" }), "version", &options),
-            Ok("raw")
-        );
-        assert!(choice(&json!({ "version": "original" }), "version", &options).is_err());
+    fn look_arguments_left_out_take_their_default_and_wrong_ones_are_refused() {
+        let look: Look = parse(&json!({ "photos": ["S/a.jpg"] })).unwrap();
+        assert!(look.version == Version::Edited && look.region == Region::Frame);
+        assert!(parse::<Look>(&json!({ "photos": [], "version": "original" })).is_err());
+        assert!(parse::<Look>(&json!({ "photos": [], "at": { "x": 0.2 } })).is_err());
+        assert!(parse::<Look>(&json!({ "photos": [], "size": "2000" })).is_err());
     }
 
     #[test]
@@ -535,15 +590,14 @@ mod tests {
             "path": "/r/S/a.jpg", "rel": "a.jpg", "rating": 3, "flag": 0, "edited": false,
             "enriched": true, "captured": null, "score": 0.4321, "stack": "/r/S/a.jpg"
         });
-        let none = |_: &str| None;
         assert_eq!(
-            row("S", &image, &none, false),
+            row("S", &image, None),
             json!({ "id": "S/a.jpg", "rating": 3, "instinct": 0.43 })
         );
         let pending =
             json!({ "path": "/r/S/b.jpg", "rel": "b.jpg", "rating": 0, "enriched": false });
         assert_eq!(
-            row("S", &pending, &none, false),
+            row("S", &pending, None),
             json!({ "id": "S/b.jpg", "indexing": true })
         );
     }

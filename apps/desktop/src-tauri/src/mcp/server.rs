@@ -107,7 +107,7 @@ impl Server {
             })),
             "ping" => Ok(json!({})),
             "tools/list" => Ok(json!({ "tools": tools::list(access) })),
-            "tools/call" => tools::call(params, access),
+            "tools/call" => tools::call(params, &self.access),
             _ => Err((-32601, format!("unknown method {method}"))),
         };
         Some(reply(id, result))

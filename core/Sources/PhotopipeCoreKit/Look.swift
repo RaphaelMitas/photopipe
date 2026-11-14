@@ -22,7 +22,7 @@ public enum Look {
     public static let separateLimit = 8
     public static let sheetLimit = 64
     static let longEdges = 256...2576
-    /// Below the last a frame is not worth looking at; the caller drops what is still over budget.
+    /// Below the last a frame is not worth looking at; the MCP tool drops what is still over budget.
     static let qualities = [0.85, 0.7, 0.55, 0.4]
 
     static func grid(count: Int, longEdge: Int) -> (columns: Int, rows: Int, cell: Int) {

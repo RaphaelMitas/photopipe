@@ -65,7 +65,7 @@ public struct ImageFile: Encodable, Equatable, Sendable {
     public let sidecarMtime: Double
     /// Encoded so the UI never keeps a list of its own.
     public let isRaw: Bool
-    /// Encoded for agents, which see the edit as JSON and cannot tell a default one by its fields.
+    /// Encoded for the MCP tools, which get the edit as JSON and cannot tell an identity edit by its fields.
     public let edited: Bool
 
     public init(
