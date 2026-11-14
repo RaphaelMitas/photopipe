@@ -170,7 +170,7 @@ async function travel(target: number, asked: Asked, onStart?: OnStart) {
   return run;
 }
 
-/// `from`, when given, is the entry an agent expects on top: anything else moved History first, so no move.
+/// `from`, when given, is the entry the caller expects on top: anything else moved History first, so no move.
 export function stepHistory(
   direction: HistoryDirection,
   onStart?: OnStart,

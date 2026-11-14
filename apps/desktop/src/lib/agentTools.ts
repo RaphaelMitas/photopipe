@@ -356,6 +356,8 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
             current.current.resetFilter();
             await rendered();
           }
+          // the waits above give the user time to start a crop or a drag
+          whenIdle(current.current);
           if (chosen !== null) {
             current.current.close();
             current.current.select(chosen.map((image) => image.path));
@@ -411,7 +413,6 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
           let top = topOfHistory();
           for (let step = 0; step < call.args.steps; step++) {
             if (current.current.busy()) break;
-            // checked in History's own queue, so a move the user queued first means no move
             const entry = await stepHistory(direction, undefined, { id: top });
             if (!entry) break;
             steps.push(historyLabel(entry));
