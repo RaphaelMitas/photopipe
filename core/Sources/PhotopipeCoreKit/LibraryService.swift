@@ -357,7 +357,7 @@ public final class LibraryService: @unchecked Sendable {
         public let done: Bool
     }
 
-    /// Waits up to `wait` for the shared face pass; cached like Instinct scores.
+    /// Joins the shared face pass; cached like Instinct scores.
     public func faces(paths: [String], wait: TimeInterval = 90) throws -> [PhotoFaces] {
         guard paths.count <= Look.sheetLimit else {
             throw Look.LookError.tooMany(paths.count, limit: Look.sheetLimit)
@@ -369,8 +369,9 @@ public final class LibraryService: @unchecked Sendable {
             // one shared pass, so asking again after a timeout joins the pass still running
             facer.start(shoot: "agent", files: files)
             Thread.sleep(forTimeInterval: 0.25)
-            // a rating mid-pass moves the stamp the answer is under; a photo gone since is answered unreadable
-            files = (try? knownImages(paths: paths)) ?? files
+            // a rating mid-pass moves the stamp the answer is under; a photo gone or another root ends the wait
+            guard let fresh = try? knownImages(paths: paths) else { break }
+            files = fresh
             answers = facer.answers(for: files)
         }
         return files.map {

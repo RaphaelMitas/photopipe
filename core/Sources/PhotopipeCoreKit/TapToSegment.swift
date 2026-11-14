@@ -22,6 +22,7 @@ enum TapToSegment {
             guard #available(macOS 27, iOS 27, *) else { return [] }
             guard let image = photo.cgImage ?? CIContext().createCGImage(photo, from: photo.extent)
             else { throw Renderer.RenderError.encodeFailed }
+            // an export waits here on a thread of Swift's pool, which spares one for this task only while exports stay utility
             return try awaited { try await segment(image, from: seed) }
                 .map { CIImage(cgImage: $0, options: [.colorSpace: NSNull()]) }
         }

@@ -382,16 +382,20 @@ fn paths_of(ids: &[String]) -> Result<Vec<String>, String> {
 /// Refuses an unknown id before the core can name the folder it would be in, which only pictures may see.
 fn known_paths(ids: &[String]) -> Result<Vec<String>, String> {
     let mut listed: HashMap<&str, Vec<Value>> = HashMap::new();
-    for id in ids {
-        let (shoot, rel) = split_id(id)?;
-        if !listed.contains_key(shoot) {
-            listed.insert(shoot, images(shoot)?);
-        }
-        if !listed[shoot].iter().any(|image| image["rel"] == rel) {
-            return Err(format!("no photo {id}"));
-        }
-    }
-    paths_of(ids)
+    ids.iter()
+        .map(|id| {
+            let (shoot, rel) = split_id(id)?;
+            if !listed.contains_key(shoot) {
+                listed.insert(shoot, images(shoot)?);
+            }
+            listed[shoot]
+                .iter()
+                .find(|image| image["rel"] == rel)
+                .and_then(|image| image["path"].as_str())
+                .map(str::to_owned)
+                .ok_or_else(|| format!("no photo {id}"))
+        })
+        .collect()
 }
 
 fn id_of(shoot: &str, image: &Value) -> String {
@@ -572,7 +576,15 @@ fn per_photo(method: &str, args: &Value, each: fn(&Value) -> Value) -> Result<Co
     if args.photos.is_empty() {
         return Err("photos is required".into());
     }
-    let answered = on_agent_lane(method, json!({ "paths": known_paths(&args.photos)? }))?;
+    let answered = on_agent_lane(method, json!({ "paths": known_paths(&args.photos)? }))
+        // the core names the whole path of a photo removed since it was checked
+        .map_err(|error| {
+            if error.starts_with("unknown_image") {
+                "a photo was removed meanwhile; list the shoot again".into()
+            } else {
+                error
+            }
+        })?;
     let photos: Vec<Value> = args
         .photos
         .iter()
