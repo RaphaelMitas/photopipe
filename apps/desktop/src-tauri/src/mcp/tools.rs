@@ -143,24 +143,23 @@ pub fn call(params: &Value, store: &AccessStore, bridge: &Bridge) -> Result<Valu
     let arguments = params.get("arguments").unwrap_or(&empty);
     let allowed = || {
         let access = store.get();
+        let needs = |what: &str| {
+            Err(format!(
+                "{name} needs Photopipe > Settings > Agents set to let agents {what}."
+            ))
+        };
         if tool.see > access.see {
-            Err(format!(
-                "{name} needs Photopipe > Settings > Agents set to let agents see {}.",
-                if tool.see == See::Pictures {
-                    "pictures"
-                } else {
-                    "details"
-                }
-            ))
+            needs(if tool.see == See::Pictures {
+                "see pictures"
+            } else {
+                "see details"
+            })
         } else if tool.act > access.act {
-            Err(format!(
-                "{name} needs Photopipe > Settings > Agents set to let agents do {}.",
-                if tool.act == Act::Everything {
-                    "everything"
-                } else {
-                    "cull and edit"
-                }
-            ))
+            needs(if tool.act == Act::Everything {
+                "do everything"
+            } else {
+                "do cull and edit"
+            })
         } else {
             Ok(())
         }
@@ -168,7 +167,7 @@ pub fn call(params: &Value, store: &AccessStore, bridge: &Bridge) -> Result<Valu
     let outcome = allowed()
         .and_then(|()| ready())
         .and_then(|()| (tool.run)(arguments, bridge))
-        // a look is asked again in case access went down mid-call; a landed write is reported as is
+        // a read is checked again in case access went down mid-call; a landed write is reported as is
         .and_then(|content| {
             if tool.act == Act::Off {
                 allowed().map(|()| content)

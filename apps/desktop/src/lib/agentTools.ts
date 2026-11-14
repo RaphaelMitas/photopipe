@@ -101,7 +101,7 @@ type AgentCall =
   | { tool: "export"; args: AgentExport & { photos: string[] } }
   | { tool: "trash"; args: { photos: string[] } };
 
-/// `deadline` is when the host stops waiting; a call still queued then is dropped, not run late.
+/// `deadline` is a little before the host stops waiting; a call still queued then is dropped, not run late.
 type Request = AgentCall & { id: number; deadline: number };
 
 const FLAGS: Record<FlagName, Flag> = { picked: 1, rejected: -1, unflagged: 0 };
@@ -410,22 +410,29 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
     let queue: Promise<unknown> = Promise.resolve();
     const subscription = listen<Request>("agent:request", ({ payload }) => {
       const { id, deadline } = payload;
-      const done = queue.then(() => {
-        if (Date.now() > deadline) {
-          throw new Error("Photopipe was busy; this call was dropped.");
+      const answer = (ok: boolean, value: unknown) =>
+        invoke("agent_reply", { id, ok, value }).catch(() => {});
+      let started = false;
+      let dropped = false;
+      const drop = setTimeout(() => {
+        if (started) return;
+        dropped = true;
+        void answer(false, "Photopipe was busy; this call was dropped.");
+      }, deadline - Date.now());
+      const run = queue.then(async () => {
+        if (dropped) return;
+        started = true;
+        clearTimeout(drop);
+        try {
+          await answer(true, await handle(payload));
+        } catch (error) {
+          await answer(
+            false,
+            error instanceof Error ? error.message : String(error),
+          );
         }
-        return handle(payload);
       });
-      queue = done.catch(() => undefined);
-      done.then(
-        (value) => invoke("agent_reply", { id, ok: true, value }),
-        (error: unknown) =>
-          invoke("agent_reply", {
-            id,
-            ok: false,
-            value: error instanceof Error ? error.message : String(error),
-          }),
-      );
+      queue = run;
     });
     let gone = false;
     subscription
