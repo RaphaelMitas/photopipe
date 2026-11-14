@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import Synchronization
 
 /// Reached from the dispatcher's worker pool, the watcher's queue and the
 /// enricher's; every field below is guarded by `lock`.
@@ -264,6 +266,84 @@ public final class LibraryService: @unchecked Sendable {
         try renderer.preview(
             file: recordUnderRoot(path: path), edit: edit, maxPixel: maxPixel,
             viewport: viewport, decoderVersion: decoderVersion)
+    }
+
+    /// `at` is a spot in the framed photo, from the top left; with it every tile is native pixels around that spot.
+    public func look(
+        paths: [String], edited: Bool, longEdge: Int, at spot: CGPoint?, sheet: Bool,
+        maxBytes: Int
+    ) throws -> [Look.Shown] {
+        guard !paths.isEmpty else { throw Look.LookError.nothingToShow }
+        let limit = sheet ? Look.sheetLimit : Look.separateLimit
+        guard paths.count <= limit else { throw Look.LookError.tooMany(paths.count, limit: limit) }
+        let files = try settledImages(paths: paths)
+        let longEdge = min(max(longEdge, Look.longEdges.lowerBound), Look.longEdges.upperBound)
+        let tile = sheet ? Look.grid(count: files.count, longEdge: longEdge).cell : longEdge
+
+        let stills = Mutex([CGImage?](repeating: nil, count: files.count))
+        let failure = Mutex<Error?>(nil)
+        // a few at a time: each raw decode is a whole sensor's worth of memory
+        for start in stride(from: 0, to: files.count, by: 3) {
+            let batch = Array(start..<min(start + 3, files.count))
+            DispatchQueue.concurrentPerform(iterations: batch.count) { slot in
+                let index = batch[slot]
+                do {
+                    let still = try self.still(of: files[index], edited: edited, tile: tile, at: spot)
+                    stills.withLock { $0[index] = still }
+                } catch {
+                    failure.withLock { $0 = $0 ?? error }
+                }
+            }
+            if let error = failure.withLock({ $0 }) { throw error }
+        }
+        let rendered = stills.withLock { $0 }.compactMap { $0 }
+        let paths = files.map(\.path)
+        if sheet {
+            let labels = files.enumerated().map { index, file in
+                "\(index + 1)  \((file.rel as NSString).lastPathComponent)"
+            }
+            let canvas = try Look.sheet(rendered, labels: labels, longEdge: longEdge)
+            return [try Look.shown(canvas, paths: paths, maxBytes: maxBytes)]
+        }
+        return try zip(rendered, paths).map { still, path in
+            try Look.shown(still, paths: [path], maxBytes: maxBytes / rendered.count)
+        }
+    }
+
+    private func still(of file: ImageFile, edited: Bool, tile: Int, at spot: CGPoint?) throws
+        -> CGImage
+    {
+        let edit = edited ? file.edit : .identity
+        let viewport = spot.map {
+            Look.viewport(around: $0, tile: tile, framed: Look.framedSize(of: file, edit: edit))
+        }
+        do {
+            return try renderer.still(file: file, edit: edit, longEdge: tile, viewport: viewport)
+        } catch  where edit.masks.contains(where: \.changesPixels) {
+            // like the loupe: a mask that cannot be cut costs the photo its masks, not the photo
+            var bare = edit
+            bare.masks = []
+            return try renderer.still(file: file, edit: bare, longEdge: tile, viewport: viewport)
+        }
+    }
+
+    /// From any shoot, read now if enrichment has not reached them yet.
+    private func settledImages(paths: [String]) throws -> [ImageFile] {
+        try requireRoot()
+        let byShoot = lock.withLock { snapshot.imagesByShoot }
+        var shootOf: [String: String] = [:]
+        for (shoot, images) in byShoot {
+            for image in images { shootOf[image.path] = shoot }
+        }
+        // the walk keeps /private and canonical() drops it
+        lazy var byCanonical = Dictionary(
+            shootOf.keys.map { (Self.canonical($0), $0) }, uniquingKeysWith: { $1 })
+        return try paths.map { path in
+            guard let stored = shootOf[path] != nil ? path : byCanonical[Self.canonical(path)],
+                let shoot = shootOf[stored]
+            else { throw ServiceError.unknownImage(path) }
+            return try settledImage(shoot: shoot, path: stored)
+        }
     }
 
     public func maskOverlay(

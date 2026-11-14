@@ -11,6 +11,7 @@ import { Label } from "@photopipe/ui/components/label";
 import { Switch } from "@photopipe/ui/components/switch";
 import { cn } from "@photopipe/ui/lib/utils";
 import type { ReactNode } from "react";
+import { useFeatures } from "@/lib/features";
 import { flagPref } from "@/lib/pref";
 import { useRaw9Availability } from "@/lib/queries";
 import {
@@ -20,6 +21,7 @@ import {
   useRawDecoderQuickSwitch,
   useRawDecoderVersion,
 } from "@/lib/rawDecoder";
+import { AgentSettings } from "./AgentSettings";
 import { KeyboardSettings } from "./KeyboardSettings";
 import { tooltipsPref } from "./ShortcutTooltip";
 
@@ -157,13 +159,21 @@ function SettingSwitch({
   );
 }
 
-export type SettingsSection = "general" | "raw" | "keyboard";
+export type SettingsSection = "general" | "raw" | "keyboard" | "agents";
 
 const SECTIONS: readonly [SettingsSection, string][] = [
   ["general", "General"],
   ["raw", "RAW decoding"],
   ["keyboard", "Keyboard"],
+  ["agents", "Agents"],
 ];
+
+const DESCRIPTIONS: Partial<Record<SettingsSection, string>> = {
+  keyboard:
+    "A key can mean something else in the grid, the loupe and while cropping.",
+  agents:
+    "Lets AI agents like Claude work with your library over MCP. Off until you choose what they may see.",
+};
 
 export function SettingsDialog({
   open,
@@ -176,12 +186,14 @@ export function SettingsDialog({
   const quickSwitch = useRawDecoderQuickSwitch();
   const tooltips = tooltipsPref.use();
   const raw9Missing = useRaw9Availability(open).data === false;
+  const { agents } = useFeatures();
+  const sections = SECTIONS.filter(([value]) => value !== "agents" || agents);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="h-[min(36rem,calc(100vh-4rem))] gap-0 overflow-hidden p-0 sm:max-w-3xl">
         <div className="flex min-h-0">
           <nav className="flex w-44 shrink-0 flex-col gap-0.5 border-border border-r bg-sidebar p-3 pt-14">
-            {SECTIONS.map(([value, label]) => (
+            {sections.map(([value, label]) => (
               <button
                 key={value}
                 type="button"
@@ -203,9 +215,8 @@ export function SettingsDialog({
                 {SECTIONS.find(([value]) => value === section)?.[1]}
               </DialogTitle>
               <DialogDescription>
-                {section === "keyboard"
-                  ? "A key can mean something else in the grid, the loupe and while cropping."
-                  : "These stay on this Mac and apply to every project."}
+                {DESCRIPTIONS[section] ??
+                  "These stay on this Mac and apply to every project."}
               </DialogDescription>
             </DialogHeader>
             {section === "general" && (
@@ -270,6 +281,7 @@ export function SettingsDialog({
                 <KeyboardSettings />
               </>
             )}
+            {section === "agents" && agents && <AgentSettings />}
           </div>
         </div>
       </DialogContent>

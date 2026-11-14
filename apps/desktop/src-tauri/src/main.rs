@@ -1,7 +1,12 @@
-fn main() {
+fn main() -> std::process::ExitCode {
     if std::env::args().nth(1).as_deref() == Some("--core") {
         desktop_lib::serve_core_on_stdin();
-        return;
+        return std::process::ExitCode::SUCCESS;
     }
-    desktop_lib::run()
+    #[cfg(agents)]
+    if std::env::args().nth(1).as_deref() == Some("--mcp") {
+        return desktop_lib::relay_agent();
+    }
+    desktop_lib::run();
+    std::process::ExitCode::SUCCESS
 }

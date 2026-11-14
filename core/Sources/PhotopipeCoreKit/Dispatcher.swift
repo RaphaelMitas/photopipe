@@ -62,6 +62,16 @@ public final class Dispatcher: Sendable {
                 maxPixel: request.param("maxPixel")?.intValue ?? 2000,
                 viewport: Self.viewport(from: request.param("viewport")),
                 decoderVersion: request.param("decoderVersion")?.intValue)
+        case "look":
+            return [
+                "images": try library.look(
+                    paths: request.strings("paths"),
+                    edited: request.param("edited")?.boolValue ?? true,
+                    longEdge: request.param("longEdge")?.intValue ?? 1024,
+                    at: try request.spot("at"),
+                    sheet: request.param("sheet")?.boolValue ?? false,
+                    maxBytes: request.param("maxBytes")?.intValue ?? 700_000)
+            ]
         case "maskOverlay":
             let cachePath = try library.maskOverlay(
                 path: request.string("path"),
@@ -180,6 +190,14 @@ extension Request {
 
     fileprivate func fraction(_ key: String) throws -> Double {
         try required(key, param(key)?.doubleValue.flatMap { (0...1).contains($0) ? $0 : nil })
+    }
+
+    fileprivate func spot(_ key: String) throws -> CGPoint? {
+        guard let value = param(key) else { return nil }
+        guard let x = value["x"]?.doubleValue, let y = value["y"]?.doubleValue,
+            (0...1).contains(x), (0...1).contains(y)
+        else { throw DispatchError.invalidParams(key) }
+        return CGPoint(x: x, y: y)
     }
 
     fileprivate func strings(_ key: String) throws -> [String] {

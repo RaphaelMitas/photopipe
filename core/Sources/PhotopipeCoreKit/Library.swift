@@ -65,6 +65,8 @@ public struct ImageFile: Encodable, Equatable, Sendable {
     public let sidecarMtime: Double
     /// Encoded so the UI never keeps a list of its own.
     public let isRaw: Bool
+    /// Encoded for agents, which see the edit as JSON and cannot tell a default one by its fields.
+    public let edited: Bool
 
     public init(
         path: String, rel: String, ext: String, size: Int64, mtime: Double,
@@ -90,6 +92,7 @@ public struct ImageFile: Encodable, Equatable, Sendable {
         self.enriched = enriched
         self.sidecarMtime = sidecarMtime
         self.isRaw = rawExtensions.contains(ext.lowercased())
+        self.edited = edit != .identity
     }
 
     var sidecarOnly: Bool {

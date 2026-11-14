@@ -276,6 +276,7 @@ let roots: RootEntry[] =
     : [];
 
 let picked: string | null = null;
+let agentAccess: unknown = { see: "off" };
 
 function stringArg(args: unknown, key: string): string | undefined {
   if (typeof args !== "object" || args === null || !(key in args)) return;
@@ -293,7 +294,15 @@ export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
     photoLibrary: ipad,
     reveal: !ipad,
     trash: !ipad,
+    agents: !ipad,
   }),
+  agent_access: () => agentAccess,
+  set_agent_access: (args) => {
+    if (typeof args === "object" && args !== null && "access" in args) {
+      agentAccess = Reflect.get(args, "access");
+    }
+  },
+  agent_command: () => "/Applications/Photopipe.app/Contents/MacOS/Photopipe",
   pick_folder: (args) => {
     picked =
       stringArg(args, "title") === "Export to folder"

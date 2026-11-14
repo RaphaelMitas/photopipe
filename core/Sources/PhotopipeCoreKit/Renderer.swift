@@ -201,6 +201,25 @@ public final class Renderer: @unchecked Sendable {
         }
     }
 
+    /// Decoded once like an export, so an agent going through a shoot leaves the loupe's warm filters alone.
+    public func still(
+        file: ImageFile, edit: Edit, longEdge: Int, viewport: CropRect? = nil
+    ) throws -> CGImage {
+        guard longEdge > 0 else { throw RenderError.encodeFailed }
+        let raw = try file.isRaw ? makeFilter(for: file) : nil
+        let image = Self.fitted(
+            try sourceImage(
+                for: file, raw: raw, edit: edit, maxPixel: longEdge, viewport: viewport),
+            longEdge: CGFloat(longEdge))
+        defer { exportContext.clearCaches() }
+        guard
+            let still = exportContext.createCGImage(
+                image, from: image.extent, format: .RGBA8,
+                colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+        else { throw RenderError.encodeFailed }
+        return still
+    }
+
     /// The mask as the alpha of a white image, framed like the render it lies over.
     public func maskOverlay(
         file: ImageFile, source: Mask.Source, points: [Mask.Point], inverted: Bool, edit: Edit,

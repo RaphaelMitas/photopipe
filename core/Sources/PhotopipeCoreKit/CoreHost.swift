@@ -14,6 +14,8 @@ public final class CoreHost: Sendable {
             "render": Lane(workers: 1, window: 4),
             // about a large grid's mounted cells, so an on-screen thumbnail rarely waits on a retry
             "thumbnail": Lane(workers: 8, window: 256),
+            // below the user's renders, and an agent's burst is not dropped for its newest look
+            "look": Lane(workers: 1, window: 32, qos: .utility),
             "maskOverlay": masks,
             "maskAt": masks,
         ]

@@ -1,8 +1,7 @@
 use crate::bookmark::{self, Failure, Live};
+use crate::defaults;
 use objc2::rc::Retained;
-use objc2::runtime::AnyObject;
-use objc2::AllocAnyThread;
-use objc2_foundation::{NSString, NSUserDefaults};
+use objc2_foundation::NSUserDefaults;
 use serde::Serialize;
 use std::collections::HashSet;
 use std::path::Path;
@@ -51,19 +50,9 @@ pub struct Roots {
 
 impl Roots {
     pub fn load(suite: Option<&str>) -> Self {
-        let defaults = match suite {
-            Some(suite) => NSUserDefaults::initWithSuiteName(
-                NSUserDefaults::alloc(),
-                Some(&NSString::from_str(suite)),
-            )
-            .expect("suite defaults"),
-            None => NSUserDefaults::standardUserDefaults(),
-        };
+        let defaults = defaults::open(suite);
         // only a change to Live makes this unparseable; starting empty beats refusing to launch
-        let stored: Vec<Live> = defaults
-            .stringForKey(&NSString::from_str(KEY))
-            .and_then(|json| serde_json::from_str(&json.to_string()).ok())
-            .unwrap_or_default();
+        let stored: Vec<Live> = defaults::read(&defaults, KEY).unwrap_or_default();
         // resolving a bookmark can stall on a slow volume, so launch leaves it to the first listing
         let pending = |live| Entry {
             live,
@@ -77,12 +66,7 @@ impl Roots {
 
     fn write(&self, entries: &[Entry]) {
         let stored: Vec<&Live> = entries.iter().map(|entry| &entry.live).collect();
-        let json = NSString::from_str(&serde_json::to_string(&stored).expect("roots json"));
-        let object: &AnyObject = &json;
-        unsafe {
-            self.defaults
-                .setObject_forKey(Some(object), &NSString::from_str(KEY));
-        }
+        defaults::write(&self.defaults, KEY, &stored);
     }
 
     pub fn list(&self) -> Vec<Listing> {
@@ -154,6 +138,7 @@ impl Roots {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use objc2_foundation::NSString;
 
     fn suite(tag: &str) -> String {
         let suite = format!("net.photopipe.desktop.tests.{tag}");
