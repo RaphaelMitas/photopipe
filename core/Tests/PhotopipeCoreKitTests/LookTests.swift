@@ -28,44 +28,45 @@ private func withShoot(
         try? FileManager.default.removeItem(at: root)
         try? FileManager.default.removeItem(at: caches)
     }
-    let paths = try (1...photos).map { index in
-        let url = root.appendingPathComponent("shoot/IMG_\(index).jpg")
-        try writeHalvesJPEG(width: width, height: height, at: url)
-        return url.path
+    let ids = try (1...photos).map { index in
+        try writeHalvesJPEG(
+            width: width, height: height,
+            at: root.appendingPathComponent("shoot/IMG_\(index).jpg"))
+        return "shoot/IMG_\(index).jpg"
     }
     let service = makeService(in: caches)
     _ = try service.setRoot(
         path: root.path, indexPath: caches.appendingPathComponent("index.sqlite").path)
-    try body(service, paths)
+    try body(service, ids)
 }
 
 @Test func aSheetPutsEveryPhotoOnOneCanvas() throws {
-    try withShoot(photos: 5) { service, paths in
+    try withShoot(photos: 5) { service, ids in
         let shown = try service.look(
-            paths: paths, edited: true, longEdge: 600, at: nil, sheet: true, maxBytes: 500_000)
-        #expect(shown.count == 1)
-        let canvas = try decoded(shown[0])
+            ids: ids, edited: true, longEdge: 600, at: nil, sheet: true, maxBytes: 500_000)
+        #expect(shown.images.count == 1)
+        let canvas = try decoded(shown.images[0])
         // five photos take three columns and two rows of 200 px cells
         #expect((canvas.width, canvas.height) == (600, 400))
     }
 }
 
 @Test func separateFramesComeBackOnePerPhotoAtTheLongEdgeAsked() throws {
-    try withShoot(photos: 2) { service, paths in
+    try withShoot(photos: 2) { service, ids in
         let shown = try service.look(
-            paths: paths, edited: true, longEdge: 300, at: nil, sheet: false, maxBytes: 500_000)
-        #expect(shown.count == 2)
-        let frame = try decoded(shown[0])
+            ids: ids, edited: true, longEdge: 300, at: nil, sheet: false, maxBytes: 500_000)
+        #expect(shown.images.count == 2)
+        let frame = try decoded(shown.images[0])
         #expect((frame.width, frame.height) == (300, 150))
     }
 }
 
 @Test func aSpotShowsNativePixelsAroundItSlidInsideTheFrame() throws {
-    try withShoot(photos: 1) { service, paths in
+    try withShoot(photos: 1) { service, ids in
         let shown = try service.look(
-            paths: paths, edited: true, longEdge: 256, at: CGPoint(x: 0.95, y: 0.5),
+            ids: ids, edited: true, longEdge: 256, at: CGPoint(x: 0.95, y: 0.5),
             sheet: false, maxBytes: 500_000)
-        let crop = try decoded(shown[0])
+        let crop = try decoded(shown.images[0])
         // 256 native px wide, and the 200 px tall frame is all there is
         #expect((crop.width, crop.height) == (256, 200))
         // slid left to fit, so it spans x 144 to 400: 200 of its 256 px are the blue half
@@ -74,38 +75,55 @@ private func withShoot(
 }
 
 @Test func aLookOverTheLimitIsRefusedBeforeAnythingRenders() throws {
-    try withShoot(photos: 1) { service, paths in
-        let many = Array(repeating: paths[0], count: Look.separateLimit + 1)
+    try withShoot(photos: 1) { service, ids in
+        let many = Array(repeating: ids[0], count: Look.separateLimit + 1)
         #expect(throws: Look.LookError.self) {
             try service.look(
-                paths: many, edited: true, longEdge: 512, at: nil, sheet: false,
+                ids: many, edited: true, longEdge: 512, at: nil, sheet: false,
                 maxBytes: 500_000)
         }
     }
 }
 
 @Test func aFrameOverItsByteShareIsEncodedSmaller() throws {
-    try withShoot(photos: 1, width: 1600, height: 1200) { service, paths in
+    try withShoot(photos: 1, width: 1600, height: 1200) { service, ids in
         let roomy = try service.look(
-            paths: paths, edited: true, longEdge: 1600, at: nil, sheet: false,
+            ids: ids, edited: true, longEdge: 1600, at: nil, sheet: false,
             maxBytes: 5_000_000)
         let tight = try service.look(
-            paths: paths, edited: true, longEdge: 1600, at: nil, sheet: false, maxBytes: 1)
-        #expect(tight[0].jpeg.count < roomy[0].jpeg.count)
+            ids: ids, edited: true, longEdge: 1600, at: nil, sheet: false, maxBytes: 1)
+        #expect(tight.images[0].jpeg.count < roomy.images[0].jpeg.count)
     }
 }
 
 @Test func originalsNameTheSidecarPhotopipeActuallyWrites() throws {
-    try withShoot(photos: 1) { service, paths in
-        #expect(try service.originals(paths: paths)[0].sidecar == nil)
-        let sidecar = XMP.sidecarURL(forImagePath: paths[0])
+    try withShoot(photos: 1) { service, ids in
+        let original = try service.originals(ids: ids)[0]
+        #expect(original.sidecar == nil)
+        let sidecar = XMP.sidecarURL(forImagePath: original.path)
         try Data("<x/>".utf8).write(to: sidecar)
         // a JPEG's is IMG_1.jpg.photopipe.xmp, not the IMG_1.xmp a raw would get
-        #expect(try service.originals(paths: paths)[0].sidecar == sidecar.path)
+        #expect(try service.originals(ids: ids)[0].sidecar == sidecar.path)
         #expect(throws: LibraryService.ServiceError.self) {
-            try service.originals(paths: [paths[0] + "/../../elsewhere.jpg"])
+            try service.originals(ids: ["shoot/../elsewhere.jpg"])
         }
     }
+}
+
+@Test func anUndatedPhotoIsTakenAtTheLocalTimeItsFileWasWritten() {
+    let written = Date(timeIntervalSince1970: 1_783_884_667)
+    let file = ImageFile(
+        path: "/r/s/a.png", rel: "a.png", ext: "png", size: 1,
+        mtime: written.timeIntervalSince1970)
+    var utc = Calendar(identifier: .gregorian)
+    utc.timeZone = TimeZone(identifier: "UTC")!
+    let parts: Set<Calendar.Component> = [.day, .hour, .minute]
+    #expect(
+        utc.dateComponents(parts, from: Date(timeIntervalSince1970: file.taken))
+            == Calendar.current.dateComponents(parts, from: written))
+    #expect(
+        ImageFile(path: "/r/s/b.arw", rel: "b.arw", ext: "arw", size: 1, mtime: 9, captured: 5)
+            .taken == 5)
 }
 
 @Test func theGridKeepsSheetsRoughlySquare() {

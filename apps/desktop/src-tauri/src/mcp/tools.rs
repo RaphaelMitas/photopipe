@@ -4,7 +4,6 @@ use super::ui;
 use crate::swift_core;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Map, Value};
-use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 pub type Content = Vec<Value>;
@@ -342,18 +341,10 @@ fn images(shoot: &str) -> Result<Vec<Value>, String> {
         .as_array()
         .cloned()
         .unwrap_or_default();
-    // undated last; file name breaks ties like a camera's numbering
+    // stable on the core's name order, like the app's Date sort
     images.sort_by(|a, b| {
-        let key = |image: &Value| {
-            (
-                image["captured"].as_f64().is_none(),
-                image["captured"].as_f64().unwrap_or(0.0),
-            )
-        };
-        key(a)
-            .partial_cmp(&key(b))
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a["rel"].as_str().cmp(&b["rel"].as_str()))
+        let taken = |image: &Value| image["taken"].as_f64().unwrap_or(0.0);
+        taken(a).total_cmp(&taken(b))
     });
     Ok(images)
 }
@@ -364,64 +355,22 @@ fn split_id(id: &str) -> Result<(&str, &str), String> {
         .ok_or_else(|| format!("{id} is not a photo id; ids look like \"<shoot>/<file>\""))
 }
 
-fn paths_of(ids: &[String]) -> Result<Vec<String>, String> {
-    let shoots = shoots()?;
-    ids.iter()
-        .map(|id| {
-            let (shoot, rel) = split_id(id)?;
-            let dir = shoots
-                .iter()
-                .find(|s| s["name"] == shoot)
-                .and_then(|s| s["path"].as_str())
-                .ok_or_else(|| format!("no shoot named {shoot}"))?;
-            Ok(format!("{dir}/{rel}"))
-        })
-        .collect()
-}
-
-/// Refuses an unknown id before the core can name the folder it would be in, which only pictures may see.
-fn known_paths(ids: &[String]) -> Result<Vec<String>, String> {
-    let mut listed: HashMap<&str, Vec<Value>> = HashMap::new();
-    ids.iter()
-        .map(|id| {
-            let (shoot, rel) = split_id(id)?;
-            if !listed.contains_key(shoot) {
-                listed.insert(shoot, images(shoot)?);
-            }
-            listed[shoot]
-                .iter()
-                .find(|image| image["rel"] == rel)
-                .and_then(|image| image["path"].as_str())
-                .map(str::to_owned)
-                .ok_or_else(|| format!("no photo {id}"))
-        })
-        .collect()
-}
-
 fn id_of(shoot: &str, image: &Value) -> String {
     format!("{shoot}/{}", image["rel"].as_str().unwrap_or_default())
 }
 
 /// Seconds read off the camera clock as if it were UTC, so no zone is claimed.
-fn clock(seconds: f64) -> String {
-    let secs = seconds.floor() as i64;
-    let (days, rest) = (secs.div_euclid(86_400), secs.rem_euclid(86_400));
-    // Howard Hinnant's civil_from_days
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    format!(
-        "{year:04}-{month:02}-{day:02} {:02}:{:02}:{:02}",
-        rest / 3600,
-        rest / 60 % 60,
-        rest % 60
-    )
+fn clock(seconds: f64) -> Option<String> {
+    let at = time::OffsetDateTime::from_unix_timestamp(seconds.floor() as i64).ok()?;
+    Some(format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+        at.year(),
+        u8::from(at.month()),
+        at.day(),
+        at.hour(),
+        at.minute(),
+        at.second()
+    ))
 }
 
 fn stack_sizes(images: &[Value]) -> std::collections::HashMap<&str, usize> {
@@ -435,8 +384,8 @@ fn stack_sizes(images: &[Value]) -> std::collections::HashMap<&str, usize> {
 fn row(shoot: &str, image: &Value, stack: Option<String>) -> Value {
     let mut row = Map::new();
     row.insert("id".into(), id_of(shoot, image).into());
-    if let Some(captured) = image["captured"].as_f64() {
-        row.insert("time".into(), clock(captured).into());
+    if let Some(time) = image["captured"].as_f64().and_then(clock) {
+        row.insert("time".into(), time.into());
     }
     if image["enriched"] == false {
         row.insert("indexing".into(), true.into());
@@ -570,21 +519,13 @@ struct Photos {
     photos: Vec<String>,
 }
 
-/// The core answers per photo in the order asked, keyed by path; agents know them by id.
+/// The core answers per photo in the order asked.
 fn per_photo(method: &str, args: &Value, each: fn(&Value) -> Value) -> Result<Content, String> {
     let args: Photos = parse(args)?;
     if args.photos.is_empty() {
         return Err("photos is required".into());
     }
-    let answered = on_agent_lane(method, json!({ "paths": known_paths(&args.photos)? }))
-        // the core names the whole path of a photo removed since it was checked
-        .map_err(|error| {
-            if error.starts_with("unknown_image") {
-                "a photo was removed meanwhile; list the shoot again".into()
-            } else {
-                error
-            }
-        })?;
+    let answered = on_agent_lane(method, json!({ "ids": args.photos }))?;
     let photos: Vec<Value> = args
         .photos
         .iter()
@@ -609,11 +550,14 @@ fn faces(args: &Value, _: &Bridge) -> Result<Content, String> {
 }
 
 fn describe(args: &Value, _: &Bridge) -> Result<Content, String> {
-    per_photo(
-        "describe",
-        args,
-        |photo| json!({ "description": photo["text"], "error": photo["error"] }),
-    )
+    per_photo("describe", args, |photo| {
+        let mut row = json!({ "description": photo["text"], "error": photo["error"] });
+        if photo["unmasked"] == true {
+            row["note"] =
+                "described without its masks, which could not be cut on this Mac right now".into();
+        }
+        row
+    })
 }
 
 fn look(args: &Value, _: &Bridge) -> Result<Content, String> {
@@ -622,12 +566,11 @@ fn look(args: &Value, _: &Bridge) -> Result<Content, String> {
     if ids.is_empty() {
         return Err("photos is required".into());
     }
-    let paths = paths_of(ids)?;
     if args.version == Version::Raw {
         if args.region != Region::Frame || args.at.is_some() {
             return Err("raw returns the original files, so region and at do not apply".into());
         }
-        let originals = core("originals", json!({ "paths": paths }))?;
+        let originals = core("originals", json!({ "ids": ids }))?;
         let files: Vec<Value> = ids
             .iter()
             .zip(originals["files"].as_array().into_iter().flatten())
@@ -640,7 +583,7 @@ fn look(args: &Value, _: &Bridge) -> Result<Content, String> {
     let faces = args.region == Region::Faces;
     let sheet = args.layout == Layout::Sheet || faces;
     let mut params = json!({
-        "paths": paths,
+        "ids": ids,
         "edited": args.version == Version::Edited,
         "sheet": sheet,
         "longEdge": args.size.unwrap_or(if sheet { 1568 } else { 1024 }),
@@ -692,6 +635,18 @@ fn look(args: &Value, _: &Bridge) -> Result<Content, String> {
         }));
         content.push(json!({ "type": "image", "data": jpeg, "mimeType": "image/jpeg" }));
     }
+    let unmasked: Vec<&str> = shown["unmasked"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|index| ids.get(index.as_u64()? as usize).map(String::as_str))
+        .collect();
+    if !unmasked.is_empty() {
+        content.push(text(format!(
+            "Shown without their masks, which could not be cut on this Mac right now: {}",
+            unmasked.join(", ")
+        )));
+    }
     if !left_out.is_empty() {
         content.push(text(format!(
             "Left out to stay under the reply size limit, ask for them in another look: {}",
@@ -707,9 +662,7 @@ mod tests {
 
     #[test]
     fn the_camera_clock_reads_back_as_written() {
-        assert_eq!(clock(0.0), "1970-01-01 00:00:00");
-        assert_eq!(clock(1_786_219_265.4), "2026-08-08 20:01:05");
-        assert_eq!(clock(951_782_400.0), "2000-02-29 00:00:00");
+        assert_eq!(clock(1_786_219_265.4).unwrap(), "2026-08-08 20:01:05");
     }
 
     #[test]

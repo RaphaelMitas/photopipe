@@ -35,7 +35,7 @@ private func storePhoto(_ name: String) -> URL {
     _ = try service.setRoot(
         path: root.path, indexPath: caches.appendingPathComponent("index.sqlite").path)
 
-    let found = try #require(try service.faces(paths: [copy.path]).first?.faces)
+    let found = try #require(try service.faces(ids: ["Shoot/DSC03455.jpg"]).first?.faces)
     #expect(found.count == 1)
     let face = try #require(found.first)
     // the dancer's face sits in the upper middle of the frame
@@ -45,11 +45,11 @@ private func storePhoto(_ name: String) -> URL {
     #expect((face.sharpness ?? 0) > 0)
 
     let again = Date()
-    #expect(try service.faces(paths: [copy.path]).first?.faces == found)
+    #expect(try service.faces(ids: ["Shoot/DSC03455.jpg"]).first?.faces == found)
     #expect(Date().timeIntervalSince(again) < 0.5, "a second ask is answered from the cache")
 
     let sheet = try service.look(
-        paths: [copy.path], edited: true, longEdge: 512, at: nil, sheet: true, faces: true,
+        ids: ["Shoot/DSC03455.jpg"], edited: true, longEdge: 512, at: nil, sheet: true, faces: true,
         maxBytes: 500_000)
-    #expect(sheet.count == 1)
+    #expect(sheet.images.count == 1)
 }

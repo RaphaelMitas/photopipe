@@ -26,7 +26,7 @@ extension Analyzer where Value == [FaceSpot] {
     }
 
     static func faces(in file: ImageFile, renderer: Renderer) async throws -> [FaceSpot] {
-        let photo = try renderer.still(file: file, edit: .identity, longEdge: findEdge)
+        let photo = try renderer.still(file: file, edit: .identity, longEdge: findEdge).image
         let found = try await DetectFaceCaptureQualityRequest().perform(on: photo)
         return
             found
@@ -37,7 +37,8 @@ extension Analyzer where Value == [FaceSpot] {
             .map { face in
                 let box = Self.box(face.boundingBox.cgRect)
                 let crop = try? renderer.still(
-                    file: file, edit: .identity, longEdge: cropEdge, viewport: box)
+                    file: file, edit: .identity, longEdge: cropEdge, viewport: box
+                ).image
                 return FaceSpot(
                     box: box, quality: face.captureQuality.map { Double($0.score) },
                     sharpness: crop.map(Self.sharpness))
