@@ -138,6 +138,18 @@ function photosIn(
   });
 }
 
+const topOfHistory = () => {
+  const { entries, cursor } = historyState();
+  return entries[cursor - 1]?.id;
+};
+
+/// Where the top of History should be once `id` is undone; a user's push in between makes it differ.
+const entryBelow = (id: number) => {
+  const { entries } = historyState();
+  const at = entries.findIndex((entry) => entry.id === id);
+  return at > 0 ? entries[at - 1].id : undefined;
+};
+
 const userIsEditing = (): never => {
   throw new Error(
     "The user is editing a photo right now. Try again in a moment.",
@@ -145,9 +157,9 @@ const userIsEditing = (): never => {
 };
 
 /// The user's held slider or open crop wins; a change merely waiting to save is saved first, as its own step.
-async function waitForUser(now: () => AgentView, tool: string) {
-  // undo would walk back the very change it saved
-  if (now().editing() || (tool === "undo" && now().unsaved())) userIsEditing();
+async function waitForUser(now: () => AgentView, walksHistory: boolean) {
+  // walking History back would undo the very change it saved
+  if (now().editing() || (walksHistory && now().unsaved())) userIsEditing();
   await now()
     .save()
     .catch(() => {});
@@ -324,7 +336,12 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
 
     const handle = async (call: AgentCall) => {
       const view = GUARDED.has(call.tool)
-        ? await waitForUser(() => current.current, call.tool)
+        ? await waitForUser(
+            () => current.current,
+            call.tool === "undo" ||
+              (call.tool === "ui_action" &&
+                call.args.action.startsWith("history.")),
+          )
         : current.current;
       switch (call.tool) {
         case "get_view":
@@ -411,12 +428,15 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
         case "undo": {
           const direction = call.args.redo ? "redo" : "undo";
           const steps: string[] = [];
+          let expected: number | undefined = topOfHistory();
           for (let step = 0; step < call.args.steps; step++) {
             // a change the user makes meanwhile is theirs, not a step for the agent to walk back
             const now = current.current;
             if (now.editing() || now.unsaved()) break;
+            if (topOfHistory() !== expected) break;
             const entry = await now.step(direction);
             if (!entry) break;
+            expected = direction === "undo" ? entryBelow(entry.id) : entry.id;
             steps.push(historyLabel(entry));
           }
           return { [direction === "undo" ? "undid" : "redid"]: steps };
@@ -455,6 +475,8 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
             () => !current.current.trashBlocked,
             "waiting for pending writes",
           );
+          const after = current.current;
+          if (after.editing() || after.unsaved()) userIsEditing();
           return { files: await current.current.trash(paths) };
         }
       }
