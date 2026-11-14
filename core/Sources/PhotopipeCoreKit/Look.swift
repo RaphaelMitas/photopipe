@@ -13,6 +13,12 @@ public enum Look {
         public let height: Int
     }
 
+    public struct Reply: Encodable, Sendable {
+        public let images: [Shown]
+        /// Places in the request of photos drawn without their masks, which could not be cut.
+        public let unmasked: [Int]
+    }
+
     public enum LookError: Error {
         case tooMany(Int, limit: Int)
         case nothingToShow

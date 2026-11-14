@@ -63,19 +63,17 @@ public final class Dispatcher: Sendable {
                 viewport: Self.viewport(from: request.param("viewport")),
                 decoderVersion: request.param("decoderVersion")?.intValue)
         case "look":
-            return [
-                "images": try library.look(
-                    paths: request.strings("paths"),
-                    edited: request.param("edited")?.boolValue ?? true,
-                    longEdge: request.param("longEdge")?.intValue ?? 1024,
-                    at: try request.param("x").map { _ in
-                        CGPoint(x: try request.fraction("x"), y: try request.fraction("y"))
-                    },
-                    sheet: request.param("sheet")?.boolValue ?? false,
-                    maxBytes: request.int("maxBytes"))
-            ]
+            return try library.look(
+                ids: request.strings("ids"),
+                edited: request.param("edited")?.boolValue ?? true,
+                longEdge: request.param("longEdge")?.intValue ?? 1024,
+                at: try request.param("x").map { _ in
+                    CGPoint(x: try request.fraction("x"), y: try request.fraction("y"))
+                },
+                sheet: request.param("sheet")?.boolValue ?? false,
+                maxBytes: request.int("maxBytes"))
         case "originals":
-            return ["files": try library.originals(paths: request.strings("paths"))]
+            return ["files": try library.originals(ids: request.strings("ids"))]
         case "maskOverlay":
             let cachePath = try library.maskOverlay(
                 path: request.string("path"),

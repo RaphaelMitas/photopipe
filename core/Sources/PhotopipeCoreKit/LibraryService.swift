@@ -270,17 +270,17 @@ public final class LibraryService: @unchecked Sendable {
 
     /// `at` is a spot in the framed photo, from the top left; with it every tile is native pixels around that spot.
     public func look(
-        paths: [String], edited: Bool, longEdge: Int, at spot: CGPoint?, sheet: Bool,
+        ids: [String], edited: Bool, longEdge: Int, at spot: CGPoint?, sheet: Bool,
         maxBytes: Int
-    ) throws -> [Look.Shown] {
-        guard !paths.isEmpty else { throw Look.LookError.nothingToShow }
+    ) throws -> Look.Reply {
+        guard !ids.isEmpty else { throw Look.LookError.nothingToShow }
         let limit = sheet ? Look.sheetLimit : Look.separateLimit
-        guard paths.count <= limit else { throw Look.LookError.tooMany(paths.count, limit: limit) }
-        let files = try readImages(paths: paths)
+        guard ids.count <= limit else { throw Look.LookError.tooMany(ids.count, limit: limit) }
+        let files = try readImages(ids: ids)
         let longEdge = min(max(longEdge, Look.longEdges.lowerBound), Look.longEdges.upperBound)
         let tile = sheet ? Look.grid(count: files.count, longEdge: longEdge).cell : longEdge
 
-        let stills = Mutex([CGImage?](repeating: nil, count: files.count))
+        let stills = Mutex([(image: CGImage, unmasked: Bool)?](repeating: nil, count: files.count))
         let failure = Mutex<Error?>(nil)
         // a few at a time: each raw decode is a whole sensor's worth of memory
         for start in stride(from: 0, to: files.count, by: 3) {
@@ -297,18 +297,21 @@ public final class LibraryService: @unchecked Sendable {
             if let error = failure.withLock({ $0 }) { throw error }
         }
         let rendered = stills.withLock { $0 }.compactMap { $0 }
+        let unmasked = rendered.indices.filter { rendered[$0].unmasked }
         if sheet {
             let labels = files.enumerated().map { index, file in
                 "\(index + 1)  \((file.rel as NSString).lastPathComponent)"
             }
-            let canvas = try Look.sheet(rendered, labels: labels, longEdge: longEdge)
-            return [try Look.shown(canvas, maxBytes: maxBytes)]
+            let canvas = try Look.sheet(rendered.map(\.image), labels: labels, longEdge: longEdge)
+            return Look.Reply(images: [try Look.shown(canvas, maxBytes: maxBytes)], unmasked: unmasked)
         }
-        return try rendered.map { try Look.shown($0, maxBytes: maxBytes / rendered.count) }
+        return Look.Reply(
+            images: try rendered.map { try Look.shown($0.image, maxBytes: maxBytes / rendered.count) },
+            unmasked: unmasked)
     }
 
     private func still(of file: ImageFile, edited: Bool, tile: Int, at spot: CGPoint?) throws
-        -> CGImage
+        -> (image: CGImage, unmasked: Bool)
     {
         let edit = edited ? file.edit : .identity
         let viewport = spot.map {
@@ -322,8 +325,8 @@ public final class LibraryService: @unchecked Sendable {
         public let sidecar: String?
     }
 
-    public func originals(paths: [String]) throws -> [Original] {
-        try knownImages(paths: paths).map { image in
+    public func originals(ids: [String]) throws -> [Original] {
+        try knownImages(ids: ids).map { image in
             let sidecar = XMP.sidecarURL(forImagePath: image.path)
             return Original(
                 path: image.path,
@@ -332,13 +335,24 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     /// A placeholder is read here but not stored, so a write landing meanwhile is never undone.
-    private func readImages(paths: [String]) throws -> [ImageFile] {
-        try knownImages(paths: paths).map { $0.enriched ? $0 : enrich($0) }
+    private func readImages(ids: [String]) throws -> [ImageFile] {
+        try knownImages(ids: ids).map { $0.enriched ? $0 : enrich($0) }
     }
 
-    private func knownImages(paths: [String]) throws -> [ImageFile] {
-        try requireRoot()
-        return try Self.lookup(paths, in: lock.withLock { snapshot.imagesByShoot.values.joined() })
+    /// An agent's id for a photo is its shoot's name, a slash, and its path inside the shoot.
+    private func knownImages(ids: [String]) throws -> [ImageFile] {
+        var shoots: [String: [String: ImageFile]] = [:]
+        return try ids.map { id in
+            let parts = id.split(separator: "/", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { throw ServiceError.unknownImage(id) }
+            if shoots[parts[0]] == nil {
+                shoots[parts[0]] = Dictionary(
+                    try snapshotImages(inShoot: parts[0]).map { ($0.rel, $0) },
+                    uniquingKeysWith: { $1 })
+            }
+            guard let image = shoots[parts[0]]?[parts[1]] else { throw ServiceError.unknownImage(id) }
+            return image
+        }
     }
 
     public func maskOverlay(
@@ -418,20 +432,15 @@ public final class LibraryService: @unchecked Sendable {
             mtime: ((attrs[.modificationDate] as? Date) ?? .distantPast).timeIntervalSince1970)
     }
 
-    private func images(inShoot shootName: String, paths: [String]) throws -> [ImageFile] {
-        try Self.lookup(paths, in: snapshotImages(inShoot: shootName))
-    }
-
     /// One index for the whole selection, since a linear scan per path is quadratic.
-    private static func lookup(_ paths: [String], in images: some Sequence<ImageFile>) throws
-        -> [ImageFile]
-    {
-        let byPath = byPath(images)
+    private func images(inShoot shootName: String, paths: [String]) throws -> [ImageFile] {
+        let images = try snapshotImages(inShoot: shootName)
+        let byPath = Self.byPath(images)
         // the walk keeps /private and canonical() drops it
         lazy var byCanonical = Dictionary(
-            byPath.values.map { (canonical($0.path), $0) }, uniquingKeysWith: { $1 })
+            images.map { (Self.canonical($0.path), $0) }, uniquingKeysWith: { $1 })
         return try paths.map { path in
-            guard let image = byPath[path] ?? byCanonical[canonical(path)] else {
+            guard let image = byPath[path] ?? byCanonical[Self.canonical(path)] else {
                 throw ServiceError.unknownImage(path)
             }
             return image

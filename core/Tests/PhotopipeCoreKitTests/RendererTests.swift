@@ -1759,6 +1759,7 @@ private let rightSide = CGRect(x: 40, y: 0, width: 24, height: 64)
     #expect(preview.unmasked)
     #expect(preview.cachePath == plain.path)
     #expect(try !noModel.preview(file: file, edit: .identity, maxPixel: 64).unmasked)
+    #expect(try noModel.still(file: file, edit: masked, longEdge: 64).unmasked)
 
     let exported = out.appendingPathComponent("masked.jpg")
     try noModel.exportJPEG(file: file, edit: masked, quality: 0.9, to: exported)
@@ -1769,6 +1770,7 @@ private let rightSide = CGRect(x: 40, y: 0, width: 24, height: 64)
     defer { try? FileManager.default.removeItem(at: uncut) }
     let failing = Renderer(cacheDir: uncut) { _, _, _ in throw ModelFailed() }
     #expect(try failing.preview(file: file, edit: masked, maxPixel: 64).unmasked)
+    #expect(try failing.still(file: file, edit: masked, longEdge: 64).unmasked)
     #expect(throws: ModelFailed.self) {
         try failing.exportJPEG(
             file: file, edit: masked, quality: 0.9, to: out.appendingPathComponent("failed.jpg"))

@@ -17,6 +17,7 @@ export function makeImage(
     height: 2000,
     score: null,
     captured: null,
+    taken: overrides.captured ?? 1,
     exif: {},
     stack: null,
     enriched: true,
