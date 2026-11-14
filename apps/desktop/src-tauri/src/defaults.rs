@@ -30,7 +30,6 @@ pub fn write<T: Serialize>(defaults: &NSUserDefaults, key: &str, value: &T) {
     }
 }
 
-/// An emptied suite for one test's values.
 #[cfg(test)]
 pub fn test_suite(tag: &str) -> String {
     let suite = format!("net.photopipe.desktop.tests.{tag}");

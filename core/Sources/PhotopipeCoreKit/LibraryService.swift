@@ -325,7 +325,6 @@ public final class LibraryService: @unchecked Sendable {
         public let sidecar: String?
     }
 
-    /// The files themselves, for an agent that reads them with its own tools.
     public func originals(paths: [String]) throws -> [Original] {
         try knownImages(paths: paths).map { image in
             let sidecar = XMP.sidecarURL(forImagePath: image.path).path
@@ -335,23 +334,14 @@ public final class LibraryService: @unchecked Sendable {
         }
     }
 
-    /// From any shoot. A placeholder is read here but not stored, so a write landing meanwhile is never undone.
+    /// A placeholder is read here but not stored, so a write landing meanwhile is never undone.
     private func readImages(paths: [String]) throws -> [ImageFile] {
         try knownImages(paths: paths).map { $0.enriched ? $0 : enrich($0) }
     }
 
     private func knownImages(paths: [String]) throws -> [ImageFile] {
         try requireRoot()
-        let byPath = Self.byPath(lock.withLock { snapshot.imagesByShoot.values.joined() })
-        // the walk keeps /private and canonical() drops it
-        lazy var byCanonical = Dictionary(
-            byPath.values.map { (Self.canonical($0.path), $0) }, uniquingKeysWith: { $1 })
-        return try paths.map { path in
-            guard let image = byPath[path] ?? byCanonical[Self.canonical(path)] else {
-                throw ServiceError.unknownImage(path)
-            }
-            return image
-        }
+        return try Self.lookup(paths, in: lock.withLock { snapshot.imagesByShoot.values.joined() })
     }
 
     public func maskOverlay(
@@ -431,15 +421,20 @@ public final class LibraryService: @unchecked Sendable {
             mtime: ((attrs[.modificationDate] as? Date) ?? .distantPast).timeIntervalSince1970)
     }
 
-    /// One index for the whole selection, since a linear scan per path is quadratic.
     private func images(inShoot shootName: String, paths: [String]) throws -> [ImageFile] {
-        let images = try snapshotImages(inShoot: shootName)
-        let byPath = Self.byPath(images)
+        try Self.lookup(paths, in: snapshotImages(inShoot: shootName))
+    }
+
+    /// One index for the whole selection, since a linear scan per path is quadratic.
+    private static func lookup(_ paths: [String], in images: some Sequence<ImageFile>) throws
+        -> [ImageFile]
+    {
+        let byPath = byPath(images)
         // the walk keeps /private and canonical() drops it
         lazy var byCanonical = Dictionary(
-            images.map { (Self.canonical($0.path), $0) }, uniquingKeysWith: { $1 })
+            byPath.values.map { (canonical($0.path), $0) }, uniquingKeysWith: { $1 })
         return try paths.map { path in
-            guard let image = byPath[path] ?? byCanonical[Self.canonical(path)] else {
+            guard let image = byPath[path] ?? byCanonical[canonical(path)] else {
                 throw ServiceError.unknownImage(path)
             }
             return image

@@ -9,10 +9,10 @@ use std::sync::{Arc, Mutex, Weak};
 use std::thread;
 use std::time::Duration;
 
-/// A client that stops reading must not hold its writer, and with it the setting change that announces to it, for good.
+/// A client that stops reading would otherwise stall every reply and announce queued behind it.
 const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// For a client that names none; one that names its own gets it back, since nothing used here changed between versions.
+/// Fallback only; nothing used here differs between versions, so a client's own is echoed.
 const PROTOCOL: &str = "2025-06-18";
 
 pub struct Server {
@@ -137,7 +137,10 @@ fn reply(id: Value, result: Result<Value, (i64, String)>) -> Value {
 
 fn send(writer: &Mutex<UnixStream>, message: &Value) {
     let mut writer = writer.lock().unwrap();
-    let _ = writeln!(writer, "{message}");
+    if writeln!(writer, "{message}").is_err() {
+        // half a line would swallow the next message too; hanging up tells the client
+        let _ = writer.shutdown(std::net::Shutdown::Both);
+    }
 }
 
 #[cfg(test)]

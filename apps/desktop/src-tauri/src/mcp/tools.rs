@@ -16,7 +16,7 @@ struct Tool {
 /// Raw JPEG bytes; a third larger as base64, still under Claude Desktop's 1 MB reply cap.
 const LOOK_BUDGET: usize = 600_000;
 
-/// One look at a time: the core's look lane runs newest first, and a look waiting behind others would time out.
+/// The look lane runs newest first, so a queued look would time out.
 static LOOKING: std::sync::Mutex<()> = std::sync::Mutex::new(());
 const PAGE: usize = 200;
 
@@ -52,7 +52,7 @@ fn catalog() -> [Tool; 4] {
         Tool {
             name: "get_photo",
             see: See::Details,
-            description: "Everything Photopipe knows about one photo: file path, capture time, rating, flag, camera, lens and exposure, size, its edit and the other frames in its stack.",
+            description: "Everything Photopipe knows about one photo: capture time, rating, flag, camera, lens and exposure, size, its edit and the other frames in its stack.",
             input: || {
                 json!({
                     "type": "object",
@@ -65,7 +65,7 @@ fn catalog() -> [Tool; 4] {
         Tool {
             name: "look",
             see: See::Pictures,
-            description: "See photos, rendered on this Mac. Measured on real event shoots: picking the better frame of a burst works from the whole frame at 1024 px, two or four at a time; focus and noise do not show at that size or on a sheet, so judge them from region \"crop\" (100% pixels) at a face. Sheets number every cell; use them to survey, not to judge detail.",
+            description: "See photos, rendered on this Mac. Measured on real event shoots: picking the better frame of a burst works best from two whole frames at 1024 px side by side, less well from a 2x2 sheet; focus and noise do not show at that size or on any sheet, so judge them from region \"crop\" (100% pixels) at a face. Bigger sheets number every cell; use them to survey, not to judge.",
             input: || {
                 json!({
                     "type": "object",
@@ -181,7 +181,7 @@ fn images(shoot: &str) -> Result<Vec<Value>, String> {
         .as_array()
         .cloned()
         .unwrap_or_default();
-    // by capture time, undated last; ties by file name, like a camera's numbering
+    // undated last; file name breaks ties like a camera's numbering
     images.sort_by(|a, b| {
         let key = |image: &Value| {
             (
@@ -336,7 +336,7 @@ fn list_photos(args: &Value) -> Result<Content, String> {
         })
         .filter(|image| edited.is_none_or(|edited| image["edited"].as_bool() == Some(edited)))
         .collect();
-    let offset = args["offset"].as_u64().unwrap_or(0) as usize;
+    let offset = args["offset"].as_u64().unwrap_or(0).min(usize::MAX as u64) as usize;
     let limit = args["limit"]
         .as_u64()
         .map_or(PAGE, |limit| limit.clamp(1, 1000) as usize);
@@ -354,8 +354,9 @@ fn list_photos(args: &Value) -> Result<Content, String> {
         .collect();
     let mut answer =
         json!({ "shoot": shoot, "total": matching.len(), "offset": offset, "photos": page });
-    if offset + limit < matching.len() {
-        answer["next_offset"] = (offset + limit).into();
+    let next = offset.saturating_add(limit);
+    if next < matching.len() {
+        answer["next_offset"] = next.into();
     }
     let indexing = images
         .iter()
@@ -376,10 +377,11 @@ fn get_photo(args: &Value) -> Result<Content, String> {
         .find(|image| image["rel"] == rel)
         .ok_or_else(|| format!("no photo {id}"))?;
     let mut answer = row(shoot, image, &|_| None, false);
-    answer["file"] = image["path"].clone();
-    answer["width"] = image["width"].clone();
-    answer["height"] = image["height"].clone();
-    answer["camera"] = image["exif"].clone();
+    if image["enriched"] == true {
+        answer["width"] = image["width"].clone();
+        answer["height"] = image["height"].clone();
+        answer["camera"] = image["exif"].clone();
+    }
     if image["edited"] == true {
         answer["edit"] = image["edit"].clone();
     }

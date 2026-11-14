@@ -4,7 +4,6 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-/// What an agent is shown: photos one by one or numbered on a sheet, the whole frame or 100% pixels.
 public enum Look {
     public struct Shown: Encodable, Sendable {
         /// Base64, so the reply can go into an MCP image block as it is.

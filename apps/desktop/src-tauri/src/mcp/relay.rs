@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::time::{Duration, Instant};
 
-/// `--mcp`: what an MCP client starts. It only pipes stdio to the running app, starting the app if it is not running.
 pub fn run() -> ExitCode {
     let path = super::socket_path();
     let Some(stream) = UnixStream::connect(&path)

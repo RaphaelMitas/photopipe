@@ -24,7 +24,7 @@ pub struct Access {
 
 type Listener = Box<dyn Fn() + Send>;
 
-/// Owned here rather than by the webview, so an agent the relay starts the app for is answered before the UI has loaded.
+/// Not the webview's: the relay may start the app and ask before the UI loads.
 pub struct AccessStore {
     defaults: Retained<NSUserDefaults>,
     current: Mutex<Access>,
