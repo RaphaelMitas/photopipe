@@ -65,6 +65,8 @@ public struct ImageFile: Encodable, Equatable, Sendable {
     public let sidecarMtime: Double
     /// Encoded so the UI never keeps a list of its own.
     public let isRaw: Bool
+    /// Encoded for the MCP tools, which get the edit as JSON and cannot tell an identity edit by its fields.
+    public let edited: Bool
 
     public init(
         path: String, rel: String, ext: String, size: Int64, mtime: Double,
@@ -90,6 +92,7 @@ public struct ImageFile: Encodable, Equatable, Sendable {
         self.enriched = enriched
         self.sidecarMtime = sidecarMtime
         self.isRaw = rawExtensions.contains(ext.lowercased())
+        self.edited = !edit.isIdentity
     }
 
     var sidecarOnly: Bool {

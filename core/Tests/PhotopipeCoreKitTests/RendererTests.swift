@@ -27,6 +27,13 @@ private func meanChannels(
     guard let image = CIImage(contentsOf: url) else {
         throw Renderer.RenderError.unreadable(url.path)
     }
+    return meanChannels(of: image, region: region, colorSpace: colorSpace)
+}
+
+func meanChannels(
+    of image: CIImage, region: CGRect? = nil,
+    colorSpace: CGColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+) -> (red: Double, green: Double, blue: Double) {
     let average = image.applyingFilter(
         "CIAreaAverage",
         parameters: [kCIInputExtentKey: CIVector(cgRect: region ?? image.extent)])
@@ -442,17 +449,20 @@ private func writeSyntheticJPEG(
     return url
 }
 
-private func writeHalvesJPEG(
+@discardableResult
+func writeHalvesJPEG(
     left: CIColor = CIColor(red: 1, green: 0, blue: 0),
     right: CIColor = CIColor(red: 0, green: 0, blue: 1),
-    width: Int = 64, height: Int = 64
+    width: Int = 64, height: Int = 64,
+    at url: URL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("photopipe-halves-\(UUID().uuidString).jpg")
 ) throws -> URL {
     let leftHalf = CIImage(color: left)
         .cropped(to: CGRect(x: 0, y: 0, width: width, height: height))
     let rightHalf = CIImage(color: right)
         .cropped(to: CGRect(x: width / 2, y: 0, width: width / 2, height: height))
-    let url = FileManager.default.temporaryDirectory
-        .appendingPathComponent("photopipe-halves-\(UUID().uuidString).jpg")
+    try FileManager.default.createDirectory(
+        at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     try CIContext().writeJPEGRepresentation(
         of: rightHalf.composited(over: leftHalf), to: url,
         colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)

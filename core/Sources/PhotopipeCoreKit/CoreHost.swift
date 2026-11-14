@@ -14,6 +14,8 @@ public final class CoreHost: Sendable {
             "render": Lane(workers: 1, window: 4),
             // about a large grid's mounted cells, so an on-screen thumbnail rarely waits on a retry
             "thumbnail": Lane(workers: 8, window: 256),
+            // below the user's renders
+            "look": Lane(workers: 1, window: 32, qos: .utility),
             "maskOverlay": masks,
             "maskAt": masks,
         ]
@@ -50,7 +52,8 @@ public final class CoreHost: Sendable {
     /// exiftool is stopped by its atexit hook, not here.
     public func shutdown() {
         work.waitUntilAllOperationsAreFinished()
-        for lane in lanes.values { lane.waitUntilIdle() }
+        // a look can run for minutes, and nobody is left to read its answer
+        for (method, lane) in lanes where method != "look" { lane.waitUntilIdle() }
         library.stopExports()
     }
 }

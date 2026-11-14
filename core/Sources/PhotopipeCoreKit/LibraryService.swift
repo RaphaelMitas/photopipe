@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import Synchronization
 
 /// Reached from the dispatcher's worker pool, the watcher's queue and the
 /// enricher's; every field below is guarded by `lock`.
@@ -266,6 +268,79 @@ public final class LibraryService: @unchecked Sendable {
             viewport: viewport, decoderVersion: decoderVersion)
     }
 
+    /// `at` is a spot in the framed photo, from the top left; with it every tile is native pixels around that spot.
+    public func look(
+        paths: [String], edited: Bool, longEdge: Int, at spot: CGPoint?, sheet: Bool,
+        maxBytes: Int
+    ) throws -> [Look.Shown] {
+        guard !paths.isEmpty else { throw Look.LookError.nothingToShow }
+        let limit = sheet ? Look.sheetLimit : Look.separateLimit
+        guard paths.count <= limit else { throw Look.LookError.tooMany(paths.count, limit: limit) }
+        let files = try readImages(paths: paths)
+        let longEdge = min(max(longEdge, Look.longEdges.lowerBound), Look.longEdges.upperBound)
+        let tile = sheet ? Look.grid(count: files.count, longEdge: longEdge).cell : longEdge
+
+        let stills = Mutex([CGImage?](repeating: nil, count: files.count))
+        let failure = Mutex<Error?>(nil)
+        // a few at a time: each raw decode is a whole sensor's worth of memory
+        for start in stride(from: 0, to: files.count, by: 3) {
+            let batch = Array(start..<min(start + 3, files.count))
+            DispatchQueue.concurrentPerform(iterations: batch.count) { slot in
+                let index = batch[slot]
+                do {
+                    let still = try self.still(of: files[index], edited: edited, tile: tile, at: spot)
+                    stills.withLock { $0[index] = still }
+                } catch {
+                    failure.withLock { $0 = $0 ?? error }
+                }
+            }
+            if let error = failure.withLock({ $0 }) { throw error }
+        }
+        let rendered = stills.withLock { $0 }.compactMap { $0 }
+        if sheet {
+            let labels = files.enumerated().map { index, file in
+                "\(index + 1)  \((file.rel as NSString).lastPathComponent)"
+            }
+            let canvas = try Look.sheet(rendered, labels: labels, longEdge: longEdge)
+            return [try Look.shown(canvas, maxBytes: maxBytes)]
+        }
+        return try rendered.map { try Look.shown($0, maxBytes: maxBytes / rendered.count) }
+    }
+
+    private func still(of file: ImageFile, edited: Bool, tile: Int, at spot: CGPoint?) throws
+        -> CGImage
+    {
+        let edit = edited ? file.edit : .identity
+        let viewport = spot.map {
+            Look.viewport(around: $0, tile: tile, framed: Look.framedSize(of: file, edit: edit))
+        }
+        return try renderer.still(file: file, edit: edit, longEdge: tile, viewport: viewport)
+    }
+
+    public struct Original: Sendable, Encodable {
+        public let path: String
+        public let sidecar: String?
+    }
+
+    public func originals(paths: [String]) throws -> [Original] {
+        try knownImages(paths: paths).map { image in
+            let sidecar = XMP.sidecarURL(forImagePath: image.path)
+            return Original(
+                path: image.path,
+                sidecar: (try? XMP.isOwnSidecar(sidecar)) == true ? sidecar.path : nil)
+        }
+    }
+
+    /// A placeholder is read here but not stored, so a write landing meanwhile is never undone.
+    private func readImages(paths: [String]) throws -> [ImageFile] {
+        try knownImages(paths: paths).map { $0.enriched ? $0 : enrich($0) }
+    }
+
+    private func knownImages(paths: [String]) throws -> [ImageFile] {
+        try requireRoot()
+        return try Self.lookup(paths, in: lock.withLock { snapshot.imagesByShoot.values.joined() })
+    }
+
     public func maskOverlay(
         path: String, source: Mask.Source, points: [Mask.Point], inverted: Bool, edit: Edit,
         maxPixel: Int
@@ -343,15 +418,20 @@ public final class LibraryService: @unchecked Sendable {
             mtime: ((attrs[.modificationDate] as? Date) ?? .distantPast).timeIntervalSince1970)
     }
 
-    /// One index for the whole selection, since a linear scan per path is quadratic.
     private func images(inShoot shootName: String, paths: [String]) throws -> [ImageFile] {
-        let images = try snapshotImages(inShoot: shootName)
-        let byPath = Self.byPath(images)
+        try Self.lookup(paths, in: snapshotImages(inShoot: shootName))
+    }
+
+    /// One index for the whole selection, since a linear scan per path is quadratic.
+    private static func lookup(_ paths: [String], in images: some Sequence<ImageFile>) throws
+        -> [ImageFile]
+    {
+        let byPath = byPath(images)
         // the walk keeps /private and canonical() drops it
         lazy var byCanonical = Dictionary(
-            images.map { (Self.canonical($0.path), $0) }, uniquingKeysWith: { $1 })
+            byPath.values.map { (canonical($0.path), $0) }, uniquingKeysWith: { $1 })
         return try paths.map { path in
-            guard let image = byPath[path] ?? byCanonical[Self.canonical(path)] else {
+            guard let image = byPath[path] ?? byCanonical[canonical(path)] else {
                 throw ServiceError.unknownImage(path)
             }
             return image

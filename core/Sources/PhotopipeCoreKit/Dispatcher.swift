@@ -62,6 +62,20 @@ public final class Dispatcher: Sendable {
                 maxPixel: request.param("maxPixel")?.intValue ?? 2000,
                 viewport: Self.viewport(from: request.param("viewport")),
                 decoderVersion: request.param("decoderVersion")?.intValue)
+        case "look":
+            return [
+                "images": try library.look(
+                    paths: request.strings("paths"),
+                    edited: request.param("edited")?.boolValue ?? true,
+                    longEdge: request.param("longEdge")?.intValue ?? 1024,
+                    at: try request.param("x").map { _ in
+                        CGPoint(x: try request.fraction("x"), y: try request.fraction("y"))
+                    },
+                    sheet: request.param("sheet")?.boolValue ?? false,
+                    maxBytes: request.int("maxBytes"))
+            ]
+        case "originals":
+            return ["files": try library.originals(paths: request.strings("paths"))]
         case "maskOverlay":
             let cachePath = try library.maskOverlay(
                 path: request.string("path"),

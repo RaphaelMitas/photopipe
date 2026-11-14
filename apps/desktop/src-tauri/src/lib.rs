@@ -1,8 +1,11 @@
 mod bookmark;
+mod defaults;
+mod mcp;
 mod roots;
 mod swift_core;
 
 use bookmark::Failure;
+use mcp::access::{Access, AccessStore};
 use roots::{Listing, Roots};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -190,6 +193,23 @@ async fn forget_root(roots: State<'_, Arc<Roots>>, path: String) -> Result<(), F
     Ok(blocking(move || roots.forget(&path)).await?)
 }
 
+#[tauri::command]
+fn agent_access(store: State<'_, Arc<AccessStore>>) -> Access {
+    store.get()
+}
+
+#[tauri::command]
+fn set_agent_access(store: State<'_, Arc<AccessStore>>, access: Access) {
+    store.set(access);
+}
+
+/// What an MCP client runs: this very executable, with `--mcp`.
+#[tauri::command]
+fn agent_command() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    Some(exe.to_string_lossy().into_owned())
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Features {
@@ -198,6 +218,7 @@ struct Features {
     photo_library: bool,
     reveal: bool,
     trash: bool,
+    agents: bool,
 }
 
 #[tauri::command]
@@ -211,6 +232,7 @@ fn features() -> Features {
         reveal: cfg!(desktop),
         // On My iPad has no Trash, so the core deletes there for good
         trash: cfg!(desktop),
+        agents: cfg!(agents),
     }
 }
 
@@ -313,6 +335,11 @@ pub fn serve_core_on_stdin() {
     swift_core::shutdown();
 }
 
+#[cfg(agents)]
+pub fn relay_agent() -> std::process::ExitCode {
+    mcp::relay::run()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -325,6 +352,14 @@ pub fn run() {
     builder
         .setup(|app| {
             app.manage(Arc::new(Roots::load(None)));
+            let access = Arc::new(AccessStore::load(None));
+            #[cfg(agents)]
+            if let Err(error) =
+                mcp::server::Server::new(Arc::clone(&access)).listen(&mcp::socket_path())
+            {
+                eprintln!("not serving agents: {error}");
+            }
+            app.manage(access);
             // not in capabilities/: tauri-build rejects permissions for plugins the store build compiles out
             #[cfg(all(desktop, feature = "updater"))]
             app.add_capability(
@@ -349,7 +384,10 @@ pub fn run() {
             default_library,
             pick_folder,
             pick_photos,
-            features
+            features,
+            agent_access,
+            set_agent_access,
+            agent_command
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -15,8 +15,10 @@ swift-rs = { version = "1.0.9", features = ["build"] }
 tauri-build = { version = "2", features = [] }
 
 [features]
-default = ["updater"]
+default = ["updater", "agents"]
 updater = ["dep:tauri-plugin-updater", "dep:tauri-plugin-process"]
+# off in the App Store build until its sandbox is checked against the socket
+agents = []
 
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset"] }
