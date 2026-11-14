@@ -20,8 +20,15 @@ pub struct Tool {
 /// Raw JPEG bytes; a third larger as base64, still under Claude Desktop's 1 MB reply cap.
 const LOOK_BUDGET: usize = 600_000;
 
-/// The look lane runs newest first, so a queued look would time out.
-static LOOKING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+/// The core's agent lane runs newest first, so a request queued there would time out.
+static AGENT_LANE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn on_agent_lane(method: &str, params: Value) -> Result<Value, String> {
+    let _turn = AGENT_LANE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    core(method, params)
+}
 const PAGE: usize = 200;
 
 fn catalog() -> Vec<Tool> {
@@ -70,6 +77,34 @@ fn catalog() -> Vec<Tool> {
             run: get_photo,
         },
         Tool {
+            name: "faces",
+            see: See::Details,
+            act: Act::Off,
+            description: "Faces Photopipe finds in photos, read on this Mac: where each face is (fractions of the photo as shot, from the top left), Vision's face capture quality (0 to 1: sharpness, light, expression and pose together) and a sharpness number that only compares between frames of the same scene, higher is sharper. The four biggest faces per photo. Found once and remembered.",
+            input: || {
+                json!({
+                    "type": "object",
+                    "properties": { "photos": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 64 } },
+                    "required": ["photos"]
+                })
+            },
+            run: faces,
+        },
+        Tool {
+            name: "describe",
+            see: See::Descriptions,
+            act: Act::Off,
+            description: "A short description of each photo by Apple's on-device model, written on this Mac without sending pixels anywhere: who is in it and what they do, expressions and eyes, composition, and visible flaws. Needs macOS 27 with Apple Intelligence on; a few seconds a photo.",
+            input: || {
+                json!({
+                    "type": "object",
+                    "properties": { "photos": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 8 } },
+                    "required": ["photos"]
+                })
+            },
+            run: describe,
+        },
+        Tool {
             name: "look",
             see: See::Pictures,
             act: Act::Off,
@@ -80,7 +115,7 @@ fn catalog() -> Vec<Tool> {
                     "properties": {
                         "photos": { "type": "array", "items": { "type": "string" }, "minItems": 1, "description": "Photo ids. At most 8 separate, 64 on a sheet." },
                         "version": { "type": "string", "enum": ["edited", "unedited", "raw"], "description": "edited (default) applies the photo's crop and adjustments; raw returns the original file's path instead of pixels." },
-                        "region": { "type": "string", "enum": ["frame", "crop"], "description": "frame (default) is the whole picture; crop is native pixels around `at`." },
+                        "region": { "type": "string", "enum": ["frame", "crop", "faces"], "description": "frame (default) is the whole picture; crop is native pixels around `at`; faces is one sheet of every face found, at up to native pixels and unedited: the way to judge focus and eyes across a burst." },
                         "at": {
                             "type": "object",
                             "properties": { "x": { "type": "number", "minimum": 0, "maximum": 1 }, "y": { "type": "number", "minimum": 0, "maximum": 1 } },
@@ -149,10 +184,10 @@ pub fn call(params: &Value, store: &AccessStore, bridge: &Bridge) -> Result<Valu
             ))
         };
         if tool.see > access.see {
-            needs(if tool.see == See::Pictures {
-                "see pictures"
-            } else {
-                "see details"
+            needs(match tool.see {
+                See::Pictures => "see pictures",
+                See::Descriptions => "see descriptions",
+                _ => "see details",
             })
         } else if tool.act > access.act {
             needs(if tool.act == Act::Everything {
@@ -262,6 +297,7 @@ enum Region {
     #[default]
     Frame,
     Crop,
+    Faces,
 }
 
 #[derive(Default, PartialEq, Deserialize)]
@@ -508,6 +544,47 @@ fn get_photo(args: &Value, _: &Bridge) -> Result<Content, String> {
     Ok(vec![json_text(&answer)])
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Photos {
+    photos: Vec<String>,
+}
+
+/// The core answers per photo in the order asked, keyed by path; agents know them by id.
+fn per_photo(method: &str, args: &Value, each: fn(&Value) -> Value) -> Result<Content, String> {
+    let args: Photos = parse(args)?;
+    if args.photos.is_empty() {
+        return Err("photos is required".into());
+    }
+    let answered = on_agent_lane(method, json!({ "paths": paths_of(&args.photos)? }))?;
+    let photos: Vec<Value> = args
+        .photos
+        .iter()
+        .zip(answered["photos"].as_array().into_iter().flatten())
+        .map(|(id, photo)| {
+            let mut row = each(photo);
+            row["id"] = id.clone().into();
+            row
+        })
+        .collect();
+    Ok(vec![json_text(&json!({ "photos": photos }))])
+}
+
+fn faces(args: &Value, _: &Bridge) -> Result<Content, String> {
+    per_photo("faces", args, |photo| match &photo["faces"] {
+        Value::Null => json!({ "unreadable": true }),
+        faces => json!({ "faces": faces }),
+    })
+}
+
+fn describe(args: &Value, _: &Bridge) -> Result<Content, String> {
+    per_photo(
+        "describe",
+        args,
+        |photo| json!({ "description": photo["text"], "error": photo["error"] }),
+    )
+}
+
 fn look(args: &Value, _: &Bridge) -> Result<Content, String> {
     let args: Look = parse(args)?;
     let ids = &args.photos;
@@ -526,7 +603,8 @@ fn look(args: &Value, _: &Bridge) -> Result<Content, String> {
             .collect();
         return Ok(vec![json_text(&json!({ "files": files }))]);
     }
-    let sheet = args.layout == Layout::Sheet;
+    let faces = args.region == Region::Faces;
+    let sheet = args.layout == Layout::Sheet || faces;
     let mut params = json!({
         "paths": paths,
         "edited": args.version == Version::Edited,
@@ -540,15 +618,13 @@ fn look(args: &Value, _: &Bridge) -> Result<Content, String> {
             params["x"] = at.x.into();
             params["y"] = at.y.into();
         }
-        (Region::Frame, Some(_)) => return Err("at only applies to region \"crop\"".into()),
+        (Region::Faces, None) => params["faces"] = true.into(),
+        (Region::Frame | Region::Faces, Some(_)) => {
+            return Err("at only applies to region \"crop\"".into())
+        }
         (Region::Frame, None) => {}
     }
-    let shown = {
-        let _turn = LOOKING
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        core("look", params)?
-    };
+    let shown = on_agent_lane("look", params)?;
     let mut content = Vec::new();
     let mut spent = 0;
     let mut left_out = Vec::new();
@@ -571,10 +647,17 @@ fn look(args: &Value, _: &Bridge) -> Result<Content, String> {
                 .enumerate()
                 .map(|(i, id)| format!("{} = {id}", i + 1))
                 .collect();
-            format!(
-                "Sheet, cells numbered left to right, top to bottom: {}",
-                cells.join(", ")
-            )
+            if faces {
+                format!(
+                    "Faces sheet: cell n.f is face f of photo n, left to right, top to bottom, where {}",
+                    cells.join(", ")
+                )
+            } else {
+                format!(
+                    "Sheet, cells numbered left to right, top to bottom: {}",
+                    cells.join(", ")
+                )
+            }
         } else {
             photos.join(", ")
         }));

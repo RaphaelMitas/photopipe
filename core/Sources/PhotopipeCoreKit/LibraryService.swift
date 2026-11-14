@@ -39,6 +39,7 @@ public final class LibraryService: @unchecked Sendable {
     private let renderer: Renderer
     private let scorer: Scorer
     private let printer: Printer
+    private let facer: Facer
     private let exporter = Exporter()
     private let rescanQueue = DispatchQueue(label: "photopipe.rescan")
     /// One connection, one writer: enrichment batches and full saves both land
@@ -57,6 +58,7 @@ public final class LibraryService: @unchecked Sendable {
         self.renderer = renderer
         self.scorer = scorer
         self.printer = printer
+        facer = Facer(renderer: renderer)
     }
 
     public static func defaultIndexPath() -> String {
@@ -269,26 +271,72 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     /// `at` is a spot in the framed photo, from the top left; with it every tile is native pixels around that spot.
+    /// `faces` sheets every face found at up to native pixels, unedited, since faces are found in the photo as shot.
     public func look(
         paths: [String], edited: Bool, longEdge: Int, at spot: CGPoint?, sheet: Bool,
-        maxBytes: Int
+        faces: Bool = false, maxBytes: Int
     ) throws -> [Look.Shown] {
         guard !paths.isEmpty else { throw Look.LookError.nothingToShow }
-        let limit = sheet ? Look.sheetLimit : Look.separateLimit
+        let limit = sheet || faces ? Look.sheetLimit : Look.separateLimit
         guard paths.count <= limit else { throw Look.LookError.tooMany(paths.count, limit: limit) }
         let files = try readImages(paths: paths)
         let longEdge = min(max(longEdge, Look.longEdges.lowerBound), Look.longEdges.upperBound)
+        if faces {
+            return [try faceSheet(of: files, longEdge: longEdge, maxBytes: maxBytes)]
+        }
         let tile = sheet ? Look.grid(count: files.count, longEdge: longEdge).cell : longEdge
+        let rendered = try renderInBatches(files.count) { index in
+            try self.still(of: files[index], edited: edited, tile: tile, at: spot)
+        }
+        if sheet {
+            let labels = files.enumerated().map { index, file in
+                "\(index + 1)  \(Self.stem(file))"
+            }
+            let canvas = try Look.sheet(rendered, labels: labels, longEdge: longEdge)
+            return [try Look.shown(canvas, maxBytes: maxBytes)]
+        }
+        return try rendered.map { try Look.shown($0, maxBytes: maxBytes / rendered.count) }
+    }
 
-        let stills = Mutex([CGImage?](repeating: nil, count: files.count))
+    private func faceSheet(of files: [ImageFile], longEdge: Int, maxBytes: Int) throws
+        -> Look.Shown
+    {
+        let found = try faces(paths: files.map(\.path))
+        let tiles = zip(files, found).enumerated().flatMap { index, pair in
+            (pair.1.faces ?? []).enumerated().map { face, spot in
+                (
+                    file: pair.0, box: Look.around(spot.box),
+                    label: "\(index + 1).\(face + 1)  \(Self.stem(pair.0))"
+                )
+            }
+        }.prefix(Look.sheetLimit)
+        guard !tiles.isEmpty else { throw Look.LookError.noFaces }
+        let tile = Look.grid(count: tiles.count, longEdge: longEdge).cell
+        let crops = Array(tiles)
+        let rendered = try renderInBatches(crops.count) { index in
+            try self.renderer.still(
+                file: crops[index].file, edit: .identity, longEdge: tile, viewport: crops[index].box)
+        }
+        let canvas = try Look.sheet(rendered, labels: crops.map(\.label), longEdge: longEdge)
+        return try Look.shown(canvas, maxBytes: maxBytes)
+    }
+
+    private static func stem(_ file: ImageFile) -> String {
+        (file.rel as NSString).lastPathComponent
+    }
+
+    /// A few at a time: each raw decode is a whole sensor's worth of memory.
+    private func renderInBatches(_ count: Int, _ render: @escaping @Sendable (Int) throws -> CGImage)
+        throws -> [CGImage]
+    {
+        let stills = Mutex([CGImage?](repeating: nil, count: count))
         let failure = Mutex<Error?>(nil)
-        // a few at a time: each raw decode is a whole sensor's worth of memory
-        for start in stride(from: 0, to: files.count, by: 3) {
-            let batch = Array(start..<min(start + 3, files.count))
+        for start in stride(from: 0, to: count, by: 3) {
+            let batch = Array(start..<min(start + 3, count))
             DispatchQueue.concurrentPerform(iterations: batch.count) { slot in
                 let index = batch[slot]
                 do {
-                    let still = try self.still(of: files[index], edited: edited, tile: tile, at: spot)
+                    let still = try render(index)
                     stills.withLock { $0[index] = still }
                 } catch {
                     failure.withLock { $0 = $0 ?? error }
@@ -296,15 +344,48 @@ public final class LibraryService: @unchecked Sendable {
             }
             if let error = failure.withLock({ $0 }) { throw error }
         }
-        let rendered = stills.withLock { $0 }.compactMap { $0 }
-        if sheet {
-            let labels = files.enumerated().map { index, file in
-                "\(index + 1)  \((file.rel as NSString).lastPathComponent)"
-            }
-            let canvas = try Look.sheet(rendered, labels: labels, longEdge: longEdge)
-            return [try Look.shown(canvas, maxBytes: maxBytes)]
+        return stills.withLock { $0 }.compactMap { $0 }
+    }
+
+    public struct PhotoFaces: Sendable, Encodable {
+        public let path: String
+        /// nil when the photo could not be read.
+        public let faces: [FaceSpot]?
+    }
+
+    /// Found now for photos not looked at yet, and remembered like Instinct scores.
+    public func faces(paths: [String]) throws -> [PhotoFaces] {
+        let files = try knownImages(paths: paths)
+        let pass = "agent-\(UUID().uuidString)"
+        facer.start(shoot: pass, files: files)
+        let deadline = Date().addingTimeInterval(100)
+        while facer.progress(shoot: pass, files: files).running, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.1)
         }
-        return try rendered.map { try Look.shown($0, maxBytes: maxBytes / rendered.count) }
+        let answers = facer.answers(for: files)
+        return files.map { PhotoFaces(path: $0.path, faces: answers[$0.path] ?? nil) }
+    }
+
+    public struct Description: Sendable, Encodable {
+        public let path: String
+        public let text: String?
+        public let error: String?
+    }
+
+    /// By the on-device model, which only ever sees a 1024 px render of the edited photo.
+    public func describe(paths: [String]) throws -> [Description] {
+        guard paths.count <= Look.separateLimit else {
+            throw Look.LookError.tooMany(paths.count, limit: Look.separateLimit)
+        }
+        guard Describer.isAvailable else { throw Describer.Unavailable() }
+        return try readImages(paths: paths).map { file in
+            do {
+                let still = try still(of: file, edited: true, tile: 1024, at: nil)
+                return Description(path: file.path, text: try Describer.describe(still), error: nil)
+            } catch {
+                return Description(path: file.path, text: nil, error: "\(error)")
+            }
+        }
     }
 
     private func still(of file: ImageFile, edited: Bool, tile: Int, at spot: CGPoint?) throws
@@ -337,7 +418,7 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     private func knownImages(paths: [String]) throws -> [ImageFile] {
-        try requireRoot()
+        _ = try requireRoot()
         return try Self.lookup(paths, in: lock.withLock { snapshot.imagesByShoot.values.joined() })
     }
 
@@ -470,6 +551,7 @@ public final class LibraryService: @unchecked Sendable {
         replace(settled, inShoot: shoot)
         scorer.restamp(image, to: settled)
         printer.restamp(image, to: settled)
+        facer.restamp(image, to: settled)
         renderer.restamp(image, to: settled)
         let index = lock.withLock { self.index }
         indexQueue.async { try? index?.upsert(shoot: shoot, files: [settled]) }
@@ -748,6 +830,9 @@ public final class LibraryService: @unchecked Sendable {
             }
             printer.use(cache: (try? index?.loadPrints(under: root)) ?? [:]) { rows in
                 queue.async { try? index?.savePrints(rows) }
+            }
+            facer.use(cache: (try? index?.loadFaces(under: root)) ?? [:]) { rows in
+                queue.async { try? index?.saveFaces(rows) }
             }
         }
     }

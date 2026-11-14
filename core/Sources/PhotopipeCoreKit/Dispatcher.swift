@@ -72,8 +72,13 @@ public final class Dispatcher: Sendable {
                         CGPoint(x: try request.fraction("x"), y: try request.fraction("y"))
                     },
                     sheet: request.param("sheet")?.boolValue ?? false,
+                    faces: request.param("faces")?.boolValue ?? false,
                     maxBytes: request.int("maxBytes"))
             ]
+        case "faces":
+            return ["photos": try library.faces(paths: request.strings("paths"))]
+        case "describe":
+            return ["photos": try library.describe(paths: request.strings("paths"))]
         case "originals":
             return ["files": try library.originals(paths: request.strings("paths"))]
         case "maskOverlay":

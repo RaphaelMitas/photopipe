@@ -89,6 +89,13 @@ public final class SQLiteIndex: @unchecked Sendable {
                 size INTEGER NOT NULL,
                 version INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS faces (
+                path TEXT PRIMARY KEY,
+                faces TEXT,
+                mtime REAL NOT NULL,
+                size INTEGER NOT NULL,
+                version INTEGER NOT NULL
+            );
             """)
         try exec("INSERT OR REPLACE INTO meta (key, value) VALUES ('schema', '\(Self.schemaVersion)')")
         try exec("SELECT count(*) FROM files")
@@ -260,6 +267,24 @@ public final class SQLiteIndex: @unchecked Sendable {
                     sqlite3_bind_blob(
                         statement, 2, bytes.baseAddress, Int32(bytes.count), transientDestructor)
                 }
+            } else {
+                sqlite3_bind_null(statement, 2)
+            }
+        }
+    }
+
+    public func loadFaces(under root: String) throws -> [String: Facer.Row] {
+        try loadRows("faces", from: "faces", under: root) { columnJSON([FaceSpot].self, $0, 1) }
+    }
+
+    public func saveFaces(_ rows: [(String, Facer.Row)]) throws {
+        try saveRows(
+            "INSERT OR REPLACE INTO faces (path, faces, mtime, size, version) VALUES (?,?,?,?,?)",
+            rows
+        ) { statement, faces in
+            if let faces, let json = try? encoder.encode(faces) {
+                sqlite3_bind_text(
+                    statement, 2, String(decoding: json, as: UTF8.self), -1, transientDestructor)
             } else {
                 sqlite3_bind_null(statement, 2)
             }

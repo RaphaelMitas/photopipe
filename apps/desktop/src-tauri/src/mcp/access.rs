@@ -13,6 +13,7 @@ pub enum See {
     #[default]
     Off,
     Details,
+    Descriptions,
     Pictures,
 }
 
