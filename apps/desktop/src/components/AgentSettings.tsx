@@ -17,13 +17,16 @@ import {
 const SEE: readonly [AgentSee, string][] = [
   ["off", "Nothing"],
   ["details", "Details"],
+  ["descriptions", "Descriptions"],
   ["pictures", "Pictures"],
 ];
 
 const SEE_DETAIL: Record<AgentSee, string> = {
   off: "Agents get no tools at all.",
   details:
-    "Projects, ratings, flags, capture times, camera settings and edits. No pixels leave Photopipe.",
+    "Projects, ratings, flags, capture times, camera settings, edits and where faces are and how sharp. No pixels leave Photopipe.",
+  descriptions:
+    "Also a few sentences about each photo, written by Apple's on-device model on this Mac. Still no pixels leave Photopipe. Needs macOS 27 with Apple Intelligence on.",
   pictures:
     "Also the photos themselves, rendered on this Mac and sent to the agent, which may send them on to its model's provider, and where the original files are.",
 };

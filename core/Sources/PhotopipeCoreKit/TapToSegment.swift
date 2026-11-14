@@ -22,19 +22,9 @@ enum TapToSegment {
             guard #available(macOS 27, iOS 27, *) else { return [] }
             guard let image = photo.cgImage ?? CIContext().createCGImage(photo, from: photo.extent)
             else { throw Renderer.RenderError.encodeFailed }
-            let done = DispatchSemaphore(value: 0)
-            let answer = Answer()
             // an export waits here on a thread of Swift's pool, which spares one for this task only while exports stay utility
-            Task.detached {
-                do {
-                    answer.result = .success(try await segment(image, from: seed))
-                } catch {
-                    answer.result = .failure(error)
-                }
-                done.signal()
-            }
-            done.wait()
-            return try answer.result.get().map { CIImage(cgImage: $0, options: [.colorSpace: NSNull()]) }
+            return try awaited { try await segment(image, from: seed) }
+                .map { CIImage(cgImage: $0, options: [.colorSpace: NSNull()]) }
         }
 
         @available(macOS 27, iOS 27, *)
@@ -149,9 +139,6 @@ enum TapToSegment {
             NormalizedPoint(x: min(max(point.x, 0), 1), y: 1 - min(max(point.y, 0), 1))
         }
 
-        private final class Answer: @unchecked Sendable {
-            var result: Result<[CGImage], any Error> = .success([])
-        }
     #else
         static let isAvailable = false
 

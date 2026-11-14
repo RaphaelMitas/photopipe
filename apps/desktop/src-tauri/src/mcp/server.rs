@@ -207,7 +207,10 @@ mod tests {
         let (server, suite) = server("levels", See::Off);
         assert!(names(&server).is_empty());
         server.access.set(seeing(See::Details));
-        assert!(names(&server).contains(&"list_photos".to_owned()));
+        assert!(names(&server).contains(&"faces".to_owned()));
+        assert!(!names(&server).contains(&"describe".to_owned()));
+        server.access.set(seeing(See::Descriptions));
+        assert!(names(&server).contains(&"describe".to_owned()));
         assert!(!names(&server).contains(&"look".to_owned()));
         server.access.set(seeing(See::Pictures));
         assert!(names(&server).contains(&"look".to_owned()));

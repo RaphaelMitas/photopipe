@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 
-export type AgentSee = "off" | "details" | "pictures";
+export type AgentSee = "off" | "details" | "descriptions" | "pictures";
 export type AgentAct = "off" | "cull" | "everything";
 
 export type AgentAccess = { see: AgentSee; act: AgentAct };
