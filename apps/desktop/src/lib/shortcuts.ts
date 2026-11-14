@@ -234,6 +234,24 @@ function handlerFor(id: ActionId, context: Context): Handler | undefined {
   }
 }
 
+/// For an agent: what the key would do in the view the user has open; false when nothing here handles it.
+export function runAction(id: ActionId): boolean {
+  const context = activeContext();
+  const handler = ACTIONS[id].contexts.includes(context)
+    ? handlerFor(id, context)
+    : undefined;
+  return handler !== undefined && handler() !== false;
+}
+
+export const availableActions = () => {
+  const context = activeContext();
+  return ACTION_IDS.filter(
+    (id) =>
+      ACTIONS[id].contexts.includes(context) &&
+      handlerFor(id, context) !== undefined,
+  ).map((id) => ({ id, label: ACTIONS[id].label }));
+};
+
 function dispatch(event: KeyboardEvent) {
   if (ignored(event)) return;
   const chords = chordsOf(event);

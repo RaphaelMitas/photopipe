@@ -90,6 +90,9 @@ const changesTo = <V>(
 export const ratedTo = (photos: ImageFile[], rating: number) =>
   changesTo(photos, (photo) => photo.rating, rating);
 
+export const flaggedTo = (photos: ImageFile[], flag: Flag) =>
+  changesTo<Flag>(photos, (photo) => photo.flag, flag);
+
 export const sharedFlag = (photos: ImageFile[]): Flag =>
   photos.every((photo) => photo.flag === photos[0]?.flag)
     ? (photos[0]?.flag ?? 0)

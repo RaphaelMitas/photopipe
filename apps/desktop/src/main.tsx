@@ -8,19 +8,23 @@ import "./index.css";
 async function prepare() {
   if (import.meta.env.VITE_E2E === "1") {
     const { mockIPC } = await import("@tauri-apps/api/mocks");
-    const { answerCoreRequest, E2E_COMMANDS, isCoreRequest } = await import(
-      "./e2e-mocks"
+    const { answerCoreRequest, askAgent, E2E_COMMANDS, isCoreRequest } =
+      await import("./e2e-mocks");
+    // what the host's agent server would send, for e2e to call
+    Reflect.set(window, "askAgent", askAgent);
+    mockIPC(
+      (cmd, args) => {
+        // The save panel is an OS window with nothing to drive it from a browser.
+        if (cmd === "plugin:dialog|save") return "/fake/delivery";
+        if (cmd === "plugin:opener|reveal_item_in_dir") return null;
+        if (cmd in E2E_COMMANDS) return E2E_COMMANDS[cmd](args);
+        if (cmd === "core_request" && isCoreRequest(args)) {
+          return answerCoreRequest(args);
+        }
+        throw new Error(`unmocked IPC call: ${cmd} ${JSON.stringify(args)}`);
+      },
+      { shouldMockEvents: true },
     );
-    mockIPC((cmd, args) => {
-      // The save panel is an OS window with nothing to drive it from a browser.
-      if (cmd === "plugin:dialog|save") return "/fake/delivery";
-      if (cmd === "plugin:opener|reveal_item_in_dir") return null;
-      if (cmd in E2E_COMMANDS) return E2E_COMMANDS[cmd](args);
-      if (cmd === "core_request" && isCoreRequest(args)) {
-        return answerCoreRequest(args);
-      }
-      throw new Error(`unmocked IPC call: ${cmd} ${JSON.stringify(args)}`);
-    });
   }
 }
 

@@ -42,6 +42,7 @@ import { ShootSettingsDialog } from "@/components/ShootSettingsDialog";
 import { ShortcutSheet } from "@/components/ShortcutSheet";
 import { ShortcutTooltip } from "@/components/ShortcutTooltip";
 import { ShowSidebarTrigger } from "@/components/ShowSidebarTrigger";
+import { AGENT_EDIT, useAgentTools } from "@/lib/agentTools";
 import {
   type Edit,
   editKey,
@@ -81,6 +82,7 @@ import {
   useStacking,
   useTrash,
 } from "@/lib/queries";
+import { rawDecoderVersion } from "@/lib/rawDecoder";
 import {
   defaultLibrary,
   openRoot,
@@ -237,7 +239,8 @@ export default function App() {
   const enriched = useEnriched(openShoot, ready);
   const writes = useRecordedWrites(openShoot);
   const reveal = useReveal();
-  const revealPaths = useFeatures().reveal
+  const features = useFeatures();
+  const revealPaths = features.reveal
     ? (paths: string[]) => reveal.mutate(paths)
     : undefined;
   const trash = useTrash(openShoot);
@@ -631,10 +634,12 @@ export default function App() {
   const travel = useCallback(
     (direction: HistoryDirection) => {
       flushEdit();
-      void stepHistory(direction, showPhoto).then((entry) => {
-        if (!entry) return;
-        const verb = direction === "undo" ? "Undid" : "Redid";
-        toast(`${verb} ${historyLabel(entry)}`, { id: "history" });
+      return stepHistory(direction, showPhoto).then((entry) => {
+        if (entry) {
+          const verb = direction === "undo" ? "Undid" : "Redid";
+          toast(`${verb} ${historyLabel(entry)}`, { id: "history" });
+        }
+        return entry;
       });
     },
     [flushEdit, showPhoto],
@@ -708,12 +713,14 @@ export default function App() {
     "browser",
   );
 
-  const trashPhotos = (paths: string[]) =>
-    // even a failed trash may have moved some of them
-    void trash
+  const trashFiles = (paths: string[]) =>
+    trash
       .mutateAsync(paths)
-      .catch(() => {})
+      .then((result) => result.files)
+      // even a failed trash may have moved some of them
       .finally(() => forgetHistoryPaths(paths));
+  const trashPhotos = (paths: string[]) =>
+    void trashFiles(paths).catch(() => {});
   const rejects = useMemo(
     () => allImages.filter((image) => image.flag === -1),
     [allImages],
@@ -729,6 +736,65 @@ export default function App() {
     filter.reset();
     selection.clear();
   };
+
+  const openPhoto = (path: string | null) => {
+    // A new visit walks the browser's order as it stands now.
+    held.current = NO_HELD;
+    setCurrentPath(path);
+    // closing, a grid undo or a shoot switch can leave an anchor behind, so opening decides it fresh
+    setInsideAnchor(
+      anchorFor(
+        path && stacksOn ? stackOf(groupStacks(allImages), path) : undefined,
+        path,
+      ),
+    );
+    setLoupeOpen(true);
+  };
+
+  useAgentTools(features.agents && ready, {
+    shoots: shoots.data,
+    shoot: openShoot,
+    images: images.data,
+    visible: filteredImages,
+    loupe: loupePhoto,
+    selected: selectedImages,
+    filter,
+    sort: activeSort,
+    live: (path) => cachedImage(queryClient, openShoot, path),
+    editOf,
+    enter: enterShoot,
+    open: openPhoto,
+    close: () => setLoupeOpen(false),
+    select: selection.select,
+    resetFilter: filter.reset,
+    rate: writes.rateMany,
+    flag: writes.flagMany,
+    edit: (edits) => {
+      if (editDraft && edits.has(editDraft.path)) cancelEdit();
+      return writes.paste(edits, AGENT_EDIT);
+    },
+    step: travel,
+    exportPhotos: (paths, { destination, format, quality, longEdge, zip }) =>
+      openShoot === null
+        ? Promise.resolve(null)
+        : exports.start({
+            method: "exportFiles",
+            label: exportLabel(paths.length, format),
+            request: {
+              shoot: openShoot,
+              paths,
+              destination,
+              zip,
+              flatten: true,
+              format,
+              quality: quality ?? 90,
+              longEdge: longEdge ?? null,
+              decoderVersion: rawDecoderVersion(),
+              names: null,
+            },
+          }),
+    trash: trashFiles,
+  });
 
   // Settings is reachable from the menu bar at any time, including before a
   // photos folder is picked, so it lives outside the browser chrome.
@@ -842,22 +908,7 @@ export default function App() {
       revealed={revealed}
       rejects={rejects}
       onTrashRejects={() => trashPhotos(rejects.map((image) => image.path))}
-      onOpen={(index) => {
-        // A new visit walks the browser's order as it stands now.
-        held.current = NO_HELD;
-        // closing, a grid undo or a shoot switch can leave an anchor behind, so opening decides it fresh
-        const path = filteredImages[index]?.path ?? null;
-        setCurrentPath(path);
-        setInsideAnchor(
-          anchorFor(
-            path && stacksOn
-              ? stackOf(groupStacks(allImages), path)
-              : undefined,
-            path,
-          ),
-        );
-        setLoupeOpen(true);
-      }}
+      onOpen={(index) => openPhoto(filteredImages[index]?.path ?? null)}
       onImport={runImport}
     />
   );

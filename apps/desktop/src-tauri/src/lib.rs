@@ -6,6 +6,7 @@ mod swift_core;
 
 use bookmark::Failure;
 use mcp::access::{Access, AccessStore};
+use mcp::bridge::Bridge;
 use roots::{Listing, Roots};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -203,6 +204,26 @@ fn set_agent_access(store: State<'_, Arc<AccessStore>>, access: Access) {
     store.set(access);
 }
 
+#[tauri::command]
+fn agent_attach(bridge: State<'_, Arc<Bridge>>) {
+    bridge.attach();
+}
+
+#[tauri::command]
+fn agent_reply(bridge: State<'_, Arc<Bridge>>, id: u64, ok: bool, value: serde_json::Value) {
+    bridge.answer(
+        id,
+        if ok {
+            Ok(value)
+        } else {
+            Err(value
+                .as_str()
+                .unwrap_or("Photopipe could not do that")
+                .to_owned())
+        },
+    );
+}
+
 /// What an MCP client runs: this very executable, with `--mcp`.
 #[tauri::command]
 fn agent_command() -> Option<String> {
@@ -353,13 +374,21 @@ pub fn run() {
         .setup(|app| {
             app.manage(Arc::new(Roots::load(None)));
             let access = Arc::new(AccessStore::load(None));
+            let window = app.handle().clone();
+            let bridge = Arc::new(Bridge::new(move |request| {
+                use tauri::Emitter;
+                window
+                    .emit_to("main", "agent:request", request)
+                    .map_err(|e| e.to_string())
+            }));
             #[cfg(agents)]
-            if let Err(error) =
-                mcp::server::Server::new(Arc::clone(&access)).listen(&mcp::socket_path())
+            if let Err(error) = mcp::server::Server::new(Arc::clone(&access), Arc::clone(&bridge))
+                .listen(&mcp::socket_path())
             {
                 eprintln!("not serving agents: {error}");
             }
             app.manage(access);
+            app.manage(bridge);
             // not in capabilities/: tauri-build rejects permissions for plugins the store build compiles out
             #[cfg(all(desktop, feature = "updater"))]
             app.add_capability(
@@ -387,7 +416,9 @@ pub fn run() {
             features,
             agent_access,
             set_agent_access,
-            agent_command
+            agent_command,
+            agent_attach,
+            agent_reply
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
