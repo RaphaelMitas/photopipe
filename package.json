@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "./scripts/fetch-exiftool.sh && pnpm --filter desktop tauri dev",
     "dev:ios": "pnpm --filter desktop tauri ios dev",
-    "check": "biome check .",
+    "check": "biome check . && node scripts/check-comments.mjs",
     "typecheck": "pnpm -r typecheck",
     "check:fix": "biome check --write .",
     "release": "node scripts/release.mjs",
