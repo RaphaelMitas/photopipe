@@ -1,7 +1,6 @@
 import Foundation
 import Vision
 
-/// Aesthetic scores from Vision, -1 to 1.
 public typealias Scorer = Analyzer<Double>
 
 extension Analyzer where Value == Double {

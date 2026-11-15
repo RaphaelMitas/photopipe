@@ -120,8 +120,6 @@ private let fixtureCases: [(name: String, points: [CurvePoint])] = [
     let decoded = try JSONDecoder().decode(Edit.self, from: JSONEncoder().encode(edit))
     #expect(decoded == edit)
 
-    // An uncropped edit must keep its pre-crop cache key so existing renders
-    // stay valid: nil crop may not appear in the encoded JSON.
     let json = String(decoding: try JSONEncoder().encode(Edit(exposure: 1)), as: UTF8.self)
     #expect(!json.contains("crop"))
     #expect(!json.contains("rotation"))
@@ -143,9 +141,6 @@ private let fixtureCases: [(name: String, points: [CurvePoint])] = [
     #expect(a.cacheKey != Edit(exposure: 0.6).cacheKey)
 }
 
-/// The TypeScript curve editor ships its own copy of this spline. The fixture
-/// pins both to the same samples; regenerate with
-/// PHOTOPIPE_WRITE_FIXTURES=1 swift test --filter curveFixture
 @Test func curveFixtureMatchesTheSharedSamples() throws {
     let url = fixtureURL()
     if ProcessInfo.processInfo.environment["PHOTOPIPE_WRITE_FIXTURES"] != nil {

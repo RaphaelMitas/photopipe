@@ -10,7 +10,6 @@ import {
   zoomAt,
 } from "./zoom";
 
-// A 1000x500 viewport showing a 3:2 photo letterboxed to 750x500 at x=125.
 const view = { width: 1000, height: 500 };
 const photo = { x: 125, y: 0, width: 750, height: 500 };
 
@@ -20,8 +19,6 @@ describe("zoomAt", () => {
     const state = zoomAt(null, cursor, 2, 8, photo, view.width, view.height);
     expect(state).not.toBeNull();
     if (!state) return;
-    // The photo point under the cursor before (cursor, scale 1) must still
-    // be under the cursor after: s*p + t = cursor where p = cursor.
     expect(state.scale * cursor.x + state.tx).toBeCloseTo(cursor.x);
     expect(state.scale * cursor.y + state.ty).toBeCloseTo(cursor.y);
   });
@@ -64,7 +61,6 @@ describe("clampPan", () => {
       view.width,
       view.height,
     );
-    // Left photo edge at or left of the viewport edge, right at or beyond.
     expect(4 * photo.x + state.tx).toBeLessThanOrEqual(0);
     expect(4 * (photo.x + photo.width) + state.tx).toBeGreaterThanOrEqual(
       view.width,
@@ -75,7 +71,6 @@ describe("clampPan", () => {
   });
 
   it("centers an axis the photo cannot fill", () => {
-    // scale 1.2: width 900 < viewport 1000 stays centered.
     const state = clampPan({ scale: 1.2, tx: 500, ty: 0 }, photo, 1000, 500);
     expect(1.2 * photo.x + state.tx).toBeCloseTo((1000 - 900) / 2);
   });
@@ -94,7 +89,6 @@ describe("visibleRect and centerOn", () => {
 });
 
 describe("viewportRequest", () => {
-  // The 750x500 box shows a 6000x4000 photo, so 100% is scale 8.
   const pixels = { width: 6000, height: 4000 };
   const request = (state: Parameters<typeof viewportRequest>[0]) =>
     viewportRequest(
@@ -124,7 +118,6 @@ describe("viewportRequest", () => {
     expect(width).toBeLessThan(0.3);
     expect(got.viewport.left).toBeGreaterThan(0.3);
     expect(got.viewport.right).toBeLessThan(0.7);
-    // Only what the region truly holds: 6000 * ~0.17 is far under a full frame.
     expect(got.maxPixel).toBeLessThan(pixels.width);
     expect(got.maxPixel).toBeGreaterThan(0);
   });
@@ -166,7 +159,6 @@ describe("viewportRequest", () => {
   });
 
   it("stops at the photo edge when it does not fill the stage", () => {
-    // scale 1.2 leaves the 750-wide photo at 900, short of the 1000 viewport.
     const state = clampPan({ scale: 1.2, tx: 0, ty: 0 }, photo, 1000, 500);
     const rect = visibleScreenRect(state, photo, view.width, view.height);
     expect(rect.width).toBeCloseTo(900);

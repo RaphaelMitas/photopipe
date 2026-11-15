@@ -1,7 +1,5 @@
 import Foundation
 
-/// Byte ranges of an XMP packet down to the properties of its top-level
-/// rdf:Descriptions, the depth both the reader and XMPTextWriter work at.
 struct XMPDocument {
     struct Malformed: Error {
         let reason: String
@@ -32,7 +30,6 @@ struct XMPDocument {
         let items: [Range<Int>]
     }
 
-    // Lightroom's mask Descriptions repeat names like crs:ToneCurvePV2012
     struct TopLevelDescription {
         let start: Tag
         let end: Tag?
@@ -135,8 +132,6 @@ struct XMPDocument {
         return (tags, nil)
     }
 
-    /// `lenient` keeps everything before the first malformation instead of
-    /// throwing, including a Description it cut off.
     static func parse(_ bytes: [UInt8], lenient: Bool = false) throws -> XMPDocument {
         let (tags, malformed) = scanTags(bytes)
         if let malformed, !lenient { throw Malformed(reason: malformed) }

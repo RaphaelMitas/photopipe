@@ -23,7 +23,6 @@ describe("agentEdit", () => {
       crop: { left: 0, top: 0, right: 0.5, bottom: 1 },
     };
     const next = agentEdit(base, { rotation: 90 }, raw);
-    // the kept left half of the photo is the top half once it is turned
     expect(next.rotation).toBe(90);
     expect(next.crop).toEqual({ left: 0, top: 0, right: 1, bottom: 0.5 });
   });

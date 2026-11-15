@@ -1,8 +1,6 @@
 import Image from "next/image";
 import { APP_STORE } from "@/lib/release";
 
-// Apple's own artwork, unaltered, as its marketing guidelines require. 40px
-// is the smallest height they allow on screen.
 export function AppStoreBadge() {
   return (
     <a

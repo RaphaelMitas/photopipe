@@ -18,8 +18,6 @@ extension FileActions {
     }
 }
 
-/// A project with a raw + sidecar + JPEG at the root and the same basename
-/// sorted into two subfolders — the flatten-collision shape.
 private func makeShoot(in root: URL, named name: String = "2026-06-06_actions") throws -> URL {
     let shoot = root.appendingPathComponent(name)
     for (file, contents) in [
@@ -69,13 +67,11 @@ private func exportNow(
 
     let result = try service.trashImages(
         shoot: shoot.lastPathComponent, paths: [shoot.appendingPathComponent("DSC00001.ARW").path])
-    // The ARW plus its XMP sidecar — and nothing else.
     #expect(result.files == 2)
 
     let fm = FileManager.default
     #expect(!fm.fileExists(atPath: shoot.appendingPathComponent("DSC00001.ARW").path))
     #expect(!fm.fileExists(atPath: shoot.appendingPathComponent("DSC00001.xmp").path))
-    // The JPEG shares the stem but is its own photo, so it stays.
     #expect(fm.fileExists(atPath: shoot.appendingPathComponent("DSC00001.jpg").path))
     #expect(
         try service.listImages(shoot: shoot.lastPathComponent).map(\.rel) == [
@@ -139,7 +135,6 @@ private func exportNow(
     let service = makeService(in: dir)
     _ = try service.setRoot(path: root.path, indexPath: nil)
 
-    // A malformed request must never reach a file outside the library.
     #expect(throws: LibraryService.ServiceError.self) {
         try service.startExport(
             shoot: shoot.lastPathComponent, paths: ["/etc/hosts"],
@@ -162,7 +157,6 @@ private func exportNow(
             service, shoot: shoot.lastPathComponent, paths: [jpg], destination: out.path)
     }
     #expect(try export().done == 1)
-    // Exporting the same file twice keeps both rather than clobbering.
     #expect(try export().done == 1)
 
     let delivered = try FileManager.default.contentsOfDirectory(atPath: out.path).sorted()
@@ -186,7 +180,6 @@ private func exportNow(
         destination: out.path)
     #expect(job.done == 2)
 
-    // Same basename in two subfolders: different photos, both must arrive.
     let delivered = try FileManager.default.contentsOfDirectory(atPath: out.path).sorted()
     #expect(delivered == ["DSC00002-1.jpg", "DSC00002.jpg"])
     #expect(
@@ -315,8 +308,6 @@ private func exportNow(
     try exportNow(
         service, shoot: shoot.lastPathComponent, paths: [source.path], destination: out.path)
 
-    // A hardlink would share the inode, so the source's link count would be
-    // 2 and an edit to the delivered file would corrupt the library original.
     let delivered = out.appendingPathComponent("DSC00002.jpg")
     let links =
         try FileManager.default.attributesOfItem(atPath: source.path)[.referenceCount]
@@ -332,7 +323,6 @@ private func exportNow(
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
 
-    // A good archive already sitting at the destination.
     let good = dir.appendingPathComponent("staging-good")
     try FileManager.default.createDirectory(at: good, withIntermediateDirectories: true)
     try Data("keep".utf8).write(to: good.appendingPathComponent("a.txt"))
@@ -340,8 +330,6 @@ private func exportNow(
     try FileActions.zipDirectory(at: good, to: dest)
     #expect(try FileActions.list(zip: dest).contains { $0.contains("a.txt") })
 
-    // Re-zipping a directory that does not exist makes zip fail; the old
-    // archive must survive rather than being deleted up front.
     #expect(throws: (any Error).self) {
         try FileActions.zipDirectory(
             at: dir.appendingPathComponent("does-not-exist"), to: dest)
@@ -358,7 +346,6 @@ private func exportNow(
     try fm.createDirectory(at: staging, withIntermediateDirectories: true)
     try Data("a".utf8).write(to: staging.appendingPathComponent("a.txt"))
 
-    // 0o500 stands in for a save panel's grant: nothing can be created beside the chosen file.
     let delivery = dir.appendingPathComponent("delivery")
     try fm.createDirectory(at: delivery, withIntermediateDirectories: true)
     try fm.setAttributes([.posixPermissions: 0o500], ofItemAtPath: delivery.path)
@@ -381,7 +368,6 @@ private func exportNow(
     let shoot = dir.appendingPathComponent("2026-06-07_jpeg")
     try FileManager.default.createDirectory(at: shoot, withIntermediateDirectories: true)
 
-    // A real renderable source whose extension differs from the delivery's.
     let gray = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5))
         .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 32))
     let png = shoot.appendingPathComponent("IMG_0001.png")
@@ -419,7 +405,6 @@ private func exportNow(
     let service = makeService(in: dir)
     _ = try service.setRoot(path: dir.path, indexPath: nil)
 
-    // The photo lands in the shoot folder; the text file never makes the plan.
     let job = try settled(
         service,
         service.startImport(
@@ -461,7 +446,6 @@ private func exportNow(
         FileManager.default.fileExists(
             atPath: shoot.appendingPathComponent("DSC00050-1.ARW").path))
 
-    // The source was only read.
     #expect(try FileManager.default.contentsOfDirectory(atPath: source.path).count == 2)
 
     #expect(throws: FileActions.ActionError.noFiles) {
@@ -480,8 +464,6 @@ private func exportNow(
     try FileManager.default.createDirectory(at: shoot, withIntermediateDirectories: true)
     try ProjectFile().write(inShoot: shoot.path)
 
-    // Two bodies both shooting DSC00001: uncompressed raws are one size per
-    // body, so only the mtimes tell these apart.
     let fm = FileManager.default
     let cardA = try tempDir()
     let cardB = try tempDir()
@@ -580,8 +562,6 @@ private func exportNow(
     try FileManager.default.createDirectory(at: shoot, withIntermediateDirectories: true)
     try ProjectFile().write(inShoot: shoot.path)
 
-    // Two backup folders of one card: neither is in the shoot yet, so only the
-    // plan's own memory can catch the repeat.
     let fm = FileManager.default
     let first = try tempDir()
     let second = try tempDir()
@@ -610,8 +590,6 @@ private func exportNow(
     let source = dir.appendingPathComponent("DSC00700.ARW")
     try Data("the new photo".utf8).write(to: source)
 
-    // A name that was free when the job planned it, taken by the time the
-    // writer got there.
     let taken = dir.appendingPathComponent("landing/DSC00700.ARW")
     try FileManager.default.createDirectory(
         at: taken.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -633,8 +611,6 @@ private func exportNow(
     let source = dir.appendingPathComponent("DSC00800.ARW")
     try Data("the photo".utf8).write(to: source)
 
-    // `fileExists` says no and `moveItem` says yes, so a resolver trusting the
-    // first hands back the name the second refuses, forever.
     let landing = dir.appendingPathComponent("landing")
     try fm.createDirectory(at: landing, withIntermediateDirectories: true)
     let target = landing.appendingPathComponent("DSC00800.ARW")
@@ -671,7 +647,6 @@ private func exportNow(
     _ = try settled(service, service.startImport(shoot: "2026-08-13_temps", paths: [photo.path]))
 
     #expect(!fm.fileExists(atPath: stale.path))
-    // A concurrent import's staging file is not this import's to delete.
     #expect(fm.fileExists(atPath: live.path))
 }
 

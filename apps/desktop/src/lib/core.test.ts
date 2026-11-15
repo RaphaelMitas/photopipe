@@ -4,7 +4,6 @@ import { makeImage } from "./test-image";
 
 describe("normalizeImage", () => {
   it("fills in the score the core leaves out for an unrated photo", () => {
-    // What listImages actually sends: no `score` key at all.
     const { score, ...unrated } = makeImage("DSC00001.ARW");
     expect("score" in unrated).toBe(false);
 
@@ -17,8 +16,6 @@ describe("normalizeImage", () => {
   });
 
   it("fills in the tone fields the core omits at their defaults", () => {
-    // What listImages actually sends for an untouched photo: the core's
-    // encoder drops every field sitting at its default.
     const image = {
       ...makeImage("DSC00002.ARW"),
       edit: { exposure: 0, highlights: 0, shadows: 0 },

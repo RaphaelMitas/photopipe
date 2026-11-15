@@ -96,8 +96,6 @@ describe("export decoder row", () => {
         "true",
       ),
     );
-    // matching decoders mean the export looks like the previews; the case for
-    // RAW 9 belongs in the help text, not an amber warning with no way out
     expect(screen.queryByTestId("decoder-banner")).not.toBeInTheDocument();
     expect(screen.getByTestId("export-decoder-help").textContent).toContain(
       "RAW 9 resolves more detail",
@@ -174,8 +172,6 @@ describe("export decoder row", () => {
   });
 
   it("disables RAW 9 and never warns when nothing supports it", async () => {
-    // culling sits at 9 here, but the previews fell back to 8 as well, so the
-    // export matches what was seen and there is nothing to flag
     mockSupport(0, 3);
     const { onExport } = renderDrawer();
     await waitFor(() =>
@@ -237,7 +233,6 @@ describe("export decoder row", () => {
         "detail",
       ),
     );
-    // one 900-path request is what outran the request timeout
     expect(sizes.every((size) => size <= 400)).toBe(true);
     expect(sizes.reduce((sum, size) => sum + size, 0)).toBe(900);
   });
@@ -307,7 +302,6 @@ describe("export size", () => {
     fireEvent.click(screen.getByTestId("format-jpeg"));
     fireEvent.click(screen.getByTestId("size-custom"));
     const field = screen.getByTestId("custom-long-edge");
-    // backspacing 4096 away passes 409, which must not stick
     for (const typed of ["409", "40", ""]) {
       fireEvent.change(field, { target: { value: typed } });
     }

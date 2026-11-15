@@ -64,8 +64,6 @@ describe("useLibrarySync", () => {
         queryKey: ["images", "shoot1"],
       }),
     );
-    // A blanket ["images"] key would refetch every shoot the app has cached —
-    // megabytes per tick on a big library that is still indexing.
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ["images"] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["shoots"] });
     expect(progress?.progress).toMatchObject({
@@ -156,7 +154,6 @@ describe("useSetRatings", () => {
       { ...image("E"), rating: 1 },
     ]);
     const result = ratings(new Map(paths.map((path) => [path, 5])));
-    // Four workers hold A to D; E is still queued when it is rated by hand.
     await waitFor(() => expect(release.length).toBe(4));
     client.setQueryData<ImageFile[]>(["images", "shoot1"], (old) =>
       old?.map((img) => (img.path === paths[4] ? { ...img, rating: 2 } : img)),
@@ -244,7 +241,6 @@ describe("usePasteEdits", () => {
     const result = mutation(
       new Map(names.map((name) => [`/r/shoot1/${name}.ARW`, look])),
     );
-    // Four workers, six photos: F is still queued.
     await waitFor(() => expect(written.length).toBe(4));
 
     client.setQueryData<ImageFile[]>(["images", "shoot1"], (old) =>

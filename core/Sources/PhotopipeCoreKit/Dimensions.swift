@@ -28,7 +28,6 @@ public enum Dimensions {
         return (width, height)
     }
 
-    // macOS 26 leaves a Panasonic S5 RW2's size out of the image's properties, not the file's
     private static func fileContentsSize(at url: URL) -> (width: Int, height: Int)? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
             let file = CGImageSourceCopyProperties(source, nil) as? [CFString: Any],
@@ -48,7 +47,6 @@ public enum Dimensions {
                 (exif?[kCGImagePropertyExifDateTimeOriginal] as? String)
                 ?? (exif?[kCGImagePropertyExifDateTimeDigitized] as? String)
                 ?? (tiff?[kCGImagePropertyTIFFDateTime] as? String)
-            // EXIF stamps are "yyyy:MM:dd HH:mm:ss"
             if let date = stamp?.prefix(10).replacingOccurrences(of: ":", with: "-"), isDay(date) {
                 return date
             }
@@ -64,14 +62,11 @@ public enum Dimensions {
         return String(format: "%04d-%02d-%02d", y, m, d)
     }
 
-    /// Seconds since the epoch, read as if the camera clock were UTC: only the gaps between
-    /// photos matter, and a camera does not record which zone it was set to.
     static func captureTime(_ props: [CFString: Any]) -> Double? {
         guard let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any],
             let stamp = exif[kCGImagePropertyExifDateTimeOriginal] as? String,
             let date = exifDate.date(from: stamp)
         else { return nil }
-        // digits only: "1e999" would parse to infinity and fail encoding the whole shoot
         let fraction =
             (exif[kCGImagePropertyExifSubsecTimeOriginal] as? String)
             .map { $0.trimmingCharacters(in: .whitespaces) }

@@ -70,7 +70,6 @@ describe("App", () => {
     expect(screen.getByTestId("root-input")).toBeInTheDocument();
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("list_roots"));
     expect(invoke).not.toHaveBeenCalledWith("open_root", expect.anything());
-    // The picker's list and the launch decision share one query.
     expect(
       invoke.mock.calls.filter(([cmd]) => cmd === "list_roots"),
     ).toHaveLength(1);
@@ -178,7 +177,6 @@ describe("App", () => {
     chooseMenuItem("menu:settings");
     expect(await screen.findByTestId("auto-score")).toBeInTheDocument();
 
-    // And again after closing it, not just the first time.
     act(() => {
       fireEvent.keyDown(document.body, { key: "Escape" });
     });

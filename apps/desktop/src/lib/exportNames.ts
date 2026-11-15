@@ -22,14 +22,12 @@ export const DEFAULT_TEMPLATE = NAME_PRESETS[0].template;
 export const TEMPLATE_LIMIT = 200;
 
 const TOKEN = /\{([^{}]*)\}/g;
-// leaves room for a collision suffix and the extension under the 255-byte limit
 const MAX_STEM_BYTES = 200;
 const utf8 = new TextEncoder();
 
 const isNameToken = (value: string): value is NameToken =>
   NAME_TOKENS.some((token) => token === value);
 
-/// Only what the user typed blocks an export; values a photo brings are cleaned instead.
 export function templateProblem(template: string): string | null {
   if (template.trim() === "") return "Type a name or pick a preset.";
   const unknown = [...template.matchAll(TOKEN)].find(
@@ -72,7 +70,6 @@ function tokenValue(
   count: number,
   shoot: string,
 ): string {
-  // taken is a wall clock expressed as UTC, so the ISO form reads it as is
   const taken = new Date(image.taken * 1000).toISOString();
   switch (token) {
     case "date":
@@ -103,7 +100,6 @@ function clean(name: string): string {
   return out.replace(/^[\s.]+/, "").trimEnd();
 }
 
-/// Stem only; the core adds the extension and any -1/-2 suffix.
 export function exportName(
   template: string,
   image: ImageFile,
@@ -121,7 +117,6 @@ export function exportName(
   return name === "" ? stem(image) : name;
 }
 
-/// Where the core will put `name`, before any -1/-2 suffix.
 export function exportPath(
   image: ImageFile,
   name: string,

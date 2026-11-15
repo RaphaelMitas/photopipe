@@ -4,11 +4,8 @@ import { type SortKey, sortImages } from "./sort";
 
 export const stacksPref = flagPref("photopipe.stacks", "on", "off", false);
 
-/// Near-identical photos the core grouped, frames in capture order. A photo
-/// that stands alone is a stack of one.
 export type Stack = { id: string; frames: ImageFile[] };
 
-// ties by path, like the core, so a sort cannot reorder burst frames that share a timestamp
 function byCapture(a: ImageFile, b: ImageFile): number {
   if (a.captured === b.captured)
     return a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
@@ -66,8 +63,6 @@ export const inStack = (stack: Stack, path: string | null) =>
 export const stackOf = (stacks: Stack[], path: string) =>
   stacks.find((stack) => inStack(stack, path));
 
-/// Opening a photo that is in a stack but is not what the stack shows means
-/// you came for that photo, so the loupe starts inside the stack, anchored on it.
 export const anchorFor = (stack: Stack | undefined, path: string | null) =>
   path !== null &&
   stack !== undefined &&

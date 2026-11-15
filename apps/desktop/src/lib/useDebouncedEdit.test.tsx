@@ -11,9 +11,6 @@ describe("useDebouncedEdit", () => {
   it("commits once at rest, not on every scrub tick", () => {
     vi.useFakeTimers();
     const commit = vi.fn();
-    // Reproduce the real App wiring: `commit` is a fresh closure every render
-    // (it wraps a react-query mutation object that changes identity), which is
-    // exactly what defeated a naive unmount effect.
     const { result, rerender } = renderHook(() =>
       useDebouncedEdit((path, edit) => commit(path, edit), 400),
     );
@@ -52,7 +49,6 @@ describe("useDebouncedEdit", () => {
 
     act(() => result.current.scrub("/r/a.arw", editWith(1)));
     act(() => result.current.scrub("/r/b.arw", editWith(2)));
-    // A's pending edit must not be dropped by B's scrub.
     expect(commit).toHaveBeenCalledWith("/r/a.arw", editWith(1));
 
     act(() => vi.advanceTimersByTime(400));

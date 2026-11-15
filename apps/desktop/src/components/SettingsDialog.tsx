@@ -73,8 +73,6 @@ const DECODERS: {
 
 function DecoderCards({ raw9Missing }: { raw9Missing: boolean }) {
   const stored = useRawDecoderVersion();
-  // the preference survives so it lights up on a Mac that has RAW 9; only
-  // what the cards claim is happening changes
   const active = raw9Missing ? 8 : stored;
   return (
     <div className="flex gap-2">
@@ -89,8 +87,6 @@ function DecoderCards({ raw9Missing }: { raw9Missing: boolean }) {
             disabled={unavailable}
             data-testid={`decoder-${version}`}
             onClick={() => {
-              // shown as selected while stored says 9: writing here would
-              // destroy a preference the disabled card cannot restore
               if (version !== active) setRawDecoderVersion(version);
             }}
             className={cn(

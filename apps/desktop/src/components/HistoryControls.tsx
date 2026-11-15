@@ -36,7 +36,6 @@ type Row = Pick<HistoryEntry, "icon" | "label" | "detail"> & {
   time?: string;
 };
 
-// position counts the entries applied once you are on this row; the origin is 0
 function HistoryRow({
   row: { icon: Icon, label, detail, sub, time },
   position,
@@ -53,7 +52,6 @@ function HistoryRow({
   const current = steps === 0;
   const button = useRef<HTMLButtonElement>(null);
   const opening = useRef(true);
-  // in the middle when the popover opens, then only kept in view as ⌘Z moves it
   useEffect(() => {
     if (current) {
       button.current?.scrollIntoView({

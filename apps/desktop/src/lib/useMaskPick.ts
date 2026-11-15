@@ -27,9 +27,7 @@ type Cursor = {
   altKey: boolean;
 };
 
-// a press that travels further is a pan
 const CLICK_SLOP = 4;
-// sent inline with every hover answer, so a quarter the pixels of the kept overlay
 const PREVIEW_MAX_PIXEL = 1024;
 
 export function useMaskPick(
@@ -40,7 +38,6 @@ export function useMaskPick(
 ) {
   const frame = unedited(edit);
   const target = masks.target;
-  // a preview or a click lands only on the photo, frame and mask it was asked about
   const scene = `${image?.path}|${editKey(frame)}|${masks.creating}|${target?.id}|${target && shapeKey(target)}`;
   const clickLimit = useMaskClickLimit();
   const [answer, setAnswer] = useState<{ scene: string; png: string } | null>(
@@ -52,7 +49,6 @@ export function useMaskPick(
     asking: false,
   });
   const pressed = useRef<{ x: number; y: number } | null>(null);
-  // an answer lands a render or a model load later, when the loupe may be gone
   const live = useRef<{ masks: MaskSession; scene: string } | null>(null);
   useLayoutEffect(() => {
     live.current = { masks, scene };
@@ -74,7 +70,6 @@ export function useMaskPick(
       points: refined?.points ?? [],
       inverted: refined?.inverted ?? false,
       ...spot,
-      // on an inverted mask, adding to what is shown cuts it from what the model found
       include: cursor.altKey === (refined?.inverted ?? false),
       maxPixel: PREVIEW_MAX_PIXEL,
     };
@@ -82,7 +77,6 @@ export function useMaskPick(
     return { ask, refined, scene, full };
   };
 
-  // one question at a time, and only the newest of those that waited
   const show = async (wanted: Wanted | null) => {
     const state = hover.current;
     state.wanted = wanted;
@@ -124,7 +118,6 @@ export function useMaskPick(
       if (now?.scene !== scene) return;
       if (asked.refined) now.masks.refine(asked.refined, point);
       else now.masks.click(point);
-      // an undo restores the old scene, and its answer would come back with it
       show(null);
     } catch (error) {
       toast.error("Could not mask that", { description: String(error) });

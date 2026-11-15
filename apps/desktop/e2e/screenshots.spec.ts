@@ -1,13 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
 
-// README and landing page artwork, captured from the real UI against the e2e
-// mock so the pictures can never drift from the app. Tagged @screenshots:
-// `pnpm e2e` greps these out, `pnpm screenshots` runs only these.
-//
-// The photos are drawn landscapes (see placeholderFor in lib/placeholder.ts).
-// Nothing here is a real shoot, and nothing depends on the machine it runs
-// on, so the output is identical for anyone who regenerates it.
-
 const SHOTS = "../../docs/screenshots";
 
 test.use({
@@ -25,7 +17,6 @@ async function openLibrary(page: Page) {
 
 test("@screenshots library", async ({ page }) => {
   await openLibrary(page);
-  // Covers load lazily; wait for one to have real dimensions.
   await expect(page.getByTestId("shoot-cover").first()).toBeVisible();
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${SHOTS}/library.png` });

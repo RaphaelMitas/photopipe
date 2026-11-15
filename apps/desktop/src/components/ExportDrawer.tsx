@@ -68,7 +68,6 @@ export type ExportOptions = {
   zip: boolean;
   flatten: boolean;
   decoderVersion: RawDecoderVersion;
-  /// One per exported photo, in the order sent; null keeps the files' names.
   names: string[] | null;
 };
 
@@ -80,7 +79,6 @@ export function exportLabel(count: number, format: ExportFormat): string {
 
 type Props = {
   shoot: string;
-  /// The selection in grid order, which is the order the names are numbered in.
   images: ImageFile[];
   sort: SortKey;
   selectedCount: number;
@@ -98,8 +96,6 @@ type Props = {
   onClose: () => void;
 };
 
-/// Held back until a few files are in: the first render of a shoot pays for a
-/// cold cache and would promise a number nothing else lives up to.
 function timeLeft(job: ExportJob, settled: number): string {
   const elapsed = Date.now() - job.startedAt;
   if (settled < 3 || elapsed < 2000) return "";
@@ -113,8 +109,6 @@ function jobDetail(job: ExportJob, status: JobStatus, settled: number): string {
   switch (status) {
     case "running":
       if (job.archiving) return `${files} · building the archive`;
-      // Settled, not delivered: a count that skipped the failures would sit
-      // still while the bar and the estimate kept moving.
       return `${settled} of ${job.total}${
         job.failed > 0 ? ` · ${job.failed} failed` : ""
       }${timeLeft(job, settled)}`;
@@ -169,7 +163,6 @@ function Row({
   );
 }
 
-/// Commits on blur, so the 409 on the way to retyping 4096 is never saved.
 function CustomLongEdge({
   value,
   onChange,
@@ -212,8 +205,6 @@ function CustomLongEdge({
   );
 }
 
-/// The decoder is seeded from culling on every open, so it never persists.
-/// The custom edge lives apart from the pick, so a typed 2048 stays Custom.
 type StoredOptions = Omit<
   ExportOptions,
   "decoderVersion" | "longEdge" | "names"
@@ -267,9 +258,7 @@ export function decodeOptions(stored: string | null): StoredOptions {
             : [],
       };
     }
-  } catch {
-    // Corrupt preferences never block an export.
-  }
+  } catch {}
   return {
     format: "jpeg",
     quality: 90,
@@ -325,10 +314,6 @@ export function ExportDrawer({
     useState<RawDecoderVersion>(rawDecoderVersion);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const culling = useRawDecoderVersion();
-  // Dismissal answers "ship these photos with this decoder", so it is stored
-  // as the answer's subject rather than reset by an effect. Contents, not
-  // array identity: the images cache hands back a fresh array on any rating
-  // or enrich tick, which would revoke the answer unprompted.
   const selectionKey = useMemo(
     () => [...rawPaths].sort().join("\n"),
     [rawPaths],
@@ -336,8 +321,6 @@ export function ExportDrawer({
   const supportQuery = useDecoderSupport(rawPaths, options.format === "jpeg");
   const support = supportQuery.data;
   const noRaw9 = support?.raw9 === 0;
-  // a held-over verdict describes the previous selection, so exporting on it
-  // could ship a decoder this one never agreed to
   const probing = supportQuery.isPlaceholderData;
   const effectiveDecoder: RawDecoderVersion = noRaw9 ? 8 : decoderVersion;
   const partial =
@@ -358,16 +341,11 @@ export function ExportDrawer({
       : "Best detail and strongest denoising. Slower to decode.";
   };
 
-  /// Only a genuine disagreement earns a warning: matching decoders mean the
-  /// export looks like the previews, and warning there left no quiet state.
-  /// The pitch for the better decoder belongs in the row's help text.
   const warning = ():
     | { body: string; fixTo: RawDecoderVersion; keep: string }
     | undefined => {
     if (!showDecoder || culling === effectiveDecoder) return undefined;
     if (dismissed === dismissKey) return undefined;
-    // with no RAW 9 anywhere the previews fell back to 8 too, so the decoders
-    // only look different: nothing to warn about
     if ((support?.raw9 ?? 0) === 0) return undefined;
     const reach = partial ? ` on ${partial.raw9} of them` : "";
     return effectiveDecoder === 8
@@ -674,8 +652,6 @@ export function ExportDrawer({
                         </Button>
                       </ShortcutTooltip>
                     )}
-                    {/* A cancelled zip deletes its staging, so there is no
-                        archive at the path to reveal. */}
                     {onReveal && !job.running && job.done > 0 && (
                       <ShortcutTooltip label="Reveal in Finder">
                         <Button

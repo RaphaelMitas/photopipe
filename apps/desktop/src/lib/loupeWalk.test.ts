@@ -69,8 +69,6 @@ describe("heldOrder", () => {
     ]);
   });
 
-  // A newcomer follows the photo it arrived after into the held order, not
-  // into the place the browser's own sort just gave it.
   it("slots a newcomer by its neighbour even as the browser re-sorts", () => {
     const b = makeImage("b.arw", { rating: 5 });
     const live = [

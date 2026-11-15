@@ -2,7 +2,6 @@ import CryptoKit
 import Foundation
 import Synchronization
 
-/// An entry's mtime is when it was last served, so pruning by age or size drops what nobody looks at first.
 final class CacheFolder: Sendable {
     let dir: URL
     let maxBytes: Int
@@ -14,9 +13,7 @@ final class CacheFolder: Sendable {
     }
 
     private static let maxAge: TimeInterval = 7 * 24 * 3600
-    // the webview reuses a path it let go of for React Query's 5 min gcTime without asking again
     private static let recentlyServed: TimeInterval = 10 * 60
-    // a hit's touch and the prune's stat-then-delete must not interleave
     private static let lock = NSLock()
     private let usage: Mutex<Usage>
     let pruneQueue = DispatchQueue(label: "CacheFolder.prune", qos: .utility)
@@ -48,7 +45,6 @@ final class CacheFolder: Sendable {
         if isCached(url) { return url }
         let fm = FileManager.default
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        // a reader never sees half a file
         let temp = dir.appendingPathComponent("tmp-\(UUID().uuidString).\(url.pathExtension)")
         try write(temp)
         let bytes = (try? temp.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
@@ -65,7 +61,6 @@ final class CacheFolder: Sendable {
         let start = usage.withLock {
             guard !$0.pruning else { return false }
             $0.pruning = true
-            // writes landing during the prune spend from what it leaves
             $0.bytesUntilPrune = 0
             return true
         }
@@ -73,7 +68,6 @@ final class CacheFolder: Sendable {
         pruneQueue.async { [self] in
             let remaining = prune()
             let retry = usage.withLock {
-                // what was just served can hold a prune over budget, so wait for more writes
                 $0.bytesUntilPrune += max(maxBytes - remaining, headroom)
                 $0.pruning = false
                 let overTarget = remaining > maxBytes - headroom || $0.bytesUntilPrune < 0
@@ -82,7 +76,6 @@ final class CacheFolder: Sendable {
                 return true
             }
             guard retry else { return }
-            // by then what the ten minute window held is past it, even if nothing more is written
             pruneQueue.asyncAfter(deadline: .now() + Self.recentlyServed) {
                 [self] in
                 usage.withLock { $0.retryScheduled = false }
@@ -91,7 +84,6 @@ final class CacheFolder: Sendable {
         }
     }
 
-    /// Returns the bytes left behind.
     @discardableResult
     func prune() -> Int {
         let cutoff = Date().addingTimeInterval(-Self.maxAge)
@@ -123,7 +115,6 @@ final class CacheFolder: Sendable {
         where total > target && file.modified.timeIntervalSinceNow < -Self.recentlyServed {
             file.url.removeAllCachedResourceValues()
             Self.lock.withLock {
-                // served since the listing, so no longer the least recent
                 guard Self.modified(file.url) == file.modified,
                     (try? fm.removeItem(at: file.url)) != nil
                 else { return }

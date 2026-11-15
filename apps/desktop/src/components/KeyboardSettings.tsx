@@ -49,7 +49,6 @@ export function KeyboardSettings() {
   const [refused, setRefused] = useState<string | null>(null);
   const [conflict, setConflict] = useState<Conflict | null>(null);
 
-  // Captured ahead of the dialog, so Escape cancels the recording instead of closing Settings.
   useEffect(() => {
     if (!recording) return;
     const capture = (event: KeyboardEvent) => {

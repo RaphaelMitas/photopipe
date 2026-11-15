@@ -61,8 +61,6 @@ export function isIdentityCurve(points: CurvePoint[]): boolean {
   return sorted.every((point) => Math.abs(point.y - point.x) < 1e-9);
 }
 
-// Fritsch–Carlson tangents: shape-preserving, no overshoot. The Swift core
-// ships the same spline; fixtures/curve-samples.json pins both.
 function tangents(pts: CurvePoint[]): number[] {
   const n = pts.length;
   const delta: number[] = [];

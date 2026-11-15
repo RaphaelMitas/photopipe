@@ -27,7 +27,6 @@ export type Frame = {
   panel?: Image;
   scrim?: string;
   capture?: Capture;
-  // a crop of the capture, scaled up and outlined on top of the window
   callout?: {
     crop: { x: number; y: number; w: number; h: number };
     scale: number;
@@ -192,7 +191,6 @@ export function frames(device: Device): Frame[] {
         : "Full-res JPEGs or the originals byte for byte.",
       fine: "Works on the folders you already have. No catalogue, no account.",
       bg: { src: render("DSC04421_bright"), pos: "50% 50%" },
-      // keeps the person in the middle of the panel
       panel: {
         src: render("DSC04421_bright"),
         pos: mac ? "34.8% 50%" : "36.1% 50%",
@@ -238,7 +236,6 @@ export const CREATIVE_ASSETS: Asset[] = [
   },
 ];
 
-/// Everything arrives as a URL, so the page needs no file access.
 export function framePage(
   { width, height }: Size,
   frame: Frame,

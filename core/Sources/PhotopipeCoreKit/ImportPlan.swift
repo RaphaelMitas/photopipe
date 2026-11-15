@@ -23,8 +23,6 @@ final class ImportPlan {
     private var claimed: [FileIdentity: Claim] = [:]
     private var digests: [URL: Data] = [:]
 
-    /// The first file is kept whole rather than digested, so a selection
-    /// that collides nowhere never opens a file at all.
     private struct Claim {
         var first: URL?
         var digests: Set<Data> = []
@@ -68,8 +66,6 @@ final class ImportPlan {
         return claim.digests.contains(mine)
     }
 
-    /// FAT32 rounds mtime to two seconds and an uncompressed raw is one size
-    /// per body, so two frames of a burst agree on both; their EXIF does not.
     private func sameHead(_ left: URL, _ right: URL) -> Bool {
         guard let left = digest(left) else { return false }
         return left == digest(right)
@@ -103,8 +99,6 @@ final class ImportPlan {
         return try? handle.read(upToCount: 64 * 1024)
     }
 
-    /// Nothing else clears a staging file, since the prefix hides it from Finder
-    /// and the scanner alike. The age bound spares a running import's temps.
     fileprivate static func sweepStaleTemps(in folder: URL) {
         let fm = FileManager.default
         let cutoff = Date().addingTimeInterval(-3600)

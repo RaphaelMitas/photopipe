@@ -1,7 +1,6 @@
 import Foundation
 import Synchronization
 
-/// Newest first, so a photo the user already moved past cannot hold up the one they stopped on.
 public final class Lane: Sendable {
     private struct Job {
         let run: @Sendable () -> Void
@@ -25,7 +24,6 @@ public final class Lane: Sendable {
         self.qos = qos
     }
 
-    /// Calls exactly one of the two.
     public func submit(
         _ run: @escaping @Sendable () -> Void,
         superseded: @escaping @Sendable () -> Void

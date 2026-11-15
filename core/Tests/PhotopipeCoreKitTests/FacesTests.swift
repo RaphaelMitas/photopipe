@@ -38,7 +38,6 @@ private func storePhoto(_ name: String) -> URL {
     let found = try #require(try service.faces(ids: ["Shoot/DSC03455.jpg"]).first?.faces)
     #expect(found.count == 1)
     let face = try #require(found.first)
-    // the dancer's face sits in the upper middle of the frame
     #expect((0.3...0.7).contains((face.box.left + face.box.right) / 2))
     #expect((0.1...0.4).contains((face.box.top + face.box.bottom) / 2))
     #expect((0...1).contains(face.quality ?? -1))

@@ -1,6 +1,5 @@
 import type { ImageFile } from "./core";
 
-/// The browser re-sorts under a rating, so the loupe walks the order it arrived with.
 export function heldOrder(held: string[], live: ImageFile[]): ImageFile[] {
   const byPath = new Map(live.map((image) => [image.path, image]));
   const known = new Set(held);

@@ -7,14 +7,10 @@ public final class CoreHost: Sendable {
     private let dispatcher: Dispatcher
     private let work: OperationQueue
     private let lanes: [String: Lane] = {
-        // a photo's rows ask together: off the queue ratings share, and wide enough to drop none
         let masks = Lane(workers: 1, window: 64)
-        // below the user's renders
         let agent = Lane(workers: 1, window: 32, qos: .utility)
         return [
-            // measured: parallel cold renders share the machine and the newest lands later
             "render": Lane(workers: 1, window: 4),
-            // about a large grid's mounted cells, so an on-screen thumbnail rarely waits on a retry
             "thumbnail": Lane(workers: 8, window: 256),
             "look": agent,
             "faces": agent,
@@ -41,7 +37,6 @@ public final class CoreHost: Sendable {
             reply(ok, text)
         }
         if method == "setRoot" || method == "rescan" {
-            // a walk of a hung volume never returns, and must not hold a slot everything else needs
             DispatchQueue.global(qos: .userInitiated).async(execute: answer)
         } else if let lane = lanes[method] {
             lane.submit(answer) {
@@ -52,10 +47,8 @@ public final class CoreHost: Sendable {
         }
     }
 
-    /// exiftool is stopped by its atexit hook, not here.
     public func shutdown() {
         work.waitUntilAllOperationsAreFinished()
-        // an agent request can run for minutes, and nobody is left to read its answer
         for lane in lanes.values where lane !== lanes["look"] { lane.waitUntilIdle() }
         library.stopExports()
     }

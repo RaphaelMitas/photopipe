@@ -17,10 +17,8 @@ pub struct Tool {
     pub run: fn(&Value, &Bridge) -> Result<Content, String>,
 }
 
-/// Raw JPEG bytes; a third larger as base64, still under Claude Desktop's 1 MB reply cap.
 const LOOK_BUDGET: usize = 600_000;
 
-/// The core's agent lane runs newest first, so a request queued there would time out.
 static AGENT_LANE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn on_agent_lane(method: &str, params: Value) -> Result<Value, String> {
@@ -202,7 +200,6 @@ pub fn call(params: &Value, store: &AccessStore, bridge: &Bridge) -> Result<Valu
     let outcome = allowed()
         .and_then(|()| ready())
         .and_then(|()| (tool.run)(arguments, bridge))
-        // a read is checked again in case access went down mid-call; a landed write is reported as is
         .and_then(|content| {
             if tool.act == Act::Off {
                 allowed().map(|()| content)
@@ -228,7 +225,6 @@ pub fn core(method: &str, params: Value) -> Result<Value, String> {
     swift_core::request(method, Some(params))
 }
 
-/// The relay may have just started the app, which opens its folder a moment later.
 fn ready() -> Result<(), String> {
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
@@ -341,7 +337,6 @@ fn images(shoot: &str) -> Result<Vec<Value>, String> {
         .as_array()
         .cloned()
         .unwrap_or_default();
-    // stable on the core's name order, like the app's Date sort
     images.sort_by(|a, b| {
         let taken = |image: &Value| image["taken"].as_f64().unwrap_or(0.0);
         taken(a).total_cmp(&taken(b))
@@ -359,7 +354,6 @@ fn id_of(shoot: &str, image: &Value) -> String {
     format!("{shoot}/{}", image["rel"].as_str().unwrap_or_default())
 }
 
-/// Seconds read off the camera clock as if it were UTC, so no zone is claimed.
 fn clock(seconds: f64) -> Option<String> {
     let at = time::OffsetDateTime::from_unix_timestamp(seconds.floor() as i64).ok()?;
     Some(format!(
@@ -458,7 +452,6 @@ fn list_photos(args: &Value, _: &Bridge) -> Result<Content, String> {
         .skip(offset)
         .take(limit)
         .map(|image| {
-            // a stack of one is not worth a field
             let stack = image["stack"]
                 .as_str()
                 .filter(|stack| sizes[stack] > 1)
@@ -519,7 +512,6 @@ struct Photos {
     photos: Vec<String>,
 }
 
-/// The core answers per photo in the order asked.
 fn per_photo(method: &str, args: &Value, each: fn(&Value) -> Value) -> Result<Content, String> {
     let args: Photos = parse(args)?;
     if args.photos.is_empty() {
@@ -612,7 +604,6 @@ fn look(args: &Value, _: &Bridge) -> Result<Content, String> {
         } else {
             vec![ids[index].clone()]
         };
-        // the first image always goes out, or a single oversized sheet would show nothing at all
         if !content.is_empty() && spent + jpeg.len() > LOOK_BUDGET * 4 / 3 {
             left_out.extend(photos);
             continue;

@@ -4,8 +4,6 @@ import Testing
 
 @testable import PhotopipeCoreKit
 
-/// exiftool availability: soft skip locally, loud failure on CI (which
-/// installs it before running tests).
 func requireExifTool() -> Bool {
     guard ExifTool.shared.available else {
         #expect(
@@ -23,8 +21,6 @@ private func tempDir() throws -> URL {
     return dir
 }
 
-/// Independent verification path: what would Lightroom see? Ask exiftool
-/// directly rather than trusting our own reader.
 func exiftoolTag(_ tag: String, of url: URL) throws -> String {
     try ExifTool.shared.execute([tag, "-s3", url.path])
         .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -46,7 +42,6 @@ func image(_ url: URL) throws -> ImageFile {
         mtime: ((attrs[.modificationDate] as? Date) ?? .distantPast).timeIntervalSince1970)
 }
 
-/// The iPad's write path, which the Mac takes only to start a sidecar.
 func writeTextRating(_ rating: Int, at url: URL) throws {
     try XMP.writeText(XMP.ratingTags(rating), clearing: rating == 0, file: try image(url))
 }
@@ -87,7 +82,6 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
     #expect(XMP.read(file: try image(arw)).rating == 4)
     #expect(try exiftoolTag("-XMP:Rating", of: sidecar) == "4")
 
-    // Update in place (no duplicate sidecar, no backup file left behind).
     try XMP.writeRating(2, file: try image(arw))
     #expect(XMP.read(file: try image(arw)).rating == 2)
     let contents = try FileManager.default.contentsOfDirectory(atPath: dir.path)
@@ -153,7 +147,6 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
     #expect(read.curveRed.count == 2)
     #expect(read.curveGreen.isEmpty)
 
-    // The tags Lightroom itself uses, verified independently.
     let sidecar = XMP.sidecarURL(forImagePath: arw.path)
     #expect(try exiftoolTag("-XMP-crs:Exposure2012", of: sidecar) == "1.5")
     #expect(try exiftoolTag("-XMP-crs:Highlights2012", of: sidecar) == "-42")
@@ -163,12 +156,10 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
     #expect(try exiftoolTag("-XMP-crs:LuminanceSmoothing", of: sidecar) == "25")
     #expect(try exiftoolTag("-XMP-crs:ToneCurvePV2012", of: sidecar).contains("128, 153"))
 
-    // Edit and rating live in the same sidecar without clobbering each other.
     try XMP.writeRating(3, file: try image(arw))
     #expect(XMP.read(file: try image(arw)).edit.exposure == 1.5)
     #expect(XMP.read(file: try image(arw)).rating == 3)
 
-    // Writing identity clears every tag again.
     try XMP.writeEdit(.identity, file: try image(arw))
     #expect(XMP.read(file: try image(arw)).edit == .identity)
     #expect(try exiftoolTag("-XMP-crs:ToneCurvePV2012", of: sidecar).isEmpty)
@@ -196,7 +187,6 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
     #expect(try exiftoolTag("-XMP-crs:CropAngle", of: sidecar) == "-1.5")
     #expect(try exiftoolTag("-XMP-crs:HasCrop", of: sidecar) == "True")
 
-    // Clearing the crop removes every crop tag again.
     try XMP.writeEdit(.identity, file: try image(arw))
     #expect(XMP.read(file: try image(arw)).edit == .identity)
     #expect(try exiftoolTag("-XMP-crs:HasCrop", of: sidecar).isEmpty)
@@ -204,7 +194,6 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
 }
 
 @Test func hasCropFalseSuppressesStaleCropValues() {
-    // Lightroom's crop-reset keeps the Crop* tags and flips HasCrop to False.
     let sidecar = """
         <rdf:Description
         crs:HasCrop="False" crs:CropLeft="0.1" crs:CropTop="0.1"
@@ -278,7 +267,6 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
     #expect(edit.curveRed.count == 2)
 }
 
-/// exiftool rewrites move crs:Look, which nests its own tone curve, above the photo's curves.
 @Test func lightroomLookCurveIsNotThePhotosCurve() throws {
     guard requireExifTool() else { return }
     let dir = try tempDir()
@@ -392,7 +380,6 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
         """
     #expect(parsed(sidecar).edit.curveRGB.isEmpty, "an infinite point is dropped")
 
-    // finite but far past Int.max, as IPC can send it
     let huge = Edit(curveRGB: [CurvePoint(x: 0, y: 0.2), CurvePoint(x: 1e30, y: 1)])
     try XMP.writeEdit(huge, file: try image(arw))
     #expect(XMP.read(file: try image(arw)).edit.curveRGB.last == CurvePoint(x: 1, y: 1))
@@ -427,26 +414,20 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
     #expect(edit.crop == nil)
     #expect(edit.cropAngle == 0)
 
-    // Degenerate rects (right <= left) never become a crop.
     let inverted = parsed(
         #"<rdf:Description crs:CropLeft="0.9" crs:CropTop="0" crs:CropRight="0.1" crs:CropBottom="1"/>"#
     ).edit
     #expect(inverted.crop == nil)
 
-    // Finite-but-huge exponent values would trap the integer tag writes.
     let huge = parsed(#"<rdf:Description crs:Highlights2012="1e308"/>"#).edit
     #expect(huge.highlights == 0)
 
-    // A straightened crop legitimately overhangs the frame box; the parse
-    // tolerance matches the renderer's.
     let overhang = parsed(
         #"<rdf:Description crs:CropLeft="-0.05" crs:CropTop="0" crs:CropRight="1.02" crs:CropBottom="1" crs:CropAngle="12"/>"#
     ).edit
     #expect(overhang.crop == CropRect(left: -0.05, top: 0, right: 1.02, bottom: 1))
 }
 
-/// The JPEG segment walk must ignore a decoy packet in a comment segment and
-/// read the orientation from the real APP1 XMP.
 @Test func decoyXMPPacketInAJPEGCommentIsIgnored() throws {
     guard requireExifTool() else { return }
     let dir = try tempDir()
@@ -456,8 +437,6 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
     try writeGrayJPEG(to: jpg)
     try ExifTool.shared.write(["-overwrite_original", "-XMP-tiff:Orientation#=6", jpg.path])
 
-    // Splice a decoy packet into a COM segment right after SOI — earlier in
-    // the byte stream than the genuine APP1.
     var bytes = try Data(contentsOf: jpg)
     let decoy = Data(#"<x:xmpmeta><rdf:Description tiff:Orientation="3"/></x:xmpmeta>"#.utf8)
     var segment = Data([0xFF, 0xFE])
@@ -471,8 +450,6 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
     #expect(XMP.embeddedXMPOrientation(at: jpg) == 6)
 }
 
-/// A base orientation guessed from a failed read must never be written into
-/// an embedded file's real EXIF; the turn fails loudly instead.
 @Test func turningAnUnreadableEmbeddedFileThrows() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
@@ -491,8 +468,6 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
     let arw = dir.appendingPathComponent("DSC00009.ARW")
     try Data("fake".utf8).write(to: arw)
 
-    // 3e-05 in Swift's default interpolation — must be written as a plain
-    // decimal or the whole crop is lost on the next read.
     let edit = Edit(crop: CropRect(left: 0.00003, top: 0, right: 0.9, bottom: 1))
     try XMP.writeEdit(edit, file: try image(arw))
 
@@ -500,16 +475,11 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
     #expect(try exiftoolTag("-XMP-crs:CropLeft", of: sidecar) == "0.00003")
     #expect(XMP.read(file: try image(arw)).edit.crop == edit.crop)
 
-    // Exponent forms in foreign sidecars parse anyway.
     let exponent = parsed(
         #"<rdf:Description crs:CropLeft="3e-05" crs:CropTop="0" crs:CropRight="0.9" crs:CropBottom="1"/>"#)
     #expect(exponent.edit.crop?.left == 3e-05)
 }
 
-/// Regression: for embedded formats ImageIO reports our own freshly written
-/// XMP orientation back as the file's orientation, so without a pinned EXIF
-/// base the turn cancelled itself on the next read ("applies briefly, then
-/// resets").
 @Test func embeddedRotationSurvivesWithoutExifOrientation() throws {
     guard requireExifTool() else { return }
     let dir = try tempDir()
@@ -524,20 +494,15 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
         try exiftoolTag("-IFD0:Orientation#", of: jpg) == "1",
         "the pre-edit base gets pinned as real EXIF")
 
-    // A second write reads the pinned base, not our own XMP echo.
     try XMP.writeEdit(Edit(rotation: 180), file: try image(jpg))
     #expect(XMP.read(file: try image(jpg)).edit.rotation == 180)
     #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: jpg) == "3")
 
-    // Un-turning restores the pinned base instead of deleting the tag.
     try XMP.writeEdit(Edit(rotation: 0), file: try image(jpg))
     #expect(XMP.read(file: try image(jpg)).edit.rotation == 0)
     #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: jpg) == "1")
 }
 
-/// Regression: any edit used to emit `-XMP-tiff:Orientation=` when the model
-/// rotation was 0, deleting the only orientation record of a photo rotated
-/// by another tool (Lightroom writes XMP only for JPEG turns).
 @Test func foreignXMPOrientationSurvivesUnrelatedEdits() throws {
     guard requireExifTool() else { return }
     let dir = try tempDir()
@@ -549,7 +514,6 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
         "-overwrite_original", "-XMP-tiff:Orientation#=6", jpg.path,
     ])
 
-    // The foreign turn reads as no model rotation (it is the display base).
     #expect(XMP.read(file: try image(jpg)).edit.rotation == 0)
 
     try XMP.writeEdit(Edit(exposure: 0.5), file: try image(jpg))
@@ -563,8 +527,6 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
 }
 
 @Test func rotationIsTheDifferenceAgainstTheBaseOrientation() {
-    // A Lightroom sidecar for a portrait shot mirrors the file's own
-    // orientation without any user turn.
     #expect(XMP.rotation(fromXMP: 6, base: 6) == 0)
     #expect(XMP.rotation(fromXMP: 6, base: 1) == 90)
     #expect(XMP.rotation(fromXMP: 3, base: 6) == 90)
@@ -576,8 +538,6 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
     #expect(XMP.absoluteOrientation(rotation: 90, base: 6) == 3)
     #expect(XMP.absoluteOrientation(rotation: 270, base: 6) == 1)
 
-    // Mirrored bases keep their mirror through turns: a turn only adds
-    // display degrees, it never unflips the photo for other readers.
     #expect(XMP.absoluteOrientation(rotation: 90, base: 2) == 7)
     #expect(XMP.absoluteOrientation(rotation: 180, base: 5) == 7)
     #expect(XMP.rotation(fromXMP: 7, base: 2) == 90)
@@ -596,23 +556,16 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
     let arw = dir.appendingPathComponent("DSC00010.ARW")
     try Data("fake".utf8).write(to: arw)
 
-    // The fake ARW has no readable orientation, so base is 1 and the
-    // absolute tag equals the user turn.
     try XMP.writeEdit(Edit(rotation: 90), file: try image(arw))
     let sidecar = XMP.sidecarURL(forImagePath: arw.path)
     #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: sidecar) == "6")
     #expect(XMP.read(file: try image(arw)).edit.rotation == 90)
 
-    // Clearing a turn restores the base rather than deleting the tag, so a
-    // foreign orientation record can never be collateral damage.
     try XMP.writeEdit(.identity, file: try image(arw))
     #expect(try exiftoolTag("-XMP-tiff:Orientation#", of: sidecar) == "1")
     #expect(XMP.read(file: try image(arw)).edit == .identity)
 }
 
-/// Regression: `-TAG= -TAG+=…` appends to the existing list in exiftool, so
-/// every scrub grew the tone curve until a sidecar held thousands of points
-/// and writes took seconds. Rewrites must replace the list wholesale.
 @Test func rewritingACurveReplacesInsteadOfAppending() throws {
     guard requireExifTool() else { return }
     let dir = try tempDir()
@@ -632,8 +585,6 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
     try XMP.writeEdit(second, file: try image(arw))
     try XMP.writeEdit(second, file: try image(arw))
 
-    // the reader returns the raw item list, so a stale leftover would show up
-    // as extra points here.
     let read = XMP.read(file: try image(arw)).edit
     #expect(read.curveRGB.count == 4)
     let sidecar = XMP.sidecarURL(forImagePath: arw.path)
@@ -646,7 +597,6 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
 
-    // A sidecar Lightroom might have written: rating plus other tags.
     let arw = dir.appendingPathComponent("DSC00002.ARW")
     try Data("fake".utf8).write(to: arw)
     let sidecar = XMP.sidecarURL(forImagePath: arw.path)
@@ -664,11 +614,6 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
 }
 
 @Test func exifToolRejectsNewlineArguments() {
-    // The stay_open protocol is newline-delimited, so a newline in an
-    // argument would inject extra flags into exiftool (`-config` loads
-    // arbitrary Perl). Newlines are legal in paths, so this guards a real
-    // filename and a hostile request alike — and needs no exiftool binary,
-    // the guard fires before the daemon is touched.
     #expect(throws: ExifTool.ExifToolError.self) {
         try ExifTool.shared.execute(["-XMP:Rating=5", "/tmp/out\n-config\n/tmp/evil.config"])
     }
@@ -702,10 +647,8 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
     #expect(read.curveRGB.count == 3)
     #expect(try exiftoolTag("-XMP:Rating", of: jpg) == "3")
     #expect(try exiftoolTag("-XMP-crs:Exposure2012", of: jpg) == "0.5")
-    // Embedded formats have no known as-shot neutral, so the incremental tags.
     #expect(try exiftoolTag("-XMP-crs:IncrementalTemperature", of: jpg) == "30")
     #expect(try exiftoolTag("-XMP-crs:IncrementalTint", of: jpg) == "-10")
-    // No sidecar for embedded formats, no backup litter.
     let contents = try FileManager.default.contentsOfDirectory(atPath: dir.path)
     #expect(contents == ["DSC00003.JPG"])
 }
@@ -774,7 +717,6 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
 
-    // One stem, two photos: rating the raw must not touch the JPEG's rating.
     let arw = dir.appendingPathComponent("DSC00005.ARW")
     try Data("fake".utf8).write(to: arw)
     let jpg = dir.appendingPathComponent("DSC00005.JPG")
@@ -809,20 +751,16 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
         curveRGB: [CurvePoint(x: 0, y: 0), CurvePoint(x: 0.5, y: 0.55), CurvePoint(x: 1, y: 1)])
     _ = try service.setEdit(shoot: "2026-01-01_xmptest", path: jpg.path, edit: edit)
 
-    // Snapshot updated immediately, per file — the JPEG's rating stays 0.
     let images = try service.listImages(shoot: "2026-01-01_xmptest")
     #expect(images.first { $0.path == arw.path }?.rating == 4)
     #expect(images.first { $0.path == jpg.path }?.rating == 0)
     #expect(images.first { $0.path == jpg.path }?.edit.exposure == 1.25)
     #expect(images.first { $0.path == jpg.path }?.edit.highlights == -30)
 
-    // Disk agrees: sidecar for the raw, embedded for the JPG — both verified
-    // through the independent exiftool read (the Lightroom proxy).
     let sidecar = shoot.appendingPathComponent("DSC00010.xmp")
     #expect(try exiftoolTag("-XMP:Rating", of: sidecar) == "4")
     #expect(try exiftoolTag("-XMP-crs:Exposure2012", of: jpg) == "1.25")
 
-    // A fresh scan (new service, no snapshot) reads the same values back.
     let fresh = makeService(in: dir)
     _ = try fresh.setRoot(path: dir.path, indexPath: nil)
     waitUntilIndexed(fresh)
@@ -843,9 +781,6 @@ private func parsed(_ description: String, baseOrientation: Int = 1) -> XMP.Judg
     }
 }
 
-/// Writing to a JPEG changes its mtime and size, which is how the scorer spots
-/// a file that really changed. Our own metadata writes must not read that way,
-/// or every slider commit knocks the photo out of the sort by score.
 @Test func editingAPhotoKeepsItsScore() async throws {
     guard requireExifTool() else { return }
     let dir = try tempDir()
@@ -970,7 +905,6 @@ func theMacNeverWritesIntoAnUntestedFormatButKeepsWhatItCarried(_ ext: String) t
     defer { try? FileManager.default.removeItem(at: dir) }
     let photo = dir.appendingPathComponent("IMG_0025.\(ext)")
     if ext == "HEIC" {
-        // encoded once, ahead of time: a CI virtual machine has no HEVC encoder
         try FileManager.default.copyItem(
             at: fixturesRoot().appendingPathComponent("images/gray.heic"), to: photo)
     } else {

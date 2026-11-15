@@ -12,7 +12,6 @@ private func decoded(_ shown: Look.Shown) throws -> CGImage {
 }
 
 private func blueShare(of image: CGImage) -> Double {
-    // the average is taken in linear light, so read it out linear
     let mean = meanChannels(
         of: CIImage(cgImage: image), colorSpace: CGColorSpace(name: CGColorSpace.linearSRGB)!)
     return mean.blue / (mean.red + mean.blue)
@@ -46,7 +45,6 @@ private func withShoot(
             ids: ids, edited: true, longEdge: 600, at: nil, sheet: true, maxBytes: 500_000)
         #expect(shown.images.count == 1)
         let canvas = try decoded(shown.images[0])
-        // five photos take three columns and two rows of 200 px cells
         #expect((canvas.width, canvas.height) == (600, 400))
     }
 }
@@ -67,9 +65,7 @@ private func withShoot(
             ids: ids, edited: true, longEdge: 256, at: CGPoint(x: 0.95, y: 0.5),
             sheet: false, maxBytes: 500_000)
         let crop = try decoded(shown.images[0])
-        // 256 native px wide, and the 200 px tall frame is all there is
         #expect((crop.width, crop.height) == (256, 200))
-        // slid left to fit, so it spans x 144 to 400: 200 of its 256 px are the blue half
         #expect(abs(blueShare(of: crop) - 200.0 / 256) < 0.05)
     }
 }
@@ -102,7 +98,6 @@ private func withShoot(
         #expect(original.sidecar == nil)
         let sidecar = XMP.sidecarURL(forImagePath: original.path)
         try Data("<x/>".utf8).write(to: sidecar)
-        // a JPEG's is IMG_1.jpg.photopipe.xmp, not the IMG_1.xmp a raw would get
         #expect(try service.originals(ids: ids)[0].sidecar == sidecar.path)
         #expect(throws: LibraryService.ServiceError.self) {
             try service.originals(ids: ["shoot/../elsewhere.jpg"])

@@ -106,7 +106,6 @@ describe("browserOrder", () => {
     );
   });
 
-  // The one case that fails if the kept photo is appended rather than sorted.
   it("sorts the photo it keeps by its own stars", () => {
     const atMostTwo = (image: { rating: number }) => image.rating <= 2;
     expect(rels(browserOrder(images, atMostTwo, "rating", images[2]))).toEqual([

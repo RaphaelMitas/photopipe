@@ -2,7 +2,6 @@ import { cn } from "@photopipe/ui/lib/utils";
 import { Check, Star } from "lucide-react";
 import type { Flag } from "@/lib/core";
 
-/// Rejects stay in view, just faded, so a change of mind is one look away.
 export const rejectedFade = (flag: Flag) =>
   flag === -1 && "opacity-30 transition-opacity";
 

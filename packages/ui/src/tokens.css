@@ -30,7 +30,6 @@
   --chart-4: oklch(0.511 0.096 186.391);
   --chart-5: oklch(0.437 0.078 188.216);
   --radius: 0.875rem;
-  /* Brand orange (#FF7A2F) in oklch; primary derives from it. */
   --pp-accent: oklch(0.725 0.182 46.038);
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.141 0.005 285.823);
@@ -122,8 +121,6 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* A fingertip needs about 44pt; the invisible area grows a small control to
-   that without moving what is drawn. Needs a positioned element. */
 @utility finger-target {
   @media (pointer: coarse) {
     &::after {

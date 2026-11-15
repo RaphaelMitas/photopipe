@@ -68,8 +68,6 @@ const noMasks: MaskSession = {
   endFlash: vi.fn(),
 };
 
-/// A real tap is pointerdown then click, and Radix closes the tooltip on both.
-/// Firing only pointerdown passes against a trigger that a finger cannot open.
 function tap(element: Element) {
   fireEvent.pointerDown(element);
   fireEvent.click(element);
@@ -488,8 +486,6 @@ describe("Loupe crop mode", () => {
     const { onApplyCrop, onCropDraft } = renderLoupe(0, 0, draft());
     fireEvent.keyDown(window, { key: "Enter" });
     expect(onApplyCrop).toHaveBeenCalled();
-    // The parent clears the draft on the next render; a nudge landing in that
-    // gap must not push the photo back into crop mode.
     fireEvent.keyDown(window, { key: "ArrowRight" });
     expect(onCropDraft).not.toHaveBeenCalled();
   });
@@ -690,8 +686,6 @@ describe("EditSidebar", () => {
       "aria-pressed",
       "true",
     );
-    // clicking the one already shown must not overwrite a preference the
-    // disabled button cannot hand back
     fireEvent.click(screen.getByTestId("decoder-quick-8"));
     expect(localStorage.getItem("photopipe.rawDecoder")).toBe("9");
   });
@@ -771,7 +765,6 @@ describe("EditSidebar", () => {
     });
     const next = onCropDraft.mock.calls[0][0];
     expect(next.aspect).toBe("1:1");
-    // 3000x2000 test image: a centered square crop is 2000x2000.
     expect(next.crop.left).toBeCloseTo(1 / 6);
     expect(next.crop.right).toBeCloseTo(5 / 6);
     expect(next.crop.top).toBeCloseTo(0);
@@ -796,8 +789,6 @@ describe("EditSidebar", () => {
     expect(onCropDraft).toHaveBeenCalledWith({
       ...draft,
       rotation: 90,
-      // The left half of the frame becomes the top half after a clockwise
-      // turn. "original" follows the turned frame dims, so flipped stays put.
       crop: { left: 0, top: 0, right: 1, bottom: 0.5 },
     });
   });
@@ -812,8 +803,6 @@ describe("EditSidebar", () => {
     fireEvent.click(screen.getByTestId("crop-turn"));
     expect(first.onCropDraft.mock.calls[0][0].flipped).toBe(true);
     cleanup();
-    // original/transposed follow the turned frame dims by themselves; a
-    // flip on top would invert the lock against the turned rect.
     const original = { ...preset, aspect: "original" };
     const second = renderEditSidebar(identityEdit, original);
     fireEvent.click(screen.getByTestId("crop-turn"));
@@ -821,7 +810,6 @@ describe("EditSidebar", () => {
   });
 
   it("the flip button transposes the crop about its center", () => {
-    // 3000x2000 image: a centered 1500x1000px crop transposes to 1000x1500px.
     const draft = {
       ...draftFromEdit(identityEdit, 3000, 2000),
       crop: { left: 0.25, top: 0.25, right: 0.75, bottom: 0.75 },

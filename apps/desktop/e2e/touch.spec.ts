@@ -43,14 +43,12 @@ test("crop handles and straighten zones are finger sized on a touch screen", asy
     ),
   ).toBe("crop-handle-t");
 
-  // Pull the crop in so the zones outside its corners lie on the stage.
   const start = await box(page.getByTestId("crop-handle-tl"));
   await page.mouse.move(start.x + 7, start.y + 7);
   await page.mouse.down();
   await page.mouse.move(start.x + 90, start.y + 90, { steps: 5 });
   await page.mouse.up();
 
-  // Each probe sits past the mouse grab area but inside the finger one.
   const corner = await box(page.getByTestId("crop-handle-tl"));
   expect(await hitAt(page, corner.x + 26, corner.y + 26)).toBe(
     "crop-handle-tl",

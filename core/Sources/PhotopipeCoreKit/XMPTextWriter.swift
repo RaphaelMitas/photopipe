@@ -1,6 +1,5 @@
 import Foundation
 
-/// Edits only the properties it owns, byte-wise, so everything else in the sidecar survives.
 enum XMPTextWriter {
     enum WriteError: Error {
         case foreignPrefix(String)
@@ -41,8 +40,6 @@ enum XMPTextWriter {
         return bytes
     }
 
-    // exiftool follows a namespace to whatever prefix the file binds it to;
-    // this writer only knows the conventional ones
     private static func refuseForeignPrefixes(in document: XMPDocument) throws {
         for namespace in XMP.TagWrite.Namespace.allCases {
             for bound in document.prefixes
@@ -90,7 +87,6 @@ enum XMPTextWriter {
     ) throws -> XMPDocument.TopLevelDescription {
         var document = try XMPDocument.parse(bytes)
         if document.descriptions.isEmpty {
-            // exiftool leaves an empty rdf:RDF behind once every tag is cleared
             guard let rdfEnd = document.rdfEnd else { throw XMPDocument.Malformed(reason: "no rdf:RDF") }
             bytes.insert(
                 contentsOf: Array(" <rdf:Description rdf:about=''/>\n".utf8),

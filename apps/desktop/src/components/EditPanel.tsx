@@ -197,7 +197,6 @@ function Group({
 export function EditPanel({ image, edit, onChange, crop, masks }: Props) {
   const raw = image.isRaw;
   const rawDefaults = useRawDefaults(raw ? image : undefined);
-  // deferred like the Loupe's request, so both resolve to the same query
   const render = useRender(image, useDeferredEdit(image, edit));
 
   const set = (partial: Partial<Edit>) => onChange({ ...edit, ...partial });
@@ -413,11 +412,7 @@ function DecoderStrip() {
   const stored = useRawDecoderVersion();
   const raw9Missing = useRaw9Availability(true).data === false;
   const version = raw9Missing ? 8 : stored;
-  // Radix opens on hover only, and the icon is small enough to want a tap
   const [tipOpen, setTipOpen] = useState(false);
-  // Mirrors tipOpen so pointerdown reads the live value, not a render
-  // closure; Radix fires open/close between our renders and a stale
-  // snapshot made the closing click reopen the tip (flaked in CI).
   const openRef = useRef(false);
   const intentRef = useRef<"open" | "close">("open");
   const setOpen = (next: boolean) => {
@@ -437,9 +432,6 @@ function DecoderStrip() {
               type="button"
               aria-label="About the RAW decoder"
               data-testid="decoder-info"
-              // Radix closes the tooltip on pointerdown and again on click,
-              // both before ours run, so a relative toggle only ever reopens.
-              // Decide the intent before Radix interferes, enforce it last.
               onPointerDown={() => {
                 intentRef.current = openRef.current ? "close" : "open";
               }}

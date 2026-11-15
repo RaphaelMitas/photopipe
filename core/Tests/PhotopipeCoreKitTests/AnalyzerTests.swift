@@ -14,15 +14,12 @@ func waitForPass(
     Issue.record("scoring pass never finished", sourceLocation: sourceLocation)
 }
 
-/// The same photo as the walk would restat it after a write.
 private func touched(_ file: ImageFile) -> ImageFile {
     ImageFile(
         path: file.path, rel: file.rel, ext: file.ext, size: file.size + 64,
         mtime: file.mtime + 5)
 }
 
-/// Wires a scorer to an index the way LibraryService does, minus the queue hop
-/// so a finished pass has already been written by the time a test looks.
 private func attach(_ scorer: Scorer, to index: SQLiteIndex) {
     scorer.use(cache: (try? index.loadScores(under: tempRoot)) ?? [:]) { rows in
         try? index.saveScores(rows)
@@ -71,8 +68,6 @@ private func attach(_ scorer: Scorer, to index: SQLiteIndex) {
     attach(scorer, to: index)
     scorer.start(shoot: "s", files: files)
     try await Task.sleep(for: .milliseconds(20))
-    // Switching libraries cancels the pass with reads still in flight. Vision
-    // reports those the same way it reports a file it cannot open.
     scorer.use(cache: [:]) { _ in }
     try await Task.sleep(for: .milliseconds(300))
 
@@ -120,13 +115,11 @@ private func attach(_ scorer: Scorer, to index: SQLiteIndex) {
     try await waitForPass { scorer.progress(shoot: "s", files: [file]).running }
     let score = try #require(scorer.values(for: [file])[file.path])
 
-    // A metadata write: same pixels, new stamps.
     let written = touched(file)
     scorer.restamp(file, to: written)
     #expect(scorer.values(for: [written])[written.path] == score)
     #expect(scorer.progress(shoot: "s", files: [written]).done == 1)
 
-    // Something else replaced the photo, so the score expired before we wrote.
     let replaced = touched(written)
     let settled = touched(replaced)
     scorer.restamp(replaced, to: settled)
@@ -151,8 +144,6 @@ private func attach(_ scorer: Scorer, to index: SQLiteIndex) {
     let scorer = Scorer()
     attach(scorer, to: try SQLiteIndex(path: indexPath))
     scorer.start(shoot: "s", files: files)
-    // Six read at a time, so the last one is still queued: the pass would answer
-    // for the stamps it was queued with and leave the photo unscored.
     let written = touched(files[files.count - 1])
     scorer.restamp(files[files.count - 1], to: written)
     let settled = files.dropLast() + [written]

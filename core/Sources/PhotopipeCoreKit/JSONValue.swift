@@ -54,8 +54,6 @@ extension JSONValue {
     }
 
     public var intValue: Int? {
-        // Int(Double) traps on NaN or out-of-range values, and these come
-        // straight off the IPC boundary.
         if case .number(let value) = self { return Int(exactly: value.rounded()) }
         return nil
     }

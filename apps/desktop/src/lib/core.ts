@@ -2,7 +2,6 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type { CurvePoint } from "./curve";
 import { placeholderFor } from "./placeholder";
 
-// Normalized crop in the unit square with a top-left origin, crs-style.
 export type CropRect = {
   left: number;
   top: number;
@@ -22,12 +21,10 @@ const ADJUST_KEYS = [
   "saturation",
 ] as const;
 
-// every slider is relative, temperature and tint included, on raws too
 export type LocalAdjust = Record<(typeof ADJUST_KEYS)[number], number>;
 
 export type MaskSource = "subject" | "people" | "click";
 
-// on the uncropped photo, in fractions from its top left
 export type MaskPoint = { x: number; y: number; include: boolean };
 
 export type MaskShape = {
@@ -60,8 +57,6 @@ export function maskName({ source, inverted }: MaskShape): string {
   return inverted ? "Not object" : "Object";
 }
 
-// Mirrors core Edit.swift, which documents the units. The core omits null
-// fields when encoding, so read them with `?? null`.
 export type Edit = {
   exposure: number;
   highlights: number;
@@ -133,7 +128,6 @@ const pointsKey = (points: MaskPoint[]) =>
 export const shapeKey = ({ source, inverted, points }: MaskShape) =>
   `${source}|${inverted}|${pointsKey(points)}`;
 
-// Stable string for react-query keys and mock cache paths.
 export function editKey(edit: Edit): string {
   const curve = (points: CurvePoint[]) =>
     points.map((point) => `${point.x},${point.y}`).join(";");
@@ -174,7 +168,6 @@ export function editKey(edit: Edit): string {
 
 export type Flag = -1 | 0 | 1;
 
-// units as in core Exif.swift: shutter in seconds, focal in mm
 export type Exif = {
   shutter?: number;
   aperture?: number;
@@ -184,8 +177,6 @@ export type Exif = {
   body?: string;
 };
 
-// `enriched` is false while rating, edit, dimensions, capture time and exif
-// are still the placeholders the core's directory walk left behind.
 export type ImageFile = {
   path: string;
   rel: string;
@@ -196,21 +187,15 @@ export type ImageFile = {
   edit: Edit;
   width: number;
   height: number;
-  // Vision's aesthetic score, -1..1, null for a photo it has not rated.
   score: number | null;
-  // seconds, the camera clock read as if it were UTC
   captured: number | null;
-  // what Date sorts by: captured, or the local time the file was written, read as UTC the same way
   taken: number;
   exif: Exif;
-  // path of the first photo in its stack, its own when alone, null until analyzed
   stack: string | null;
   enriched: boolean;
   isRaw: boolean;
 };
 
-/// The core omits nulls and defaulted fields when it encodes, so an unrated
-/// photo arrives with no `score` and an untouched one with no `whites`.
 type WireImage = Omit<ImageFile, "score" | "captured" | "stack" | "edit"> & {
   score?: number | null;
   captured?: number | null;
@@ -306,8 +291,6 @@ export type StatusResult = {
   scanning: boolean;
   filesFound: number;
   filesEnriched: number;
-  // Only the shoots that changed since the `since` the caller passed, so a
-  // library that is still indexing doesn't refetch every open shoot.
   changedShoots?: string[];
 };
 
@@ -327,7 +310,6 @@ export type CoreMethods = {
       viewport?: CropRect;
       decoderVersion?: number;
     };
-    // unmasked: the masks could not be cut, and the photo was drawn without any
     result: CachePath & { unmasked: boolean };
   };
   maskOverlay: {

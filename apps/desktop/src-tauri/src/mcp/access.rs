@@ -6,7 +6,6 @@ use std::sync::Mutex;
 
 const KEY: &str = "agentAccess";
 
-/// Ordered: each level also allows everything below it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum See {
@@ -35,7 +34,6 @@ pub struct Access {
 
 type Listener = Box<dyn Fn() + Send>;
 
-/// Not the webview's: the relay may start the app and ask before the UI loads.
 pub struct AccessStore {
     defaults: Retained<NSUserDefaults>,
     listeners: Mutex<Vec<Listener>>,
@@ -49,7 +47,6 @@ impl AccessStore {
         }
     }
 
-    /// Read on every ask, so turning access down in a second copy of the app reaches the one serving agents.
     pub fn get(&self) -> Access {
         defaults::read(&self.defaults, KEY).unwrap_or_default()
     }

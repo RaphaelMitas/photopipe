@@ -5,24 +5,20 @@ import Vision
 
 enum TapToSegment {
     enum Seed: Sendable {
-        /// The first has to include: it finds the object, the rest refine it.
         case clicks([Mask.Point])
         case covering(RoughMask)
         case scribbles([RoughMask])
     }
 
-    // the request arrives with the macOS 27 SDK, and Swift 6.4 is the first toolchain to carry it
     #if compiler(>=6.4)
         static var isAvailable: Bool {
             if #available(macOS 27, iOS 27, *) { true } else { false }
         }
 
-        /// Empty when there is nothing to find.
         static func mattes(in photo: CIImage, from seed: Seed) throws -> [CIImage] {
             guard #available(macOS 27, iOS 27, *) else { return [] }
             guard let image = photo.cgImage ?? CIContext().createCGImage(photo, from: photo.extent)
             else { throw Renderer.RenderError.encodeFailed }
-            // an export waits here on a thread of Swift's pool, which spares one for this task only while exports stay utility
             return try awaited { try await segment(image, from: seed) }
                 .map { CIImage(cgImage: $0, options: [.colorSpace: NSNull()]) }
         }
@@ -63,7 +59,6 @@ enum TapToSegment {
 
         private static let ownClickLimit = 8
 
-        /// `next` sees the answer so far and names the click that refines it.
         @available(macOS 27, iOS 27, *)
         private static func grown(
             from seed: Mask.Point, with handler: ImageRequestHandler,
@@ -101,7 +96,6 @@ enum TapToSegment {
 
         private static let model = Mutex(Model.unasked)
 
-        /// A fresh process sees the model missing until a fetch, milliseconds from disk, so wait at most a second for it.
         static func modelArrives() -> Bool {
             guard #available(macOS 27, iOS 27, *) else { return false }
             let fetch: (done: DispatchGroup, since: DispatchTime)? = model.withLock { model in
@@ -121,7 +115,6 @@ enum TapToSegment {
                         let request = GenerateIterativeSegmentationRequest(
                             seedPoint: NormalizedPoint(x: 0.5, y: 0.5))
                         let arrived = (try? await ready(request)) != nil
-                        // a fetch that fails slowly must not cost every render of a drag its wait
                         let failed = Model.failed(until: .now() + .seconds(5))
                         Self.model.withLock { $0 = arrived ? .ready : failed }
                         done.leave()
@@ -135,7 +128,6 @@ enum TapToSegment {
 
         @available(macOS 27, iOS 27, *)
         private static func normalized(_ point: Mask.Point) -> NormalizedPoint {
-            // Vision counts up from the bottom
             NormalizedPoint(x: min(max(point.x, 0), 1), y: 1 - min(max(point.y, 0), 1))
         }
 

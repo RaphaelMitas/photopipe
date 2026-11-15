@@ -28,7 +28,6 @@ export function useMaskSession(
   const [overlay, setOverlay] = useState(false);
   const current =
     panelOpen && stored?.path === loupePhoto?.path ? stored : null;
-  // another photo or a closed panel starts over on Photo with the field closed
   if (stored && !current) setStored(null);
 
   const byId = (id: string | null | undefined) =>
@@ -87,7 +86,6 @@ export function useMaskSession(
       const id = append(shape);
       patch({ target: id, creating: false, chip: null, flash: id });
     },
-    // the field stays open, so the next click on the photo starts another mask
     click: (point: MaskPoint) => {
       const id = append({ source: "click", inverted: false, points: [point] });
       patch({ target: id, flash: id });

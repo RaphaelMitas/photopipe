@@ -11,15 +11,12 @@ describe("useSelection", () => {
     act(() => result.current.click("B", {}));
     expect([...result.current.selected]).toEqual(["B"]);
 
-    // ⌘-click adds without clearing.
     act(() => result.current.click("D", { meta: true }));
     expect([...result.current.selected].sort()).toEqual(["B", "D"]);
 
-    // ⌘-click again removes.
     act(() => result.current.click("B", { meta: true }));
     expect([...result.current.selected]).toEqual(["D"]);
 
-    // Shift extends from the last plain click — the anchor.
     act(() => result.current.click("B", {}));
     act(() => result.current.click("E", { shift: true }));
     expect([...result.current.selected].sort()).toEqual(["B", "C", "D", "E"]);
@@ -54,7 +51,6 @@ describe("useSelection", () => {
     act(() => result.current.selectAll());
     expect(result.current.selected.size).toBe(5);
 
-    // C and E were deleted (or filtered away).
     rerender({ list: ["A", "B", "D"] });
     expect([...result.current.selected].sort()).toEqual(["A", "B", "D"]);
   });

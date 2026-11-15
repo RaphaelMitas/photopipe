@@ -2,19 +2,15 @@ import CoreImage
 import Foundation
 import Vision
 
-/// A face in the photo as shot, before any crop or turn of the user's.
 public struct FaceSpot: Codable, Equatable, Sendable {
-    /// Fractions of the photo from the top left.
     public let box: CropRect
     public let quality: Double?
-    /// Only comparable between frames of the same scene.
     public let sharpness: Double?
 }
 
 public typealias Facer = Analyzer<[FaceSpot]>
 
 extension Analyzer where Value == [FaceSpot] {
-    /// The biggest faces only: a crowd behind the couple says nothing about the frame.
     static let faceLimit = 4
     static let findEdge = 1600
     static let cropEdge = 1024
@@ -45,15 +41,12 @@ extension Analyzer where Value == [FaceSpot] {
             }
     }
 
-    /// Vision's lower-left rect to the renderer's top-left fractions.
     static func box(_ rect: CGRect) -> CropRect {
-        // a face cut off at the edge reaches past the frame
         let rect = rect.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
         return CropRect(
             left: rect.minX, top: 1 - rect.maxY, right: rect.maxX, bottom: 1 - rect.minY)
     }
 
-    /// Mean squared Laplacian, scaled up to read as a plain number.
     static func sharpness(of image: CGImage) -> Double {
         let grey = CIImage(cgImage: image)
             .applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey: 0])

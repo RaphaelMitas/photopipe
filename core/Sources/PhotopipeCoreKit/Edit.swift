@@ -10,8 +10,6 @@ public struct CurvePoint: Codable, Equatable, Sendable {
     }
 }
 
-/// Normalized crop in the unit square with a top-left origin, crs-style:
-/// `left`/`top`/`right`/`bottom` are fractions of the full frame.
 public struct CropRect: Codable, Equatable, Sendable {
     public let left: Double
     public let top: Double
@@ -27,9 +25,6 @@ public struct CropRect: Codable, Equatable, Sendable {
 
     public static let full = CropRect(left: 0, top: 0, right: 1, bottom: 1)
 
-    /// These arrive from sidecars and IPC. nil is geometry Core Image cannot
-    /// take. A straightened photo's corners overhang, so values legitimately
-    /// run past [0, 1]; one frame beyond bounds anything hostile.
     public func sanitized() -> CropRect? {
         guard left.isFinite, top.isFinite, right.isFinite, bottom.isFinite,
             right > left, bottom > top
@@ -43,7 +38,6 @@ public struct CropRect: Codable, Equatable, Sendable {
     var height: Double { bottom - top }
 }
 
-/// Temperature and tint are relative on every file: a region has no as-shot neutral of its own.
 public struct LocalAdjust: Codable, Equatable, Sendable {
     public var exposure: Double
     public var highlights: Double
@@ -115,13 +109,11 @@ public struct LocalAdjust: Codable, Equatable, Sendable {
     }
 }
 
-/// Only what to look for is stored; the pixels are found again per photo, so a pasted mask fits.
 public struct Mask: Codable, Equatable, Sendable {
     public enum Source: String, Codable, Sendable {
         case subject, people, click
     }
 
-    /// A click on the uncropped photo, in fractions from its top left.
     public struct Point: Codable, Equatable, Sendable {
         public var x: Double
         public var y: Double
@@ -138,12 +130,10 @@ public struct Mask: Codable, Equatable, Sendable {
         }
     }
 
-    // a sidecar is anyone's to write, and every click costs a segmentation
     static let clickLimit = 16
 
     public var id: String
     public var source: Source
-    /// Empty unless the source is .click.
     public var points: [Point]
     public var inverted: Bool
     public var hidden: Bool
@@ -189,20 +179,9 @@ public struct Mask: Codable, Equatable, Sendable {
 }
 
 extension [Mask.Point] {
-    /// Empty without clicks, so the masks that have none keep their cache keys.
     var cacheKey: String { map { "|\($0.x),\($0.y),\($0.include)" }.joined() }
 }
 
-/// Every per-photo adjustment. Curve points live in the unit square, empty
-/// meaning the identity ramp.
-/// `temperature`/`tint`: Kelvin and green–magenta for raws (nil = as shot),
-/// incremental -100..100 for non-raws, whose neutral is unknowable.
-/// `denoise`: luminance NR 0...100, raws only. nil is the decoder's own
-/// amount, which is not zero, so nil and 0 have to stay distinct.
-/// `cropAngle`: degrees, positive clockwise on screen about the center while
-/// the crop rect stays axis-aligned.
-/// `rotation`: whole-photo turn (0/90/180/270) on top of the file's own
-/// orientation; the crop rect is against the turned frame.
 public struct Edit: Codable, Equatable, Sendable {
     public var exposure: Double
     public var highlights: Double
@@ -293,8 +272,6 @@ public struct Edit: Codable, Equatable, Sendable {
         masks = try container.decodeIfPresent([Mask].self, forKey: .masks) ?? []
     }
 
-    /// Later-added fields are omitted at their defaults, so older edits keep
-    /// the cache keys and sidecar JSON they already had.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         func encodeUnlessZero<T: Encodable & Numeric>(_ value: T, forKey key: CodingKeys) throws {
@@ -333,14 +310,11 @@ public struct Edit: Codable, Equatable, Sendable {
         crop != nil || cropAngle != 0
     }
 
-    /// 0/90/180/270 clockwise; anything else from a hostile source becomes 0.
     public var normalizedRotation: Int {
         [90, 180, 270].contains(rotation) ? rotation : 0
     }
 
-    /// Deterministic representation for render cache keys.
     public var cacheKey: String {
-        // a new, hidden or unadjusted mask draws nothing, so it must not ask for a render
         var drawn = self
         drawn.masks = masks.filter(\.changesPixels)
         let encoder = JSONEncoder()
@@ -350,10 +324,6 @@ public struct Edit: Codable, Equatable, Sendable {
     }
 }
 
-/// Monotone cubic interpolation (Fritsch–Carlson) through curve points.
-/// Shape-preserving: no overshoot between points, flat outside the outermost
-/// points. The TypeScript curve editor mirrors this exactly; the shared
-/// fixtures in fixtures/curve-samples.json keep the two in lockstep.
 public enum Curve {
     public static func isIdentity(_ points: [CurvePoint]) -> Bool {
         let sorted = normalized(points)
@@ -428,8 +398,6 @@ public enum Curve {
     }
 }
 
-/// Whites, blacks and the user curves folded into one per-channel lookup
-/// table, applied by a single CIColorCurves.
 public enum ToneLUT {
     public static let resolution = 256
 
@@ -439,14 +407,12 @@ public enum ToneLUT {
             return nil
         }
 
-        // pow 8 keeps the shift at the very ends, so it moves the black and white point
         let b = edit.blacks / 100 * 0.15
         let w = edit.whites / 100 * 0.15
         var tone = (0..<resolution).map { i -> Double in
             let v = Double(i) / Double(resolution - 1)
             return min(max(v + b * pow(1 - v, 8) + w * pow(v, 8), 0), 1)
         }
-        // monotone, so an extreme slider cannot fold the scale back on itself
         for i in 1..<resolution {
             tone[i] = max(tone[i], tone[i - 1])
         }

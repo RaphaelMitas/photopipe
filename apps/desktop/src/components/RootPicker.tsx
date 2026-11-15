@@ -50,7 +50,6 @@ function errorText(error: RootError): string {
 export function RootPicker({ error, busy: opening, onPick }: Props) {
   const [path, setPath] = useState("");
   const roots = useQuery(rootsQuery);
-  // the first listing may auto-open a root; a pick before it lands would race it
   const busy = opening || roots.isPending;
 
   return (
@@ -80,7 +79,6 @@ export function RootPicker({ error, busy: opening, onPick }: Props) {
                     disabled={busy}
                     data-testid="recent-root"
                     data-status={root.status}
-                    // Broken needs a fresh grant, and only the panel gives one.
                     onClick={() =>
                       onPick(root.status === "broken" ? undefined : root.path)
                     }

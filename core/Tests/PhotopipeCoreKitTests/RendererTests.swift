@@ -7,7 +7,6 @@ import UniformTypeIdentifiers
 
 @testable import PhotopipeCoreKit
 
-/// Built from the raw value so the tests compile on SDKs without `.version9`.
 private func decoder(_ raw: String) -> CIRAWDecoderVersion {
     CIRAWDecoderVersion(rawValue: raw)
 }
@@ -113,14 +112,6 @@ private func withExportScratch(_ body: (Renderer, URL) throws -> Void) throws {
         "mtime change must invalidate")
 }
 
-/// Warm scrubs must stay interactive: ~35ms on real hardware, and 250ms fails
-/// the build long before a slider feels broken.
-///
-/// CI is a GPU-less VM running the whole suite at once, where the same scrub
-/// took 2180ms and 3230ms on consecutive runs and a warm render has clocked
-/// slower than the cold one it reused, so any stopwatch there measures the
-/// runner. The decode count is the invariant under the budget, and it holds
-/// on every machine: warm renders reuse the cached CIRAWFilter.
 @Test func warmRenderLatencyBudget() throws {
     guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
@@ -128,7 +119,6 @@ private func withExportScratch(_ body: (Renderer, URL) throws -> Void) throws {
     let renderer = Renderer(cacheDir: cacheDir)
     let file = try imageFile(for: fixture)
 
-    // The cold render pays for the raw decode and primes the filter LRU.
     let coldStart = Date()
     _ = try renderer.render(file: file, edit: .identity, maxPixel: 2000)
     let cold = Date().timeIntervalSince(coldStart) * 1000
@@ -254,7 +244,6 @@ private func writeEntry(_ name: String, in dir: URL, bytes: Int, hoursAgo: Doubl
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
 
-    // Tiny synthetic JPEG: mid-gray via CIContext.
     let gray = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5))
         .cropped(to: CGRect(x: 0, y: 0, width: 64, height: 64))
     let jpegURL = FileManager.default.temporaryDirectory
@@ -284,7 +273,6 @@ private func writeEntry(_ name: String, in dir: URL, bytes: Int, hoursAgo: Doubl
 
     var bytes = [UInt8](try Data(contentsOf: jpegURL))
     let sof = try #require(bytes.indices.dropLast().first { bytes[$0] == 0xFF && bytes[$0 + 1] == 0xC0 })
-    // 20000 x 20000 in the frame header; the scan data still holds 64 x 64
     bytes.replaceSubrange((sof + 5)...(sof + 8), with: [0x4E, 0x20, 0x4E, 0x20])
     try Data(bytes).write(to: jpegURL)
 
@@ -316,7 +304,6 @@ private func writeEntry(_ name: String, in dir: URL, bytes: Int, hoursAgo: Doubl
     #expect(channels.blue > 180, "the right half is blue")
     #expect(channels.red < 60, "the red half is cropped away")
 
-    // Angle-only straighten rotates behind the full-frame rect: same size.
     let straightened = try renderer.render(file: file, edit: Edit(cropAngle: 3), maxPixel: 64)
     guard let rotated = CIImage(contentsOf: straightened) else {
         throw Renderer.RenderError.unreadable(straightened.path)
@@ -324,8 +311,6 @@ private func writeEntry(_ name: String, in dir: URL, bytes: Int, hoursAgo: Doubl
     #expect(rotated.extent.width == 64)
     #expect(rotated.extent.height == 64)
 
-    // Sign convention: +90° turns the photo clockwise on screen, so the red
-    // left half must end up as the top half (the high-y rows in CI space).
     let quarter = try renderer.render(file: file, edit: Edit(cropAngle: 90), maxPixel: 64)
     let top = try meanChannels(
         of: quarter, region: CGRect(x: 0, y: 40, width: 64, height: 24))
@@ -360,7 +345,6 @@ private func contrast(_ values: [Float]) -> Float {
         linearRed(of: Renderer.applyCrop(Edit(crop: middle, cropAngle: angle), to: image))
     }
 
-    // bilinear sampling keeps 0.77 of a wave four pixels long
     let wave = redBitmap { x, y in 0.5 + 0.4 * sin(2 * .pi * (0.25 * Double(x) + 0.11 * Double(y))) }
     let kept = contrast(straightened(wave, by: 0.5)) / contrast(straightened(wave, by: 0))
     #expect(kept > 0.88, "a straightened photo keeps its fine detail, got \(kept)")
@@ -384,8 +368,6 @@ private func contrast(_ values: [Float]) -> Float {
     let renderer = Renderer(cacheDir: cacheDir)
     let file = try imageFile(for: jpegURL)
 
-    // 90° clockwise puts the red left half on top; cropping the top half of
-    // the TURNED frame must keep it.
     let turned = try renderer.render(
         file: file,
         edit: Edit(crop: CropRect(left: 0, top: 0, right: 1, bottom: 0.5), rotation: 90),
@@ -404,9 +386,6 @@ private func contrast(_ values: [Float]) -> Float {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
 
-    // Stored 64x32 (left red, right blue), tagged Orientation=6: displays as
-    // 32x64 tall with red on top. Cropping the display's top half must keep
-    // the red — not a side band of the sensor layout.
     let flat = try writeHalvesJPEG(width: 64, height: 32)
     let jpegURL = FileManager.default.temporaryDirectory
         .appendingPathComponent("photopipe-orient6-\(UUID().uuidString).jpg")
@@ -473,7 +452,6 @@ private func gray(_ value: CGFloat) -> CIColor {
     CIColor(red: value, green: value, blue: value)
 }
 
-/// Step across the seam of a 256 px halves render.
 private func seamContrast(of url: URL) throws -> Double {
     let left = try meanLuminance(of: url, region: CGRect(x: 120, y: 0, width: 8, height: 256))
     let right = try meanLuminance(of: url, region: CGRect(x: 128, y: 0, width: 8, height: 256))
@@ -483,7 +461,6 @@ private func seamContrast(of url: URL) throws -> Double {
 @Test func dehazeLiftsTheVeilAndNegativeAddsIt() throws {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
-    // a veiled scene: two tones squeezed toward one bright, flat gray
     let jpegURL = try writeHalvesJPEG(left: gray(0.55), right: gray(0.7), width: 256, height: 256)
     defer { try? FileManager.default.removeItem(at: jpegURL) }
     let renderer = Renderer(cacheDir: cacheDir)
@@ -500,8 +477,6 @@ private func seamContrast(of url: URL) throws -> Double {
 @Test func coarseEstimatesLeaveNoBandAlongTheEdge() throws {
     let cacheDir = tempCacheDir()
     defer { try? FileManager.default.removeItem(at: cacheDir) }
-    // 3:2 at this size shrinks to a fractional row count for the coarse copy;
-    // two tones, because on flat gray dehaze cancels out whatever the veil says
     let jpegURL = try writeHalvesJPEG(
         left: gray(0.55), right: gray(0.7), width: 3000, height: 2000)
     defer { try? FileManager.default.removeItem(at: jpegURL) }
@@ -539,7 +514,6 @@ private func seamContrast(of url: URL) throws -> Double {
         abs(beside - away) < 3,
         "the silhouette must be as dark at the sky's edge as away from it, got \(beside) vs \(away)")
 
-    // a viewport that sees no sky still clears against the sky's haze
     let silhouette = try renderer.render(
         file: file, edit: Edit(dehaze: 100), maxPixel: 1000,
         viewport: CropRect(left: 0, top: 0, right: 0.4, bottom: 1))
@@ -551,7 +525,6 @@ private func seamContrast(of url: URL) throws -> Double {
     let frame = CGRect(x: 0, y: 0, width: 1500, height: 1000)
     let sky = CGRect(x: 0, y: 0, width: 1500, height: 700)
     let silhouette = CGRect(x: 0, y: 0, width: 750, height: 700)
-    // the bright band above takes the airlight, so the sky is haze that clears
     let scene = CIImage(color: gray(0.2)).cropped(to: silhouette)
         .composited(over: CIImage(color: gray(0.6)).cropped(to: sky))
         .composited(over: CIImage(color: gray(0.8)).cropped(to: frame))
@@ -602,10 +575,8 @@ private func seamContrast(of url: URL) throws -> Double {
         "blue water beside an orange sky must not brighten, got \(dehazed) from \(plain)")
 }
 
-// a sidecar may ask for more than the slider reaches
 @Test(arguments: [100.0, 400]) func dehazeStaysBetweenBlackAndWhite(amount: Double) {
     let frame = CGRect(x: 0, y: 0, width: 1000, height: 600)
-    // the cloud is smaller than the dark channel's patch, so it stays above the airlight
     let scene = CIImage(color: gray(0.98))
         .cropped(to: CGRect(x: 500, y: 400, width: 12, height: 12))
         .composited(over: CIImage(color: gray(0.15)).cropped(to: frame.insetBy(dx: 0, dy: 200)))
@@ -627,7 +598,6 @@ private func seamContrast(of url: URL) throws -> Double {
     let dim = change(CIImage(color: gray(0.2)).cropped(to: frame))
     #expect(abs(dim) < 0.002, "a dim field is its own airlight, moved \(dim)")
 
-    // far above white, the way a stray pixel in a float TIFF is
     let stray: [Float] = [60000, 60000, 60000, 1]
     let glint = change(
         CIImage(
@@ -693,7 +663,6 @@ private func linearPixels(of image: CIImage, in frame: CGRect) -> [Float] {
 }
 
 @Test func clarityKeepsAHighlightFarOverWhiteBesideBlack() {
-    // an HDR highlight: its luma unclipped drives Metal's tanh past 44, to NaN
     let halves = redBitmap { x, _ in x < 128 ? 0 : 4096 }
     let highlight = linearRed(of: Presence.clarity(halves, amount: 100))
         .enumerated().filter { $0.offset % 256 >= 128 }.map(\.element)
@@ -729,7 +698,6 @@ private func writeStripesPNG(stripe: Int) throws -> URL {
         return abs(try column(1500) - column(1500 + stripe))
     }
 
-    // a pixel wide is where noise and capture sharpening live; 6 px sits mid-band at this size
     let fine = try contrast(1, .identity)
     let mid = try contrast(6, .identity)
     let crispFine = try contrast(1, Edit(texture: 100))
@@ -1139,9 +1107,6 @@ private func oklab(_ rgb: [Double]) -> (lightness: Double, chroma: Double, hue: 
     #expect(try renderer.rawDefaults(for: imageFile(for: jpegURL)) == nil)
 }
 
-/// Older Macs top out at RAW 8, which is already a fresh filter's default, so
-/// the opt-in is only observable where a newer version exists. Asserting the
-/// resolved version holds everywhere; asserting it *changed* does not.
 @Test func newestDecoderVersionIsUsed() throws {
     guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
@@ -1185,7 +1150,6 @@ private func oklab(_ rgb: [Double]) -> (lightness: Double, chroma: Double, hue: 
     #expect(
         Renderer.resolveDecoder(requested: nil, supported: [decoder("8"), decoder("9")])
             == decoder("9"))
-    // a DNG-only file still answers a plain RAW 9 request
     #expect(
         Renderer.resolveDecoder(requested: 9, supported: [decoder("8.dng"), decoder("9.dng")])
             == decoder("9.dng"))
@@ -1210,9 +1174,6 @@ private func oklab(_ rgb: [Double]) -> (lightness: Double, chroma: Double, hue: 
     let nine = renderer.cachePath(for: file, edit: .identity, maxPixel: 800, decoderVersion: 9)
     let eight = renderer.cachePath(for: file, edit: .identity, maxPixel: 800, decoderVersion: 8)
     let plain = renderer.cachePath(for: file, edit: .identity, maxPixel: 800)
-    // Only a decoder this Mac can actually run earns its own key; a request
-    // that falls back renders the default, so it shares the default entry.
-    // CI runs an older macOS with no RAW 9, which is the whole point.
     if renderer.supports(file: file, major: 9) {
         #expect(nine != plain)
         #expect(nine != eight)
@@ -1224,7 +1185,6 @@ private func oklab(_ rgb: [Double]) -> (lightness: Double, chroma: Double, hue: 
     }
 }
 
-// macOS 27 denoises a raw on the Neural Engine, which the CI virtual machine lacks
 private var hasNoNeuralEngine: Bool {
     !MLComputeDevice.allComputeDevices.contains { if case .neuralEngine = $0 { true } else { false } }
 }
@@ -1239,8 +1199,6 @@ private var hasNoNeuralEngine: Bool {
     let defaults = try #require(try renderer.rawDefaults(for: file))
     #expect(defaults.denoise > 0, "the decoder's own amount is what nil has to mean")
 
-    // JPEG size stands in for retained grain: less smoothing compresses worse.
-    // Native size, since a downscale is itself a denoise.
     let native = Int(max(CIRAWFilter(imageURL: fixture)?.nativeSize.width ?? 0, 1))
     let off = try Data(
         contentsOf: renderer.render(file: file, edit: Edit(denoise: 0), maxPixel: native))
@@ -1253,8 +1211,6 @@ private var hasNoNeuralEngine: Bool {
     }
 }
 
-/// maxPixel crosses IPC unvalidated, and 0 must not read as "full sensor":
-/// that would decode every pixel of a 33MP raw on request, eight at a time.
 @Test func nonPositiveMaxPixelIsRefused() throws {
     guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
@@ -1269,9 +1225,6 @@ private var hasNoNeuralEngine: Bool {
     }
 }
 
-/// Two renders that want the same decode scale must both get it. A cached
-/// CIRAWFilter whose scaleFactor was left alone because it already matched
-/// handed back a quarter-size decode on the second read.
 @Test func aReusedFilterKeepsItsDecodeSize() throws {
     guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
@@ -1296,9 +1249,6 @@ private var hasNoNeuralEngine: Bool {
     #expect(max(second.extent.width, second.extent.height) > 390)
 }
 
-/// The loupe zoomed to a quarter of the frame wants that quarter at 1:1, not
-/// the whole sensor. It must cost a fraction of the full-frame render and come
-/// back at the size it asked for.
 @Test func viewportRendersOnlyTheVisibleRegion() throws {
     guard let fixture = rawFixture("sony-a7iv.arw") else { return }
     let cacheDir = tempCacheDir()
@@ -1333,7 +1283,6 @@ private var hasNoNeuralEngine: Bool {
     let renderer = Renderer(cacheDir: cacheDir)
     let file = try imageFile(for: fixture)
 
-    // The right half of the left half is the second quarter of the frame.
     let leftHalf = Edit(crop: CropRect(left: 0, top: 0, right: 0.5, bottom: 1))
     let rightOfIt = CropRect(left: 0.5, top: 0, right: 1, bottom: 1)
     let composed = try meanChannels(
@@ -1422,7 +1371,6 @@ private var hasNoNeuralEngine: Bool {
     }
 }
 
-/// The final fit hides a decode budget measured before the crop or the turn.
 @Test func sourceScaleMeasuresTheTurnedCrop() {
     let size = CGSize(width: 6000, height: 4000)
     let leftHalf = CropRect(left: 0, top: 0, right: 0.5, bottom: 1)
@@ -1442,7 +1390,6 @@ private var hasNoNeuralEngine: Bool {
     try withExportScratch { renderer, out in
         let file = try imageFile(for: fixture)
 
-        // about 1400 px across at full resolution, short of the 2048 asked for
         let small = Edit(crop: CropRect(left: 0.4, top: 0.4, right: 0.6, bottom: 0.6))
         let full = out.appendingPathComponent("full.jpg")
         let resized = out.appendingPathComponent("resized.jpg")
@@ -1507,7 +1454,6 @@ private var hasNoNeuralEngine: Bool {
         return filter.outputImage != nil
     }
     #expect(renderer.supports(file: file, major: 9) == expected)
-    // the second ask answers from the per-camera cache, same verdict
     #expect(renderer.supports(file: file, major: 9) == expected)
 }
 
@@ -1541,10 +1487,6 @@ private var hasNoNeuralEngine: Bool {
     for _ in 0..<500 { _ = renderer.supports(file: file, major: 9) }
     let warm = Date().timeIntervalSince(second)
 
-    // a per-path miss means a whole shoot re-reads every header on every
-    // selection change
-    // per call, not in total: a sibling test that already warmed CoreImage's
-    // codec shrinks `cold`, and a bare warm < cold would start failing
     #expect(
         warm / 500 < cold / 10,
         "warm: \(warm)s for 500, cold: \(cold)s for 1")
@@ -1561,14 +1503,11 @@ private var hasNoNeuralEngine: Bool {
 
     let renderer = Renderer(cacheDir: cacheDir)
     let whole = try imageFile(for: fixture)
-    // Probing 8 rather than 9: CI runs a macOS with no RAW 9, where a poisoned
-    // "no" and an honest "no" look alike and the regression goes untested.
     guard renderer.supports(file: whole, major: 8) else {
         print("SKIP: fixture does not offer RAW 8")
         return
     }
 
-    // a card still copying: the header names the camera, the body is missing
     let partial = dir.appendingPathComponent("IMG_0001.arw")
     let head = try Data(contentsOf: fixture).prefix(1_000_000)
     try head.write(to: partial)
@@ -1595,8 +1534,6 @@ private var hasNoNeuralEngine: Bool {
     if renderer.supports(file: file, major: 9) {
         #expect(asked != plain, "a decoder that ran must not share the default key")
     } else {
-        // The request fell back, so these are the same pixels. Were the key to
-        // record the wish, a macOS that later gains RAW 9 would serve them.
         #expect(asked == plain, "a fallback must not be cached as RAW 9")
     }
 }
@@ -1618,13 +1555,10 @@ private var hasNoNeuralEngine: Bool {
         path: partial.path, rel: "IMG_0001.arw", ext: "arw",
         size: Int64(bytes.count), mtime: 1)
 
-    // "cannot read yet" must stay distinguishable: the library-wide answer
-    // caches for the session, so a no here would stick after the copy lands.
     #expect(renderer.known(file: file, major: 9) == nil)
     #expect(renderer.supports(file: file, major: 9) == false)
 }
 
-/// White over the left half, in a shape that is not the photo's.
 private let leftHalf: Masker.Segment = { _, _, _ in
     CIImage(color: .white).cropped(to: CGRect(x: 0, y: 0, width: 15, height: 40))
         .composited(
@@ -1818,7 +1752,6 @@ private func pixel(of image: CIImage, at point: CGPoint) -> [UInt8] {
     let rightHalfCrop = Edit(crop: CropRect(left: 0.5, top: 0, right: 1, bottom: 1))
     #expect(try alpha(of: overlay(rightHalfCrop), at: CGPoint(x: 8, y: 32)) == 0)
 
-    // clockwise, so the photo's left side is the top, which Core Image counts from below
     let turned = try overlay(Edit(rotation: 90))
     #expect(try alpha(of: turned, at: CGPoint(x: 32, y: 56)) == 255)
     #expect(try alpha(of: turned, at: CGPoint(x: 32, y: 8)) == 0)
@@ -1860,7 +1793,6 @@ private let aroundTheLastClick: Masker.Segment = { photo, _, points in
     for edit in framings {
         let overlay = try #require(CIImage(data: try pick(edit).png))
         let size = overlay.extent.size
-        // Core Image counts from below
         let cursor = CGPoint(x: 0.3 * size.width, y: 0.25 * size.height)
         let elsewhere = CGPoint(x: 0.8 * size.width, y: 0.8 * size.height)
         #expect(alpha(of: overlay, at: cursor) == 255, "\(edit.cacheKey)")
@@ -1934,7 +1866,6 @@ private func roughMask(white: [CGRect], in photo: CGRect) -> RoughMask {
 @Test func aRoughMaskCountsFromTheTopLikeAClick() throws {
     let photo = CGRect(x: 0, y: 0, width: 640, height: 320)
     let topLeftQuarter = CGRect(x: 0, y: 0, width: 0.5, height: 0.5)
-    // Core Image counts from below
     let mask = roughMask(white: [CGRect(x: 0, y: 160, width: 320, height: 160)], in: photo)
     let deepest = try #require(mask.deepest()).spot
     #expect(deepest.x < 0.5 && deepest.y < 0.5)

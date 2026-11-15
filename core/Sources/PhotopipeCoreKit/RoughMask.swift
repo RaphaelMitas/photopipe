@@ -1,13 +1,11 @@
 import CoreImage
 import Foundation
 
-/// What an older model found, small and hard-edged: it tells the click model where to look.
 struct RoughMask: Equatable, Sendable {
     static let longEdge = 320
 
     let width: Int
     let height: Int
-    // rows from the top, like a click
     private var cells: [Bool]
 
     init(_ matte: CIImage, over photo: CGRect) {
@@ -24,7 +22,6 @@ struct RoughMask: Equatable, Sendable {
 
     var count: Int { cells.count { $0 } }
 
-    /// The spot furthest from the mask's edge, and how many cells in it lies.
     func deepest() -> (spot: Mask.Point, depth: Int)? {
         var depth = [Int](repeating: 0, count: cells.count)
         for y in 0..<height {
@@ -50,7 +47,6 @@ struct RoughMask: Equatable, Sendable {
         return (spot, depth[best])
     }
 
-    /// Where the next click goes so that `found` grows to cover this mask, nil once little is missed.
     func spotMissed(by found: RoughMask) -> Mask.Point? {
         var missed = self
         for index in cells.indices where found.cells[index] { missed.cells[index] = false }
@@ -62,7 +58,6 @@ struct RoughMask: Equatable, Sendable {
 
     func isMuch(of whole: RoughMask) -> Bool { count * 20 > whole.count }
 
-    /// `box` in fractions from the top left.
     func inside(_ box: CGRect) -> RoughMask {
         keeping { box.contains($0) }
     }
@@ -83,7 +78,6 @@ struct RoughMask: Equatable, Sendable {
         return kept
     }
 
-    /// The mask at the photo's size, the way a scribble seed takes it.
     func scribble(width: Int, height: Int) throws -> CVPixelBuffer {
         var buffer: CVPixelBuffer?
         CVPixelBufferCreate(

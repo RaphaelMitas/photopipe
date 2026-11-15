@@ -24,7 +24,6 @@ import {
 } from "./queries";
 import type { Stack } from "./stacks";
 
-// a batch resolves even when every write failed; overtaken photos are not failures
 const landed = (batch: Promise<BatchResult>) =>
   batch.then((result) => {
     if (result.written === 0 && result.failed.length > 0) {
@@ -61,7 +60,6 @@ const FLAG: Judgment<Flag> = {
         : { icon: FlagOff, label: "Flag", detail: "cleared" },
 };
 
-// setOne and setMany must be stable: a history entry holds on to setMany
 function useRecordedJudgment<V>(
   shoot: string | null,
   judgment: Judgment<V>,
@@ -79,9 +77,7 @@ function useRecordedJudgment<V>(
       const image = cachedImage(queryClient, shoot, path);
       if (!image || judgment.of(image) === value) return;
       const written = setOne({ path, value });
-      // the mutation already rolled back and toasted; the channel drops the entry
       void written.catch(() => {});
-      // before the core has read the file, the old value is a placeholder
       if (!image.enriched) return;
       void channel.record(
         { ...judgment.describe(value), paths: [path], written },
@@ -92,7 +88,6 @@ function useRecordedJudgment<V>(
     [queryClient, shoot, judgment, setOne, channel],
   );
 
-  /// `before` must be enriched: undo writes its values back.
   const many = useCallback(
     (values: Map<string, V>, before: ImageFile[], stack?: Stack) => {
       const [first] = values.values();
@@ -173,7 +168,6 @@ export function useRecordedWrites(shoot: string | null) {
       described: { icon: LucideIcon; label: string } = PASTED,
     ): Promise<BatchResult> => {
       const batch = pasteEdits(pasted);
-      // Recorded up front: ⌘Z during a long paste has to mean this paste.
       void edits.record(
         {
           ...described,

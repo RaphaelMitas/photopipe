@@ -32,8 +32,6 @@ private let sampleFiles: [String: [ImageFile]] = [
     ],
 ]
 
-// MARK: - SQLite index
-
 @Test func indexRoundTripsSnapshot() throws {
     let path = tempFile("index.sqlite")
     defer { try? FileManager.default.removeItem(atPath: path) }
@@ -103,7 +101,6 @@ private let sampleFiles: [String: [ImageFile]] = [
     let path = tempFile("index.sqlite")
     defer { try? FileManager.default.removeItem(atPath: path) }
 
-    // v0.2's six-column table, which today's insert cannot write into
     var db: OpaquePointer?
     #expect(sqlite3_open(path, &db) == SQLITE_OK)
     #expect(
@@ -158,8 +155,6 @@ private let sampleFiles: [String: [ImageFile]] = [
     try index.save(root: "/r/it's here", filesByShoot: [:])
     #expect(try #require(try index.load()).root == "/r/it's here")
 }
-
-// MARK: - Thumbnailer
 
 func makePNG(width: Int = 64, height: Int = 48) throws -> (ImageFile, URL) {
     let path = tempFile("img.png")
@@ -229,6 +224,5 @@ func makePNG(width: Int = 64, height: Int = 48) throws -> (ImageFile, URL) {
     let thumb = try Thumbnailer(cacheDir: cacheDir).thumbnail(for: file, maxPixel: 512)
     let elapsed = Date().timeIntervalSince(start)
     #expect(FileManager.default.fileExists(atPath: thumb.path))
-    // Embedded-preview extraction must stay far from full raw decode territory.
     #expect(elapsed < 2.0, "ARW thumbnail took \(elapsed)s")
 }

@@ -2,14 +2,6 @@
     import CoreServices
     import Foundation
 
-    /// FSEvents wrapper: fires `onChange` on the given queue for any mutation
-    /// under `path`. Coalescing/debouncing is the caller's job.
-    ///
-    /// The stream's context holds a small retained trampoline object rather than
-    /// `self`: FSEvents retains it via the context's retain/release callbacks and
-    /// drops it only after `FSEventStreamInvalidate` has quiesced in-flight
-    /// callbacks, so deallocating the `Watcher` mid-callback can't leave the
-    /// stream dereferencing freed memory.
     public final class Watcher {
         private final class Trampoline {
             let onChange: () -> Void

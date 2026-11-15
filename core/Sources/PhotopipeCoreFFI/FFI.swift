@@ -5,7 +5,6 @@ public typealias Reply =
     @convention(c) (UnsafeMutableRawPointer?, Bool, UnsafePointer<CChar>?) ->
     Void
 
-/// Calls `reply` exactly once, from a background thread, with the result JSON or "code: message".
 @_cdecl("photopipe_core_request")
 public func request(
     _ method: UnsafePointer<CChar>, _ params: UnsafePointer<CChar>?,
@@ -31,7 +30,6 @@ public func shutdown() {
     import UniformTypeIdentifiers
     import WebKit
 
-    /// The UI assumes nothing overlaps it, so the webview stops at the status bar and home indicator.
     @_cdecl("photopipe_fit_to_safe_area")
     public func fitToSafeArea(_ webview: UnsafeMutableRawPointer) {
         nonisolated(unsafe) let webview = webview
@@ -50,7 +48,6 @@ public func shutdown() {
         }
     }
 
-    /// The scope is never stopped: the core reads the folder for the life of the process.
     @_cdecl("photopipe_pick_folder")
     public func pickFolder(_ context: UnsafeMutableRawPointer?, _ reply: Reply) {
         nonisolated(unsafe) let context = context
@@ -65,8 +62,6 @@ public func shutdown() {
         }
     }
 
-    /// Replies with the picked paths as a JSON array. Files are picked in place
-    /// rather than copied in, so a card's worth of raws is read once, by the import.
     @_cdecl("photopipe_pick_photos")
     public func pickPhotos(
         _ fromLibrary: Bool, _ context: UnsafeMutableRawPointer?, _ reply: Reply
@@ -112,7 +107,6 @@ public func shutdown() {
             var configuration = PHPickerConfiguration()
             configuration.filter = .images
             configuration.selectionLimit = 0
-            // the original file, so a raw stays a raw
             configuration.preferredAssetRepresentationMode = .current
             let picker = PHPickerViewController(configuration: configuration)
             show(picker, done: done) { picker.delegate = $0 }
@@ -125,7 +119,6 @@ public func shutdown() {
             let presenter = UIApplication.shared.connectedScenes
                 .compactMap { ($0 as? UIWindowScene)?.keyWindow?.rootViewController }
                 .first
-            // UIKit silently refuses to present over another sheet, and then nothing would reply
             guard let presenter, current == nil, presenter.presentedViewController == nil else {
                 return done([])
             }
@@ -153,12 +146,10 @@ public func shutdown() {
             }
         }
 
-        /// A swipe down dismisses the sheet without calling documentPickerWasCancelled.
         func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
             finish([])
         }
 
-        /// Replies once even if a dismissal reports itself twice.
         private func finish(_ urls: [URL]) {
             guard Self.current === self else { return }
             Self.current = nil
@@ -166,8 +157,6 @@ public func shutdown() {
         }
     }
 
-    /// Photos lends a file only for the length of a callback, so each pick is
-    /// copied out; one the core cannot read is written as a JPEG.
     private enum LibraryCopies {
         static func save(
             _ providers: [NSItemProvider], done: @escaping @MainActor ([URL]) -> Void
@@ -219,7 +208,6 @@ public func shutdown() {
             return CGImageDestinationFinalize(destination) ? jpeg : nil
         }
 
-        /// The import copies out of these, so they are only cleared once surely done with.
         private static func sweep(_ folder: URL) {
             let dayAgo = Date().addingTimeInterval(-86_400)
             let picks =

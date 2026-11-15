@@ -4,10 +4,8 @@ import { ShortcutTooltip } from "./ShortcutTooltip";
 
 export function ShowSidebarTrigger() {
   const { isMobile, state, toggleSidebar } = useSidebar();
-  // The header outlives both sidebars, which unmount as a sheet on mobile.
   useShortcuts({ "sidebar.toggle": toggleSidebar });
 
-  // On mobile it stays mounted under the overlay, so the sheet can hand focus back.
   if (!isMobile && state === "expanded") return null;
 
   return (

@@ -3,8 +3,6 @@ import type { ScanProgress } from "@/lib/queries";
 
 const format = new Intl.NumberFormat();
 
-/// Sits in the header while the core fills in ratings and dimensions behind
-/// the already-usable library.
 export function IndexingStatus({ progress }: { progress: ScanProgress }) {
   if (!progress.scanning) return null;
   const share =

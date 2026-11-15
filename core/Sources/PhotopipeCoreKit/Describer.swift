@@ -1,12 +1,10 @@
 import CoreGraphics
 import Foundation
 
-// image input arrives with the macOS 27 SDK, and Swift 6.4 is the first toolchain to carry it
 #if compiler(>=6.4) && canImport(FoundationModels)
     import FoundationModels
 #endif
 
-/// Apple's on-device model, so no pixels leave the Mac.
 enum Describer {
     struct Unavailable: WireError {
         var wire: ResponseError {

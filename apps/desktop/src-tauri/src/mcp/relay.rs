@@ -21,7 +21,6 @@ pub fn run() -> ExitCode {
     };
     std::thread::spawn(move || {
         let _ = io::copy(&mut io::stdin().lock(), &mut upstream);
-        // the client hung up; let the app see the end too
         let _ = upstream.shutdown(Shutdown::Write);
     });
     let mut downstream = stream;
@@ -31,7 +30,6 @@ pub fn run() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// In the background, so an agent asking does not pull the window to the front.
 fn launch() -> Option<()> {
     let bundle = bundle(&std::env::current_exe().ok()?)?;
     let status = Command::new("/usr/bin/open")
@@ -42,7 +40,6 @@ fn launch() -> Option<()> {
     status.success().then_some(())
 }
 
-/// A dev build is not inside an app bundle and has nothing to open.
 fn bundle(exe: &Path) -> Option<PathBuf> {
     exe.ancestors()
         .find(|dir| dir.extension().is_some_and(|ext| ext == "app"))

@@ -10,10 +10,8 @@ use std::sync::{Arc, Mutex, Weak};
 use std::thread;
 use std::time::Duration;
 
-/// A client that stops reading would otherwise stall every reply and announce queued behind it.
 const WRITE_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// Fallback only; nothing used here differs between versions, so a client's own is echoed.
 const PROTOCOL: &str = "2025-06-18";
 
 pub struct Server {
@@ -31,7 +29,6 @@ impl Server {
         })
     }
 
-    /// Refuses when another Photopipe already answers there, so a second copy never steals the first one's agents.
     pub fn listen(self: &Arc<Self>, path: &Path) -> io::Result<()> {
         if UnixStream::connect(path).is_ok() {
             return Err(io::Error::new(
@@ -39,7 +36,6 @@ impl Server {
                 "another Photopipe answers agents",
             ));
         }
-        // nothing listens, so this is a socket left behind by a crash
         let _ = std::fs::remove_file(path);
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
@@ -47,7 +43,6 @@ impl Server {
         let listener = UnixListener::bind(path)?;
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
         let weak = Arc::downgrade(self);
-        // off the caller's thread, which is the UI's when Settings changes the level
         self.access.on_change(move || {
             if let Some(server) = weak.upgrade() {
                 thread::spawn(move || server.announce_tools());
@@ -61,7 +56,6 @@ impl Server {
                         let server = Arc::clone(&server);
                         thread::spawn(move || server.serve(stream));
                     }
-                    // a client that hung up before accept, or a moment out of descriptors
                     Err(_) => thread::sleep(Duration::from_millis(100)),
                 }
             }
@@ -82,7 +76,6 @@ impl Server {
                 continue;
             }
             let (server, writer) = (Arc::clone(&self), Arc::clone(&writer));
-            // a look takes seconds, and the client may ask something else meanwhile
             thread::spawn(move || {
                 let reply = match serde_json::from_str::<Value>(&line) {
                     Ok(message) => server.handle(&message),
@@ -95,7 +88,6 @@ impl Server {
         }
     }
 
-    /// None for notifications and for responses to anything the server sent.
     pub fn handle(&self, message: &Value) -> Option<Value> {
         let method = message["method"].as_str()?;
         let id = message.get("id")?.clone();
@@ -141,7 +133,6 @@ fn reply(id: Value, result: Result<Value, (i64, String)>) -> Value {
 fn send(writer: &Mutex<UnixStream>, message: &Value) {
     let mut writer = writer.lock().unwrap();
     if writeln!(writer, "{message}").is_err() {
-        // half a line would swallow the next message too; hanging up tells the client
         let _ = writer.shutdown(std::net::Shutdown::Both);
     }
 }

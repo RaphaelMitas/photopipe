@@ -25,8 +25,6 @@ test("opening a shoot shows its grid; back returns to the library", async ({
   await expect(page.getByTestId("grid")).toBeVisible();
   await expect(page.getByTestId("thumb")).toHaveCount(4);
 
-  // The sidebar shows only the current shoot; the library page is where
-  // shoots are browsed, and "All shoots" is the way back.
   await expect(page.getByTestId("current-shoot")).toContainText("zell");
   await expect(page.getByTestId("shoot-misc")).toHaveCount(0);
   await page.getByTestId("back-to-shoots").click();

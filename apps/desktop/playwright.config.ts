@@ -1,8 +1,6 @@
 import process from "node:process";
 import { defineConfig } from "@playwright/test";
 
-// Dedicated port: `tauri dev` owns 1420, and reusing its server would lack
-// VITE_E2E (no mockIPC). e2e always talks to its own server on 1421.
 export default defineConfig({
   testDir: "./e2e",
   use: {

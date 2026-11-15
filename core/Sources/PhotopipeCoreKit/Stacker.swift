@@ -28,8 +28,6 @@ extension Analyzer where Value == Print {
         return Print(feature: floats(observation))
     }
 
-    /// A raw's embedded preview is cheap and big enough; a JPEG's embedded thumbnail is often
-    /// 160 px, too small for the threshold, so that one is decoded instead.
     static func preview(_ source: CGImageSource) -> CGImage? {
         let size = Stacker.previewSize
         guard let embedded = Thumbnailer.image(from: source, maxPixel: size) else { return nil }
@@ -48,15 +46,10 @@ extension Analyzer where Value == Print {
 }
 
 public enum Stacker {
-    /// Tuned by eye on dance-event pairs: 0.35–0.40 still looked the same, 0.40–0.45 did not.
     static let threshold: Float = 0.40
-    /// So two near-identical shots of an empty hall an hour apart stay apart.
     static let window: Double = 60
-    /// The threshold holds for prints of this size; a full-size preview moves distances by ~0.01.
     static let previewSize = 1024
 
-    /// Standalone photos and those with no capture time are left out. Matching every frame keeps
-    /// slow drift from chaining a whole song; trying every open stack keeps a misfire from cutting a burst.
     public static func stacks(_ prints: [String: Print], captured: [String: Double]) -> [String: String] {
         let ordered = prints.compactMap { path, print in
             captured[path].map { (path: path, print: print, captured: $0) }

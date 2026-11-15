@@ -12,10 +12,6 @@ import {
   type Size,
 } from "./store/frames";
 
-// The App Store screenshots and creative assets: the real UI against the e2e
-// mock in `?store` mode, with the maker's own photos from e2e/store, framed by
-// store/frames.ts. Tagged @store: `pnpm store-screenshots` runs only these.
-
 const IPAD = {
   name: "ipad",
   url: "/?store&ipad",
@@ -50,13 +46,11 @@ async function capture(
   const page = await context.newPage();
   await openShoot(page, shoot, device);
   await steps(page);
-  // Out of the way of hover overlays, then wait out the image decodes.
   await page.mouse.move(2, viewport.height - 2);
   await page.waitForFunction(() =>
     [...document.images].every((image) => image.complete),
   );
   await page.waitForTimeout(500);
-  // A photo without a committed preview is drawn instead; none may show.
   const drawn = await page.evaluate(() =>
     [...document.images]
       .filter((image) => {
@@ -127,7 +121,6 @@ async function loupeOnBlueHour(page: Page) {
   await expect(page.getByTestId("loupe")).toBeVisible();
   for (let i = 0; i < 3; i += 1) await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC04417.ARW");
-  // The histogram decodes its own copy of the render, outside the image wait.
   await expect(page.getByTestId("curve-histogram")).toBeAttached();
 }
 
@@ -185,7 +178,6 @@ for (const device of DEVICES) {
 
 test("@store creative", async ({ browser }) => {
   test.setTimeout(120_000);
-  // 3:2 like the search asset, with the sidebar away so the editor fills it.
   const editor = await capture(
     browser,
     IPAD,

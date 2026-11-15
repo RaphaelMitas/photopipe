@@ -3,15 +3,10 @@ use std::ffi::{c_char, c_void, CStr, CString};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::time::Duration;
 
-/// Generous: most methods answer instantly, warm renders in ~35ms; the ceiling
-/// exists for cold full-res renders.
 const TIMEOUT: Duration = Duration::from_secs(10);
 
-/// `setRoot` and `rescan` walk the whole tree before answering, which on a
-/// slow external disk can take a while.
 const WALK_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// A sheet decodes up to 64 raws, a few at a time; faces and descriptions take seconds a photo.
 const AGENT_TIMEOUT: Duration = Duration::from_secs(120);
 
 type Reply = extern "C" fn(*mut c_void, bool, *const c_char);
@@ -33,7 +28,6 @@ extern "C" {
     fn photopipe_fit_to_safe_area(webview: *mut c_void);
 }
 
-/// Swift calls this exactly once per `context`, which owns the sender.
 extern "C" fn deliver(context: *mut c_void, ok: bool, text: *const c_char) {
     let sender = unsafe { Box::from_raw(context.cast::<SyncSender<Answer>>()) };
     let text = (!text.is_null()).then(|| {
@@ -50,7 +44,6 @@ fn call(start: impl FnOnce(*mut c_void, Reply)) -> Receiver<Answer> {
     receiver
 }
 
-/// A request that times out keeps running in the core; its late answer is dropped.
 pub fn request(method: &str, params: Option<Value>) -> Result<Value, String> {
     let method_c = CString::new(method).map_err(|_| format!("bad_request: {method:?}"))?;
     let params = params.map(|params| CString::new(params.to_string()).expect("JSON escapes NUL"));
@@ -81,7 +74,6 @@ pub fn shutdown() {
         unsafe { photopipe_core_shutdown() };
         let _ = sender.send(());
     });
-    // long enough for a running export to drop its queue and clean up; a library walk is not waited out
     let _ = receiver.recv_timeout(Duration::from_secs(3));
 }
 
@@ -102,7 +94,6 @@ pub fn pick_photos(from_library: bool) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Must run on the main thread with the window's WKWebView.
 #[cfg(target_os = "ios")]
 pub fn fit_to_safe_area(webview: *mut c_void) {
     unsafe { photopipe_fit_to_safe_area(webview) }

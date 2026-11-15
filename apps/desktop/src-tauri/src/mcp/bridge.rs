@@ -15,10 +15,8 @@ pub struct Bridge {
     attached: (Mutex<bool>, Condvar),
 }
 
-/// The relay may have just started the app, and its window loads a moment after the server listens.
 const ATTACH_WAIT: Duration = Duration::from_secs(20);
 
-/// The one failure after which the window may still be carrying out the call.
 pub const UNANSWERED: &str = "Photopipe's window did not answer in time.";
 
 impl Bridge {
@@ -31,7 +29,6 @@ impl Bridge {
         }
     }
 
-    /// False when the webview's listener goes away, so a call waits for the next one instead of timing out on nobody.
     pub fn attach(&self, on: bool) {
         let (attached, ready) = &self.attached;
         *attached.lock().unwrap() = on;
@@ -51,7 +48,6 @@ impl Bridge {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         let (sender, receiver) = sync_channel(1);
         self.pending.lock().unwrap().insert(id, sender);
-        // a little before the wait ends, so a call the window drops is still answered as dropped
         let deadline = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |now| (now + timeout.mul_f32(0.9)).as_millis());

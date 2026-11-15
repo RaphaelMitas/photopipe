@@ -1,8 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { openZell } from "./open-shoot";
 
-// Headless Chromium hides scrollbars. macOS draws a classic one inside the
-// strip whenever a mouse is connected, and it used to swallow the rating row.
 test.use({ launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] } });
 
 test("the rating row stays above a classic scrollbar", async ({ page }) => {
@@ -22,7 +20,6 @@ test("the rating row stays above a classic scrollbar", async ({ page }) => {
     .getByTestId("filmstrip-rating");
   await expect(rating).toHaveText("2");
 
-  // Without a reserved gutter the assertion below passes on the bug too.
   const gutter = await strip.evaluate((el: HTMLElement) => {
     const style = getComputedStyle(el);
     return (

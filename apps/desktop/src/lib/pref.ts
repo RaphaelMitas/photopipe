@@ -6,7 +6,6 @@ export function pref<T>(
   encode: (value: T) => string,
 ) {
   const listeners = new Set<() => void>();
-  // useSyncExternalStore loops on a snapshot that is a fresh object each read
   let cached: { raw: string | null; value: T } | null = null;
 
   const get = () => {

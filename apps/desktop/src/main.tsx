@@ -13,7 +13,6 @@ async function prepare() {
     Reflect.set(window, "askAgent", askAgent);
     mockIPC(
       (cmd, args) => {
-        // The save panel is an OS window with nothing to drive it from a browser.
         if (cmd === "plugin:dialog|save") return "/fake/delivery";
         if (cmd === "plugin:opener|reveal_item_in_dir") return null;
         if (cmd in E2E_COMMANDS) return E2E_COMMANDS[cmd](args);
@@ -28,7 +27,6 @@ async function prepare() {
 }
 
 prepare().then(() => {
-  // The core is a local process: being offline must not pause a write to disk.
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { networkMode: "always" },

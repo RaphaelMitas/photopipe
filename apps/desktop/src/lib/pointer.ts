@@ -19,13 +19,10 @@ export function normalizedIn(
   };
 }
 
-// Synthetic and already-released pointers make setPointerCapture throw.
 export function capturePointer(event: {
   currentTarget: Element;
   pointerId: number;
 }) {
-  // Grabbing the photo takes the keyboard back: a control left focused, like
-  // the ratio dropdown, would go on swallowing the arrow keys.
   if (document.activeElement instanceof HTMLElement) {
     document.activeElement.blur();
   }

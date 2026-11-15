@@ -33,8 +33,6 @@ type PanelProps = {
   onCancel: () => void;
 };
 
-/// The crop section that replaces the "Crop & straighten" button in the edit
-/// panel while cropping; straightening happens on the photo itself.
 export function CropPanel({
   image,
   draft,
@@ -88,14 +86,11 @@ export function CropPanel({
       <div className="flex flex-col gap-1.5 text-muted-foreground text-xs">
         <span>Ratio</span>
         <div className="flex items-center gap-1.5">
-          {/* A native select: WKWebView shows the macOS popup menu, and the
-              Radix portal version never opened there. */}
           <div className="relative flex-1">
             <select
               data-testid="crop-aspect"
               value={draft.aspect}
               onChange={(event) => {
-                // Hands the arrow keys back to the crop frame.
                 event.target.blur();
                 onDraft(applyAspect({ ...draft, aspect: event.target.value }));
               }}
@@ -158,9 +153,6 @@ export function CropPanel({
             ...draft,
             rotation: (draft.rotation + 90) % 360,
             crop: turnCrop(draft.crop),
-            // Fixed presets need the flip so the lock follows the turned
-            // rect; original/transposed already follow via the swapped frame
-            // dims, and free has nothing to lock.
             flipped: draft.aspect.includes(":")
               ? !draft.flipped
               : draft.flipped,
@@ -265,8 +257,6 @@ export function CropOverlay({
     return (Math.atan2(point.y - centerY, point.x - centerX) * 180) / Math.PI;
   };
 
-  // The line's screen tilt, folded into (-90, 90] so leveling never turns
-  // the photo upside down.
   const lineAngle = (line: {
     x1: number;
     y1: number;
@@ -338,15 +328,11 @@ export function CropOverlay({
       return;
     }
     if (active.kind === "rotate") {
-      // Accumulate wrap-safe deltas so freehand rotation runs past ±90°
-      // without jumping at the atan2 seam.
       const pointer = pointerAngle(event);
       let delta = pointer - active.lastPointerAngle;
       if (delta > 180) delta -= 360;
       if (delta <= -180) delta += 360;
       active.lastPointerAngle = pointer;
-      // Clamp the accumulator too, or winding past the limit builds up
-      // slack that must be dragged back before the photo responds again.
       active.angle = Math.min(
         Math.max(active.angle + delta, -STRAIGHTEN_RANGE),
         STRAIGHTEN_RANGE,
@@ -402,7 +388,6 @@ export function CropOverlay({
     );
   };
 
-  // The system took the touch, so a half-drawn level line is not applied.
   const onPointerCancel = () => {
     drag.current = null;
     setAlignLine(null);
@@ -417,13 +402,9 @@ export function CropOverlay({
     height: percent(crop.bottom - crop.top),
   };
 
-  // The drawn handles are thin, so the pseudo-element widens what you can
-  // grab without changing what you see. A finger needs about 44pt.
   const hitArea = "before:absolute before:-inset-2 before:content-['']";
   const corner = `absolute size-3.5 border-2 border-white ${hitArea} pointer-coarse:before:-inset-4`;
   const edge = `absolute bg-white ${hitArea} pointer-coarse:before:-inset-5`;
-  // Corners last: on a crop small enough for the grab areas to overlap, the
-  // later element wins the click, and a corner has nowhere else to grab from.
   const handles: [Handle, string][] = [
     [
       "t",
@@ -500,8 +481,6 @@ export function CropOverlay({
             onPointerDown={(event) => onPointerDown(event, handle)}
           />
         ))}
-        {/* After the handles: the corner grab areas now reach into the band
-            just outside the crop, which belongs to straightening. */}
         {rotateZones.map((position) => (
           <div
             key={position}

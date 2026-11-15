@@ -2,21 +2,17 @@ import CoreImage
 import Foundation
 import Vision
 
-/// Finds a mask's pixels: a grey matte the shape of the photo, white where the mask is.
 struct Masker {
     typealias Segment = @Sendable (CIImage, Mask.Source, [Mask.Point]) throws -> CIImage
 
     static let inputLongEdge = 2048
-    // bump when the same photo would get a different matte
     static let version = 5
 
     let cache: CacheFolder
     let segment: Segment
-    // a matte is coverage, not colour: managed, a half would come back as a fifth
     static let unmanaged = CIContext(options: [.workingColorSpace: NSNull()])
     private let photoContext = CIContext()
     private let brightened = LastPhoto()
-    // a render and the mask's row want the same matte at once, and the second must find it cut
     private let cutting = NSLock()
 
     init(cache: CacheFolder, segment: @escaping Segment) {
@@ -24,10 +20,8 @@ struct Masker {
         self.segment = segment
     }
 
-    /// Every mask is cut by the click model, so without it there are none.
     static var isAvailable: Bool { TapToSegment.isAvailable }
 
-    /// `neutral` is the photo before any edit, so one matte serves every edit of it.
     func matte(
         for pixelStamp: String, source: Mask.Source, points: [Mask.Point],
         neutral: () throws -> CIImage
@@ -59,11 +53,9 @@ struct Masker {
             .applyingFilter("CIMaximumComponent")
     }
 
-    /// Drawn once and kept, so the cursor's next question does not wait on a decode.
     func brightPhoto(for pixelStamp: String, neutral: () throws -> CIImage) throws -> CIImage {
         try brightened.photo(for: pixelStamp) {
             let photo = try neutral()
-            // half floats, so lifting the shadows does not band them
             guard
                 let drawn = photoContext.createCGImage(
                     photo, from: photo.extent, format: .RGBAh,
@@ -78,7 +70,6 @@ struct Masker {
         }
     }
 
-    // a dark photo hides its edges from the model
     private func stopsToMiddleGrey(_ photo: CGImage) -> Double {
         let image = CIImage(cgImage: photo)
         let average = image.applyingFilter(
@@ -92,16 +83,13 @@ struct Masker {
         return min(max((stops * 2).rounded() / 2, 0), 4)
     }
 
-    /// The border repeats outward first, or linear sampling fades the matte along the frame.
     static func stretched(_ matte: CIImage, over extent: CGRect) -> CIImage {
         Presence.stretched(matte.clampedToExtent(), from: matte.extent, to: extent)
             .cropped(to: extent)
     }
 
-    /// The older models only say where: who the subject is, where each person stands.
     static let vision: Segment = { photo, source, points in
         let nothing = CIImage(color: .black).cropped(to: photo.extent)
-        // a click does not need it, and the cursor asks on every move
         lazy var handler = VNImageRequestHandler(ciImage: photo)
         func rough(_ found: CVPixelBuffer) -> RoughMask {
             RoughMask(
@@ -131,11 +119,9 @@ struct Masker {
             guard let crowd = everyone.results?.first.map({ rough($0.pixelBuffer) }), crowd.count > 0
             else { return nothing }
             let boxes = (bodies.results ?? []).map { body in
-                // Vision counts up from the bottom
                 let box = body.boundingBox
                 return CGRect(x: box.minX, y: 1 - box.maxY, width: box.width, height: box.height)
             }
-            // the detector misses people the mask has, and they go in together
             let missed = [crowd.outside(boxes)].filter { $0.isMuch(of: crowd) }
             seed = .scribbles(boxes.map(crowd.inside).filter { $0.count > 0 } + missed)
         }
@@ -153,7 +139,6 @@ private final class LastPhoto: @unchecked Sendable {
     private let lock = NSLock()
     private var last: (key: String, photo: CIImage)?
 
-    // held through the draw, so two who miss together decode once
     func photo(for key: String, orDraw draw: () throws -> CIImage) rethrows -> CIImage {
         try lock.withLock {
             if let last, last.key == key { return last.photo }

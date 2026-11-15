@@ -12,7 +12,6 @@ export function useCropSession(
     draft: CropDraft;
   } | null>(null);
   const current = stored?.path === loupePhoto?.path ? stored : null;
-  // leaving the photo or closing the loupe ends the crop instead of parking it
   if (stored && !current) setStored(null);
   const draft = current?.draft ?? null;
 

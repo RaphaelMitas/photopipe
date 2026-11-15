@@ -2,8 +2,6 @@ import CoreGraphics
 import Foundation
 import Synchronization
 
-/// Reached from the dispatcher's worker pool, the watcher's queue and the
-/// enricher's; every field below is guarded by `lock`.
 public final class LibraryService: @unchecked Sendable {
     public enum ServiceError: Error {
         case noRoot
@@ -26,8 +24,6 @@ public final class LibraryService: @unchecked Sendable {
     private var root: String?
     private var rootRequests = 0
     private var generation = 0
-    /// Bumped whenever the file list itself is replaced. Enrichment batches
-    /// carry the epoch they were queued under and are dropped if it moved on.
     private var epoch = 0
     private var shootGenerations: [String: Int] = [:]
     private var shootPublished: [String: Date] = [:]
@@ -42,8 +38,6 @@ public final class LibraryService: @unchecked Sendable {
     private let facer: Facer
     private let exporter = Exporter()
     private let rescanQueue = DispatchQueue(label: "photopipe.rescan")
-    /// One connection, one writer: enrichment batches and full saves both land
-    /// here so they never interleave on the same sqlite handle.
     private let indexQueue = DispatchQueue(label: "photopipe.index", qos: .utility)
     private var pendingRescan: DispatchWorkItem?
     private let enricher = Enricher()
@@ -72,18 +66,12 @@ public final class LibraryService: @unchecked Sendable {
         public let generation: Int
     }
 
-    /// Returns as soon as the tree has been walked. Ratings, edits and
-    /// dimensions arrive afterwards, either straight from the index or from
-    /// background enrichment, and are visible through `status`.
     public func setRoot(path: String, indexPath: String?) throws -> RootSummary {
         let path = Self.canonical(path)
         let request = lock.withLock {
             rootRequests += 1
             return rootRequests
         }
-        // Opening the database is itself a write (pragmas, schema, and a delete
-        // if it turns out corrupt), so it has to queue behind whatever the
-        // previous root left in flight rather than race it on a second handle.
         let (index, warm) = indexQueue.sync { () -> (SQLiteIndex?, [String: ImageFile]) in
             let index = try? SQLiteIndex(path: indexPath ?? Self.defaultIndexPath())
             guard let stored = (try? index?.load()) ?? nil, stored.root == path else {
@@ -94,7 +82,6 @@ public final class LibraryService: @unchecked Sendable {
         let scanned = carryEnrichment(into: try walkLibrary(root: path), from: warm)
 
         let currentGeneration = try lock.withLock {
-            // the caller may have timed out and opened another folder while this one was walked
             guard rootRequests == request else { throw ServiceError.rootSuperseded(path) }
             root = path
             self.index = index
@@ -122,7 +109,6 @@ public final class LibraryService: @unchecked Sendable {
     public func listImages(shoot: String) throws -> [ImageFile] {
         let images = try images(inShoot: shoot)
         let scores = scorer.values(for: images)
-        // one read, so a print landing mid-call cannot be counted without being stacked
         let answers = printer.answers(for: images)
         let captured = images.reduce(into: [String: Double]()) { $0[$1.path] = $1.captured }
         let stacks = Stacker.stacks(answers.compactMapValues { $0 }, captured: captured)
@@ -137,14 +123,12 @@ public final class LibraryService: @unchecked Sendable {
         scorer.start(shoot: shoot, files: try images(inShoot: shoot))
     }
 
-    /// Separate from scoring, so turning Instinct off in Settings leaves stacks working.
     public func stackShoot(shoot: String) throws -> Printer.Progress {
         printer.start(shoot: shoot, files: try images(inShoot: shoot))
     }
 
     private func images(inShoot shoot: String) throws -> [ImageFile] {
         let images = try snapshotImages(inShoot: shoot)
-        // A read with a side effect: what you are looking at gets indexed first.
         enricher.prioritize(shoot: shoot)
         return images
     }
@@ -166,9 +150,6 @@ public final class LibraryService: @unchecked Sendable {
         public let filesFound: Int
         public let filesEnriched: Int
         public let scanning: Bool
-        /// Shoots whose images changed after the caller's generation, so the
-        /// client can refetch just those instead of the whole library. Nil
-        /// when the caller did not say where it left off.
         public let changedShoots: [String]?
     }
 
@@ -188,11 +169,7 @@ public final class LibraryService: @unchecked Sendable {
         }
     }
 
-    /// Callers must hold the lock.
     private func publish(_ next: LibrarySnapshot) -> Int {
-        // Disappearing is a change too, and it has to be announced under the
-        // shoot's own name: a client still holding its photos hears about it
-        // only if the name it knows comes back as changed.
         let departed = Set(snapshot.shoots.map(\.name)).subtracting(next.shoots.map(\.name))
         snapshot = next
         epoch += 1
@@ -225,18 +202,12 @@ public final class LibraryService: @unchecked Sendable {
                 return nil
             }
             let updates = Self.byPath(files)
-            // A batch is a snapshot of what the files held when it was queued. If
-            // an entry has been settled since — a rating written, say — it is the
-            // newer truth and the batch must not walk over it.
             let accepted = images.map { current in
                 current.enriched ? current : updates[current.path] ?? current
             }
             snapshot = snapshot.replacingImages(inShoot: shoot, with: accepted)
             generation += 1
 
-            // Refetching a shoot means re-encoding every image in it, so say a
-            // shoot changed at most once a second. The dashboard's counters ride
-            // the global generation, which is free to move every batch.
             let now = Date()
             if shootDone || now.timeIntervalSince(shootPublished[shoot] ?? .distantPast) >= 1 {
                 shootGenerations[shoot] = generation
@@ -246,8 +217,6 @@ public final class LibraryService: @unchecked Sendable {
         }
         guard let (merged, index) = applied else { return }
 
-        // Only what the merge accepted: persisting an entry the merge rejected
-        // would put the pre-write value back on the next launch.
         indexQueue.async { try? index?.upsert(shoot: shoot, files: merged) }
     }
 
@@ -270,8 +239,6 @@ public final class LibraryService: @unchecked Sendable {
             viewport: viewport, decoderVersion: decoderVersion)
     }
 
-    /// `at` is a spot in the framed photo, from the top left; with it every tile is native pixels around that spot.
-    /// `faces` sheets every face found at up to native pixels, unedited, since faces are found in the photo as shot.
     public func look(
         ids: [String], edited: Bool, longEdge: Int, at spot: CGPoint?, sheet: Bool,
         faces: Bool = false, maxBytes: Int
@@ -306,7 +273,6 @@ public final class LibraryService: @unchecked Sendable {
     private func faceSheet(of files: [ImageFile], ids: [String], longEdge: Int, maxBytes: Int) throws
         -> Look.Shown
     {
-        // leaves the crops time to render before the host gives up on the request
         let found = try self.faces(ids: ids, wait: 60)
         let pending = found.count { !$0.done }
         guard pending == 0 else { throw Look.LookError.facesPending(pending) }
@@ -334,7 +300,6 @@ public final class LibraryService: @unchecked Sendable {
         (file.rel as NSString).lastPathComponent
     }
 
-    /// A few at a time: each raw decode is a whole sensor's worth of memory.
     private func renderInBatches<Still: Sendable>(
         _ count: Int, _ render: @escaping @Sendable (Int) throws -> Still
     ) throws -> [Still] {
@@ -357,12 +322,10 @@ public final class LibraryService: @unchecked Sendable {
     }
 
     public struct PhotoFaces: Sendable, Encodable {
-        /// nil when the photo could not be read or is not done.
         public let faces: [FaceSpot]?
         public let done: Bool
     }
 
-    /// Joins the shared face pass; cached like Instinct scores.
     public func faces(ids: [String], wait: TimeInterval = 90) throws -> [PhotoFaces] {
         guard ids.count <= Look.sheetLimit else {
             throw Look.LookError.tooMany(ids.count, limit: Look.sheetLimit)
@@ -371,10 +334,8 @@ public final class LibraryService: @unchecked Sendable {
         var files = try knownImages(ids: ids)
         var answers = facer.answers(for: files)
         while !files.allSatisfy({ answers.keys.contains($0.path) }), Date() < deadline {
-            // one shared pass, so asking again after a timeout joins the pass still running
             facer.start(shoot: "agent", files: files)
             Thread.sleep(forTimeInterval: 0.25)
-            // a rating mid-pass moves the stamp the answer is under; a photo gone or another root ends the wait
             guard let fresh = try? knownImages(ids: ids) else { break }
             files = fresh
             answers = facer.answers(for: files)
@@ -401,7 +362,6 @@ public final class LibraryService: @unchecked Sendable {
                 return Description(
                     text: try Describer.describe(still.image), error: nil, unmasked: still.unmasked)
             } catch {
-                // a render error names the original's path, which is for agents that see pictures
                 let error = error is Renderer.RenderError ? "could not read this photo" : "\(error)"
                 return Description(text: nil, error: error, unmasked: false)
             }
@@ -432,12 +392,10 @@ public final class LibraryService: @unchecked Sendable {
         }
     }
 
-    /// A placeholder is read here but not stored, so a write landing meanwhile is never undone.
     private func readImages(ids: [String]) throws -> [ImageFile] {
         try knownImages(ids: ids).map { $0.enriched ? $0 : enrich($0) }
     }
 
-    /// An agent's id for a photo is its shoot's name, a slash, and its path inside the shoot.
     private func knownImages(ids: [String]) throws -> [ImageFile] {
         var shoots: [String: [String: ImageFile]] = [:]
         return try ids.map { id in
@@ -478,21 +436,12 @@ public final class LibraryService: @unchecked Sendable {
         try renderer.rawDefaults(for: recordUnderRoot(path: path), decoderVersion: decoderVersion)
     }
 
-    /// Whether RAW 9 is reachable at all here. Per-file support folds the
-    /// camera and this Mac's macOS together, so one body that lacks it proves
-    /// nothing; only a library-wide "no" is worth telling the user about.
-    /// nil when there is no raw to ask.
     public func raw9Availability() -> Bool? {
         let shoots = lock.withLock { snapshot.imagesByShoot }
-        // one raw per shoot: cameras rarely differ within a shoot, and the
-        // probe caches per camera
         let samples = shoots.values.compactMap { $0.first(where: \.isRaw) }
-        // A file still copying answers nothing, not no. Condemning the library
-        // on it would stick, because the client caches this for the session.
         var answered = false
         for sample in samples {
             guard let verdict = renderer.known(file: sample, major: 9) else { continue }
-            // a probe loads RAW 9 on its first yes, which takes seconds; one is enough
             if verdict { return true }
             answered = true
         }
@@ -509,11 +458,9 @@ public final class LibraryService: @unchecked Sendable {
             .compactMap { try? recordUnderRoot(path: $0) }
             .filter(\.isRaw)
         guard !files.isEmpty else { return DecoderSupport(raw9: 0, rawTotal: 0) }
-        // a whole shoot serially outruns the caller's request timeout
         DispatchQueue.concurrentPerform(iterations: files.count) { index in
             _ = renderer.supports(file: files[index], major: 9)
         }
-        // every answer is cached now, so this pass never touches a file
         return DecoderSupport(
             raw9: files.count { renderer.supports(file: $0, major: 9) }, rawTotal: files.count)
     }
@@ -530,11 +477,9 @@ public final class LibraryService: @unchecked Sendable {
             mtime: ((attrs[.modificationDate] as? Date) ?? .distantPast).timeIntervalSince1970)
     }
 
-    /// One index for the whole selection, since a linear scan per path is quadratic.
     private func images(inShoot shootName: String, paths: [String]) throws -> [ImageFile] {
         let images = try snapshotImages(inShoot: shootName)
         let byPath = Self.byPath(images)
-        // the walk keeps /private and canonical() drops it
         lazy var byCanonical = Dictionary(
             images.map { (Self.canonical($0.path), $0) }, uniquingKeysWith: { $1 })
         return try paths.map { path in
@@ -545,9 +490,6 @@ public final class LibraryService: @unchecked Sendable {
         }
     }
 
-    /// The image with its real metadata, reading it now if enrichment has not
-    /// reached it. A write against a placeholder would both lose what the file
-    /// already carries and be overwritten by the batch still in the queue.
     private func settledImage(shoot: String, path: String) throws -> ImageFile {
         let image = try images(inShoot: shoot, paths: [path])[0]
         guard !image.enriched else { return image }
@@ -556,9 +498,6 @@ public final class LibraryService: @unchecked Sendable {
         return settled
     }
 
-    /// One photo's XMP write, settled afterwards. What settling compares against
-    /// is restatted first rather than taken from the snapshot, which a second
-    /// write to the same photo leaves behind while it is in flight.
     private func write(
         shoot: String, path: String, _ apply: (ImageFile) throws -> Void
     ) throws -> ImageFile {
@@ -568,10 +507,6 @@ public final class LibraryService: @unchecked Sendable {
         return settleAfterWrite(shoot: shoot, image: before)
     }
 
-    /// Re-reads a file we just wrote and records it everywhere the old value
-    /// lived. Restatting matters as much as re-reading: the walk compares those
-    /// stamps, so an entry left holding the pre-write ones is dropped back to a
-    /// placeholder by the very next rescan.
     private func settleAfterWrite(shoot: String, image: ImageFile) -> ImageFile {
         let settled = enrich(Self.restat(image))
         replace(settled, inShoot: shoot)
@@ -594,8 +529,6 @@ public final class LibraryService: @unchecked Sendable {
             sidecarMtime: XMP.sidecarMtime(forImagePath: file.path))
     }
 
-    /// Not announced through `status`: the writer gets the new value in its
-    /// answer, and a shoot named as changed costs every client a full refetch.
     private func replace(_ image: ImageFile, inShoot shootName: String) {
         lock.withLock {
             guard var updated = snapshot.imagesByShoot[shootName],
@@ -737,7 +670,6 @@ public final class LibraryService: @unchecked Sendable {
     public func trashImages(shoot shootName: String, paths: [String]) throws -> TrashResult {
         let doomed = try images(inShoot: shootName, paths: paths)
         let doomedPaths = Set(doomed.map(\.path))
-        // raws sharing a stem, like an ORF and its ORI, share Lightroom's DSC0001.xmp
         let stillUsed = Set(
             try snapshotImages(inShoot: shootName).filter { !doomedPaths.contains($0.path) }
                 .map { XMP.sidecarURL(forImagePath: $0.path).path })
@@ -751,9 +683,6 @@ public final class LibraryService: @unchecked Sendable {
         return TrashResult(files: trashed.count, generation: status().generation)
     }
 
-    /// Everything that can be refused outright is refused here, so a bad
-    /// request comes back as an error rather than as a job that fails a
-    /// minute later.
     public func startExport(
         shoot shootName: String, paths: [String], destination: String,
         zip: Bool, flatten: Bool, format: ExportFormat, quality: Int,
@@ -778,7 +707,6 @@ public final class LibraryService: @unchecked Sendable {
             settled: rescanWhenSettled)
     }
 
-    /// The watcher would see the delivered files, but iPadOS has none.
     private var rescanWhenSettled: @Sendable () -> Void {
         { [weak self] in self?.rescanNow() }
     }
@@ -829,9 +757,6 @@ public final class LibraryService: @unchecked Sendable {
             let walked = try? walkLibrary(root: currentRoot)
         else { return }
 
-        // Read what is known only after the walk: on a big tree the walk takes
-        // seconds, and anything enriched during it would otherwise be thrown
-        // back to a placeholder.
         let known = lock.withLock { Self.byPath(snapshot.imagesByShoot.values.joined()) }
         let scanned = carryEnrichment(into: walked, from: known)
 
@@ -845,11 +770,8 @@ public final class LibraryService: @unchecked Sendable {
         store(scanned, root: currentRoot, in: index)
     }
 
-    /// Each analyzer keeps its own copy of the cache and hands results back here to
-    /// be written, so the sqlite handle stays on one queue with the enricher.
     private func useAnalyzers(with index: SQLiteIndex?, root: String) {
         let queue = indexQueue
-        // on the queue, so a superseded root's late load cannot land after the current one
         queue.sync {
             scorer.use(cache: (try? index?.loadScores(under: root)) ?? [:]) { rows in
                 queue.async { try? index?.saveScores(rows) }
@@ -863,9 +785,6 @@ public final class LibraryService: @unchecked Sendable {
         }
     }
 
-    /// Writes the file list out and hands whatever is still a placeholder to
-    /// the enricher. Both happen on the index queue, in that order, so an
-    /// interrupted session still starts warm next time.
     private func store(_ scanned: LibrarySnapshot, root: String, in index: SQLiteIndex?) {
         indexQueue.async { [weak self] in
             try? index?.save(root: root, filesByShoot: scanned.imagesByShoot)

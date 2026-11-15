@@ -29,7 +29,6 @@ describe("exif", () => {
   });
 
   it("shows the camera's clock, not the clock shifted into the local zone", () => {
-    // 2026-10-26 22:41:07 on the camera, which would read 23:41 in Darmstadt
     expect(takenTime(1_793_054_467)).toMatch(/^(22:41:07|10:41:07\sPM)$/);
   });
 });

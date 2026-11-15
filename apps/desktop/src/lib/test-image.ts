@@ -1,6 +1,5 @@
 import { type ImageFile, identityEdit } from "./core";
 
-/// `path` defaults to `/r/s/<rel>`; override anything.
 export function makeImage(
   rel: string,
   overrides: Partial<ImageFile> = {},
