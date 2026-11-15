@@ -81,7 +81,6 @@ function ProjectDateField({
   onChange: Dispatch<SetStateAction<string>>;
 }) {
   const [open, setOpen] = useState(false);
-  // suggest once, and only for a project that opened undated; a clear stays cleared
   const suggested = useRef(day !== "");
   const { mutate: suggest } = useCaptureDate();
   const selected = day ? fromDay(day) : undefined;

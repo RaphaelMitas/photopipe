@@ -10,12 +10,10 @@ export function useVirtualJump(
   const jumped = useRef(false);
   useEffect(() => {
     if (jumped.current || !ready) return;
-    // a match arriving later must not yank the scroll out from under the user
     if (index === -1) {
       jumped.current = true;
       return;
     }
-    // the virtualizer re-applies its own offset on attach, undoing a jump here
     const frame = requestAnimationFrame(() => {
       jumped.current = true;
       virtualizer.scrollToIndex(index, { align: "center" });

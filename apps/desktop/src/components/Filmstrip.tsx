@@ -71,7 +71,6 @@ export function Filmstrip({ images, index, mode, stacks, onNavigate }: Props) {
     overscan: 12,
   });
 
-  // every rating rebuilds the stacks, so the grouping is compared by shape, not identity
   const grouping = list?.map((stack) => stack.frames.length).join() ?? "";
   useEffect(() => {
     virtualizer.measure();

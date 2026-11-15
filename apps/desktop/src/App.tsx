@@ -159,10 +159,8 @@ export default function App() {
   const openSettings = useCallback(() => setSettingsOpen(true), []);
   const sort = sortPref.use();
   const autoScore = autoScorePref.use();
-  // outlives the loupe, so closing it lands the browser on the same photo
   const [currentPath, setCurrentPath] = useState<string | null>(null);
   const [loupeOpen, setLoupeOpen] = useState(false);
-  // a frame, not the stack id: an earlier frame arriving renames the stack and must not throw you out
   const [insideAnchor, setInsideAnchor] = useState<string | null>(null);
   const filter = useRatingFilter();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -208,7 +206,6 @@ export default function App() {
           return;
         }
         if (roots.length > 0) return;
-        // A failed migration keeps the keys, so an unplugged drive gets another try.
         const legacy = localStorage.getItem(LEGACY_ROOT_KEY);
         if (legacy) {
           if (await connectRoot(legacy)) {
@@ -252,15 +249,9 @@ export default function App() {
   const scan = useLibrarySync(ready, ready ? rootState.generation : null);
 
   const allImages = images.data ?? [];
-  // A finished pass is the signal, not a score on every photo: the core counts
-  // a file it cannot read as answered, and one of those would otherwise keep
-  // Instinct greyed out for the whole project forever.
   const scoreReady = scoring
     ? scoring.total > 0 && !scoring.running && scoring.done >= scoring.total
     : allImages.length > 0 && allImages.every((image) => image.score != null);
-  // Sorting a half-rated project would put photos in an order the scores do not
-  // support, so until the pass is done the browser falls back to name. Date
-  // waits the same way for enrichment, which reads the capture times.
   const sortReady = {
     name: true,
     date: enriched,
@@ -298,8 +289,6 @@ export default function App() {
     hold: holdEdit,
     busy: editBusy,
   } = useDebouncedEdit(writes.writeEdit, EDIT_COMMIT_MS);
-  // Before the core has read the file, an edit is relative to a blank
-  // placeholder and would erase the real one.
   const readable = useCallback((image: ImageFile) => {
     if (image.enriched) return true;
     toast("Still reading this photo's existing edits", { id: "not-indexed" });
@@ -323,7 +312,6 @@ export default function App() {
   });
 
   const { check: checkForUpdates } = updater;
-  // check is stable, so this subscribes once and no menu click falls in a gap
   useEffect(() => {
     const subscriptions = [
       listen("menu:settings", openSettings),
@@ -369,8 +357,6 @@ export default function App() {
           request: { ...settings, shoot: openShoot, paths, destination },
         });
 
-  // Keyed on the sort you chose, not the one in force: a scoring pass finishing
-  // must not re-order the loupe under you mid-visit.
   const held = useRef<{ key: string; paths: string[] }>({ key: "", paths: [] });
   const heldKey = `${openShoot}|${sort}|${filter.key}|${stacksOn}`;
   const openImage = currentPath
@@ -389,7 +375,6 @@ export default function App() {
     );
     if (!openImage || reorder) return live;
     const order = heldOrder(held.current.paths, live);
-    // holding can slot a newcomer beside the wrong held photo; regrouping puts it back in its stack
     return stacksOn
       ? groupStacks(order).flatMap((stack) => stack.frames)
       : order;
@@ -412,14 +397,11 @@ export default function App() {
   const loupeIndex = openImage ? loupeImages.indexOf(openImage) : -1;
   const loupeImage = loupeIndex >= 0 ? loupeImages[loupeIndex] : null;
   const loupeEdit = loupeImage === null ? identityEdit : editOf(loupeImage);
-  // The browser keeps the current photo after the loupe closes, so anything
-  // acting on "the photo you are looking at" has to ask whether it is open.
   const loupePhoto = loupeOpen ? loupeImage : null;
   const [split, setSplit] = useState(false);
   if (split && !loupePhoto) setSplit(false);
   const toggleSplit = useCallback(() => setSplit((on) => !on), []);
 
-  // stacks arriving or an import can regroup you onto a non-cover frame, which means inside
   const membership = currentStack?.frames.map((frame) => frame.path).join("\n");
   const decided = useRef({ membership, currentPath });
   useEffect(() => {
@@ -431,7 +413,6 @@ export default function App() {
       setInsideAnchor(anchorFor(currentStack, currentPath));
     }
   }, [membership, currentPath]);
-  // Read at keypress, not render: a rating typed a moment ago may not have re-rendered yet.
   const readLive = (photos: ImageFile[]) => {
     const live = photos.map(
       (photo) => cachedImage(queryClient, openShoot, photo.path) ?? photo,
@@ -488,7 +469,6 @@ export default function App() {
   const visit = (path: string | null, stacks: Stack[] | null) => {
     setCurrentPath(path);
     const stack = path && stacks ? stackOf(stacks, path) : undefined;
-    // inside, the anchor follows you, so a regroup can only err toward rating one frame
     if (insideStack && stack === currentStack) {
       setInsideAnchor(path);
       return;
@@ -500,7 +480,6 @@ export default function App() {
   const masks = useMaskSession(loupePhoto, loupeEdit, changeEdit, editOpen);
   const canMask = useCanMask();
 
-  // a filtered-out photo is not in the browser, so land on the nearest one that is
   const focusPath = useMemo(() => {
     if (loupeIndex === -1) return null;
     const inBrowser = new Set(filteredImages);
@@ -532,7 +511,6 @@ export default function App() {
     [editOf, readable],
   );
 
-  // a batch write takes over the photo being edited, so its pending draft goes
   const writeEdits = useCallback(
     (
       edits: Map<string, Edit>,
@@ -605,22 +583,18 @@ export default function App() {
 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [revealed, setRevealed] = useState(0);
-  // an undo resolves after the keypress, so it reads where you are now, not then
   const currentPathNow = useRef(currentPath);
   currentPathNow.current = currentPath;
   const stacksNow = useRef(loupeStacks);
-  // the browser has no stacks, so undo there lands on the photo it changed
   stacksNow.current = loupeOpen ? loupeStacks : null;
   const insideNow = useRef(insideStack);
   insideNow.current = insideStack;
-  // Before the write, so you are on the photo when the step lands.
   const showPhoto = useCallback(
     (entry: HistoryEntry) => {
       const present = (path: string) =>
         cachedImage(queryClient, openShoot, path) !== undefined;
       const current = currentPathNow.current;
       const stacks = stacksNow.current;
-      // inside a stack, a step on a sibling frame still moves you to it
       const here =
         current && stacks && (entry.wholeStack || !insideNow.current)
           ? stackOf(stacks, current)
@@ -631,7 +605,6 @@ export default function App() {
       const next = touchesHere ? undefined : entry.paths.find(present);
       if (next) {
         setCurrentPath(next);
-        // you land on the frame the step changed, inside its stack unless the step was on the whole stack
         setInsideAnchor(entry.wholeStack ? null : next);
       }
       setRevealed((count) => count + 1);
@@ -722,7 +695,6 @@ export default function App() {
     trash
       .mutateAsync(paths)
       .then((result) => result.files)
-      // even a failed trash may have moved some of them
       .finally(() => forgetHistoryPaths(paths));
   const trashPhotos = (paths: string[]) =>
     void trashFiles(paths).catch(() => {});
@@ -743,10 +715,8 @@ export default function App() {
   };
 
   const openPhoto = (path: string | null) => {
-    // A new visit walks the browser's order as it stands now.
     held.current = NO_HELD;
     setCurrentPath(path);
-    // closing, a grid undo or a shoot switch can leave an anchor behind, so opening decides it fresh
     setInsideAnchor(
       anchorFor(
         path && stacksOn ? stackOf(groupStacks(allImages), path) : undefined,
@@ -795,8 +765,6 @@ export default function App() {
     save: flushEdit,
   });
 
-  // Settings is reachable from the menu bar at any time, including before a
-  // photos folder is picked, so it lives outside the browser chrome.
   const settingsDialog = (
     <>
       <SettingsDialog
@@ -921,7 +889,6 @@ export default function App() {
         onSaved={(saved) => {
           setShootSettings(null);
           if (openShoot !== shootSettings) return;
-          // a rename moves the folder out from under every recorded path
           if (saved !== openShoot) clearHistory();
           setOpenShoot(saved);
         }}

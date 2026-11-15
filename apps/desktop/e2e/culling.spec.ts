@@ -28,24 +28,19 @@ test("clicking a thumb opens the loupe; keyboard rates and navigates", async ({
   await expect(page.getByTestId("loupe")).toBeVisible();
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.ARW");
 
-  // Rate with the keyboard — stars update optimistically (they live in the
-  // options sidebar next to the loupe).
   await page.keyboard.press("3");
   await expect(page.locator("[data-rating='3']")).toBeVisible();
 
-  // The JPEG of the same shot is its own photo, unrated.
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.jpg");
   await expect(page.locator("[data-rating='0']")).toBeVisible();
 
-  // The pre-rated image shows its stars.
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("loupe-name")).toHaveText(
     "abends/DSC00938.ARW",
   );
   await expect(page.locator("[data-rating='2']")).toBeVisible();
 
-  // Escape returns to the grid, which now shows the new rating badge.
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("loupe")).toHaveCount(0);
   await expect(
@@ -59,17 +54,14 @@ test("histogram comparators: eq and lte narrow differently", async ({
   await openZell(page);
   await expect(page.getByTestId("thumb")).toHaveCount(4);
 
-  // = 2: only the one image rated exactly 2.
   await page.getByTestId("filter-op-eq").click();
   await page.getByTestId("hist-2").click();
   await expect(page.getByTestId("thumb")).toHaveCount(1);
   await expect(page.locator("[data-path='abends/DSC00938.ARW']")).toBeVisible();
 
-  // ≤ 2: unrated images (0) count too.
   await page.getByTestId("filter-op-lte").click();
   await expect(page.getByTestId("thumb")).toHaveCount(4);
 
-  // ≥ 3: nothing in the default dataset.
   await page.getByTestId("filter-op-gte").click();
   await page.getByTestId("hist-3").click();
   await expect(page.getByTestId("thumb")).toHaveCount(0);
@@ -81,14 +73,12 @@ test("unrated mode shows only rating-0 images; a bar click returns to threshold 
   await openZell(page);
   await expect(page.getByTestId("thumb")).toHaveCount(4);
 
-  // ∅: three of the four zell images are unrated.
   await page.getByTestId("filter-op-unrated").click();
   await expect(page.getByTestId("thumb")).toHaveCount(3);
   await expect(page.locator("[data-path='abends/DSC00938.ARW']")).toHaveCount(
     0,
   );
 
-  // Clicking a star bar hops back to ≥N.
   await page.getByTestId("hist-2").click();
   await expect(page.getByTestId("thumb")).toHaveCount(1);
   await expect(page.locator("[data-path='abends/DSC00938.ARW']")).toBeVisible();
@@ -113,15 +103,11 @@ test("the filter is available inside the loupe and info toggle pins the grid ove
 }) => {
   await openZell(page);
 
-  // Overlay is hover-only by default, pinned after the toggle.
   const info = page.getByTestId("thumb-info").first();
   await expect(info).toHaveCSS("opacity", "0");
   await page.getByTestId("grid-info-toggle").click();
   await expect(info).toHaveCSS("opacity", "1");
 
-  // The detail sidebar carries the same filter controls. Filtering away the
-  // current image must NOT eject the loupe — it stays pinned until you
-  // navigate, then ←→ moves within the matches.
   await page.getByTestId("thumb").first().click();
   await expect(page.getByTestId("loupe")).toBeVisible();
   await page.getByTestId("filter-op-eq").click();
@@ -161,7 +147,6 @@ test("a filter change under the loupe leaves the photo where the sort puts it", 
   await rate(page, "DSC00832.jpg", "4");
   await sortByRating(page);
 
-  // Rating order is 4, 2, then the unrated pair, so .first() is the jpg.
   await page.getByTestId("thumb").first().click();
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.jpg");
 
@@ -188,7 +173,6 @@ test("the arrows stop at the ends instead of wrapping or sticking", async ({
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("loupe-position")).toHaveText("4/4");
 
-  // Rating the last photo must not strand the arrows.
   await page.keyboard.press("5");
   await expect(page.getByTestId("loupe-position")).toHaveText("4/4");
   await page.keyboard.press("ArrowLeft");
@@ -201,7 +185,6 @@ test("reopening the loupe walks the browser as it now stands", async ({
   await openZell(page);
   await sortByRating(page);
 
-  // Five stars sends this photo to the front of the browser.
   await page.getByTestId("thumb").nth(3).click();
   await page.keyboard.press("5");
   await expect(page.locator("[data-rating='5']")).toBeVisible();
@@ -220,8 +203,6 @@ test("reopening the loupe walks the browser as it now stands", async ({
 test("a scoring pass finishing does not re-order the loupe under you", async ({
   page,
 }) => {
-  // Instinct is the stored sort, but the browser falls back to name until the
-  // pass lands, so the loupe opens on a name-ordered walk.
   await page.addInitScript(() =>
     localStorage.setItem("photopipe.sort", "score"),
   );
@@ -236,8 +217,6 @@ test("a scoring pass finishing does not re-order the loupe under you", async ({
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.jpg");
   await expect(page.getByTestId("loupe-position")).toHaveText("2/4");
 
-  // The pass completes and the browser re-sorts by score. Nothing you are
-  // looking at moves, and the arrows still walk the order you opened.
   await expect(page.getByTestId("rating-now")).toBeHidden();
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.jpg");
   await expect(page.getByTestId("loupe-position")).toHaveText("2/4");
@@ -266,8 +245,6 @@ test("a photo rated out of the filter under Rating sort holds its place", async 
   );
   await expect(page.getByTestId("loupe-position")).toHaveText("2/3");
 
-  // Clearing its stars drops it out of the filter. The loupe pins it where it
-  // stood, so ←→ keep walking the matches around it.
   await page.keyboard.press("0");
   await expect(page.locator("[data-rating='0']")).toBeVisible();
   await expect(page.getByTestId("loupe-position")).toHaveText("2/3");
@@ -279,7 +256,6 @@ test("rating the current image below the filter keeps it in the loupe", async ({
   page,
 }) => {
   await openZell(page);
-  // ≥2 matches only DSC00938 (rated 2).
   await page.getByTestId("hist-2").click();
   await expect(page.getByTestId("thumb")).toHaveCount(1);
   await page.getByTestId("thumb").first().click();
@@ -287,15 +263,12 @@ test("rating the current image below the filter keeps it in the loupe", async ({
     "abends/DSC00938.ARW",
   );
 
-  // Clearing its rating un-matches it — the loupe must hold, not eject,
-  // even though the filtered list is now empty.
   await page.keyboard.press("0");
   await expect(page.getByTestId("loupe")).toBeVisible();
   await expect(page.getByTestId("loupe-name")).toHaveText(
     "abends/DSC00938.ARW",
   );
 
-  // Leaving deliberately still works.
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("loupe")).toHaveCount(0);
   await expect(page.getByTestId("thumb")).toHaveCount(0);
@@ -312,13 +285,11 @@ test("filmstrip jumps between images and cycles its three modes", async ({
   await expect(filmstrip).toBeVisible();
   await expect(filmstrip).toHaveAttribute("data-mode", "thumbs");
 
-  // Click a far frame in the wheel — the loupe jumps there.
   await filmstrip.locator("[data-path='abends/DSC00943.ARW']").click();
   await expect(page.getByTestId("loupe-name")).toHaveText(
     "abends/DSC00943.ARW",
   );
 
-  // Ratings mode: fixed cells with a star row (DSC00938 ships rated 2).
   await page.getByTestId("filmstrip-ratings").click();
   await expect(filmstrip).toHaveAttribute("data-mode", "ratings");
   await expect(
@@ -327,7 +298,6 @@ test("filmstrip jumps between images and cycles its three modes", async ({
       .getByTestId("filmstrip-rating"),
   ).toHaveText("2");
 
-  // Off hides it entirely; back to thumbs restores.
   await page.getByTestId("filmstrip-off").click();
   await expect(filmstrip).toHaveCount(0);
   await page.getByTestId("filmstrip-thumbs").click();
@@ -344,18 +314,14 @@ test("exposure is per photo and survives leaving and returning", async ({
   await page.keyboard.press("ArrowUp");
   await expect(page.getByText("+0.25")).toBeVisible();
 
-  // The edit belongs to this photo — the neighbor shows its own value
-  // (DSC00832.jpg ships with +0.50 in the dataset).
   await page.keyboard.press("ArrowRight");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.jpg");
   await expect(page.getByText("+0.50")).toBeVisible();
 
-  // Back on the first photo the persisted value is still there.
   await page.keyboard.press("ArrowLeft");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC00832.ARW");
   await expect(page.getByText("+0.25")).toBeVisible();
 
-  // The grid marks edited photos.
   await page.keyboard.press("Escape");
   await expect(
     page.locator("[data-path='DSC00832.jpg']").getByTestId("thumb-edited"),
@@ -418,7 +384,6 @@ test("a slider drag is one history entry, and undo walks back to its photo", asy
   for (const dx of [10, 20, 30, 40]) {
     await page.mouse.move(box.x + box.width / 2 + dx, y);
   }
-  // Held still for longer than the keyboard debounce: nothing is saved yet.
   await page.waitForTimeout(700);
   await expect(page.getByTestId("history-undo")).toBeDisabled();
   await page.mouse.up();
@@ -460,7 +425,6 @@ test("arrow keys on a slider save their last step as one entry", async ({
   }
   await expect(page.getByTestId("history-undo")).toBeEnabled();
 
-  // The newest row: a slow runner may split the presses across the debounce.
   await page.getByTestId("history-toggle").click();
   await expect(
     page.getByTestId("history-popover").getByRole("button").first(),
@@ -490,7 +454,6 @@ test("a jump across several steps lands every photo where stepping would", async
   await expect(exposure).toHaveAttribute("aria-valuenow", "0");
   await expect(page.getByTestId("history-undo")).toBeDisabled();
 
-  // The newest row: how many entries the nudges became depends on the debounce.
   await page.getByTestId("history-popover").getByRole("button").first().click();
   await expect(exposure).toHaveAttribute("aria-valuenow", "0.75");
   await page.keyboard.press("Escape");
@@ -516,7 +479,6 @@ test("the history opens on the state you are in, not at the top", async ({
   await page.getByTestId("history-toggle").click();
   const current = page.getByTestId("history-row-14");
   await expect(current).toHaveAttribute("aria-current", "true");
-  // rows on both sides in view means the middle, not merely scrolled into sight
   await expect(page.getByTestId("history-row-17")).toBeInViewport();
   await expect(page.getByTestId("history-row-11")).toBeInViewport();
   await expect(page.getByTestId("history-row-29")).toBeAttached();
@@ -564,9 +526,6 @@ test("zooming renders the visible slice and drops it again on fit", async ({
   await page.mouse.dblclick(centre.x, centre.y);
   await expect(page.getByTestId("zoom-level")).toContainText("100%");
 
-  // The point of the slice is that it is not a scaled-up copy of the fitted
-  // render: it sits outside the zoom transform, laid out at its own on-screen
-  // size, and it covers what you are looking at.
   const region = page.getByTestId("loupe-region");
   await expect(region).toHaveCount(1);
   const geometry = await region.evaluate((img) => {
@@ -649,8 +608,6 @@ test("the decoder tooltip opens and closes on a real click", async ({
   await page.getByTestId("thumb").first().click();
   await expect(page.getByTestId("loupe")).toBeVisible();
 
-  // jsdom lets a pointerdown-only handler look like it works; a real click
-  // fires the whole sequence, which is where Radix's own close lives.
   const info = page.getByTestId("decoder-info");
   const tip = page.getByText("Applies to every photo");
   await expect(tip).toHaveCount(0);

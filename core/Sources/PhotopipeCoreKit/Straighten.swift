@@ -1,6 +1,5 @@
 import CoreImage
 
-/// `transformed(by:)` samples bilinearly, which softens every pixel of a straightened photo.
 enum Straighten {
     private static let source = """
         #include <CoreImage/CoreImage.h>
@@ -36,9 +35,7 @@ enum Straighten {
                     }
                 }
             }
-            // the negative lobes ring at hard edges, so stay within the four nearest pixels
             sum = clamp(sum, lowest, highest);
-            // the taps clamp to the border, so fade it to clear over one pixel like the bilinear fallback
             float2 inside = saturate(min(p - centerBounds.xy, centerBounds.zw - p) + 1.0);
             return sum * inside.x * inside.y;
         }

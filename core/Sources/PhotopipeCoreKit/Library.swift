@@ -2,18 +2,15 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-// ImageIO also reads textures, icons and medical scans, which are not photos
 private let photoTypes = [
     "public.jpeg", "public.png", "public.tiff", "public.heic", "public.heif", "public.avif",
     "public.jpeg-xl", "org.webmproject.webp",
 ].compactMap(UTType.init)
 
-/// Asked of ImageIO at runtime, so a camera a new OS learns needs no release.
 private let readableExtensions: [(ext: String, raw: Bool)] = {
     let readable = Set(CGImageSourceCopyTypeIdentifiers() as? [String] ?? [])
     return readable.compactMap(UTType.init).flatMap { $0.tags[.filenameExtension] ?? [] }
         .compactMap { ext in
-            // .tif also names an old Canon raw, but a TIFF is what it nearly always is
             guard let type = UTType(filenameExtension: ext), readable.contains(type.identifier)
             else { return nil }
             let raw = type.conforms(to: .rawImage)
@@ -25,7 +22,6 @@ public let imageExtensions = Set(readableExtensions.map(\.ext))
 
 let rawExtensions = Set(readableExtensions.filter(\.raw).map(\.ext))
 
-// exiftool embeds only into the formats it was tested on; everything else gets a sidecar
 let xmpEmbeddingExtensions: Set<String> = ["dng", "jpe", "jpg", "jpeg", "png"]
 
 let sidecarOnlyExtensions = rawExtensions.subtracting(xmpEmbeddingExtensions)
@@ -41,34 +37,18 @@ public struct ImageFile: Encodable, Equatable, Sendable {
     public let size: Int64
     public let mtime: Double
     public let rating: Int
-    /// Lightroom's pick flag: 1 picked, -1 rejected, 0 neither.
     public let flag: Int
     public let edit: Edit
     public let width: Int
     public let height: Int
-    /// Vision's aesthetic score, -1 to 1, or nil when the photo has not been
-    /// rated yet. Lives in its own table rather than the file record, so it is
-    /// filled in on the way out rather than carried through the snapshot.
     public let score: Double?
-    /// Seconds, the camera clock read as if it were UTC.
     public let captured: Double?
     public let exif: Exif
-    /// Path of the first photo in its stack of near-identical photos, its own path when it stands
-    /// alone, nil until the stacking pass has looked at it.
     public let stack: String?
-    /// False while the walk's placeholder rating, edit and dimensions are still
-    /// standing in for the real ones. Writing an edit against a placeholder
-    /// would erase whatever the file actually carries, so the UI must wait.
     public let enriched: Bool
-    /// 0 without a sidecar. Writing one leaves the photo's own mtime alone, so only
-    /// this marks a cached record stale, including when Lightroom wrote it.
     public let sidecarMtime: Double
-    /// Encoded so the UI never keeps a list of its own.
     public let isRaw: Bool
-    /// Encoded for the MCP tools, which get the edit as JSON and cannot tell an identity edit by its fields.
     public let edited: Bool
-    /// What sorting by date uses, in the app and for agents. Like `captured`, a wall clock read as UTC, so a
-    /// file without one sorts by the local time it was written.
     public let taken: Double
 
     public init(
@@ -135,8 +115,6 @@ public struct Shoot: Codable, Equatable, Sendable {
     public let notes: String
     public let cover: String?
     public let coverPath: String?
-    /// Every image in the shoot has real metadata; ratings and dimensions can
-    /// be trusted, and the rating filter will not lie.
     public let indexed: Bool
 }
 

@@ -78,7 +78,6 @@ const RATED_OFFER_MS = 8000;
 
 const PASSES = ["scoreShoot", "stackShoot"] as const;
 
-/// Every fetch asks the core to run, which is what picks up new imports.
 function usePass(
   method: (typeof PASSES)[number],
   shoot: string | null,
@@ -107,19 +106,14 @@ function usePass(
     }
     if (!ended) return;
     setEndedAt(Date.now());
-    // photos that arrived while it ran were not part of it; asking again starts a pass for them
     void client.invalidateQueries({ queryKey: [method, shoot] });
-    // a refetch landing mid-write would put pre-write ratings back; the last write refetches
     if (xmpWritesInFlight(client) > 0) markStale(client, shoot);
     else void client.invalidateQueries({ queryKey: imagesKey(shoot) });
   }, [running, shoot, client]);
 
-  // a stale `running` would freeze a progress line where it stopped
   return { progress: enabled ? (query.data ?? null) : null, endedAt };
 }
 
-/// `justRated` is the window after a pass where the browser can hand the sort
-/// over to Instinct.
 export function useScoring(shoot: string | null, enabled: boolean) {
   const { progress, endedAt } = usePass("scoreShoot", shoot, enabled);
   const [justRated, setJustRated] = useState(false);
@@ -132,23 +126,18 @@ export function useScoring(shoot: string | null, enabled: boolean) {
   return { progress, justRated };
 }
 
-// photos arriving mid-visit must not take a finished pass back
 function useLatch(shoot: string | null, enabled: boolean, complete: boolean) {
   const [readyShoot, setReadyShoot] = useState<string | null>(null);
   useEffect(() => {
-    // off, or a library switch, drops the latch: shoot names repeat across libraries
     if (!enabled) setReadyShoot(null);
     else if (complete) setReadyShoot(shoot);
   }, [enabled, complete, shoot]);
   return enabled && (complete || (readyShoot !== null && readyShoot === shoot));
 }
 
-/// Stacks are trusted once every listed photo carries one, which the core only
-/// gives a photo it has analyzed; until then they would regroup under you.
 export function useStacking(shoot: string | null, enabled: boolean) {
   const { progress } = usePass("stackShoot", shoot, enabled);
   const images = useImages(shoot).data;
-  // the core cuts stacks by capture time, which only enrichment reads
   const complete =
     images !== undefined &&
     images.length > 0 &&
@@ -176,7 +165,6 @@ export function useThumbnail(
   });
 }
 
-// one size for the loupe overlay and the row thumbs, so they share a file
 const MASK_OVERLAY_MAX_PIXEL = 2048;
 
 export function useMaskOverlay(
@@ -216,7 +204,6 @@ type RenderFile = Pick<ImageFile, "path" | "mtime" | "isRaw"> | undefined;
 const PREVIEW_MAX_PIXEL = 2560;
 
 const superseded = (error: unknown) => String(error).startsWith("superseded");
-// The split's before keeps its key through a slider drag, whose renders can drop it any number of times.
 const renderRetry = (failures: number, error: unknown) =>
   superseded(error) || failures < 3;
 
@@ -258,7 +245,6 @@ function renderQueryOptions(
     retry: renderRetry,
     retryDelay: (failures, error) =>
       superseded(error) ? 0 : 1000 * 2 ** failures,
-    // the model that cuts the masks may still be on its way
     refetchInterval: (query) => (query.state.data?.unmasked ? 5000 : false),
   });
 }
@@ -278,16 +264,12 @@ export function useRender(file: RenderFile, edit: Edit) {
   });
 }
 
-/// A photo you step to renders with its own edit at once; only slider drags lag.
 export function useDeferredEdit(file: RenderFile, edit: Edit) {
   const deferredEdit = useDeferredValue(edit);
   const deferredPath = useDeferredValue(file?.path);
   return deferredPath === file?.path ? deferredEdit : edit;
 }
 
-/// The zoomed loupe renders only the slice on screen, at 1:1. Asking for the
-/// whole frame at native size costs several times as much and then gets
-/// downscaled into the stage anyway.
 export function useViewportRender(
   file: RenderFile,
   edit: Edit,
@@ -319,12 +301,10 @@ export function usePrefetchRender(file: RenderFile, edit: Edit | undefined) {
       undefined,
       renderDecoderVersion(file, decoder),
     );
-    // prefetching an in-flight query would re-enable the retries its last observer cancelled
     if (queryClient.getQueryState(options.queryKey)?.fetchStatus === "fetching")
       return;
     queryClient.prefetchQuery({
       ...options,
-      // the loupe may land on it mid-flight and inherit this fetch's retry
       retry: (failures, error) =>
         renderRetry(failures, error) &&
         (queryClient
@@ -346,7 +326,6 @@ export function useRawDefaults(file: RenderFile) {
   });
 }
 
-/// one header read per photo off an SD card; a whole shoot outruns the request timeout
 const SUPPORT_BATCH = 400;
 
 async function decoderSupport(paths: string[]) {
@@ -361,25 +340,19 @@ async function decoderSupport(paths: string[]) {
   return total;
 }
 
-// support is per camera model and OS, so it cannot change during the session
 export function useDecoderSupport(paths: string[], enabled: boolean) {
-  // sorted so the key is the selection's contents, not the grid's order
   const sorted = useMemo(() => [...paths].sort(), [paths]);
   return useQuery({
     queryKey: ["decoderSupport", sorted],
     queryFn: () => decoderSupport(sorted),
     enabled: enabled && sorted.length > 0,
     staleTime: Number.POSITIVE_INFINITY,
-    // an unanswered probe reads as "RAW 9 is fine", so hold the last verdict;
-    // it describes the previous selection, so callers check isPlaceholderData
     placeholderData: keepPreviousData,
   });
 }
 
 const DECODER_AVAILABILITY_KEY = ["decoderAvailability"];
 
-/// null when nothing in the library could answer, so callers stay quiet
-/// instead of claiming RAW 9 is missing.
 export function useRaw9Availability(enabled: boolean) {
   return useQuery({
     queryKey: DECODER_AVAILABILITY_KEY,
@@ -417,7 +390,6 @@ function xmpWritesInFlight(queryClient: QueryClient): number {
   );
 }
 
-/// A failed write or a list fetched during a write: refetch that shoot once the burst ends.
 const staleLists = new WeakMap<QueryClient, Set<string | null>>();
 
 function markStale(queryClient: QueryClient, shoot: string | null) {
@@ -436,7 +408,6 @@ async function holdImages(queryClient: QueryClient, shoot: string | null) {
   await queryClient.cancelQueries({ queryKey: imagesKey(shoot) });
 }
 
-// Waits for the last write, or the refetch could land over one still in flight.
 function releaseImages(queryClient: QueryClient) {
   if (xmpWritesInFlight(queryClient) !== 1) return;
   for (const shoot of staleLists.get(queryClient) ?? []) {
@@ -455,8 +426,6 @@ export function cachedImage(
     ?.find((image) => image.path === path);
 }
 
-/// Per path: a whole-list snapshot rolled back would take concurrent writes
-/// down with the failed one.
 function patchImages(
   queryClient: QueryClient,
   shoot: string | null,
@@ -492,12 +461,8 @@ export function currentEdits(
   return wanted;
 }
 
-/// The core's queue runs eight wide with no per-file lock, so overlapping
-/// writes to one photo can land in either order.
 const writesByPath = new Map<string, Promise<unknown>>();
 
-/// Resolves to null when a newer write to the photo is already queued: that
-/// one's answer is the one the cache should end on.
 function writeInOrder<T>(
   path: string,
   write: () => Promise<T>,
@@ -594,7 +559,6 @@ async function writeField<V>(
   markFetching(queryClient, shoot);
 }
 
-/// `useMutation` minus the subscription, which re-renders App on every write's state change.
 function useMutate<TData, TVariables, TOnMutateResult>(
   options: MutationObserverOptions<
     TData,
@@ -655,17 +619,13 @@ export type BatchResult = {
   overtaken: number;
 };
 
-/// Enough to keep exiftool busy without starving renders and thumbnails.
 const BATCH_CONCURRENCY = 4;
 
-/// One mutation for the batch, under the single-write key so the library poller
-/// leaves the images cache alone until every write has settled.
 function useBatchWrite<V>(shoot: string | null, field: PhotoField<V>) {
   const queryClient = useQueryClient();
   return useMutate({
     mutationKey: field.mutationKey,
     mutationFn: async (values: Map<string, V>): Promise<BatchResult> => {
-      // A long batch outlives its shoot, so it keeps the one it started with.
       const target = shoot;
       const live = (path: string) =>
         cachedValue(queryClient, target, path, field);
@@ -684,8 +644,6 @@ function useBatchWrite<V>(shoot: string | null, field: PhotoField<V>) {
       let overtaken = 0;
       const worker = async () => {
         for (const [path, value] of queue) {
-          // Changed by hand since the batch started: that value is newer. A
-          // refetch putting the old value back is not a hand change.
           const now = live(path);
           const before = previous.get(path);
           const untouched =
@@ -737,7 +695,6 @@ export const useSetRatings = (shoot: string | null) =>
 export const useSetFlags = (shoot: string | null) =>
   useBatchWrite(shoot, FLAG_FIELD);
 
-// an undo still waiting on a write could un-reject a photo already in the Trash
 const TRASH_BLOCKERS = new Set([...XMP_WRITE_KEYS, TRASH_KEY].map(hashKey));
 
 export const useTrashBlocked = () =>
@@ -810,15 +767,12 @@ export function jobStatus(job: ExportJob): JobStatus {
   if (job.running) return "running";
   if (job.error) return "failed";
   if (job.cancelled) return "cancelled";
-  // Two thirds of a delivery missing is not a success, and a green check is
-  // how it goes unnoticed until the photos are wanted.
   return job.failed > 0 ? "partial" : "done";
 }
 
 const EXPORT_POLL_MS = 400;
 let nextJobKey = 1;
 
-/// Addressed by `key`: every start that failed shares the empty `id`.
 type JobRow = {
   key: string;
   id: string;
@@ -894,7 +848,6 @@ export function useExportJobs() {
         ]);
         return started;
       } catch (error) {
-        // A refusal the user can still read after the toast has gone.
         setRows((current) => [
           { ...row, id: "", initial: { ...settled, error: String(error) } },
           ...current,
@@ -962,7 +915,6 @@ export type ScanProgress = Pick<
 >;
 
 const IDLE_POLL_MS = 2000;
-/// The shoot list is cheap; per-shoot refetches are rate-limited by the core.
 const INDEXING_POLL_MS = 250;
 
 const NOT_SCANNING: ScanProgress = {
@@ -971,9 +923,6 @@ const NOT_SCANNING: ScanProgress = {
   filesEnriched: 0,
 };
 
-/// Polls faster while the core is still indexing, and refetches a shoot's
-/// photos only when the core names that shoot as changed. `refresh` walks the
-/// library again, which on iPadOS is the only way to see files added from outside.
 export function useLibrarySync(
   enabled: boolean,
   initialGeneration: number | null,
@@ -984,7 +933,6 @@ export function useLibrarySync(
   const pollNow = useRef(() => {});
   const rescan = useMutation({
     mutationFn: () => coreRequest("rescan"),
-    // one walk at a time, so tapping refresh on a hung drive cannot pile them up
     scope: { id: "rescan" },
     onSettled: () => pollNow.current(),
     onError: (error) => {
@@ -1023,7 +971,6 @@ export function useLibrarySync(
         if (stopped) return;
         setProgress(status);
         next = status.scanning ? INDEXING_POLL_MS : IDLE_POLL_MS;
-        // A rating write in flight owns the images cache until it settles.
         if (
           status.generation !== seen.current &&
           xmpWritesInFlight(queryClient) === 0
@@ -1031,7 +978,6 @@ export function useLibrarySync(
           invalidateLibrary(queryClient);
           for (const shoot of status.changedShoots ?? []) {
             queryClient.invalidateQueries({ queryKey: imagesKey(shoot) });
-            // newly arrived photos need a score and a print, and only the passes pick them up
             for (const method of PASSES) {
               queryClient.invalidateQueries({ queryKey: [method, shoot] });
             }
@@ -1052,7 +998,6 @@ export function useLibrarySync(
       timer = setTimeout(poll, 0);
     };
 
-    // Straight away, so a library that opened mid-index says so on first paint.
     timer = setTimeout(poll, 0);
     return () => {
       stopped = true;

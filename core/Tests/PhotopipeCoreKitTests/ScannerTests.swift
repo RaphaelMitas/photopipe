@@ -3,12 +3,6 @@ import Testing
 
 @testable import PhotopipeCoreKit
 
-// MARK: - Fixtures
-
-/// Symlink-free scratch space for library fixtures. NSTemporaryDirectory sits
-/// behind the /var → /private/var symlink, and the service's path-identity
-/// lookups compare canonical strings — a symlinked root would test the
-/// symlink, not the code.
 func scratchDir(_ prefix: String) -> URL {
     FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("photopipe-tests/\(prefix)-\(UUID().uuidString)")
@@ -23,7 +17,6 @@ func fixturesRoot() -> URL {
         .appendingPathComponent("fixtures")
 }
 
-/// A real camera raw from fixtures/fetch.sh: a soft skip locally, a loud failure on CI.
 func rawFixture(_ name: String) -> URL? {
     let fixture = fixturesRoot().appendingPathComponent("raw/\(name)")
     guard FileManager.default.fileExists(atPath: fixture.path) else {
@@ -36,9 +29,6 @@ func rawFixture(_ name: String) -> URL? {
     return fixture
 }
 
-/// `setRoot` returns as soon as the tree is walked, so anything that asserts on
-/// ratings, edits, dimensions or a settled generation has to wait for the
-/// background enrichment to land first.
 func waitUntilIndexed(
     _ service: LibraryService, timeout: TimeInterval = 10,
     sourceLocation: SourceLocation = #_sourceLocation
@@ -47,8 +37,6 @@ func waitUntilIndexed(
     while Date() < deadline, service.status().scanning {
         Thread.sleep(forTimeInterval: 0.02)
     }
-    // Loudly: a counter that never reaches its total is a bug in its own right,
-    // and swallowing it here would let every assertion below pass on stale data.
     let status = service.status()
     #expect(
         !status.scanning,
@@ -56,15 +44,12 @@ func waitUntilIndexed(
         sourceLocation: sourceLocation)
 }
 
-/// Caches under the fixture's own directory, so one test's thumbnails and
-/// renders can never be served to another.
 func makeService(in dir: URL) -> LibraryService {
     LibraryService(
         thumbnailer: Thumbnailer(cacheDir: dir.appendingPathComponent("thumbs")),
         renderer: Renderer(cacheDir: dir.appendingPathComponent("renders")))
 }
 
-/// Builds a scratch photo tree: [shootName: [relative file paths]] → root URL.
 func makeTree(_ layout: [String: [String]], at root: URL = scratchDir("tree")) throws -> URL {
     for (shoot, paths) in layout {
         for relative in paths {
@@ -76,8 +61,6 @@ func makeTree(_ layout: [String: [String]], at root: URL = scratchDir("tree")) t
     }
     return root
 }
-
-// MARK: - Image files
 
 @Test func imagePathsAreRecognizedCaseInsensitively() {
     #expect(isImagePath("/s/DSC001.ARW"))
@@ -103,8 +86,6 @@ func makeTree(_ layout: [String: [String]], at root: URL = scratchDir("tree")) t
     #expect(sidecarOnlyExtensions.contains("cr3") && !sidecarOnlyExtensions.contains("dng"))
 }
 
-// MARK: - Day format
-
 @Test func isDayAcceptsOnlyIsoDates() {
     #expect(isDay("2026-07-12"))
     #expect(!isDay("2026-7-12"))
@@ -114,8 +95,6 @@ func makeTree(_ layout: [String: [String]], at root: URL = scratchDir("tree")) t
     #expect(!isDay("2026-13-45"))
     #expect(!isDay("2024-02-30"))
 }
-
-// MARK: - Scanning real directories
 
 @Test func scanFindsEveryImageRecursivelyWithRelPaths() throws {
     let root = try makeTree([
@@ -131,13 +110,10 @@ func makeTree(_ layout: [String: [String]], at root: URL = scratchDir("tree")) t
     defer { try? FileManager.default.removeItem(at: root) }
 
     let snapshot = try walkLibrary(root: root.path)
-    // not-a-shoot has no images and no photopipe.json → dropped entirely.
-    // Both are undated (no photopipe.json), so they sort by name.
     #expect(snapshot.shoots.map(\.name) == ["2026-07-12_zell", "2026-08-01_beach"])
     #expect(snapshot.fileCount == 5)
 
     let zell = try #require(snapshot.imagesByShoot["2026-07-12_zell"])
-    // One file = one image, wherever it sits; sorted by rel.
     #expect(
         zell.map(\.rel) == [
             "DSC001.ARW", "DSC001.jpg", "selects/deep/DSC003.dng", "selects/DSC002.ARW",
@@ -182,7 +158,6 @@ func makeTree(_ layout: [String: [String]], at root: URL = scratchDir("tree")) t
     #expect(carried?.enriched == false && carried?.rating == 0)
     #expect(carried?.captured == 12.5 && carried?.exif.iso == 6400)
 
-    // a second rescan before enrichment reaches it
     let rescanned = carried.flatMap { carryEnrichment(into: snapshot, from: [$0.path: $0]) }
     #expect(rescanned?.imagesByShoot["s"]?[0].captured == 12.5)
 }

@@ -79,7 +79,6 @@ export type AgentExport = {
 
 type FlagName = "picked" | "rejected" | "unflagged";
 
-/// The host checked these against its own argument types before sending them.
 type AgentCall =
   | { tool: "get_view"; args: Record<string, never> }
   | {
@@ -101,7 +100,6 @@ type AgentCall =
   | { tool: "export"; args: AgentExport & { photos: string[] } }
   | { tool: "trash"; args: { photos: string[] } };
 
-/// `deadline` is a little before the host stops waiting; a call still queued then is dropped, not run late.
 type Request = AgentCall & { id: number; deadline: number };
 
 const FLAGS: Record<FlagName, Flag> = { picked: 1, rejected: -1, unflagged: 0 };
@@ -143,7 +141,6 @@ const entryBelow = (id: number): number | undefined => {
   return at > 0 ? entries[at - 1].id : undefined;
 };
 
-/// Agents act only while the user is idle: no held slider, no open crop, no change still waiting to save.
 function whenIdle(view: AgentView) {
   if (view.busy()) {
     throw new Error(
@@ -153,7 +150,6 @@ function whenIdle(view: AgentView) {
   return view;
 }
 
-/// The tools that change or move what the user may be editing.
 const GUARDED = new Set(["show", "edit", "undo", "ui_action", "trash"]);
 
 function settled(photos: ImageFile[]) {
@@ -169,7 +165,6 @@ const SLIDERS = [...TONE_SLIDERS, ...PRESENCE_SLIDERS, ...COLOR_SLIDERS].map(
   (slider) => slider.key,
 );
 
-/// Held to the editor's own ranges, and framed the way the crop tool frames.
 export function agentEdit(
   base: Edit,
   set: Partial<Edit>,
@@ -210,7 +205,6 @@ export function agentEdit(
   if (![0, 90, 180, 270].includes(rotation)) {
     throw new Error("rotation is 0, 90, 180 or 270");
   }
-  // the crop lives in the turned frame, so a turn carries it round like the crop tool's Turn
   let crop = set.crop ? checkedCrop(set.crop) : (base.crop ?? null);
   for (
     let turn = before;
@@ -235,7 +229,6 @@ export function agentEdit(
   };
 }
 
-/// What an agent cannot set, so a reset leaves it alone.
 const beyondReach = ({
   curveRGB,
   curveRed,
@@ -293,7 +286,6 @@ function viewOf(view: AgentView) {
   };
 }
 
-/// Answers the host's `agent:request` events through the same paths the user's keys and clicks take.
 export function useAgentTools(enabled: boolean, view: AgentView) {
   const current = useRef(view);
   current.current = view;
@@ -356,7 +348,6 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
             current.current.resetFilter();
             await rendered();
           }
-          // the waits above give the user time to start a crop or a drag
           whenIdle(current.current);
           if (chosen !== null) {
             current.current.close();
@@ -438,7 +429,6 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
               `${action} does nothing in the ${activeContext()} view. These work here: ${here.join(", ")}.`,
             );
           }
-          // a key like exposure.up leaves a draft; saved before the user can grab a slider of their own
           await view.save().catch(() => {});
           await rendered();
           return viewOf(current.current);
@@ -463,7 +453,6 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
       }
     };
 
-    // one at a time, so a second call reads what the first one wrote
     let queue: Promise<unknown> = Promise.resolve();
     const subscription = listen<Request>("agent:request", ({ payload }) => {
       const { id, deadline } = payload;
@@ -477,7 +466,6 @@ export function useAgentTools(enabled: boolean, view: AgentView) {
         void answer(false, "Photopipe was busy; this call was dropped.");
       }, deadline - Date.now());
       const run = queue.then(async () => {
-        // a throttled timer can fire after its turn comes; it still answers the call as dropped
         if (dropped || Date.now() > deadline) return;
         started = true;
         clearTimeout(drop);

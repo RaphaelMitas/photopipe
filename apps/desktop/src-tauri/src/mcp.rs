@@ -9,7 +9,6 @@ mod tools;
 #[cfg(agents)]
 mod ui;
 
-/// The relay and the app meet here, so an agent needs no port and no token.
 #[cfg(agents)]
 pub fn socket_path() -> std::path::PathBuf {
     let home = std::env::var_os("HOME").unwrap_or_default();

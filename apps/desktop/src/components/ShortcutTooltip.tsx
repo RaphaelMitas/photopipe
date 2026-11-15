@@ -23,7 +23,6 @@ export function ShortcutTooltip({ label, action, children }: Props) {
   if (!on) return children;
   return (
     <Tooltip>
-      {/* hover only: focus handed back by a popover would pin it open */}
       <TooltipTrigger asChild onFocus={(event) => event.preventDefault()}>
         {children}
       </TooltipTrigger>

@@ -11,11 +11,9 @@ export const clamp = (
 export const SIGNED_RANGE = { min: -SLIDER_RANGE, max: SLIDER_RANGE };
 export const DENOISE_RANGE = { min: 0, max: SLIDER_RANGE };
 
-// kelvin for a raw's own white balance; masks and other files are an offset from neutral
 export const temperatureRange = (kelvin: boolean) =>
   kelvin ? { min: 2000, max: 12000 } : SIGNED_RANGE;
 
-/// An offset at zero is no adjustment at all, so it is stored as none.
 export const storedBalance = (kelvin: boolean, value: number) =>
   !kelvin && value === 0 ? null : value;
 

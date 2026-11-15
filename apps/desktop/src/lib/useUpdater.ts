@@ -4,8 +4,6 @@ import { useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { useFeatures } from "./features";
 
-/// One toast id for the whole update conversation, so a download replaces the
-/// offer rather than stacking under it.
 const UPDATE_TOAST = "update";
 
 type Options = {
@@ -43,7 +41,6 @@ export function useUpdater(options: Options) {
   const enabled = useFeatures().updater;
   const pending = useRef<Update | null>(null);
   const startupOfferSuppressed = useRef(false);
-  // read at call time: the offer toast's Install outlives its render, and check must stay stable for App's menu listener
   const live = useRef({ ...options, enabled });
   live.current = { ...options, enabled };
 
@@ -84,7 +81,6 @@ export function useUpdater(options: Options) {
         action: {
           label: "Install",
           onClick: (event) => {
-            // Sonner would delete whatever install() just posted under this id
             event.preventDefault();
             void install();
           },

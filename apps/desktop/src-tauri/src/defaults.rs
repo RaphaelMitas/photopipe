@@ -4,7 +4,6 @@ use objc2::AllocAnyThread;
 use objc2_foundation::{NSString, NSUserDefaults};
 use serde::{de::DeserializeOwned, Serialize};
 
-/// A suite keeps a test's values out of the app's own.
 pub fn open(suite: Option<&str>) -> Retained<NSUserDefaults> {
     match suite {
         Some(suite) => NSUserDefaults::initWithSuiteName(

@@ -17,7 +17,6 @@ import Testing
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
 
-    // 64x32 landscape JPEG.
     let gray = CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5))
         .cropped(to: CGRect(x: 0, y: 0, width: 64, height: 32))
     let plain = dir.appendingPathComponent("plain.jpg")
@@ -26,7 +25,6 @@ import Testing
     let dims = try #require(Dimensions.read(at: plain))
     #expect(dims.width == 64 && dims.height == 32)
 
-    // Same pixels with EXIF orientation 6 (90° CW): upright dims must swap.
     guard ExifTool.shared.available else {
         print("SKIP: exiftool needed for the orientation case")
         return
@@ -48,7 +46,6 @@ import Testing
     try Data("fake".utf8).write(to: fake)
 
     #expect(Dimensions.read(at: fake) == nil)
-    // The scanner substitutes 3:2 so the grid can lay out anyway.
     let images = try walkLibrary(root: dir.path).imagesByShoot["2026-01-01_dims"] ?? []
     let enriched = try #require(images.first.map(enrich))
     #expect(enriched.width == 3000)

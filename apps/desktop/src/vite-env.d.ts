@@ -1,6 +1,5 @@
 /// <reference types="vite/client" />
 
-// WebKit's trackpad pinch events, which lib.dom leaves out.
 interface GestureEvent extends UIEvent {
   readonly scale: number;
   readonly rotation: number;

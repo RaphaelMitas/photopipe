@@ -1,4 +1,3 @@
-/// After cancellation nothing new starts; in-flight results still arrive with cancelled == true.
 func forEachConcurrently<Input: Sendable, Output: Sendable>(
     _ inputs: [Input], width: Int,
     _ work: @escaping @Sendable (Input) async -> Output,

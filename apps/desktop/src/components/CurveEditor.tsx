@@ -17,7 +17,6 @@ import { ShortcutTooltip } from "./ShortcutTooltip";
 const W = 200;
 const H = 140;
 const HIT_RADIUS = 10;
-// Half a 44pt fingertip, in screen pixels whatever width the panel draws.
 const TOUCH_HIT_RADIUS_PX = 22;
 const MIN_GAP = 0.01;
 
@@ -44,9 +43,6 @@ function curvePath(points: CurvePoint[]): string {
     .join(" ");
 }
 
-// Luminance histogram of the current render, drawn behind the curve. The
-// asset protocol may refuse canvas readback; then the curve stands alone.
-// Kept while an edit re-renders the photo, dropped when the photo changes.
 function useHistogram(src: string | undefined, photo: string): number[] | null {
   const [histogram, setHistogram] = useState<{
     photo: string;
@@ -153,7 +149,6 @@ export function CurveEditor({ edit, imageSrc, photo, onChange }: Props) {
       index = insertAt === -1 ? points.length : insertAt;
       emit([...points.slice(0, index), at, ...points.slice(index)]);
     }
-    // Keeps a point grabbed off-centre from jumping under the pointer.
     drag.current = { index, dx: grabbed.x - at.x, dy: grabbed.y - at.y };
     capturePointer(event);
   };

@@ -48,10 +48,8 @@ describe("cropInsideImage / constrainCrop", () => {
   it("shrinks just enough that the rotated frame covers the crop", () => {
     const constrained = constrainCrop(fullCrop, 3, 3000, 2000);
     expect(cropInsideImage(constrained, 3, 3000, 2000)).toBe(true);
-    // Barely smaller, not collapsed: 3° should cost a few percent.
     expect(constrained.right - constrained.left).toBeGreaterThan(0.85);
     expect(constrained.right - constrained.left).toBeLessThan(1);
-    // Scaling happens about the center.
     expect(constrained.left + constrained.right).toBeCloseTo(1);
     expect(constrained.top + constrained.bottom).toBeCloseTo(1);
   });
@@ -62,8 +60,6 @@ describe("cropInsideImage / constrainCrop", () => {
   });
 
   it("pivots about the photo center, not the rect", () => {
-    // At 90° the rotated 3:2 photo covers a portrait band around the center:
-    // a small centered rect still fits, one at the left edge samples outside.
     const centered = { left: 0.45, top: 0.45, right: 0.55, bottom: 0.55 };
     expect(cropInsideImage(centered, 90, 3000, 2000)).toBe(true);
     const edgy = { left: 0, top: 0.45, right: 0.1, bottom: 0.55 };
@@ -116,8 +112,6 @@ describe("moveCrop and resizeCrop", () => {
   });
 
   it("follows the rotated photo's overhang past the frame box", () => {
-    // At +12° the photo's top-right corner sticks out right of the frame,
-    // so a crop in that band may cross right past 1.
     const start = { left: 0.85, top: 0.16, right: 0.93, bottom: 0.2 };
     expect(cropInsideImage(start, 12, 3000, 2000)).toBe(true);
     const moved = moveCrop(start, 1, 0, 12, 3000, 2000);
@@ -126,9 +120,6 @@ describe("moveCrop and resizeCrop", () => {
   });
 
   it("slides along a diagonal edge as the drag continues", () => {
-    // Deltas are cumulative within a drag: blocked at the tilted right edge,
-    // continuing the same drag downward must gain ground on y (trading back
-    // x where the boundary demands it), not stay locked.
     const start = { left: 0.4, top: 0.4, right: 0.6, bottom: 0.6 };
     const blockedRight = moveCrop(start, 5, 0, 12, 3000, 2000);
     const thenDown = moveCrop(start, 5, 5, 12, 3000, 2000);
@@ -148,8 +139,6 @@ describe("moveCrop and resizeCrop", () => {
   it("resize clamps at the frame and keeps a locked ratio", () => {
     const wide = resizeCrop(centered, "r", 5, 0, null, 0, 3000, 2000);
     expect(wide?.right).toBe(1);
-    // 1:1 in pixels on a 3000x2000 image, dragging the bottom-right corner
-    // far: height maxes at the frame and width follows the ratio.
     const locked = resizeCrop(centered, "br", 5, 5, 1, 0, 3000, 2000);
     expect(locked).not.toBeNull();
     if (!locked) return;
@@ -178,8 +167,6 @@ describe("moveCrop and resizeCrop", () => {
   });
 
   it("a lock the crop does not match yet reshapes it inside the photo", () => {
-    // Entering crop mode on a free-form crop leaves Original selected against
-    // a rect that is not 3:2, so the very first drag reshapes it.
     const free = { left: 0, top: 0, right: 0.3, bottom: 1 };
     for (const handle of ["t", "tl", "r"] as const) {
       const dragged = resizeCrop(
@@ -218,14 +205,12 @@ describe("turn, transpose, and ratio helpers", () => {
   });
 
   it("turnCrop follows the photo through a clockwise turn", () => {
-    // The left half of the frame becomes the top half.
     expect(turnCrop({ left: 0, top: 0, right: 0.5, bottom: 1 })).toEqual({
       left: 0,
       top: 0,
       right: 1,
       bottom: 0.5,
     });
-    // Four turns land back where they started.
     const rect = { left: 0.1, top: 0.2, right: 0.7, bottom: 0.9 };
     const four = turnCrop(turnCrop(turnCrop(turnCrop(rect))));
     expect(four.left).toBeCloseTo(rect.left);
@@ -245,7 +230,6 @@ describe("turn, transpose, and ratio helpers", () => {
     expect((centered.bottom - centered.top) * 2000).toBeCloseTo(1500);
     expect(centered.left + centered.right).toBeCloseTo(1);
 
-    // Near an edge the transposed rect gets nudged back inside.
     const nudged = transposeCrop(
       { left: 0, top: 0.4, right: 0.4, bottom: 0.6 },
       0,
@@ -274,11 +258,9 @@ describe("turn, transpose, and ratio helpers", () => {
       aspect: "original",
       flipped: false,
     });
-    // 2000x2000 px on the 3000x2000 frame.
     expect(
       enter({ left: 1 / 6, top: 0, right: 5 / 6, bottom: 1 }),
     ).toMatchObject({ aspect: "1:1", flipped: false });
-    // 1125x2000 px.
     expect(
       enter({ left: 0.3125, top: 0, right: 0.6875, bottom: 1 }),
     ).toMatchObject({ aspect: "16:9", flipped: true });

@@ -19,7 +19,6 @@ export function isFullCrop(crop: CropRect): boolean {
   );
 }
 
-/// The letterboxed rect an object-contain image occupies in its container.
 export function fitRect(
   containerWidth: number,
   containerHeight: number,
@@ -48,10 +47,6 @@ export function fitRect(
   };
 }
 
-// Every rotation in this file maps SCREEN points back into photo space:
-// screen coords are y-down and a positive angle turns the photo clockwise
-// on screen, so that mapping is the -angle rotation. The convention lives
-// here — everything else takes these terms.
 function rotationTerms(angleDeg: number) {
   const radians = (-angleDeg * Math.PI) / 180;
   return { cos: Math.cos(radians), sin: Math.sin(radians) };
@@ -81,8 +76,6 @@ const shift = (crop: CropRect, dx: number, dy: number): CropRect => ({
   bottom: crop.bottom + dy,
 });
 
-/// Largest t in [0, 1] with feasible(t), assuming feasible(0); 20 halvings
-/// give sub-pixel precision at any drag length.
 function largestFeasible(feasible: (t: number) => boolean): number {
   if (feasible(1)) return 1;
   let lo = 0;
@@ -107,10 +100,6 @@ function corners(crop: CropRect, imageWidth: number, imageHeight: number) {
   };
 }
 
-/// The largest about-its-center scale (capped at 1) at which the crop's
-/// corners, rotated back into photo space about the PHOTO center (the
-/// straighten pivot), stay inside the photo. 0 when no scale can fit —
-/// the rotated rect center itself lies outside the frame.
 function fitScale(
   crop: CropRect,
   angleDeg: number,
@@ -138,8 +127,6 @@ function fitScale(
   return Math.max(scale, 0);
 }
 
-/// Whether the crop rect, with the photo rotated by `angleDeg` behind it,
-/// stays inside the photo (no blank corners).
 export function cropInsideImage(
   crop: CropRect,
   angleDeg: number,
@@ -159,10 +146,6 @@ function scaleAbout(crop: CropRect, scale: number): CropRect {
   );
 }
 
-/// Shrink the crop about its center just enough that it stays inside the
-/// photo rotated by `angleDeg` about the photo center. Never grows the rect.
-/// When shrinking alone cannot help (the rect's rotated position left the
-/// frame entirely), slide it toward the photo center first.
 export function constrainCrop(
   crop: CropRect,
   angleDeg: number,
@@ -180,7 +163,6 @@ export function constrainCrop(
   if (centeredScale < 1) {
     return scaleAbout(centered, centeredScale);
   }
-  // Smallest slide that fits = complement of the largest slide that doesn't.
   const slack = largestFeasible(
     (t) =>
       fitScale(
@@ -193,7 +175,6 @@ export function constrainCrop(
   return shift(crop, dx * (1 - slack), dy * (1 - slack));
 }
 
-/// Display-space pixel size after a whole-photo turn.
 export function rotatedSize(
   width: number,
   height: number,
@@ -202,8 +183,6 @@ export function rotatedSize(
   return rotation % 180 === 0 ? [width, height] : [height, width];
 }
 
-/// Where the crop rect lands after the photo turns 90° clockwise: a point
-/// (x, y) of the old frame displays at (1 - y, x) in the new one.
 export function turnCrop(crop: CropRect): CropRect {
   return {
     left: 1 - crop.bottom,
@@ -213,8 +192,6 @@ export function turnCrop(crop: CropRect): CropRect {
   };
 }
 
-/// Swap the crop's pixel width and height about its center, nudged and
-/// shrunk as needed to stay inside the (possibly angled) photo.
 export function transposeCrop(
   crop: CropRect,
   angleDeg: number,
@@ -242,9 +219,6 @@ export function transposeCrop(
 
 const MIN_CROP_SIZE = 0.05;
 
-/// Land edges exactly on the frame when within epsilon of it: boundary
-/// searches stop just short, and near-flush slivers round-trip badly
-/// through the sidecar's decimal formatting.
 export function snapCropEdges(crop: CropRect, epsilon: number): CropRect {
   const snap = (value: number) =>
     Math.abs(value) < epsilon ? 0 : Math.abs(value - 1) < epsilon ? 1 : value;
@@ -268,16 +242,6 @@ function snapToBox(
     : crop;
 }
 
-/// Translate the crop toward target = crop + (dx, dy). The only boundary is
-/// the rotated photo itself — a straightened photo's corners overhang the
-/// frame box, and the crop may follow them.
-///
-/// For a fixed rect size and angle, the feasible region of the rect center
-/// is an axis-aligned box in the photo's rotated (base) space: each corner
-/// constraint "base(center) + offset inside the frame" is a per-axis bound
-/// there, and rotation is an isometry. So the exact answer is a clamp of
-/// the target in base space — the rect glides along diagonal edges and gives
-/// ground back on one axis when the pointer trades it for the other.
 export function moveCrop(
   crop: CropRect,
   dx: number,
@@ -339,12 +303,6 @@ export function moveCrop(
 
 export type CropHandle = "tl" | "tr" | "bl" | "br" | "t" | "b" | "l" | "r";
 
-/// Drag a handle by (dx, dy), bounded only by the rotated photo's coverage
-/// and the minimum size. `ratio` locks the pixel aspect: a corner drag leads
-/// with width and anchors the opposite edge, an edge drag opens the other
-/// axis about the center. When the full delta would
-/// leave the rotated photo, the largest feasible fraction applies, so a
-/// fast drag still lands flush on the border instead of freezing.
 export function resizeCrop(
   start: CropRect,
   handle: CropHandle,
@@ -359,8 +317,6 @@ export function resizeCrop(
     let { left, top, right, bottom } = start;
     const stepX = dx * fraction;
     const stepY = dy * fraction;
-    // No frame-box clamp: a rotated photo's overhang past the frame is fair
-    // game; the coverage search below is the only boundary.
     if (handle.includes("l"))
       left = Math.min(left + stepX, right - MIN_CROP_SIZE);
     if (handle.includes("r"))
@@ -393,9 +349,6 @@ export function resizeCrop(
   const fraction = largestFeasible((t) =>
     cropInsideImage(apply(t), angleDeg, imageWidth, imageHeight),
   );
-  // A locked ratio reshapes the rect even at fraction 0, so a crop that does
-  // not already match the lock starts outside the photo and no fraction is
-  // feasible. Pull it back in rather than returning blank edges.
   const resized = constrainCrop(
     apply(fraction),
     angleDeg,
@@ -405,8 +358,6 @@ export function resizeCrop(
   return snapToBox(resized, angleDeg, imageWidth, imageHeight);
 }
 
-/// The pixel width/height ratio a dropdown selection locks the crop to, in
-/// display space; null means unconstrained.
 export function aspectRatioFor(
   aspect: string,
   flipped: boolean,
@@ -424,8 +375,6 @@ export function aspectRatioFor(
   return flipped ? 1 / ratio : ratio;
 }
 
-/// The largest centered crop with the given pixel aspect (width/height),
-/// shrunk further if the current angle requires it.
 export function centeredAspectCrop(
   aspect: number,
   angleDeg: number,
@@ -454,10 +403,7 @@ export type CropDraft = {
   flipped: boolean;
 };
 
-// Freehand corner rotation runs the full circle; ±180 covers it after the
-// wrap-safe accumulation.
 export const STRAIGHTEN_RANGE = 180;
-// Fine enough to level a horizon by finger; Turn 90° covers larger turns.
 export const STRAIGHTEN_SLIDER_RANGE = { min: -45, max: 45 };
 
 export const signedAngle = (angle: number) =>
@@ -477,8 +423,6 @@ export const ASPECTS: [string, string][] = [
   ["21:9", "21:9"],
 ];
 
-/// The dropdown entry a crop already sits at, so re-entering crop mode keeps
-/// a locked shape locked.
 function matchAspect(
   crop: CropRect,
   displayWidth: number,
@@ -495,8 +439,6 @@ function matchAspect(
         displayWidth,
         displayHeight,
       );
-      // 0.5%: a crop that round-tripped through the sidecar's three decimals
-      // comes back a hair off its ratio.
       if (candidate !== null && Math.abs(candidate - ratio) < ratio * 0.005) {
         return { aspect: value, flipped };
       }
@@ -538,8 +480,6 @@ export function commitDraft(draft: CropDraft): {
   cropAngle: number;
   rotation: number;
 } {
-  // A near-flush sliver like left=3e-05 would survive isFullCrop yet
-  // round-trip badly through the sidecar's decimal formatting.
   const crop = snapCropEdges(draft.crop, 0.001);
   const identity = isFullCrop(crop) && draft.angle === 0;
   return {

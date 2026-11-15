@@ -6,8 +6,6 @@ import { ShortcutTooltip } from "./ShortcutTooltip";
 
 type Props = {
   value: number;
-  /// When set, stars are clickable and report the clicked star (clicking the
-  /// current value clears to 0 — toggle semantics).
   onRate?: (rating: number) => void;
   className?: string;
 };

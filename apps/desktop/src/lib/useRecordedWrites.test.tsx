@@ -101,7 +101,6 @@ describe("useRecordedWrites", () => {
       if (method === "listImages") return { images: [...disk.values()] };
       const image = disk.get(params.path);
       if (!image) throw new Error("unknown image");
-      // edits are the slow batch, so the ratings one settles while they still run
       if (method === "setEdit") {
         await new Promise((resolve) => setTimeout(resolve, 2));
         disk.set(params.path, { ...image, edit: params.edit });

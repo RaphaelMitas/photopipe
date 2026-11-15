@@ -42,7 +42,6 @@ function set(next: number, paths = ["a.arw"]) {
 const labels = () => historyState().entries.map((entry) => entry.label);
 const tick = () => new Promise((resolve) => setTimeout(resolve));
 
-// after the queued pushes have landed, so the entry exists to jump to
 const jumpTo = async (applied: number) => {
   await tick();
   return jumpHistory(historyState().entries[applied - 1] ?? null);

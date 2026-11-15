@@ -10,8 +10,6 @@ const SCRUB_SLOP_PX = 6;
 
 type Range = { value: number; min: number; max: number; step: number };
 
-// On a touch screen the whole row scrubs from the current value, the way an
-// iOS slider does: a tap never jumps it, and a vertical swipe scrolls the panel.
 function useTouchScrub(
   { value, min, max, step }: Range,
   onValue: (value: number) => void,
@@ -28,7 +26,6 @@ function useTouchScrub(
   return {
     onPointerDown: (event: PointerEvent<HTMLSpanElement>) => {
       if (event.pointerType !== "touch") return;
-      // Keeps Radix from jumping the thumb to the finger.
       event.preventDefault();
       scrub.current = {
         x: event.clientX,
@@ -49,7 +46,6 @@ function useTouchScrub(
       const raw =
         from.value + ((event.clientX - from.x) / from.width) * (max - min);
       const stepped = min + Math.round((raw - min) / step) * step;
-      // toFixed drops the float noise that 0.05 steps pile up.
       const next = Number(Math.min(Math.max(stepped, min), max).toFixed(6));
       if (next !== value) onValue(next);
     },

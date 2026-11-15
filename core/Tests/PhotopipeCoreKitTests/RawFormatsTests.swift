@@ -9,7 +9,6 @@ private let otherBrands = [
     "olympus-em1iii.orf", "panasonic-s5.rw2", "pentax-k1.pef",
 ]
 
-/// A copy, so a write that lands in the raw cannot touch the cached fixture.
 private func copyOfFixture(_ name: String, into dir: URL) throws -> URL? {
     guard let fixture = rawFixture(name) else { return nil }
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -23,7 +22,6 @@ private func renderedSize(_ file: ImageFile, _ edit: Edit, with renderer: Render
     return try #require(CIImage(contentsOf: url)).extent.size
 }
 
-// macOS 26.7 lists no decoder for a Panasonic S5 RW2, which macOS 27 decodes again
 private func osHasNoDecoder(for raw: URL) -> Bool {
     CIRAWFilter(imageURL: raw)?.supportedDecoderVersions.allSatisfy { $0.rawValue == "None" }
         ?? true
@@ -31,7 +29,6 @@ private func osHasNoDecoder(for raw: URL) -> Bool {
 
 private let noDecoder: Comment = "this macOS has no raw decoder for the camera"
 
-// one camera at a time: in parallel with the rest, they stalled the CI virtual machine for hours
 @Suite(.serialized)
 struct RawFormatsTests {
     @Test(arguments: otherBrands)
@@ -79,7 +76,6 @@ struct RawFormatsTests {
         let dir = scratchDir("portrait-\(name)")
         defer { try? FileManager.default.removeItem(at: dir) }
         guard let raw = try copyOfFixture(name, into: dir) else { return }
-        // a real portrait X-H2 RAF has it in IFD1 too, and ImageIO reads that one
         try ExifTool.shared.write(
             ["-overwrite_original", "-Orientation#=6", "-IFD1:Orientation#=6", raw.path])
         let file = try image(raw)
@@ -125,7 +121,6 @@ struct RawFormatsTests {
         #expect(exif.focal != nil && exif.lens != nil && exif.body != nil, "got \(exif)")
     }
 
-    // a NEF: macOS 15 does not surface the XMP inside a CR3
     @Test func aStarRatedInCameraShowsAndStaysOnceTheRawHasASidecar() throws {
         let name = "nikon-z6ii.nef"
         guard requireExifTool() else { return }

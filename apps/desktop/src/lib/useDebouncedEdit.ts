@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Edit } from "./core";
 
-// a context menu or a lost window can swallow the pointerup
 const RELEASES = ["pointerup", "pointercancel", "contextmenu", "blur"];
 
 type EditDraft = { path: string; edit: Edit } | null;
@@ -13,8 +12,6 @@ export function useDebouncedEdit(
   const [draft, setDraft] = useState<EditDraft>(null);
   const timer = useRef<number | null>(null);
   const pending = useRef<EditDraft>(null);
-  // A caller may pass a fresh closure every render; through a ref `flush` stays
-  // stable and the unmount effect below does not turn into a write per tick.
   const commitRef = useRef(commit);
   commitRef.current = commit;
 
@@ -28,8 +25,6 @@ export function useDebouncedEdit(
     return taken;
   }, []);
 
-  // Pasting over the photo being scrubbed cancels rather than flushes: the
-  // pending value would land after the paste.
   const cancel = useCallback(() => {
     takePending();
     setDraft(null);
@@ -38,14 +33,12 @@ export function useDebouncedEdit(
   const flush = useCallback(() => {
     const next = takePending();
     if (!next) return Promise.resolve();
-    // The optimistic patch lands async, so the draft stays until the write settles.
     const settled = () => setDraft((draft) => (draft === next ? null : draft));
     const written = Promise.resolve(commitRef.current(next.path, next.edit));
     written.then(settled, settled);
     return written;
   }, [takePending]);
 
-  // A drag saves once, on release; everything else saves at rest.
   const held = useRef(false);
   const hold = useCallback(() => {
     held.current = true;
@@ -54,7 +47,6 @@ export function useDebouncedEdit(
       flush();
       for (const type of RELEASES) window.removeEventListener(type, release);
     };
-    // on window: a pointer that went down in the panel can come up anywhere
     for (const type of RELEASES) window.addEventListener(type, release);
   }, [flush]);
 

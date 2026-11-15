@@ -36,7 +36,6 @@ private func waitUntilIdle(
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
 
-    // stands in for the minutes a few hundred full-resolution renders take
     let gate = DispatchSemaphore(value: 0)
     let exporter = Exporter()
     let began = Date()
@@ -46,7 +45,6 @@ private func waitUntilIdle(
             try Data("photo".utf8).write(to: target)
         })
 
-    // The client gives up on a request after ten seconds.
     #expect(Date().timeIntervalSince(began) < 1)
     #expect(job.running)
     #expect(job.total == 3)
@@ -96,7 +94,6 @@ private func waitUntilIdle(
 
     let finished = waitUntilIdle(exporter, job.id)
     #expect(finished.failed == 4)
-    // A count alone does not say which photos are missing from the folder.
     #expect(finished.failures.count == 4)
     #expect(
         finished.failures.map { String($0.prefix(12)) }.sorted() == [
@@ -124,7 +121,6 @@ private func waitUntilIdle(
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
 
-    // Six files, four writers: the last two are still queued when cancel lands.
     let gate = DispatchSemaphore(value: 0)
     let exporter = Exporter()
     let job = exporter.start(
@@ -146,7 +142,6 @@ private func waitUntilIdle(
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
 
-    // Staging is never created, so zip has nothing to archive and fails.
     let staging = dir.appendingPathComponent("staging")
     let archive = dir.appendingPathComponent("delivery.zip")
     let exporter = Exporter()
@@ -177,8 +172,6 @@ private func waitUntilIdle(
 
     let finished = waitUntilIdle(exporter, job.id)
     #expect(finished.cancelled)
-    // Staging is deleted with everything in it, so no count here describes a
-    // file anyone can open.
     #expect(finished.done == 0)
     #expect(finished.failed == 0)
     let fm = FileManager.default

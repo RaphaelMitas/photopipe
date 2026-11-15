@@ -120,7 +120,6 @@ test("auto-advance: undo inside a stack returns to the frame, after a whole-stac
   await expect(page.getByTestId("stack-chip")).toContainText("1 of 3");
   await expect(page.locator("[data-rating='0']")).toBeVisible();
 
-  // a kept frame that is not the top score: the stack rating skips it, and undo makes it the cover again
   const fours = page.getByTestId("hist-4");
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("4");
@@ -148,7 +147,6 @@ test("auto-advance: undoing a stack rated out of the filter lands outside it", a
   await page.keyboard.press("a");
   await expect(page.getByTestId("auto-advance-toggle")).toBeChecked();
 
-  // a ★5 single after the stack keeps the walk going once the stack leaves the filter
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("5");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC01204.ARW");
@@ -156,7 +154,6 @@ test("auto-advance: undoing a stack rated out of the filter lands outside it", a
   await page.keyboard.press("ArrowLeft");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC01200.ARW");
 
-  // stack 1 at ★3 ★5 ★0: rating it 3 skips its top-score frame, so the first frame written is not its cover
   await page.keyboard.press("Enter");
   await page.keyboard.press("3");
   await expect(page.getByTestId("loupe-name")).toHaveText("DSC01201.ARW");

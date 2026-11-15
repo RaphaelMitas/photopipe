@@ -13,7 +13,6 @@ private func stacked(_ photos: [String: (print: Float, captured: Double?)]) -> [
 }
 
 @Test func aPhotoJoinsOnlyWhenItLooksLikeEveryPhotoInTheStack() {
-    // a–b and b–c are each 0.3 apart, a–c 0.6: chaining neighbours would take c too
     let stacks = stacked([
         "a": (0, 0), "b": (0.3, 1), "c": (0.6, 2),
     ])
@@ -54,7 +53,6 @@ private func exifDate(_ stamp: String, subsec: String) -> [CFString: Any] {
     ]
 }
 
-/// Different patterns read as different pictures.
 private func writeJPEG(
     _ url: URL, pattern: Int, stamp: String = "2026:08:08 19:24:28", subsec: String = "000",
     size: Int = 256, embedThumbnail: Bool = false
@@ -86,7 +84,6 @@ private func writeJPEG(
     defer { try? FileManager.default.removeItem(at: url) }
 
     let file = enrich(ImageFile(path: url.path, rel: "captured.jpg", ext: "jpg", size: 1, mtime: 1))
-    // 2026-08-08 19:24:28 read as UTC
     #expect(try #require(file.captured) == 1_786_217_068.963)
 }
 

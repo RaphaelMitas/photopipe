@@ -27,7 +27,6 @@ impl Entry {
         Entry { live, failure }
     }
 
-    /// A live folder may have been ejected or renamed since; a failed one may be back.
     fn refresh(&mut self) -> Result<Live, Failure> {
         if self.failure.is_some() || !Path::new(&self.live.path).is_dir() {
             *self = Entry::activate(self.live.clone());
@@ -42,7 +41,6 @@ pub struct Listing {
     pub status: &'static str,
 }
 
-/// Remembered folders, newest first.
 pub struct Roots {
     defaults: Retained<NSUserDefaults>,
     entries: Mutex<Vec<Entry>>,
@@ -51,9 +49,7 @@ pub struct Roots {
 impl Roots {
     pub fn load(suite: Option<&str>) -> Self {
         let defaults = defaults::open(suite);
-        // only a change to Live makes this unparseable; starting empty beats refusing to launch
         let stored: Vec<Live> = defaults::read(&defaults, KEY).unwrap_or_default();
-        // resolving a bookmark can stall on a slow volume, so launch leaves it to the first listing
         let pending = |live| Entry {
             live,
             failure: Some(Failure::Broken("not activated yet".into())),
@@ -75,7 +71,6 @@ impl Roots {
         for entry in entries.iter_mut() {
             let _ = entry.refresh();
         }
-        // a renamed folder can refresh onto a path another entry holds; keep the working one
         let working: HashSet<String> = entries
             .iter()
             .filter(|entry| entry.failure.is_none())
@@ -86,7 +81,6 @@ impl Roots {
             (entry.failure.is_none() || !working.contains(&entry.live.path))
                 && seen.insert(entry.live.path.clone())
         });
-        // writing an unchanged list would wipe an unparseable value or another instance's roots
         if entries.iter().map(|entry| &entry.live).ne(before.iter()) {
             self.write(&entries);
         }

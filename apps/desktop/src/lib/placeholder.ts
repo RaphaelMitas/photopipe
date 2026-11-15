@@ -1,14 +1,8 @@
-// Stand-in artwork for the browser build, which has no core to render real
-// photos: a synthetic landscape per file, so the grid and the README
-// screenshots read as a shoot instead of a wall of gradients.
-
-// The sun stays warm in every sky, the way it does in a photo; only the light
-// it throws on the horizon changes.
 const SKIES = [
-  { sky: 222, horizon: 28, sun: 34, glow: 62 }, // sunset
-  { sky: 252, horizon: 318, sun: 24, glow: 55 }, // dusk
-  { sky: 205, horizon: 196, sun: 46, glow: 40 }, // clear day
-  { sky: 268, horizon: 20, sun: 30, glow: 58 }, // dawn
+  { sky: 222, horizon: 28, sun: 34, glow: 62 },
+  { sky: 252, horizon: 318, sun: 24, glow: 55 },
+  { sky: 205, horizon: 196, sun: 46, glow: 40 },
+  { sky: 268, horizon: 20, sun: 30, glow: 58 },
 ];
 
 function rng(seed: string): () => number {
@@ -36,8 +30,6 @@ function ridge(rand: () => number, base: number, amp: number, steps: number) {
 }
 
 export function placeholderFor(path: string): string {
-  // Seeded on the file name alone: a photo's thumbnail and its render are
-  // different cache paths, and they have to come back the same landscape.
   const rand = rng(path.split("/").pop() ?? path);
   const {
     sky,

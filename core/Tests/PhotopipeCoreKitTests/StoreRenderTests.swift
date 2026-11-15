@@ -10,9 +10,6 @@ private struct StoreRender: Decodable {
     let maxPixel: Int?
 }
 
-/// The App Store screenshots show these renders. Their RAW originals stay out
-/// of git, so this only runs when pointed at them:
-/// PHOTOPIPE_STORE_ORIGINALS=~/Pictures/Camera/2026-09-03_zell-am-see swift test --filter storeRenders
 @Test func storeRenders() throws {
     guard let originals = ProcessInfo.processInfo.environment["PHOTOPIPE_STORE_ORIGINALS"] else { return }
     let store = fixturesRoot().deletingLastPathComponent().appendingPathComponent("apps/desktop/e2e/store")

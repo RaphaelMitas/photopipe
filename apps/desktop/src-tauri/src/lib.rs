@@ -12,8 +12,6 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 
-/// Core requests and bookmark resolution can stall, so neither runs on the main
-/// thread or a tokio worker.
 async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, String> {
@@ -46,8 +44,6 @@ async fn list_roots(roots: State<'_, Arc<Roots>>) -> Result<Vec<Listing>, Failur
     Ok(blocking(move || roots.list()).await?)
 }
 
-/// Minting for a bare path only works under the sandbox if the panel granted it
-/// this session.
 #[tauri::command]
 async fn open_root(
     app: AppHandle,
@@ -59,7 +55,6 @@ async fn open_root(
     blocking(move || -> Result<_, Failure> {
         let live = match roots.reopen(&path) {
             Some(Ok(live)) => live,
-            // the drive is gone, not the grant; keep "connect the drive" over "no folder at"
             Some(Err(failure @ Failure::Unplugged(_))) => return Err(failure),
             Some(Err(failure)) => bookmark::activate(&bookmark::mint(&path).map_err(|_| failure)?)?,
             None => bookmark::activate(&bookmark::mint(&path)?)?,
@@ -77,7 +72,6 @@ async fn open_root(
     .await?
 }
 
-/// The app's Documents, which Files lists as On My iPad > Photopipe.
 #[tauri::command]
 fn default_library(app: AppHandle) -> Option<String> {
     if cfg!(desktop) {
@@ -93,7 +87,6 @@ fn start_default_project(
     opened: &serde_json::Value,
 ) -> Option<String> {
     let library = std::fs::canonicalize(library?).ok()?;
-    // /var links to /private/var, and the bookmark and document_dir may name either
     if opened["shoots"] != 0 || std::fs::canonicalize(root).ok()? != library {
         return None;
     }
@@ -125,7 +118,6 @@ fn choose_folder(app: &AppHandle, title: &str) -> Result<Option<String>, Failure
     ))
 }
 
-/// The dialog plugin cannot pick a folder on iOS, and copies files it picks into the app's caches.
 #[cfg(mobile)]
 fn choose_folder(_app: &AppHandle, _title: &str) -> Result<Option<String>, Failure> {
     Ok(swift_core::pick_folder())
@@ -147,7 +139,6 @@ async fn pick_photos(
     blocking(move || choose_photos(&app, &title, from)).await?
 }
 
-/// The Mac picks from Files only; `features` keeps the library from being offered.
 #[cfg(desktop)]
 fn choose_photos(app: &AppHandle, title: &str, _from: PhotoSource) -> Result<Vec<String>, Failure> {
     use tauri_plugin_dialog::DialogExt;
@@ -175,7 +166,6 @@ fn choose_photos(app: &AppHandle, title: &str, _from: PhotoSource) -> Result<Vec
         .collect()
 }
 
-/// On iOS the dialog plugin copies what it picks from Files, and asks Photos for a plain image, not the raw.
 #[cfg(mobile)]
 fn choose_photos(
     _app: &AppHandle,
@@ -224,7 +214,6 @@ fn agent_reply(bridge: State<'_, Arc<Bridge>>, id: u64, ok: bool, value: serde_j
     );
 }
 
-/// What an MCP client runs: this very executable, with `--mcp`.
 #[tauri::command]
 fn agent_command() -> Option<String> {
     let exe = std::env::current_exe().ok()?;
@@ -246,12 +235,9 @@ struct Features {
 fn features() -> Features {
     Features {
         updater: cfg!(all(desktop, feature = "updater")),
-        // zipping shells out to /usr/bin/zip, and the iOS save dialog only exports a copy
         zip_export: cfg!(desktop),
         photo_library: cfg!(mobile),
-        // the opener plugin's reveal-in-folder is desktop-only
         reveal: cfg!(desktop),
-        // On My iPad has no Trash, so the core deletes there for good
         trash: cfg!(desktop),
         agents: cfg!(agents),
     }
@@ -268,9 +254,6 @@ fn install_menu(app: &tauri::App) -> tauri::Result<()> {
         .id("settings")
         .accelerator("CmdOrCtrl+,")
         .build(app)?;
-    // Same sources the default menu reads, so the panel stays right
-    // when the version moves and picks up copyright and publisher if
-    // they are ever set in tauri.conf.json.
     let package = app.package_info();
     let bundle = &app.config().bundle;
     let about = AboutMetadataBuilder::new()
@@ -308,13 +291,7 @@ fn install_menu(app: &tauri::App) -> tauri::Result<()> {
         .paste()
         .select_all()
         .build()?;
-    // Full screen lives here in every Mac app, and replacing the default
-    // menu is what took it away.
     let view_menu = SubmenuBuilder::new(app, "View").fullscreen().build()?;
-    // These two are handed to AppKit, which finds them by id and adds
-    // the window list to one and the search field to the other. Build
-    // them with `new` and the id is random, the lookup misses, and you
-    // get inert menus that only look standard.
     let window_menu = SubmenuBuilder::with_id(app, WINDOW_SUBMENU_ID, "Window")
         .minimize()
         .maximize()
@@ -339,8 +316,6 @@ fn install_menu(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
-/// `--core`: one JSON request per stdin line, one reply per stdout line, so the
-/// bundle smoke test can drive the shipped binary without starting the app.
 pub fn serve_core_on_stdin() {
     use std::io::BufRead;
     for line in std::io::stdin().lock().lines().map_while(Result::ok) {
@@ -389,7 +364,6 @@ pub fn run() {
             }
             app.manage(access);
             app.manage(bridge);
-            // not in capabilities/: tauri-build rejects permissions for plugins the store build compiles out
             #[cfg(all(desktop, feature = "updater"))]
             app.add_capability(
                 tauri::ipc::CapabilityBuilder::new("updater")
@@ -435,7 +409,6 @@ mod tests {
 
     #[test]
     fn an_empty_default_library_gets_a_project_whichever_way_the_container_is_named() {
-        // TMPDIR sits under /var, the same /private/var alias the iPad container has
         let named = std::env::temp_dir().join(format!("photopipe-default-{}", std::process::id()));
         let index =
             std::env::temp_dir().join(format!("photopipe-default-{}.sqlite", std::process::id()));
@@ -443,7 +416,6 @@ mod tests {
         let resolved = std::fs::canonicalize(&named).unwrap();
         assert_ne!(named, resolved);
         let (named, root) = (named.to_str().unwrap(), resolved.to_str().unwrap());
-        // without indexPath the core would overwrite the installed app's index
         let opened = swift_core::request(
             "setRoot",
             Some(serde_json::json!({ "path": root, "indexPath": index })),

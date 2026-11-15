@@ -18,7 +18,6 @@ public enum FileActions {
                 #if os(macOS)
                     throw error
                 #else
-                    // On My iPad has no Trash; the app asked for a permanent delete first.
                     try FileManager.default.removeItem(at: url)
                 #endif
             }
@@ -27,7 +26,6 @@ public enum FileActions {
         return trashed
     }
 
-    /// Hidden, so a half-written copy stays out of Finder and the scanner.
     public static let tempPrefix = ".photopipe-"
 
     @discardableResult
@@ -37,8 +35,6 @@ public enum FileActions {
         let temp = folder.appendingPathComponent("\(tempPrefix)\(UUID().uuidString)")
         try fm.copyItem(at: source, to: temp)
 
-        // A dangling symlink is invisible to `fileExists` and still refuses the
-        // move, so a name it rejected is never offered again.
         var refused: Set<String> = []
         var landing = target
         while true {
@@ -65,7 +61,6 @@ public enum FileActions {
         #else
             let fm = FileManager.default
             let dest = URL(fileURLWithPath: destination)
-            // A save panel grants the chosen path, not the folder around it.
             let scratch = try fm.url(
                 for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: dest,
                 create: true)
@@ -82,7 +77,6 @@ public enum FileActions {
         #endif
     }
 
-    /// A leading dot is refused because the scan would hide it.
     static func isUsableName(_ name: String) -> Bool {
         let scalars = name.unicodeScalars
         return !name.isEmpty && !scalars.contains("/") && !scalars.contains(":")

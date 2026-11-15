@@ -20,8 +20,6 @@ public struct LibrarySnapshot: Equatable, Sendable {
         }
     }
 
-    /// Swaps one shoot's images, rebuilding the shoot record derived from them
-    /// so its cover and `indexed` flag never drift from the photos underneath.
     public func replacingImages(inShoot name: String, with images: [ImageFile]) -> LibrarySnapshot {
         guard let position = shoots.firstIndex(where: { $0.name == name }) else { return self }
         var imagesByShoot = self.imagesByShoot
@@ -45,9 +43,6 @@ public enum ScanError: WireError {
     }
 }
 
-/// Finds every shoot and file by stat alone. Nothing here opens an image, so
-/// the cost is one directory enumeration — this is what the library can be
-/// drawn from while `enrich` catches up in the background.
 public func walkLibrary(root: String) throws -> LibrarySnapshot {
     let fm = FileManager.default
     var isDirectory: ObjCBool = false
@@ -92,8 +87,6 @@ public func walkLibrary(root: String) throws -> LibrarySnapshot {
     return LibrarySnapshot(shoots: shoots, imagesByShoot: imagesByShoot, fileCount: fileCount)
 }
 
-/// Each call opens the file and its sidecar, which is why this runs
-/// off the request path. Already-settled files are returned untouched.
 public func enrich(_ file: ImageFile) -> ImageFile {
     guard !file.enriched else { return file }
     let read = XMP.read(file: file)
@@ -108,7 +101,6 @@ public func enrich(_ file: ImageFile) -> ImageFile {
         exif: header.exif)
 }
 
-/// A sidecar rewrite rereads rating, flag and edit but keeps the header, so the photo stays in its stack.
 public func carryEnrichment(
     into walked: LibrarySnapshot, from cache: [String: ImageFile]
 ) -> LibrarySnapshot {

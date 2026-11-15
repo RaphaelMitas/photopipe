@@ -14,7 +14,6 @@ export type ActionDef = {
   contexts: readonly Context[];
   keys: readonly string[];
   repeat?: boolean;
-  /// macOS owns it, so it is listed but not rebindable.
   fixed?: boolean;
 };
 
@@ -328,7 +327,6 @@ type KeyFields = Pick<
 const joinChord = (event: KeyFields, key: string, typed: boolean) => {
   const held = {
     ctrl: event.ctrlKey,
-    // ⇧ and ⌥ are how a German Mac types \ or /, not part of the shortcut
     alt: event.altKey && !typed,
     shift: event.shiftKey && !typed,
     meta: event.metaKey,
@@ -336,7 +334,6 @@ const joinChord = (event: KeyFields, key: string, typed: boolean) => {
   return [...MODIFIERS.filter((modifier) => held[modifier]), key].join("+");
 };
 
-/// Digits by position first (⇧1 is not "!"), then the typed character (⌘⇧7 is ⌘/ on a German Mac).
 export function chordsOf(event: KeyFields): string[] {
   const chords: string[] = [];
   const digit = /^(?:Digit|Numpad)(\d)$/.exec(event.code)?.[1];
@@ -344,12 +341,9 @@ export function chordsOf(event: KeyFields): string[] {
   const letter = /^Key([A-Z])$/.exec(event.code)?.[1];
   const named = NAMED[event.key];
   if (named !== undefined) chords.push(joinChord(event, named, false));
-  // ⌥ turns X into ≈ and O into ø, so its letter only survives as a position
   else if (event.altKey && letter !== undefined) {
     chords.push(joinChord(event, letter.toLowerCase(), false));
-  }
-  // by character, so Z stays Z on a QWERTZ keyboard and ü keeps its ⇧
-  else if (/^\p{L}$/u.test(event.key)) {
+  } else if (/^\p{L}$/u.test(event.key)) {
     chords.push(joinChord(event, event.key.toLowerCase(), false));
   } else if ([...event.key].length === 1) {
     chords.push(joinChord(event, event.key, true));
@@ -357,7 +351,6 @@ export function chordsOf(event: KeyFields): string[] {
   return [...new Set(chords)];
 }
 
-/// "+" can be the key itself ("meta++").
 function parseChord(chord: string) {
   const modifiers: string[] = [];
   let rest = chord;
@@ -395,7 +388,6 @@ const SYMBOLS = new Map([
   ["delete", "⌦"],
 ]);
 
-// "ß".toUpperCase() is "SS"
 const capital = (key: string) =>
   key.toUpperCase().length === key.length ? key.toUpperCase() : key;
 

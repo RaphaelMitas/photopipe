@@ -98,7 +98,6 @@ const holdersOf = (
 export const conflictsOf = (id: ActionId, press: readonly string[]) =>
   holdersOf(id, press, overridesPref.get());
 
-/// Whoever held the key gets `replacing` back if it is still free, so a swap loses nothing.
 function evict(
   overrides: Overrides,
   id: ActionId,
@@ -154,7 +153,6 @@ export function unbindShortcut(id: ActionId, chord: string) {
   );
 }
 
-/// Whoever is left with no key falls back on its own defaults where they are free.
 export function resetShortcut(id: ActionId) {
   const { keys } = ACTIONS[id];
   const overrides = overridesPref.get();
@@ -171,7 +169,6 @@ export function resetShortcut(id: ActionId) {
 
 export const resetAllShortcuts = () => overridesPref.set({});
 
-/// Returning false leaves the key to whoever else wants it.
 type Handler = () => unknown;
 type Handlers = Partial<Record<ActionId, Handler>>;
 type Registration = {
@@ -191,7 +188,6 @@ const SPECIFICITY: readonly Context[] = ["crop", "loupe", "browser"];
 export const activeContext = (): Context =>
   SPECIFICITY.find((context) => claims.includes(context)) ?? "browser";
 
-// A tooltip spends Escape on closing itself; pass it on unless a popover or menu is next in line.
 const released = new WeakSet<Event>();
 export function releaseEscape(event: KeyboardEvent) {
   if (
@@ -211,7 +207,6 @@ function ignored(event: KeyboardEvent): boolean {
   ) {
     return true;
   }
-  // a focused button acts on these itself
   if (
     (event.key === "Enter" || event.key === " ") &&
     target?.closest("button, select")
@@ -235,7 +230,6 @@ function handlerFor(id: ActionId, context: Context): Handler | undefined {
   }
 }
 
-/// Does what the key does in the view the user has open; false when nothing here handles it.
 export function runAction(id: ActionId): boolean {
   const handler = handlerFor(id, activeContext());
   return handler !== undefined && handler() !== false;
@@ -259,7 +253,6 @@ function dispatch(event: KeyboardEvent) {
     if (!chords.some((chord) => bindings.includes(chord))) continue;
     const handler = handlerFor(id, context);
     if (!handler) continue;
-    // held down, a rating would land on every photo it advances onto
     if (event.repeat && !action.repeat) {
       event.preventDefault();
       return;
@@ -270,7 +263,6 @@ function dispatch(event: KeyboardEvent) {
   }
 }
 
-/// Pass `context` when the same action does something else elsewhere.
 export function useShortcuts(handlers: Handlers, context?: Context) {
   const latest = useRef<Registration>({ context, handlers });
   latest.current = { context, handlers };
@@ -288,7 +280,6 @@ export function useShortcuts(handlers: Handlers, context?: Context) {
   }, []);
 }
 
-/// The most specific claimed context wins.
 export function useShortcutContext(context: Context) {
   useEffect(() => {
     claims.push(context);

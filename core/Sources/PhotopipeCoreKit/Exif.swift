@@ -2,11 +2,9 @@ import Foundation
 import ImageIO
 
 public struct Exif: Codable, Equatable, Sendable {
-    // seconds
     public var shutter: Double?
     public var aperture: Double?
     public var iso: Int?
-    // mm, not the 35 mm equivalent
     public var focal: Double?
     public var lens: String?
     public var body: String?
@@ -22,7 +20,6 @@ extension Exif {
         self.init(
             shutter: Self.positive(exif[kCGImagePropertyExifExposureTime]),
             aperture: Self.positive(exif[kCGImagePropertyExifFNumber]),
-            // ISOSpeedRatings stops at 65535 and a CR3 leaves it empty; the others carry the rest
             iso: [
                 (exif[kCGImagePropertyExifISOSpeedRatings] as? [Int])?.first,
                 exif[kCGImagePropertyExifISOSpeed] as? Int,

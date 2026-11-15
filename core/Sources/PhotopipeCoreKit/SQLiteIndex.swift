@@ -3,7 +3,6 @@ import SQLite3
 
 private let transientDestructor = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-/// One connection, no internal locking: callers must serialize their access.
 public final class SQLiteIndex: @unchecked Sendable {
     public enum IndexError: Error {
         case open(String)
@@ -15,9 +14,7 @@ public final class SQLiteIndex: @unchecked Sendable {
     private let decoder = JSONDecoder()
     private let path: String
 
-    // bump when a read learns something a cached row lacks, or stale rows get written back over it
     private static let schema = 7
-    // only a system that can mask reads a mask, so it shares no rows with one that cannot
     private static let schemaVersion = schema * 2 + (Masker.isAvailable ? 0 : 1)
 
     public init(path: String) throws {
@@ -44,14 +41,9 @@ public final class SQLiteIndex: @unchecked Sendable {
             throw IndexError.open(errorMessage)
         }
         try exec("PRAGMA journal_mode = WAL")
-        // A locked database is a reason to wait, not to conclude the file is
-        // corrupt: the recovery path below deletes it, and that would throw away
-        // every score ever computed.
         sqlite3_busy_timeout(db, 3000)
         try exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         let stored = try scalarInt("SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schema'")
-        // scores took minutes per shoot and survive a parser change; the files
-        // table goes whole, since an older layout would not take today's rows
         if let stored, stored != Self.schemaVersion {
             try exec("DROP TABLE IF EXISTS files; DELETE FROM meta")
         }
@@ -138,8 +130,6 @@ public final class SQLiteIndex: @unchecked Sendable {
         }
     }
 
-    /// Folds a freshly enriched batch into the stored rows without touching the
-    /// rest, so the next launch starts warm even if this one is interrupted.
     public func upsert(shoot: String, files: [ImageFile]) throws {
         guard !files.isEmpty else { return }
         try write { try insert([shoot: files]) }
@@ -177,7 +167,6 @@ public final class SQLiteIndex: @unchecked Sendable {
                     try bindJSON(statement, 8, file.edit, unless: .identity)
                     sqlite3_bind_int64(statement, 9, Int64(file.width))
                     sqlite3_bind_int64(statement, 10, Int64(file.height))
-                    // a row another build writes carries its own version, so it reads as unparsed
                     sqlite3_bind_int64(statement, 11, file.enriched ? Int64(Self.schemaVersion) : 0)
                     sqlite3_bind_double(statement, 12, file.sidecarMtime)
                     bindDouble(statement, 13, file.captured)
@@ -248,7 +237,6 @@ public final class SQLiteIndex: @unchecked Sendable {
             guard let blob = sqlite3_column_blob(statement, 1) else { return nil }
             let bytes = UnsafeRawBufferPointer(
                 start: blob, count: Int(sqlite3_column_bytes(statement, 1)))
-            // sqlite promises no alignment for a blob, so copy rather than rebind
             var feature = [Float](repeating: 0, count: bytes.count / MemoryLayout<Float>.stride)
             feature.withUnsafeMutableBytes {
                 $0.copyMemory(from: UnsafeRawBufferPointer(rebasing: bytes[..<$0.count]))
@@ -286,7 +274,6 @@ public final class SQLiteIndex: @unchecked Sendable {
         }
     }
 
-    /// NULL for the default keeps the index small.
     private func bindJSON<Value: Encodable & Equatable>(
         _ statement: OpaquePointer?, _ index: Int32, _ value: Value, unless empty: Value
     ) throws {
@@ -319,7 +306,6 @@ public final class SQLiteIndex: @unchecked Sendable {
         }
     }
 
-    /// `root` limits the load to one library; the table holds every library ever opened.
     private func loadRows<Value>(
         _ columns: String, from table: String, under root: String,
         value: (OpaquePointer?) -> Value?
@@ -327,7 +313,6 @@ public final class SQLiteIndex: @unchecked Sendable {
         let sql =
             "SELECT path, \(columns), mtime, size, version FROM \(table) WHERE path > ? AND path < ?"
         return try withStatement(sql) { statement in
-            // every path under the root sorts between "root/" and "root0"
             sqlite3_bind_text(statement, 1, root + "/", -1, transientDestructor)
             sqlite3_bind_text(statement, 2, root + "0", -1, transientDestructor)
             let stamps = sqlite3_column_count(statement) - 3
@@ -344,8 +329,6 @@ public final class SQLiteIndex: @unchecked Sendable {
         }
     }
 
-    /// `sql` binds the path first and the row's mtime, size and version last; `bind` fills in
-    /// whatever sits between.
     private func saveRows<Value>(
         _ sql: String, _ rows: [(String, AnalysisRow<Value>)],
         bind: (OpaquePointer?, Value?) throws -> Void

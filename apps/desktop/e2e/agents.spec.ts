@@ -76,7 +76,6 @@ test("an agent opens a photo in the loupe and reads the view back", async ({
   });
   await expect(page.getByTestId("loupe-name")).toContainText("DSC00938");
 
-  // the agent's own exposure change saves at once and does not hold up its next call
   expect(await ask(page, "ui_action", { action: "exposure.up" })).toMatchObject(
     { ok: true, value: { history: [{ undone: false }] } },
   );

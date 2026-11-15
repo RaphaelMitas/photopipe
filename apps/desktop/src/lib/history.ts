@@ -8,11 +8,9 @@ type HistoryAction = {
   label: string;
   detail?: string;
   paths: string[];
-  /// Taken outside a stack on all of its frames, so undo lands back outside.
   wholeStack?: boolean;
   channel: HistoryChannel;
   stage: (direction: HistoryDirection, path: string) => void;
-  // the write that made the entry: undo waits for it, its failure drops the entry
   written?: Promise<unknown>;
 };
 
@@ -24,14 +22,12 @@ export type HistoryDirection = "undo" | "redo";
 export const historyLabel = (entry: HistoryEntry) =>
   [entry.label, entry.detail].filter(Boolean).join(" ");
 
-// cursor counts applied entries; everything from entries[cursor] on is undone
 type HistoryState = { entries: HistoryEntry[]; cursor: number };
 
 let state: HistoryState = { entries: [], cursor: 0 };
 let nextId = 1;
 let clears = 0;
 let pushes = 0;
-// One step at a time: a second ⌘Z has to see the cursor the first one left.
 let queue: Promise<unknown> = Promise.resolve();
 const listeners = new Set<() => void>();
 
@@ -70,8 +66,6 @@ function rewrite(keep: (entry: HistoryEntry) => HistoryEntry | null) {
 const drop = (id: number) =>
   rewrite((entry) => (entry.id === id ? null : entry));
 
-// A channel writes everything staged as one batch: a long jump is one write per
-// photo. Values are absolute, so a batch ends where a step-by-step replay would.
 export function historyChannel<V>(
   write: (values: Map<string, V>) => Promise<unknown>,
 ) {
@@ -97,11 +91,9 @@ export function historyChannel<V>(
   };
 }
 
-// queued: pushed mid-undo it would land above the entry being undone
 function pushHistory(action: HistoryAction) {
   const entry = { ...action, id: nextId++, at: Date.now() };
   const clearsAtStart = clears;
-  // steps still waiting were aimed at a timeline this action is about to change
   pushes += 1;
   void action.written?.catch(() => enqueue(() => drop(entry.id)));
   return enqueue(() => {
@@ -132,7 +124,6 @@ export function forgetHistoryPaths(paths: string[]) {
 type OnStart = (entry: HistoryEntry) => void;
 type Asked = { pushes: number; clears: number };
 
-// `asked` is the timeline the move was aimed at: acting again calls it off.
 async function travel(target: number, asked: Asked, onStart?: OnStart) {
   const stale = () => asked.pushes !== pushes || asked.clears !== clears;
   if (stale() || target < 0 || target > state.entries.length) return [];
@@ -152,7 +143,6 @@ async function travel(target: number, asked: Asked, onStart?: OnStart) {
     return [];
   }
 
-  // in travel order, so the value a replay would write last is the one staged last
   for (const entry of run) {
     for (const path of entry.paths) entry.stage(direction, path);
   }
@@ -161,7 +151,6 @@ async function travel(target: number, asked: Asked, onStart?: OnStart) {
     Array.from(channels, (channel) => channel.flush()),
   );
   if (flushed.some((result) => result.status === "rejected")) {
-    // a step that cannot run would block everything under it
     if (run.length === 1) drop(run[0].id);
     return [];
   }
@@ -170,7 +159,6 @@ async function travel(target: number, asked: Asked, onStart?: OnStart) {
   return run;
 }
 
-/// `from`, when given, is the entry the caller expects on top: anything else moved History first, so no move.
 export function stepHistory(
   direction: HistoryDirection,
   onStart?: OnStart,
@@ -185,7 +173,6 @@ export function stepHistory(
   });
 }
 
-// To an entry, not an index: rows can shift between the click and the move.
 export function jumpHistory(to: HistoryEntry | null) {
   const asked = { pushes, clears };
   return enqueue(async () => {

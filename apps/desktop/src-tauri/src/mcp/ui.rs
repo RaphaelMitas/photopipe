@@ -6,11 +6,9 @@ use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-/// Long enough for a call queued behind others in the webview, and for opening a shoot.
 const UI_WAIT: Duration = Duration::from_secs(60);
 const EXPORT_WAIT: Duration = Duration::from_secs(30 * 60);
 
-/// Tools the webview answers, because the open shoot, selection and history only live there.
 pub fn catalog() -> Vec<Tool> {
     vec![
         Tool {
@@ -335,7 +333,6 @@ struct Export {
     zip: bool,
 }
 
-/// The webview starts the job so it shows in the app's export list; progress is polled from the core.
 fn export(args: &Value, bridge: &Bridge) -> Result<Content, String> {
     let mut export: Export = parse(args)?;
     let shoot = export
@@ -347,7 +344,6 @@ fn export(args: &Value, bridge: &Bridge) -> Result<Content, String> {
     export.destination = destination(&export.destination, shoot, export.zip, &mut reserved)?;
     let args = serde_json::to_value(export).map_err(|e| e.to_string())?;
     let started = bridge.ask("export", &args, UI_WAIT).inspect_err(|error| {
-        // the job may have started and will write the archive onto the reservation
         if error == UNANSWERED {
             reserved.0 = None;
         }
@@ -367,7 +363,6 @@ fn export(args: &Value, bridge: &Bridge) -> Result<Content, String> {
             }))]);
         }
         if Instant::now() > deadline {
-            // still running: the archive lands on the reservation later
             reserved.0 = None;
             return Ok(vec![json_text(
                 &json!({ "running": true, "done": progress["done"], "total": progress["total"] }),
@@ -377,7 +372,6 @@ fn export(args: &Value, bridge: &Bridge) -> Result<Content, String> {
     }
 }
 
-/// The core writes a zip to exactly the path it is given, replacing whatever is there; an agent only ever gets a new file.
 fn destination(
     folder: &str,
     shoot: &str,
@@ -404,7 +398,6 @@ fn destination(
     Ok(destination)
 }
 
-/// By file identity, not path: a firmlink like /System/Volumes/Data names the library under another path.
 fn inside(folder: &Path, root: &Path) -> bool {
     use std::os::unix::fs::MetadataExt;
     let Ok(root) = std::fs::metadata(root) else {
@@ -418,7 +411,6 @@ fn inside(folder: &Path, root: &Path) -> bool {
     })
 }
 
-/// Claimed on disk at once, so a second export picking a name right after, even one still running, sees it taken.
 fn reserve_zip(folder: &Path, shoot: &str) -> std::io::Result<PathBuf> {
     for n in 1.. {
         let path = match n {
@@ -438,7 +430,6 @@ fn reserve_zip(folder: &Path, shoot: &str) -> std::io::Result<PathBuf> {
     unreachable!("some name is free")
 }
 
-/// The empty placeholder goes again if the export never wrote over it.
 struct Reserved(Option<PathBuf>);
 
 impl Drop for Reserved {

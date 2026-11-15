@@ -42,7 +42,6 @@
   --radius: 0.2rem;
 }
 
-/* Neutral grays: a tinted surround shifts how the photo's colour reads. */
 .dark {
   --background: oklch(0.15 0 0);
   --card: oklch(0.2 0 0);

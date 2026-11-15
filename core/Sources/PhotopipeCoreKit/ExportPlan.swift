@@ -24,7 +24,6 @@ extension Exporter.Plan {
         let items = images.enumerated().map { index, image in
             var path = FilePath(image.rel)
             if let name = names?[index] {
-                // joined by hand: setting `extension` would eat a dot the name carries
                 let ext = path.extension
                 path.removeLastComponent()
                 path.append(ext.map { "\(name).\($0)" } ?? name)
@@ -42,9 +41,6 @@ extension Exporter.Plan {
             }
             used.insert(name.lowercased())
             let target = base.appendingPathComponent(name)
-            // An export carries the real edit and rating even where enrichment
-            // has not reached yet. Reading them opens the file, so it happens in
-            // the writers, four wide, rather than in the request that plans it.
             return Item(label: image.rel) {
                 try write(
                     enrich(image), format: format, quality: quality, longEdge: longEdge,
@@ -74,8 +70,6 @@ extension Exporter.Plan {
                 try FileActions.copyWithoutOverwriting(from: source, to: planned)
             }
         case .jpeg:
-            // A name picked before the first write can be taken by the time the
-            // render lands, and a render cannot retry one the way a copy does.
             let target =
                 staging || !fm.fileExists(atPath: planned.path)
                 ? planned : FileActions.uniqueURL(for: planned)

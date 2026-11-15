@@ -40,8 +40,6 @@ private func writeJPEG(at url: URL, dateTimeOriginal: String?) {
     CGImageDestinationFinalize(dest)
 }
 
-// MARK: - Creating
-
 @Test func createProjectMakesFolderAndNotes() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
@@ -84,8 +82,6 @@ private func writeJPEG(at url: URL, dateTimeOriginal: String?) {
             == ["dup", "2026-01-01_gala"])
 }
 
-// MARK: - Reading the date
-
 @Test func theDateComesOnlyFromTheFile() throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
@@ -112,12 +108,9 @@ private func writeJPEG(at url: URL, dateTimeOriginal: String?) {
     #expect(ProjectFile.read(inShoot: dir.path) == ProjectFile())
     try Data("{not json".utf8).write(to: ProjectFile.url(inShoot: dir.path))
     #expect(ProjectFile.read(inShoot: dir.path) == nil)
-    // A missing or null notes key is not "broken"; the cover survives.
     try Data(#"{"cover":"a.jpg","notes":null}"#.utf8).write(to: ProjectFile.url(inShoot: dir.path))
     #expect(ProjectFile.read(inShoot: dir.path) == ProjectFile(cover: "a.jpg"))
 }
-
-// MARK: - Saving
 
 @Test func updateWritesMetadataWithoutMovingTheFolder() throws {
     let dir = try tempDir()
@@ -192,7 +185,6 @@ private func writeJPEG(at url: URL, dateTimeOriginal: String?) {
             contentsOf: ProjectFile.url(inShoot: dir.appendingPathComponent("broken").path),
             encoding: .utf8) == #"{"notes":"precious","c"#)
 
-    // read-only folder: the rename in the parent succeeds, the write inside it fails
     let locked = try makeProjectFolder(dir, "locked", json: "{}")
     try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: locked.path)
     defer {
@@ -247,8 +239,6 @@ private func writeJPEG(at url: URL, dateTimeOriginal: String?) {
         try LibraryService.freeProjectURL(root: "/tmp/library", folder: "zell").path
             == "/tmp/library/zell")
 }
-
-// MARK: - Suggesting the first photo's date
 
 @Test func captureDayReadsExifThenFallsBackToTheFileDate() throws {
     let dir = try tempDir()

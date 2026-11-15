@@ -7,7 +7,6 @@ public final class Dispatcher: Sendable {
         self.library = library
     }
 
-    /// The result as JSON, or the error as "code: message".
     public func dispatch(method: String, params: String? = nil) -> (ok: Bool, text: String) {
         let decoded: JSONValue?
         do {
@@ -25,8 +24,6 @@ public final class Dispatcher: Sendable {
         }
     }
 
-    /// Dropped rather than rejected when malformed: a bad viewport should cost
-    /// the caller a whole-frame render, not an error mid-gesture.
     static func viewport(from value: JSONValue?) -> CropRect? {
         guard let value,
             let left = value["left"]?.doubleValue, let top = value["top"]?.doubleValue,

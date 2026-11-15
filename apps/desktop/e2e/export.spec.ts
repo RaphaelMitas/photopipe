@@ -7,19 +7,16 @@ test("the export drawer acts on the selection, with quick actions", async ({
 }) => {
   await openZell(page);
 
-  // The top-bar button opens the drawer; nothing selected yet.
   await page.getByTestId("open-export").click();
   await expect(page.getByTestId("export-drawer")).toBeVisible();
   await expect(page.getByTestId("drawer-count")).toHaveText("0");
   await expect(page.getByTestId("run-export")).toBeDisabled();
 
-  // "All" performs a real selection — the grid lights up.
   await page.getByTestId("select-all").click();
   await expect(page.getByTestId("drawer-count")).toHaveText("4");
   await expect(page.getByTestId("selection-count")).toHaveText("4 selected");
   await expect(page.getByTestId("run-export")).toBeEnabled();
 
-  // ⌘-click in the grid fine-tunes it and the drawer follows.
   await page
     .getByTestId("thumb")
     .first()
@@ -35,15 +32,12 @@ test("the export drawer acts on the selection, with quick actions", async ({
 test("select-filtered follows the histogram filter", async ({ page }) => {
   await openZell(page);
 
-  // ≥2 leaves one photo; the drawer offers exactly that.
   await page.getByTestId("hist-2").click();
   await page.getByTestId("open-export").click();
   await expect(page.getByTestId("select-filtered")).toContainText("1");
   await page.getByTestId("select-filtered").click();
   await expect(page.getByTestId("drawer-count")).toHaveText("1");
 
-  // Select-all must never leave part of the selection invisible: it drops
-  // the filter along the way.
   await page.getByTestId("select-all").click();
   await expect(page.getByTestId("drawer-count")).toHaveText("4");
   await expect(page.getByTestId("thumb")).toHaveCount(4);
@@ -103,7 +97,6 @@ test("an export that lost most of its files does not read as a success", async (
   await page.getByTestId("select-all").click();
   await page.getByTestId("run-export").click();
 
-  // Three of four gone is not a green check, and the row has to say which.
   const partial = page.getByTestId("job-partial");
   await expect(partial).toBeVisible();
   await expect(partial).toContainText("3 of 4 failed");
@@ -126,12 +119,10 @@ test("a cancelled zip offers no archive to reveal", async ({ page }) => {
   await page.getByTestId("job-cancel").click();
   const stopped = page.getByTestId("job-cancelled");
   await expect(stopped).toContainText("Cancelled · 0 files");
-  // The archive was never written, so revealing it would only raise an error.
   await expect(stopped.getByLabel("Reveal in Finder")).toHaveCount(0);
 });
 
 test("a long export can be cancelled and says so", async ({ page }) => {
-  // 200 photos, delivered one per poll: still running when cancel lands.
   await openShoot(page, "2026-08-01_dolomites");
   await page.getByTestId("open-export").click();
   await page.getByTestId("select-all").click();
@@ -151,15 +142,12 @@ test("format choice shows JPEG quality and names the button", async ({
   await page.getByTestId("open-export").click();
   await page.getByTestId("select-all").click();
 
-  // JPEG (the default) offers the quality toggle and says what it does.
   await expect(page.getByTestId("quality-90")).toBeVisible();
   await expect(page.getByTestId("run-export")).toContainText(
     "Export 4 as JPEG",
   );
-  // One selected photo carries an edit in the dataset.
   await expect(page.getByTestId("export-drawer")).toContainText("1 edited");
 
-  // Original copies bytes: no quality, edits ignored.
   await page.getByTestId("format-original").click();
   await expect(page.getByTestId("quality-90")).toHaveCount(0);
   await expect(page.getByTestId("run-export")).toContainText(
@@ -200,8 +188,6 @@ test("the decoder row warns before a RAW 8 export and knows what RAW 9 can reach
     "true",
   );
 
-  // the same photos are the same decision, so it stays dismissed; dropping one
-  // makes it a different set and the question is worth asking again
   await page.getByTestId("action-clear").click();
   await page.getByTestId("select-all").click();
   await expect(page.getByTestId("decoder-banner")).toHaveCount(0);

@@ -2,8 +2,6 @@ import Foundation
 import ImageIO
 
 public enum XMP {
-    /// Keeps the extension so a RAW+JPEG pair's JPEG cannot take the ARW's DSC0001.xmp,
-    /// and adds .photopipe because darktable and digiKam already own DSC0001.JPG.xmp.
     public static func sidecarURL(forImagePath path: String) -> URL {
         let url = URL(fileURLWithPath: path)
         return sidecarOnlyExtensions.contains(url.pathExtension.lowercased())
@@ -11,7 +9,6 @@ public enum XMP {
             : url.appendingPathExtension("photopipe.xmp")
     }
 
-    /// Empty is absent, as for exiftool, and a symlink would lend a read another file's rating.
     static func isOwnSidecar(_ sidecar: URL) throws -> Bool {
         do {
             let values = try sidecar.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
@@ -19,23 +16,18 @@ public enum XMP {
         } catch let error as CocoaError
             where [.fileReadNoSuchFile, .fileReadInvalidFileName].contains(error.code)
         {
-            // a name at the length limit has no room for .photopipe.xmp, so it never has one
             return false
         }
     }
 
-    /// 0 when there is no sidecar, which is also what the walk records — the
-    /// two have to agree for a cached record to be recognised as still current.
     public static func sidecarMtime(forImagePath path: String) -> Double {
         let values = try? sidecarURL(forImagePath: path).resourceValues(
             forKeys: [.contentModificationDateKey])
         return values?.contentModificationDate?.timeIntervalSince1970 ?? 0
     }
 
-    // the tag parser costs ~70x the packet in memory
     static let packetSizeLimit = 4 << 20
 
-    // Lightroom brush masks push real sidecars well past the embedded cap
     static let sidecarSizeLimit = 64 << 20
 
     static func sidecarData(forImagePath path: String) -> Data? {
@@ -47,8 +39,6 @@ public enum XMP {
         return data
     }
 
-    // non-finite or huge values poison JSON encoding, CI geometry and the
-    // integer tag writes downstream
     static let scalarMagnitudeLimit = 1e6
 
     private static func sane(_ parsed: Double?) -> Double? {
@@ -57,7 +47,6 @@ public enum XMP {
         return parsed
     }
 
-    // `Int(Double)` traps beyond Int.max, and IPC edits skip the parsers
     private static func saneInt(_ value: Double) -> Int {
         Int(min(max(value.rounded(), -scalarMagnitudeLimit), scalarMagnitudeLimit))
     }
@@ -79,7 +68,6 @@ public enum XMP {
         var hasCrop: Bool? { text("HasCrop").map { $0.lowercased() == "true" } }
     }
 
-    // a sidecar is anyone's to write, and each mask can cost a cut by the model
     static let maskLimit = 32
 
     private struct UnreadMask {
@@ -87,7 +75,6 @@ public enum XMP {
         let follows: [String]
     }
 
-    // a key from a newer build would be dropped when the mask is written back
     private static func hasOnlyKnownKeys(_ entry: Any) -> Bool {
         guard let entry = entry as? [String: Any] else { return false }
         let adjust = entry["adjust"] as? [String: Any] ?? [:]
@@ -99,7 +86,6 @@ public enum XMP {
             }
     }
 
-    // an entry this build or OS cannot read is kept for the next save
     private static func masks(fromJSON text: String?) -> (read: [Mask], unread: [UnreadMask]) {
         guard let text,
             let entries = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [Any]
@@ -107,7 +93,6 @@ public enum XMP {
         var read: [Mask] = []
         var unread: [UnreadMask] = []
         for entry in entries.prefix(maskLimit) {
-            // a number too large for a Double reads as infinity, and writing that raises past try?
             guard JSONSerialization.isValidJSONObject([entry]),
                 let json = try? JSONSerialization.data(
                     withJSONObject: entry, options: [.sortedKeys, .fragmentsAllowed])
@@ -128,13 +113,9 @@ public enum XMP {
     }
 
     private static func edit(from tags: Tags, isRaw: Bool, rotation: Int, masks: String?) -> Edit {
-        // beside As Shot the numbers are Camera Raw's reading of the file, not an edit
         let isAsShot = isRaw && tags.text("WhiteBalance") == "As Shot"
         let denoise = isRaw ? tags.scalar("LuminanceSmoothing") : nil
-        // Camera Raw stamps crs:Version and writes its default 0 into every sidecar; our own 0 means off
         let isCameraRawDefault = denoise == 0 && tags.text("Version") != nil
-        // other tools write a straight curve as two points; ours is the empty one.
-        // nan or inf would fail every JSON encode of the whole shoot's listing
         func curve(_ tag: String) -> [CurvePoint] {
             let points = tags.curve(tag).filter { $0.x.isFinite && $0.y.isFinite }
             return Curve.isIdentity(points) ? [] : points
@@ -158,7 +139,6 @@ public enum XMP {
             curveRed: curve("ToneCurvePV2012Red"),
             curveGreen: curve("ToneCurvePV2012Green"),
             curveBlue: curve("ToneCurvePV2012Blue"),
-            // Lightroom's crop reset keeps Crop* but sets HasCrop False, so HasCrop wins
             crop: tags.hasCrop == false ? nil : cropRect { tags.scalar("Crop\($0)") },
             cropAngle: tags.hasCrop == false ? 0 : tags.scalar("CropAngle") ?? 0,
             rotation: rotation,
@@ -171,7 +151,6 @@ public enum XMP {
         text.flatMap { Int($0) }.flatMap { range.contains($0) ? $0 : nil }
     }
 
-    // Bridge writes its reject as Rating -1; the reject here is the pick flag, so that reads as unrated
     private static func validRating(_ text: String?) -> Int? { int(text, in: 0...5) }
 
     private static func validFlag(_ text: String?) -> Int? { int(text, in: -1...1) }
@@ -192,9 +171,6 @@ public enum XMP {
         )
     }
 
-    // tiff:Orientation is ABSOLUTE, so our additive rotation is its difference
-    // against the base. R(k)∘(R(r)∘M) = R(r+k)∘M, so a mirrored base stays
-    // mirrored. Naming follows exiftool's "Mirror horizontal and rotate N CW".
     private static let orientationParts: [Int: (mirrored: Bool, degrees: Int)] = [
         1: (false, 0), 6: (false, 90), 3: (false, 180), 8: (false, 270),
         2: (true, 0), 7: (true, 90), 4: (true, 180), 5: (true, 270),
@@ -241,32 +217,25 @@ public enum XMP {
         case unreadableOrientation(String)
     }
 
-    /// The baseline the absolute tiff:Orientation is compared against.
     static func baseOrientation(at url: URL) -> Int? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
             let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil)
                 as? [String: Any]
         else { return nil }
-        // A readable file without an orientation tag is upright, not unknown.
         return properties[kCGImagePropertyOrientation as String] as? Int ?? 1
     }
 
-    /// Read from raw bytes: ImageIO reconciles EXIF and XMP into one value,
-    /// hiding exactly the difference the additive-rotation model needs.
     static func embeddedXMPOrientation(at url: URL) -> Int? {
         embeddedXMPProperties(at: url).flatMap { orientation(in: $0) }
     }
 
     static func embeddedXMPProperties(at url: URL) -> XMPProperties? {
-        // off the boot volume a mapping reads the whole file, a multi-GB TIFF scan included
         guard let handle = try? FileHandle(forReadingFrom: url),
             let head = try? handle.read(upToCount: 16 << 20)
         else { return nil }
-        // a segment walk, so a decoy packet in a comment cannot win
         if head.starts(with: [0xFF, 0xD8]) {
             return jpegXMPPacket(in: head).map { XMPProperties($0) }
         }
-        // anything else: a crafted delimiter pair must not become a giant String
         guard let start = head.range(of: Data("<x:xmpmeta".utf8)),
             let end = head.range(
                 of: Data("</x:xmpmeta>".utf8), in: start.upperBound..<head.endIndex),
@@ -286,7 +255,6 @@ public enum XMP {
                 index += 1
                 continue
             }
-            // SOS/EOI: metadata segments are over.
             if marker == 0xDA || marker == 0xD9 { return nil }
             if (0xD0...0xD7).contains(marker) || marker == 0x01 {
                 index += 2
@@ -311,7 +279,6 @@ public enum XMP {
         }
     }
 
-    // not embeddedXMPProperties: a JPEG's long XMP spills into extended segments it does not follow
     private static func embeddedMasks(in metadata: CGImageMetadata?) -> String? {
         metadata.flatMap {
             CGImageMetadataCopyStringValueWithPath($0, nil, "photopipe:Masks" as CFString) as String?
@@ -324,7 +291,6 @@ public enum XMP {
         let rating = validRating(
             CGImageMetadataCopyStringValueWithPath(metadata, nil, "xmp:Rating" as CFString)
                 as String?)
-        // a sidecar-only raw is never written into, so its XMP holds just what the camera put there
         guard !file.sidecarOnly else { return (rating, nil, .identity) }
         var pick: Int?
         var texts: [String: String] = [:]
@@ -425,8 +391,6 @@ public enum XMP {
         tags.flatMap { tag -> [String] in
             let isOrientation = tag.namespace == .tiff && tag.name == "Orientation"
             let group = tag.namespace == .xmp ? "XMP" : "XMP-\(tag.namespace.prefix)"
-            // exiftool's name for crs:Temperature is ColorTemperature;
-            // `#` keeps exiftool numeric for Orientation
             let name =
                 tag.namespace == .crs && tag.name == "Temperature"
                 ? "ColorTemperature" : isOrientation ? "Orientation#" : tag.name
@@ -435,7 +399,6 @@ public enum XMP {
                 switch tag.value {
                 case .remove: [target]
                 case .scalar(let value): ["\(target)\(value)"]
-                // repeated `=` replaces the list; `+=` would append to the existing items on every write
                 case .list(let items): items.map { "\(target)\($0)" }
                 }
             guard isOrientation, let exifOrientationPin else { return args }
@@ -451,7 +414,6 @@ public enum XMP {
         try write(ratingTags(rating), clearing: rating == 0, file: file)
     }
 
-    // where Lightroom Classic 13.2 and later keeps its flag
     static func flagTags(_ flag: Int) -> [TagWrite] {
         [TagWrite(.xmpDM, "pick", flag == 0 ? .remove : .scalar("\(flag)"))]
     }
@@ -472,7 +434,6 @@ public enum XMP {
         _ edit: Edit, file: ImageFile, asShot: Renderer.RawDefaults? = nil
     ) throws -> (tags: [TagWrite], exifOrientationPin: Int?) {
         var tags: [TagWrite] = []
-        // exiftool drops a "10.0" for these integer tags with only a warning
         func integerScalar(_ tag: String, _ value: Double?) {
             tags.append(
                 TagWrite(.crs, tag, value.map { .scalar("\(saneInt($0))") } ?? .remove))
@@ -482,14 +443,11 @@ public enum XMP {
                 tags.append(TagWrite(.crs, tag, .remove))
                 return
             }
-            // clamped to the unit square first: Int(1e30) traps
             let items = Curve.normalized(points).map { point in
                 "\(Int((point.x * 255).rounded())), \(Int((point.y * 255).rounded()))"
             }
             tags.append(TagWrite(.crs, tag, .list(items)))
         }
-        // Swift's Double interpolation switches to exponent form below 1e-4,
-        // which Lightroom does not read back
         func plainDecimal(_ value: Double) -> String {
             var text = String(format: "%.6f", value)
             while text.hasSuffix("0") { text.removeLast() }
@@ -510,10 +468,8 @@ public enum XMP {
         realScalar("Dehaze", nonZero(edit.dehaze))
         if file.isRaw {
             let own = (temperature: sane(asShot?.temperature), tint: sane(asShot?.tint))
-            // Camera Raw wants both numbers beside Custom
             let temperature = edit.temperature ?? own.temperature
             let tint = edit.tint ?? own.tint
-            // a half taken from the raw reads back as set, so one still at the raw's own value is no edit
             let isCustom =
                 temperature.map(saneInt) != own.temperature.map(saneInt)
                 || tint.map(saneInt) != own.tint.map(saneInt)
@@ -533,10 +489,7 @@ public enum XMP {
         realScalar("CropBottom", edit.crop?.bottom)
         realScalar("CropAngle", nonZero(edit.cropAngle))
         tags.append(TagWrite(.crs, "HasCrop", edit.hasCropComponent ? .scalar("True") : .remove))
-        // An unreadable base can default to 1 only for sidecars: guessing one
-        // for an embedded file would burn it into the photo's real EXIF.
         let fileURL = URL(fileURLWithPath: file.path)
-        // a sidecar-only raw records there even before one exists; anything else shows its own XMP till then
         let inSidecar = try file.sidecarOnly || isOwnSidecar(sidecarURL(forImagePath: file.path))
         let base =
             baseOrientation(at: fileURL) ?? (inSidecar ? 1 : nil)
@@ -547,8 +500,6 @@ public enum XMP {
         let currentXMP = written.flatMap { orientation(in: $0) }
         var exifOrientationPin: Int?
         if edit.normalizedRotation == 0 {
-            // another tool's XMP value can be the only record of its turn, so
-            // only write the base back when clearing a turn of our own
             if let currentXMP, let base, currentXMP != base {
                 tags.append(TagWrite(.tiff, "Orientation", .scalar("\(base)")))
             }
@@ -560,9 +511,6 @@ public enum XMP {
                 rotation: edit.normalizedRotation, base: base)
             tags.append(TagWrite(.tiff, "Orientation", .scalar("\(absolute)")))
             if !inSidecar {
-                // ImageIO folds this XMP value into the next read's merged
-                // orientation, reading the rotation back as zero. EXIF wins
-                // that merge, so pin the base there.
                 exifOrientationPin = base
             }
         }
@@ -577,7 +525,6 @@ public enum XMP {
                 ? written?.value(.photopipe, "Masks") : embeddedMasks(in: metadata(at: fileURL))
         ).unread
         let known = edit.masks.prefix(maskLimit - unread.count)
-        // masks render in order, so an unread one goes back behind the masks the file had before it
         let behind = Dictionary(grouping: unread) { entry in
             known.lastIndex(where: { entry.follows.contains($0.id) }) ?? -1
         }
@@ -596,7 +543,6 @@ public enum XMP {
             entries.isEmpty ? .remove : .scalar("[\(entries.joined(separator: ","))]"))
     }
 
-    // serialized, so two writes can neither both seed a new sidecar nor lose each other's tags
     private static let writeLock = NSLock()
 
     private static func write(
@@ -625,17 +571,13 @@ public enum XMP {
             seed: { try embeddedTags(file) })
     }
 
-    /// `read` stops looking inside the file once a sidecar exists, so the sidecar starts
-    /// with the rating, flag and edit the file carried.
     static func embeddedTags(_ file: ImageFile) throws -> [TagWrite] {
         let (rating, flag, edit) = embedded(file)
-        // a mask this build or OS cannot read is not in edit, so the identity check alone would drop it
         let unread =
             file.sidecarOnly
             ? [] : masks(fromJSON: embeddedMasks(in: metadata(at: URL(fileURLWithPath: file.path)))).unread
         guard (rating ?? 0) != 0 || (flag ?? 0) != 0 || !edit.isIdentity || !unread.isEmpty
         else { return [] }
-        // an untouched raw would otherwise start its sidecar with a WhiteBalance nobody set
         let carriedEdit =
             try edit.isIdentity ? [masksTag(unread.map(\.json))] : editTags(edit, file: file).tags
         return ratingTags(rating ?? 0) + flagTags(flag ?? 0) + carriedEdit

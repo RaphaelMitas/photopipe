@@ -5,9 +5,7 @@ import ImageIO
 import UniformTypeIdentifiers
 
 public enum Look {
-    /// In the order asked: one per photo, or one for the whole sheet.
     public struct Shown: Encodable, Sendable {
-        /// Base64, so the reply can go into an MCP image block as it is.
         public let jpeg: String
         public let width: Int
         public let height: Int
@@ -15,7 +13,6 @@ public enum Look {
 
     public struct Reply: Encodable, Sendable {
         public let images: [Shown]
-        /// Places in the request of photos drawn without their masks, which could not be cut.
         public let unmasked: [Int]
     }
 
@@ -31,7 +28,6 @@ public enum Look {
     public static let separateLimit = 8
     public static let sheetLimit = 64
     static let longEdges = 256...2576
-    /// Below the last a frame is not worth looking at; the MCP tool drops what is still over budget.
     static let qualities = [0.85, 0.7, 0.55, 0.4]
 
     static func grid(count: Int, longEdge: Int) -> (columns: Int, rows: Int, cell: Int) {
@@ -46,7 +42,6 @@ public enum Look {
             crop: Renderer.saneCrop(edit) ?? .full)
     }
 
-    /// A face with some hair and shoulder around it, kept inside the photo.
     static func around(_ face: CropRect) -> CropRect {
         let pad = 0.25 * max(face.width, face.height)
         return CropRect(
@@ -54,7 +49,6 @@ public enum Look {
             right: min(face.right + pad, 1), bottom: min(face.bottom + pad, 1))
     }
 
-    /// Slid inside the frame rather than cut off at its edge.
     static func viewport(around spot: CGPoint, tile: Int, framed: CGSize) -> CropRect {
         let width = min(Double(tile) / max(framed.width, 1), 1)
         let height = min(Double(tile) / max(framed.height, 1), 1)

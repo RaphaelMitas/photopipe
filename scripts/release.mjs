@@ -1,16 +1,4 @@
 #!/usr/bin/env node
-/**
- * Cuts a release: bumps the version everywhere, refreshes the README
- * screenshots, pushes a release/vX.Y.Z branch and opens an auto-merging PR.
- * Once that PR lands on main, .github/workflows/release.yml tags the commit,
- * builds, signs, notarizes, publishes the DMG, the update feed, and bumps
- * the Homebrew cask.
- *
- * Usage: pnpm release [patch|minor|major|<x.y.z>] [--direct] [--dry-run]
- *   --direct     commit the bump straight to main (skips the PR)
- *   --dry-run    print the plan without writing or pushing anything
- *   --no-shots   skip regenerating screenshots
- */
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -19,7 +7,6 @@ import { fileURLToPath } from "node:url";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CONF = "apps/desktop/src-tauri/tauri.conf.json";
 const CARGO = "apps/desktop/src-tauri/Cargo.toml";
-// tauri ios build writes the version into the plist, so a stale one dirties the tree
 const IOS_PLIST = "apps/desktop/src-tauri/gen/apple/desktop_iOS/Info.plist";
 const IOS_PROJECT = "apps/desktop/src-tauri/gen/apple/project.yml";
 
@@ -43,8 +30,6 @@ const dryRun = args.includes("--dry-run");
 const noShots = args.includes("--no-shots");
 const bump = args.find((a) => !a.startsWith("--")) ?? "patch";
 
-// In --dry-run the guards report instead of aborting, so the plan prints
-// from any branch or state.
 function guard(ok, message) {
   if (ok) return;
   if (dryRun) console.warn(`! would fail: ${message}`);
@@ -128,8 +113,6 @@ setVersion(
   /^(\s*CFBundle(?:ShortVersionString|Version): "?)[^"\n]*("?)$/gm,
 );
 
-// Cargo.lock pins the local crate; let cargo rewrite it rather than editing
-// the lockfile by hand.
 run("cargo", ["metadata", "--format-version", "1"], {
   cwd: join(repoRoot, "apps/desktop/src-tauri"),
   stdio: ["inherit", "ignore", "inherit"],
@@ -139,8 +122,6 @@ console.log(
 );
 
 if (!noShots) {
-  // Captured from the running UI, so the README can never show a version of
-  // the app that no longer exists.
   console.log("Refreshing screenshots...");
   run("pnpm", ["--filter", "desktop", "screenshots"], { stdio: "inherit" });
   console.log("✓ Screenshots refreshed");

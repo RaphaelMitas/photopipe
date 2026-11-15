@@ -3,7 +3,6 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-/// Shared by the dispatcher's workers.
 public final class Renderer: @unchecked Sendable {
     public enum RenderError: Error {
         case unreadable(String)
@@ -17,7 +16,6 @@ public final class Renderer: @unchecked Sendable {
 
     public struct Preview: Encodable, Sendable {
         public let cachePath: String
-        /// The photo has masks that could not be cut, and was rendered without any.
         public let unmasked: Bool
     }
 
@@ -25,16 +23,12 @@ public final class Renderer: @unchecked Sendable {
     private let masker: Masker
     private let maskModelArrives: @Sendable () -> Bool
     private let context = CIContext(options: [.cacheIntermediates: true])
-    // an export renders each photo once, so there is nothing to reuse
     private let exportContext = CIContext(options: [.cacheIntermediates: false])
     private let jpegColorSpace = CGColorSpace(name: CGColorSpace.displayP3)!
-    // CIColorCurves clips to this space, so it must be no narrower than the preview's
     private let curveColorSpace = CGColorSpace(name: CGColorSpace.displayP3)!
 
-    // bump when the pixels change for an unchanged key
     private static let pipelineVersion = 10
 
-    /// None of these are zero, so a slider left alone has to reach for them.
     public struct RawDefaults: Sendable {
         public let temperature: Double
         public let tint: Double
@@ -47,7 +41,6 @@ public final class Renderer: @unchecked Sendable {
         let orientedSizeBeforeScaling: CGSize
         let defaults: RawDefaults
         var lastUsed: Date
-        // a shared context gets ~55ms slower per distinct RAW 9 image it has drawn
         let context = CIContext(options: [.cacheIntermediates: true])
     }
 
@@ -58,7 +51,6 @@ public final class Renderer: @unchecked Sendable {
     private var supportsByCamera: [String: Bool] = [:]
     private var supportsByPath: [String: (supported: Bool, mtime: Double)] = [:]
     private var pixelStampsByPath: [String: (mtime: Double, size: Int64, stamp: String)] = [:]
-    // the loupe holds current, both neighbours and a zoom render at once
     private let filterCapacity = 6
 
     public convenience init(cacheDir: URL) {
@@ -93,7 +85,6 @@ public final class Renderer: @unchecked Sendable {
         return cache.url(forKey: key)
     }
 
-    /// Our metadata writes move mtime and size without touching a pixel, so what was rendered and cut still holds.
     public func restamp(_ before: ImageFile, to after: ImageFile) {
         guard before.mtime != after.mtime || before.size != after.size else { return }
         lock.withLock {
@@ -114,7 +105,6 @@ public final class Renderer: @unchecked Sendable {
         return "\(file.path)|\(file.mtime)|\(file.size)"
     }
 
-    /// What the loupe shows.
     public func preview(
         file: ImageFile, edit: Edit, maxPixel: Int, viewport: CropRect? = nil,
         decoderVersion: Int? = nil
@@ -127,12 +117,10 @@ public final class Renderer: @unchecked Sendable {
         return Preview(cachePath: rendered.path, unmasked: unmasked)
     }
 
-    /// A mask that cannot be cut costs the photo its masks, not the photo; `unmasked` says it happened.
     private func maskedOrBare<Value>(_ edit: Edit, _ render: (Edit) throws -> Value) throws -> (
         Value, unmasked: Bool
     ) {
         guard edit.masks.contains(where: \.changesPixels) else { return (try render(edit), false) }
-        // asked first, so a model still downloading holds the render lane a second at most
         if maskModelArrives(), let masked = try? render(edit) { return (masked, false) }
         var bare = edit
         bare.masks = []
@@ -171,9 +159,7 @@ public final class Renderer: @unchecked Sendable {
         file: ImageFile, edit: Edit, quality: Double, to destination: URL,
         longEdge: Int? = nil, decoderVersion: Int? = nil
     ) throws {
-        // past any sensor, and doubling it must not overflow
         if let longEdge, !(1...100_000).contains(longEdge) { throw RenderError.encodeFailed }
-        // decoding straight at the target comes out visibly soft
         let jpeg = try decodedOnce(
             file: file, edit: edit, decodeEdge: longEdge.map { $0 * 2 }, longEdge: longEdge,
             decoderVersion: decoderVersion
@@ -210,7 +196,6 @@ public final class Renderer: @unchecked Sendable {
         }
     }
 
-    /// Off the filter cache, so an export or an agent going through a shoot leaves the loupe's warm filters alone.
     private func decodedOnce<Output>(
         file: ImageFile, edit: Edit, decodeEdge: Int?, longEdge: Int?, viewport: CropRect? = nil,
         decoderVersion: Int? = nil, draw: (CIContext, CIImage) -> Output?
@@ -219,16 +204,11 @@ public final class Renderer: @unchecked Sendable {
         var image = try sourceImage(
             for: file, raw: raw, edit: edit, maxPixel: decodeEdge, viewport: viewport)
         if let longEdge { image = Self.fitted(image, longEdge: CGFloat(longEdge)) }
-        // A render here holds on to surfaces the context will happily
-        // keep for the next one. Nothing else reuses them, and about a hundred
-        // in they stop being handed out at all: every render after that comes
-        // back nil while memory still looks fine.
         defer { exportContext.clearCaches() }
         guard let output = draw(exportContext, image) else { throw RenderError.encodeFailed }
         return output
     }
 
-    /// The mask as the alpha of a white image, framed like the render it lies over.
     public func maskOverlay(
         file: ImageFile, source: Mask.Source, points: [Mask.Point], inverted: Bool, edit: Edit,
         maxPixel: Int
@@ -242,14 +222,12 @@ public final class Renderer: @unchecked Sendable {
         }
     }
 
-    /// Never cached: the cursor asks on every move.
     public func maskAt(
         file: ImageFile, edit: Edit, points: [Mask.Point], inverted: Bool, at framedSpot: CGPoint,
         include: Bool, maxPixel: Int
     ) throws -> MaskPick {
         let photo = try masker.brightPhoto(for: pixelStamp(of: file)) { try neutral(for: file) }
         let clicked = Self.unframed(framedSpot, of: photo, edit)
-        // a ten-thousandth is a fifth of a pixel of what the model sees
         func stored(_ fraction: CGFloat) -> Double {
             (Double(min(max(fraction, 0), 1)) * 10_000).rounded() / 10_000
         }
@@ -290,18 +268,15 @@ public final class Renderer: @unchecked Sendable {
         return inverted ? matte.applyingFilter("CIColorInvert") : matte
     }
 
-    /// nil for non-raws, which have no neutral to offset against.
     public func rawDefaults(for file: ImageFile, decoderVersion: Int? = nil) throws -> RawDefaults? {
         guard file.isRaw else { return nil }
         let key = Self.defaultsKey(path: file.path, decoderVersion: decoderVersion)
         if let cached = lock.withLock({ defaultsByPath[key] }), cached.mtime == file.mtime {
             return cached.values
         }
-        // reading these decodes nothing, so the filter is cheap and discarded
         return try makeFilter(for: file, decoderVersion: decoderVersion).defaults
     }
 
-    /// A nil maxPixel renders the full sensor.
     private func sourceImage(
         for file: ImageFile, raw cached: CachedFilter?, edit: Edit, maxPixel: Int?,
         viewport: CropRect? = nil
@@ -313,9 +288,6 @@ public final class Renderer: @unchecked Sendable {
                 let scale = Self.sourceScale(
                     for: edit, orientedSize: cached.orientedSizeBeforeScaling, maxPixel: maxPixel,
                     viewport: viewport)
-                // Unconditionally, even when unchanged: skipping the assignment
-                // when it already matched returned a decode a quarter of the size
-                // on the next read. Re-assigning does not cost the warm path.
                 filter.scaleFactor = scale
                 filter.exposure = Float(edit.exposure)
                 filter.neutralTemperature = Float(edit.temperature ?? cached.defaults.temperature)
@@ -329,15 +301,12 @@ public final class Renderer: @unchecked Sendable {
             guard let output else { throw RenderError.unreadable(file.path) }
             image = output
         } else {
-            // CIImage(contentsOf:) segfaults on a JPEG whose header claims a huge frame
             guard
                 let source = CGImageSourceCreateWithURL(
                     URL(fileURLWithPath: file.path) as CFURL, nil)
             else {
                 throw RenderError.unreadable(file.path)
             }
-            // the crop rect is against the displayed frame, not the sensor
-            // layout, and the option drops the tag so nothing rotates twice
             let base = CIImage(
                 cgImageSource: source, index: 0, options: [.applyOrientationProperty: true])
             guard !base.extent.isEmpty else { throw RenderError.unreadable(file.path) }
@@ -346,7 +315,6 @@ public final class Renderer: @unchecked Sendable {
             image = Self.incremental(
                 Self.fitted(base, longEdge: base.longEdge * CGFloat(scale)), edit)
         }
-        // after the photo's exposure and white balance, before its grade
         for mask in edit.masks where mask.changesPixels {
             let local = mask.adjust.edit
             let matte = try matte(
@@ -364,22 +332,18 @@ public final class Renderer: @unchecked Sendable {
         return Self.framed(graded(image, edit), edit, viewport: viewport)
     }
 
-    /// Exposure and white balance as filters: for files without a raw decoder, and for every mask's region.
     private static func incremental(_ source: CIImage, _ edit: Edit) -> CIImage {
         var image = source
         if edit.exposure != 0 {
             image = image.applyingFilter(
                 "CIExposureAdjust", parameters: ["inputEV": edit.exposure])
         }
-        // 2^EV alone runs highlights past 1, where they clip to cyan skies and flat white
         if edit.exposure > 0 {
             image = Presence.shoulder(image, afterExposure: edit.exposure)
         }
         let temperature = edit.temperature ?? 0
         let tint = edit.tint ?? 0
         if temperature != 0 || tint != 0 {
-            // even mired steps look even, and a lower target neutral renders warmer,
-            // like a raw's higher temperature
             let mired = 1e6 / 6500 + temperature / 100 * (1e6 / 4500 - 1e6 / 6500)
             image = image.applyingFilter(
                 "CITemperatureAndTint",
@@ -443,7 +407,6 @@ public final class Renderer: @unchecked Sendable {
         }
     }
 
-    /// Framed fraction to photo fraction, both from the top left.
     static func unframed(_ point: CGPoint, of photo: CIImage, _ edit: Edit) -> CGPoint {
         var toFrame = CGAffineTransform.identity
         var frame = photo.extent
@@ -470,8 +433,6 @@ public final class Renderer: @unchecked Sendable {
         return (edit.crop ?? .full).sanitized()
     }
 
-    /// Normalized coordinates are top-left-origin; CI's are bottom-left.
-    /// Rounds inward, or a straightened crop gets a thin blank edge.
     static func pixelRect(for crop: CropRect, in extent: CGRect) -> CGRect {
         let raw = CGRect(
             x: extent.minX + crop.left * extent.width,
@@ -484,8 +445,6 @@ public final class Renderer: @unchecked Sendable {
             height: max(raw.maxY.rounded(.down) - raw.minY.rounded(.up), 1))
     }
 
-    /// The sub-rect of the edited frame the loupe is actually showing. Not an
-    /// edit: it never reaches a sidecar, and it composes on top of the crop.
     static func applyViewport(_ viewport: CropRect, to image: CIImage) -> CIImage {
         guard let sane = viewport.sanitized() else { return image }
         let rect = pixelRect(for: sane, in: image.extent)
@@ -506,16 +465,13 @@ public final class Renderer: @unchecked Sendable {
     }
 
     static func straightening(_ edit: Edit, in extent: CGRect) -> CGAffineTransform {
-        // pivot on center, matching the UI where the photo stays put
         let center = CGPoint(x: extent.midX, y: extent.midY)
-        // CI is y-up, so on-screen-clockwise negates here; CSS gets it raw
         let angle = -edit.cropAngle * .pi / 180
         return CGAffineTransform(translationX: center.x, y: center.y)
             .rotated(by: angle)
             .translatedBy(x: -center.x, y: -center.y)
     }
 
-    /// Clamped and whole pixels, or a part-transparent edge row blurs into a bright band.
     static func fitted(_ image: CIImage, longEdge: CGFloat) -> CIImage {
         let extent = image.extent
         let scale = longEdge / image.longEdge
@@ -536,7 +492,6 @@ public final class Renderer: @unchecked Sendable {
             .cropped(to: CGRect(origin: .zero, size: size))
     }
 
-    /// Decoding the full sensor and shrinking after costs RAW 9 three times as much.
     static func sourceScale(
         for edit: Edit, orientedSize: CGSize, maxPixel: Int?, viewport: CropRect? = nil
     ) -> Float {
@@ -551,7 +506,6 @@ public final class Renderer: @unchecked Sendable {
     static func framedSize(_ orientedSize: CGSize, _ edit: Edit, crop: CropRect) -> CGSize {
         var width = orientedSize.width
         var height = orientedSize.height
-        // the turn comes before the crop, so the fractions are against it
         if edit.normalizedRotation == 90 || edit.normalizedRotation == 270 {
             swap(&width, &height)
         }
@@ -583,25 +537,18 @@ public final class Renderer: @unchecked Sendable {
         return entry
     }
 
-    /// Support is a property of camera model plus OS, so one probe answers for
-    /// every file from that camera.
     public func supports(file: ImageFile, major: Int) -> Bool {
         known(file: file, major: major) ?? false
     }
 
-    /// nil when the file cannot be read yet, which is not the same answer as no.
     public func known(file: ImageFile, major: Int) -> Bool? {
         guard file.isRaw else { return false }
-        // even the camera cache costs a header read, so a path answered once
-        // never reads again
         let pathKey = "\(file.path)|v\(major)"
         if let known = lock.withLock({ supportsByPath[pathKey] }), known.mtime == file.mtime {
             return known.supported
         }
 
         let url = URL(fileURLWithPath: file.path)
-        // resolveDecoder distinguishes the DNG variants, so a body's ARWs and
-        // its DNG conversions cannot share one verdict
         let ext = file.ext.lowercased()
         let cacheKey =
             Self.cameraModel(of: url).map { "\($0)|\(ext)|v\(major)" }
@@ -618,9 +565,6 @@ public final class Renderer: @unchecked Sendable {
         let supported = versions.contains { version in
             Self.isVersion(version, major) && filter.map { Self.renders($0, with: version) } == true
         }
-        // A file still being copied off a card names its camera in the header
-        // but reports ["None"] here. That is "cannot read yet", not a verdict,
-        // and caching it under the camera would answer for every sibling.
         let readable = versions.contains { $0.rawValue != "None" }
         guard readable else { return nil }
         lock.withLock {
@@ -638,20 +582,14 @@ public final class Renderer: @unchecked Sendable {
         return tiff[kCGImagePropertyTIFFModel] as? String
     }
 
-    /// `.version9` only exists in newer SDKs, but a build against an older one
-    /// still meets RAW 9 at runtime on a newer macOS. The constants are just
-    /// their version number ("9", "9.dng"), so match the value, not the symbol.
     static func isVersion(_ version: CIRAWDecoderVersion, _ major: Int) -> Bool {
         version.rawValue == "\(major)" || version.rawValue.hasPrefix("\(major).")
     }
 
-    /// Setting a version the file does not offer makes outputImage nil, and so
-    /// can one it offers: a 5D Mark IV CR2 on iOS offers 9 and renders nothing.
     static func resolveDecoder(
         requested: Int?, supported: [CIRAWDecoderVersion],
         renders: (CIRAWDecoderVersion) -> Bool = { _ in true }
     ) -> CIRAWDecoderVersion? {
-        // supportedDecoderVersions is sorted oldest to newest
         let match = requested.flatMap { requested in
             supported.first { $0.rawValue == "\(requested)" }
                 ?? supported.first { isVersion($0, requested) }
@@ -665,9 +603,6 @@ public final class Renderer: @unchecked Sendable {
         return filter.outputImage != nil
     }
 
-    /// A request the file cannot honour renders exactly what no request would,
-    /// so it shares that key rather than naming a decoder that never ran. Keeps
-    /// a Mac that later gains RAW 9 from serving the RAW 8 pixels it cached.
     private func resolvedTag(for file: ImageFile, requested: Int?) -> String {
         guard let requested, supports(file: file, major: requested) else { return "" }
         return "|d\(requested)"

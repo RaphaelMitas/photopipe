@@ -161,7 +161,6 @@ export function ExportNames({
   return (
     <>
       <div className="relative">
-        {/* the input's text is transparent; this copy underneath colours the tokens */}
         <div
           ref={mirror}
           aria-hidden

@@ -1,11 +1,8 @@
 import Foundation
 
-/// `photopipe.json`: per-project metadata only; workflow state lives in the files themselves.
 public struct ProjectFile: Codable, Equatable, Sendable {
     public var notes: String
-    /// YYYY-MM-DD, or nil when undated.
     public var day: String?
-    /// Rel path of the cover image; nil means "use the first one".
     public var cover: String?
 
     public init(notes: String = "", day: String? = nil, cover: String? = nil) {
@@ -31,8 +28,6 @@ public struct ProjectFile: Codable, Equatable, Sendable {
         URL(fileURLWithPath: shootPath).appendingPathComponent(fileName)
     }
 
-    /// Missing → defaults. nil only when a file is there but cannot be read,
-    /// so callers know not to write over it.
     public static func read(inShoot shootPath: String) -> ProjectFile? {
         let url = url(inShoot: shootPath)
         guard FileManager.default.fileExists(atPath: url.path) else { return ProjectFile() }

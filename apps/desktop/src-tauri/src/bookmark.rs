@@ -1,6 +1,3 @@
-//! Under the sandbox a panel grant lasts one session; the bookmark brings it
-//! back next launch.
-
 use objc2::runtime::Bool;
 use objc2::AllocAnyThread;
 use objc2_foundation::{
@@ -47,7 +44,6 @@ const RESOLUTION: NSURLBookmarkResolutionOptions =
         .union(NSURLBookmarkResolutionOptions::WithoutUI)
         .union(NSURLBookmarkResolutionOptions::WithoutMounting);
 
-// iOS bookmarks carry their scope implicitly and have no WithSecurityScope flag
 #[cfg(target_os = "ios")]
 const CREATION: NSURLBookmarkCreationOptions = NSURLBookmarkCreationOptions::empty();
 #[cfg(target_os = "ios")]
@@ -62,7 +58,6 @@ fn mint_url(url: &NSURL) -> Result<Vec<u8>, Failure> {
     .map_err(|error| classify(&error))
 }
 
-/// Without a bookmark, NoSuchFile is a typo or a deleted folder, not an unplugged drive.
 pub fn mint(path: &str) -> Result<Vec<u8>, Failure> {
     mint_url(&NSURL::fileURLWithPath(&NSString::from_str(path))).map_err(|failure| match failure {
         Failure::Unplugged(_) => Failure::Missing(format!("no folder at {path}")),
@@ -93,7 +88,6 @@ pub fn activate(bookmark: &[u8]) -> Result<Live, Failure> {
         .path()
         .map(|path| path.to_string())
         .ok_or_else(|| Failure::Broken("bookmark resolved to no path".into()))?;
-    // never stopped: the core reads the folder for as long as the app runs
     let scoped = unsafe { url.startAccessingSecurityScopedResource() };
     if !scoped && !(cfg!(target_os = "ios") && in_own_container(&path)) {
         return Err(Failure::Denied(format!(
@@ -108,7 +102,6 @@ pub fn activate(bookmark: &[u8]) -> Result<Live, Failure> {
     Ok(Live { path, bookmark })
 }
 
-/// iOS gives no scope for a folder in the app's own container, which needs none.
 fn in_own_container(path: &str) -> bool {
     let home = std::env::var_os("HOME").and_then(|home| std::fs::canonicalize(home).ok());
     let path = std::fs::canonicalize(path).ok();

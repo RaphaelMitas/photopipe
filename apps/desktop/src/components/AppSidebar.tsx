@@ -172,7 +172,6 @@ export function AppSidebar({
               onClick={onChangeRoot}
               className="h-7 min-w-0 flex-1 justify-start px-1.5 font-mono font-normal text-2xs text-muted-foreground"
             >
-              {/* rtl truncates from the start, so the leaf folder stays visible */}
               <span dir="rtl" className="min-w-0 truncate text-left">
                 <bdi>{rootPath}</bdi>
               </span>

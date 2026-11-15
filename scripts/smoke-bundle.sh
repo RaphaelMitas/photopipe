@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Prove a built .app is self-contained: it links only what the OS ships, and
-# its core opens a library and writes a rating through the bundled exiftool
-# with a bare env, which a checkout's dev paths would mask.
-#
-# --mas checks the signed App Store build: entitlements, no updater, and what the store's review rejects.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -93,8 +88,6 @@ PHOTO="$ROOT/$SHOOT/original/SMOKE1.ARW"
 mkdir -p "$(dirname "$PHOTO")"
 echo "not really a raw" > "$PHOTO"
 
-# No Homebrew, no PHOTOPIPE_* overrides: whatever the core reaches for has to come from inside the bundle.
-# The first rating starts the sidecar natively; only exiftool writes into one that exists.
 REPLIES=$(env -i PATH=/usr/bin:/bin HOME="$ROOT" "$BINARY" --core <<EOF
 {"method":"setRoot","params":{"path":"$ROOT","indexPath":"$ROOT/index.sqlite"}}
 {"method":"setRating","params":{"shoot":"$SHOOT","path":"$PHOTO","rating":4}}

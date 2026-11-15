@@ -27,7 +27,6 @@ private func tempIndexPath() -> String {
     #expect(summary.files == 4)
 
     let shoots = service.listShoots()
-    // Both undated, so they sort by name.
     #expect(shoots.map(\.name) == ["2026-07-12_zell", "2026-08-01_beach"])
     let images = try service.listImages(shoot: "2026-07-12_zell")
     #expect(images.map(\.rel) == ["DSC001.ARW", "DSC001.jpg", "selects/DSC002.ARW"])
@@ -42,18 +41,15 @@ private func tempIndexPath() -> String {
     waitUntilIndexed(service)
     let settled = service.status().generation
 
-    // Nothing changed → rescan must NOT bump the generation.
     service.rescanNow()
     #expect(service.status().generation == settled)
 
-    // External tool drops in a new file (deterministic: call rescanNow directly).
     try Data("x".utf8).write(
         to: root.appendingPathComponent("2026-07-12_zell/DSC003.ARW"))
     service.rescanNow()
     #expect(service.status().generation == settled + 1)
     #expect(try service.listImages(shoot: "2026-07-12_zell").count == 2)
 
-    // External deletion is picked up too.
     try FileManager.default.removeItem(
         at: root.appendingPathComponent("2026-07-12_zell/DSC001.ARW"))
     service.rescanNow()
@@ -66,13 +62,10 @@ private func tempIndexPath() -> String {
 
     let service = makeService()
     _ = try service.setRoot(path: root.path, indexPath: tempIndexPath())
-    // Settle first, or background enrichment would bump the generation and the
-    // test would pass without the watcher ever firing.
     waitUntilIndexed(service)
     let settled = service.status().generation
     try Data("x".utf8).write(to: root.appendingPathComponent("2026-07-12_zell/DSC002.ARW"))
 
-    // FSEvents latency + debounce: poll up to 5 s.
     let deadline = Date().addingTimeInterval(5)
     while Date() < deadline, service.status().generation == settled {
         Thread.sleep(forTimeInterval: 0.1)
@@ -89,7 +82,6 @@ private func tempIndexPath() -> String {
     _ = try service.setRoot(path: root.path, indexPath: indexPath)
     #expect(FileManager.default.fileExists(atPath: indexPath))
 
-    // Nuke the index, start a fresh session: identical answers, index rebuilt.
     try FileManager.default.removeItem(atPath: indexPath)
     let fresh = makeService()
     _ = try fresh.setRoot(path: root.path, indexPath: indexPath)
@@ -98,8 +90,6 @@ private func tempIndexPath() -> String {
     #expect(FileManager.default.fileExists(atPath: indexPath))
 }
 
-// MARK: - Progressive indexing
-
 @Test func setRootServesTheLibraryBeforeMetadataIsRead() throws {
     let root = try makeTree([
         "2026-07-12_zell": (0..<40).map { "DSC\($0).ARW" },
@@ -107,8 +97,6 @@ private func tempIndexPath() -> String {
     ])
     defer { try? FileManager.default.removeItem(at: root) }
 
-    // The walk alone accounts for every file, and hands them over as
-    // placeholders — no image is opened to get this far.
     let walked = try walkLibrary(root: root.path)
     #expect(walked.fileCount == 41)
     #expect(walked.shoots.allSatisfy { !$0.indexed })
@@ -139,7 +127,6 @@ private func tempIndexPath() -> String {
     _ = try first.setRoot(path: root.path, indexPath: indexPath)
     waitUntilIndexed(first)
 
-    // No second pass over the files: the index answers for all of them.
     let second = makeService()
     _ = try second.setRoot(path: root.path, indexPath: indexPath)
     #expect(!second.status().scanning)
@@ -155,7 +142,6 @@ private func tempIndexPath() -> String {
     _ = try service.setRoot(path: root.path, indexPath: tempIndexPath())
     waitUntilIndexed(service)
 
-    // An import drops in one file; the other two keep what they already paid for.
     try Data("x".utf8).write(to: root.appendingPathComponent("2026-07-12_zell/DSC003.ARW"))
     service.rescanNow()
     let images = try service.listImages(shoot: "2026-07-12_zell")
@@ -174,8 +160,6 @@ private func tempIndexPath() -> String {
     waitUntilIndexed(first)
     _ = try first.setRating(shoot: "2026-07-12_zell", path: target.path, rating: 4)
 
-    // A raw's own bytes never change when its rating does, so a cached record
-    // keyed on the file alone would shadow the sidecar for good.
     let second = makeService()
     _ = try second.setRoot(path: root.path, indexPath: indexPath)
     waitUntilIndexed(second)
@@ -192,8 +176,6 @@ private func tempIndexPath() -> String {
     _ = try first.setRoot(path: root.path, indexPath: indexPath)
     waitUntilIndexed(first)
 
-    // Lightroom, exiftool, a synced folder: something else rates the photo
-    // while Photopipe is not running.
     try XMP.writeRating(
         5,
         file: ImageFile(path: target.path, rel: "DSC001.ARW", ext: "ARW", size: 1, mtime: 1))
@@ -211,8 +193,6 @@ private func tempIndexPath() -> String {
 
     let service = makeService()
     _ = try service.setRoot(path: root.path, indexPath: tempIndexPath())
-    // Settling a file before the enricher was handed its queue used to leave
-    // the counter one short of the total, so indexing never read as done.
     _ = try service.setRating(shoot: "2026-07-12_zell", path: target.path, rating: 3)
 
     waitUntilIndexed(service)
@@ -234,8 +214,6 @@ private func tempIndexPath() -> String {
     let settled = service.status().generation
     #expect(service.status(since: settled).changedShoots == [])
 
-    // Disappearing is a change too: a client that never hears about it keeps
-    // serving photos from a folder that is gone.
     try FileManager.default.removeItem(at: root.appendingPathComponent("2026-08-01_beach"))
     service.rescanNow()
     #expect(service.status(since: settled).changedShoots?.contains("2026-08-01_beach") == true)
@@ -256,7 +234,6 @@ private func tempIndexPath() -> String {
     #expect(service.status(since: settled).changedShoots == [])
     #expect(try service.listImages(shoot: "2026-07-12_zell").first?.rating == 2)
 
-    // The watcher's rescan after our own sidecar write must not read as a change.
     service.rescanNow()
     #expect(service.status(since: settled).changedShoots == [])
 }
@@ -289,8 +266,6 @@ private func tempIndexPath() -> String {
 
     let service = makeService()
     _ = try service.setRoot(path: root.path, indexPath: tempIndexPath())
-    // Rate it while enrichment is still working through the shoot: the batch
-    // that reads this file may have been queued before the write landed.
     _ = try service.setRating(shoot: "2026-07-12_zell", path: target.path, rating: 5)
     waitUntilIndexed(service)
 
@@ -326,7 +301,6 @@ private func tempIndexPath() -> String {
     let summary = try service.setRoot(path: root.path, indexPath: tempIndexPath())
     let elapsed = Date().timeIntervalSince(start)
     #expect(summary.files == 1000)
-    // Generous CI bound; locally this runs in well under a second.
     #expect(elapsed < 5.0, "1000-file scan+index took \(elapsed)s")
 }
 
@@ -346,7 +320,6 @@ private func tempIndexPath() -> String {
     let elapsed = Date().timeIntervalSince(start)
     _ = try service.cancelExport(id: job.id)
 
-    // the client gives up on a request long before a big export is planned
     #expect(elapsed < 1.0, "planning 1000 files took \(elapsed)s")
 
     var settled = try service.exportStatus(id: job.id)
@@ -355,8 +328,6 @@ private func tempIndexPath() -> String {
         settled = try service.exportStatus(id: job.id)
     }
 }
-
-// MARK: - Dispatcher JSON layer
 
 private func result(_ reply: (ok: Bool, text: String)) -> JSONValue? {
     reply.ok ? try? JSONDecoder().decode(JSONValue.self, from: Data(reply.text.utf8)) : nil

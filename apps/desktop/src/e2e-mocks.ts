@@ -65,7 +65,6 @@ const miscImages: ImageFile[] = [
 
 const bigPath = (i: number) =>
   `/fake/2026-08-01_dolomites/DSC0${String(1200 + i)}.ARW`;
-// near-identical runs the stacking pass would find: 1200–1202, 1204–1205, 1206–1210
 const bigStacks = [
   [0, 3],
   [4, 6],
@@ -128,14 +127,12 @@ type StorePhoto = Pick<
 type StoreShoot = { notes: string; cover: string; photos: StorePhoto[] };
 type StoreRender = { name: string; edit: Partial<Edit> };
 
-// `?store` swaps the drawn library for the real photos in the App Store screenshots.
 const storeFiles = import.meta.glob<string>("../e2e/store/*/*.jpg", {
   query: "?url",
   import: "default",
   eager: true,
 });
 const storeImages = new Map<string, ImageFile[]>();
-// Another photo's preview, so frame 1's filmstrip shows landscapes, not more portraits.
 const storePreviews = new Map<string, string>();
 if (new URLSearchParams(location.search).has("store")) {
   const data: Record<string, StoreShoot> = storeShoots;
@@ -191,8 +188,6 @@ function projectFields(params: {
   };
 }
 
-/// `?indexing=1` holds the library in the state it has right after a cold
-/// start: every file listed, none of its metadata read yet.
 const indexing = new URLSearchParams(location.search).get("indexing") === "1";
 
 const allImages = () =>
@@ -207,9 +202,6 @@ function imagesFor(shoot: string): ImageFile[] {
   return miscImages;
 }
 
-// Every photo is rated already, so sorting by Instinct works the moment a
-// project opens. `?scoring` stretches a pass to three polls, which is how the
-// progress line gets tested without a clock in every other spec.
 const scorePolls = new Map<string, number>();
 const SLOW_SCORING_POLLS = 3;
 
@@ -231,8 +223,6 @@ function scored(shoot: string) {
 const exportJobs = new Map<string, ExportProgress>();
 const zipJobs = new Map<string, boolean>();
 
-/// `?exportfails=N` makes the first N files of every export fail the way a
-/// full-resolution render does, which a spec cannot otherwise reach.
 const exportFails = Number(
   new URLSearchParams(location.search).get("exportfails") ?? 0,
 );
@@ -256,7 +246,6 @@ function startJob(total: number, zip: boolean): ExportProgress {
 function advanceExport(id: string): ExportProgress {
   const job = exportJobs.get(id);
   if (!job) throw `unknown_export: ${id}`;
-  // one photo per poll, so a spec can watch the bar move
   if (job.running) {
     if (job.failed < exportFails) {
       job.failed += 1;
@@ -308,7 +297,6 @@ function stringArg(args: unknown, key: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-// The store screenshots render the iPad's feature set from /?ipad.
 const ipad = new URLSearchParams(window.location.search).has("ipad");
 
 export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
@@ -348,7 +336,6 @@ export const E2E_COMMANDS: Record<string, (args: unknown) => unknown> = {
     const path = stringArg(args, "path");
     if (path === undefined) throw new Error("open_root needs a path");
     const stored = roots.find((root) => root.path === path);
-    // the panel grants what was just picked in it, which revives a broken bookmark
     const granted = path === picked && stored?.status === "broken";
     if (stored && stored.status !== "ok" && !granted) {
       throw { kind: stored.status, message: `${stored.status}: ${path}` };
@@ -442,7 +429,6 @@ const E2E_HANDLERS: CoreHandlers = {
       ? { temperature: 5250, tint: 8, denoise: 38 }
       : { temperature: null, tint: null, denoise: null },
   decoderAvailability: () => ({ raw9: true }),
-  // misc stands in for the older body that tops out at RAW 8
   decoderSupport: (params) => {
     const raws = params.paths.filter((path) =>
       path.toLowerCase().endsWith(".arw"),
@@ -472,7 +458,6 @@ const E2E_HANDLERS: CoreHandlers = {
     if (job.running) {
       job.cancelled = true;
       job.running = false;
-      // Staging goes with it, so a cancelled zip delivered nothing at all.
       if (zipJobs.get(job.id)) {
         job.done = 0;
         job.failed = 0;
@@ -537,7 +522,6 @@ type CoreRequest<K extends keyof CoreMethods = keyof CoreMethods> = {
   [M in K]: { method: M; params: CoreMethods[M]["params"] };
 }[K];
 
-/// Only `coreRequest` sends these, and it typed the params on the way out.
 export function isCoreRequest(args: unknown): args is CoreRequest {
   return (
     typeof args === "object" &&

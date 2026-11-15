@@ -1,13 +1,8 @@
 import type { Box } from "./crop";
 import { clamp01 } from "./curve";
 
-/// Loupe zoom. `scale` is relative to the fitted view (1 = fit) and
-/// `tx`/`ty` translate the fitted layer, applied before the scale with a
-/// top-left origin. Fit itself is represented as `null` state.
 export type ZoomState = { scale: number; tx: number; ty: number };
 
-/// Keep the photo covering the viewport: clamp the pan so no gap opens on a
-/// side the photo could fill, and center it on axes it cannot fill.
 export function clampPan(
   state: ZoomState,
   photo: Box,
@@ -35,8 +30,6 @@ export function clampPan(
   };
 }
 
-/// Scale by `factor` keeping the viewport point `cursor` fixed. Returns null
-/// when the result lands back at fit.
 export function zoomAt(
   state: ZoomState | null,
   cursor: { x: number; y: number },
@@ -70,8 +63,6 @@ export function photoFractionAt(
   };
 }
 
-/// The visible part of the photo in photo-normalized coordinates (for the
-/// navigator's viewport rect).
 export function visibleRect(
   state: ZoomState,
   photo: Box,
@@ -90,9 +81,6 @@ export type ViewportRequest = {
   maxPixel: number;
 };
 
-/// What the core should render for the current zoom: the slice on screen at
-/// the resolution the screen can show, instead of the whole frame. Null when
-/// the photo fits, where the ordinary render already covers it.
 export function viewportRequest(
   state: ZoomState | null,
   photo: Box,
@@ -108,8 +96,6 @@ export function viewportRequest(
   if (visible.width >= 1 && visible.height >= 1) return null;
 
   const onScreen = visibleScreenRect(state, photo, viewWidth, viewHeight);
-  // Never more than the slice holds: upscaling would cost a bigger decode for
-  // pixels the sensor never recorded.
   const maxPixel = Math.round(
     Math.min(
       Math.max(visible.width * pixelWidth, visible.height * pixelHeight),
@@ -128,16 +114,12 @@ export function viewportRequest(
   };
 }
 
-/// Identity of a request, so the loupe can tell whether the slice it holds
-/// still matches the view. Anything else is stale and must not be drawn.
 export function viewportKey(request: ViewportRequest | null): string {
   if (!request) return "";
   const { left, top, right, bottom } = request.viewport;
   return `${left},${top},${right},${bottom}@${request.maxPixel}`;
 }
 
-/// The part of the stage the photo actually covers. A slice rendered for this
-/// state lands here exactly.
 export function visibleScreenRect(
   state: ZoomState,
   photo: Box,
@@ -156,7 +138,6 @@ export function visibleScreenRect(
   };
 }
 
-/// Pan so the photo-normalized point sits at the viewport center.
 export function centerOn(
   state: ZoomState,
   point: { x: number; y: number },

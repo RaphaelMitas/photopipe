@@ -39,7 +39,6 @@ export type SidebarStacks = {
   progress: PassProgress | null;
   ready: boolean;
   onToggle: () => void;
-  /// Null until stacks are ready, and for a photo that stands alone.
   current: { stack: Stack; inside: boolean } | null;
 };
 
@@ -50,7 +49,6 @@ type Props = {
   betterThan: number | null;
   filter: RatingFilter;
   ratingCounts: RatingCounts;
-  /// The stack's shared flag outside it, so the buttons show what a click will toggle.
   flag: Flag;
   onRate: (path: string, rating: number) => void;
   onFlag: (path: string, flag: Flag) => void;

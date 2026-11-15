@@ -64,8 +64,6 @@ export const autoAdvancePref = flagPref(
   false,
 );
 
-// Photo pixels, not screen pixels: ten of them stay a fine adjustment on any
-// photo while still showing on screen at a fitted view.
 const NUDGE_PIXELS = 10;
 
 const CHIP =
@@ -80,7 +78,6 @@ function usePrefetchNeighbour(
   usePrefetchRender(comparing ? photo : undefined, before);
 }
 
-/// Holds a value back until it has stopped changing for `delayMs`.
 function useSettled<T>(value: T, delayMs: number): T {
   const [settled, setSettled] = useState(value);
   useEffect(() => {
@@ -96,7 +93,6 @@ export type LoupeStacks = {
   inside: boolean;
   onEnter: () => void;
   onLeave: () => void;
-  /// False when nothing was swept, so the loupe stays put.
   onSweep: () => boolean;
 };
 
@@ -111,7 +107,6 @@ type Props = {
   onEditChange: (edit: Edit) => void;
   onNavigate: (path: string) => void;
   onClose: () => void;
-  /// What the photo or stack now holds, null when refused: only a verdict moves on.
   onRate: (path: string, rating: number) => number | null;
   onFlag: (path: string, flag: Flag) => Flag | null;
 };
@@ -137,8 +132,6 @@ export function Loupe({
   const comparing = split && !cropping;
   const filmstrip = filmstripPref.use();
 
-  // While cropping the stage shows the full turned frame, uncropped and
-  // unstraightened; the crop and the CSS angle preview sit on top.
   const draftRotation = cropDraft?.rotation ?? 0;
   const previewEdit = useMemo(
     () =>
@@ -147,7 +140,6 @@ export function Loupe({
         : deferredEdit,
     [cropping, deferredEdit, draftRotation],
   );
-  // Queries fetch in call order and an idle lane usually starts on the first, so the edit asks first.
   const render = useRender(image, previewEdit);
   const unmasked = render.data?.unmasked ?? false;
   const beforeEdit = useMemo(() => unedited(deferredEdit), [deferredEdit]);
@@ -164,7 +156,6 @@ export function Loupe({
       : images[index + direction];
   const next = neighbour(1);
   const previous = neighbour(-1);
-  // The render lane runs newest first, so neighbours wait for this photo's first attempt.
   const landed = [render, before].every(
     (query) => !query.isFetching || query.failureCount > 0,
   );
@@ -187,8 +178,6 @@ export function Loupe({
     return () => observer.disconnect();
   }, []);
 
-  // Pixel size of what the stage currently shows: the crop while viewing,
-  // the full turned frame while cropping.
   const rotation = cropping ? draftRotation : (edit.rotation ?? 0);
   const [displayWidth, displayHeight] = rotatedSize(
     image?.width ?? 0,
@@ -217,7 +206,6 @@ export function Loupe({
     const node = stageRef.current;
     if (!node || cropping || photoBox.width <= 0) return null;
     const at = cursorIn(node, cursor);
-    // the before half covers the preview, and a click there would mask unseen
     if (comparing && at.x < divider * node.clientWidth) return null;
     const spot = photoFractionAt(zoom.state, at, photoBox);
     const onPhoto =
@@ -236,9 +224,7 @@ export function Loupe({
     );
     return request && { ...request, zoomKey };
   }, [zoom.state, photoBox, stage, pixelWidth, pixelHeight, zoomKey]);
-  // Only ask once the gesture settles, or a pinch fires a render per frame.
   const settled = useSettled(wanted, 180);
-  // A slice for a view, photo or mode you have left would render ahead of this one and land in the wrong place.
   const current =
     settled?.zoomKey === zoomKey && viewportKey(wanted) === viewportKey(settled)
       ? settled
@@ -251,8 +237,6 @@ export function Loupe({
   ).data;
   const sharpening = wanted !== null && (!sharp || (comparing && !sharpBefore));
 
-  // Key repeat outruns re-rendering, so a nudge composes on the ref instead of
-  // the draft this handler closed over.
   const draftRef = useRef(cropDraft);
   draftRef.current = cropDraft;
 
@@ -337,13 +321,8 @@ export function Loupe({
 
   if (!image) return null;
 
-  // While cropping, a placeholder still has the old crop and rotation baked
-  // in — the overlay and CSS rotation would not line up with it. Fall back to
-  // the (uncropped) thumbnail until the full-frame render lands.
   const freshRender =
     cropping && render.isPlaceholderData ? undefined : render.data?.cachePath;
-  // The slice sits outside the zoom transform, laid out at its own on-screen
-  // size, so it is never a scaled-up copy of the fitted render.
   const sliceRect = zoom.state
     ? visibleScreenRect(zoom.state, photoBox, stage.width, stage.height)
     : null;
@@ -377,8 +356,6 @@ export function Loupe({
       )
     : null;
 
-  // The straighten pivot is the photo's center: the photo stays put while
-  // the crop rect moves over it, so dragging pans in view axes.
   const photoCenter = cropDraft
     ? {
         x: photoBox.x + photoBox.width / 2,
@@ -538,8 +515,6 @@ export function Loupe({
               }`}
             </div>
             {render.data && (
-              // The preview render has the crop and turn baked in, so it maps
-              // onto the navigator box without any stretch arithmetic.
               <Navigator
                 src={fileSrc(render.data.cachePath)}
                 pixelWidth={pixelWidth}
@@ -581,7 +556,6 @@ export function Loupe({
         )}
       </div>
       {filmstrip !== "off" && (
-        // Navigating away would silently discard the crop draft.
         <div
           className={cropping ? "pointer-events-none opacity-40" : undefined}
         >
@@ -598,13 +572,11 @@ export function Loupe({
   );
 }
 
-// a zoomed stage captures the pointer on press, which would swallow the click
 const ownTap = {
   onPointerDown: (event: React.PointerEvent) => event.stopPropagation(),
   onDoubleClick: (event: React.MouseEvent) => event.stopPropagation(),
 };
 
-// a split puts its Before and After labels where the pill sits
 function FlagPill({ flag, lowered }: { flag: Flag; lowered: boolean }) {
   if (flag === 0) return null;
   return (
@@ -677,7 +649,6 @@ function SplitDivider({
           drag.onPointerDown(event);
         }}
         onDoubleClick={ownTap.onDoubleClick}
-        // Focused by a drag, it would ring on the next key and take Enter from the stack.
         onMouseDown={(event) => event.preventDefault()}
       >
         <span className="mx-auto block h-full w-[1.5px] bg-white/90 shadow-[0_0_2px_rgba(0,0,0,0.45)]" />
@@ -787,9 +758,6 @@ function StackOverlay({
   );
 }
 
-/// Pinch (trackpad gesture or ctrl+wheel), two-finger pan, drag pan, and
-/// double-click to toggle fit ↔ 100% (min 2× for photos that barely
-/// outresolve the viewport).
 function useZoom({
   stageRef,
   stage,
@@ -869,7 +837,6 @@ function useZoom({
       }
       panBy(-event.deltaX, -event.deltaY);
     };
-    // WebKit reports trackpad pinches as gesture events, not ctrl+wheel.
     const onGestureStart = (event: GestureEvent) => {
       event.preventDefault();
       inGesture = true;
