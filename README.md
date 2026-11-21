@@ -4,13 +4,26 @@
 
 # Photopipe
 
-Culling and export for photo shoots, on macOS.
+Free raw photo editor and culling app for Mac and iPad.
+
+[photopipe.net](https://photopipe.net)
 
 </div>
 
-Photopipe is for the part of photography that happens between the shoot and
-the delivery: looking at a few hundred raws, deciding which ones are worth
-keeping, and getting the keepers out the door.
+Photopipe takes a shoot from the card to the delivery in one app: rank a few
+thousand raws, pick the keepers, edit them and export. It is free and open
+source, with no account, no subscription and no telemetry.
+
+- **Cull.** A full-bleed loupe, ratings on `1`–`5`, and Instinct, an on-device
+  score from 0 to 100 that sorts the stronger frames first.
+- **Edit.** Exposure, highlights, shadows, whites, blacks, texture, clarity,
+  dehaze, white balance, vibrance, saturation, curves, Neural Engine denoise,
+  crop and straighten. On macOS and iPadOS 27, masks for the subject, the
+  people, the background or any object you click.
+- **Export.** Originals byte for byte, or full-resolution JPEGs with the edits
+  baked in, to a folder or a zip.
+- **Works beside Lightroom.** Ratings and edits are saved as XMP with
+  Lightroom's own `crs` tags, so you can cull here and finish there.
 
 It is built around one rule: **your folders are the truth.** Photopipe reads
 what is on disk and shows it to you. It never maintains a catalogue that can
@@ -21,7 +34,8 @@ to.
 
 ## Install
 
-Requires **macOS 15 (Sequoia) or later** on **Apple Silicon**.
+Requires **macOS 15 (Sequoia) or later** on **Apple Silicon**, or an iPad on
+**iPadOS 18 or later**. The App Store listing below installs both.
 
 <a href="https://apps.apple.com/app/id6813775361"><img src="apps/web/public/badges/mac-app-store.svg" height="40" alt="Download on the Mac App Store"></a>
 
