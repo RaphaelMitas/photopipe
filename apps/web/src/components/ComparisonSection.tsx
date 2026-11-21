@@ -13,6 +13,7 @@ import type { IntentPage } from "@/lib/intent-pages";
 const MONTH = new Intl.DateTimeFormat("en-GB", {
   month: "long",
   year: "numeric",
+  timeZone: "UTC",
 });
 
 function PickCard({

@@ -49,6 +49,8 @@ ${page.lede}
 
 ### Photopipe or ${page.rival}?
 
+${page.whyThisRival}
+
 Pick Photopipe if:
 
 ${bullets(page.pick.photopipe)}
@@ -56,6 +58,8 @@ ${bullets(page.pick.photopipe)}
 Pick ${page.rival} if:
 
 ${bullets(page.pick.rival)}
+
+${page.pick.keepingRival}
 
 | | Photopipe | ${page.rival} |
 | --- | --- | --- |

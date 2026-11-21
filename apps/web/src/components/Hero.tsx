@@ -1,5 +1,5 @@
 import { InstallOptions } from "@/components/InstallOptions";
-import { Screenshot, type ScreenshotName } from "@/components/Screenshot";
+import { Screenshot, type ScreenshotImage } from "@/components/Screenshot";
 
 type Props = {
   href: string;
@@ -7,7 +7,7 @@ type Props = {
   eyebrow: string;
   title: React.ReactNode;
   lede: string;
-  screenshot: { name: ScreenshotName; alt: string };
+  screenshot: ScreenshotImage;
 };
 
 export function Hero({ href, brew, eyebrow, title, lede, screenshot }: Props) {

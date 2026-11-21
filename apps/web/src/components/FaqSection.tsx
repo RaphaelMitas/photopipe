@@ -19,7 +19,10 @@ export function FaqSection({
               {item.answer}
             </p>
             {item.link ? (
-              <TextLink href={item.link.href} className="mt-2 inline-block">
+              <TextLink
+                href={`/${item.link.slug}`}
+                className="mt-2 inline-block"
+              >
                 {item.link.label}
               </TextLink>
             ) : null}

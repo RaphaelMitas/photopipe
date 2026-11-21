@@ -1,8 +1,13 @@
-import type { ScreenshotName } from "@/components/Screenshot";
+import type { ScreenshotImage } from "@/components/Screenshot";
 import type { FaqItem } from "@/lib/faq";
 
+export type IntentSlug =
+  | "lightroom-alternative"
+  | "photo-mechanic-alternative"
+  | "free-photo-culling-software";
+
 export type IntentPage = {
-  slug: string;
+  slug: IntentSlug;
   updated: string;
   rival: string;
   rivalUrl: string;
@@ -11,13 +16,13 @@ export type IntentPage = {
   description: string;
   headline: string;
   lede: string;
-  screenshot: { name: ScreenshotName; alt: string };
+  screenshot: ScreenshotImage;
   comparison: { feature: string; photopipe: string; rival: string }[];
   pick: { photopipe: string[]; rival: string[]; keepingRival: string };
-  related: { lead: string; label: string; slug: string };
+  related: { lead: string; label: string; slug: IntentSlug };
   workflow: {
     title: string;
-    screenshot: { name: ScreenshotName; alt: string };
+    screenshot: ScreenshotImage;
     steps: { title: string; body: string }[];
   };
   faqTitle: string;
@@ -72,7 +77,7 @@ export const INTENT_PAGES: IntentPage[] = [
       {
         feature: "Where your work is stored",
         photopipe:
-          "An XMP sidecar beside each raw, which leaves the raw untouched. Inside the file for DNG, JPEG and PNG",
+          "An XMP sidecar beside each raw, which leaves the raw untouched. On a Mac, inside the file for DNG, JPEG and PNG",
         rival: "In the catalogue, written to XMP when you ask",
       },
       {
@@ -163,7 +168,7 @@ export const INTENT_PAGES: IntentPage[] = [
       {
         question: "Can I use Photopipe and Lightroom together?",
         answer:
-          "Yes. Photopipe writes star ratings and edits as XMP, with the edits in the same fields Lightroom uses, so Lightroom Classic reads them from the file. Cull and do a first edit in Photopipe, then open the keepers in Lightroom for the work Photopipe does not do. Masks are the exception: Lightroom does not see a mask made in Photopipe.",
+          "Yes. Photopipe writes star ratings and edits as XMP, with the edits in the same fields Lightroom uses, so Lightroom Classic reads them from the sidecar beside each raw. Cull and do a first edit in Photopipe, then open the keepers in Lightroom for the work Photopipe does not do. Masks are the exception: Lightroom does not see a mask made in Photopipe.",
       },
       {
         question: "What happens to my Lightroom catalogue?",
@@ -175,7 +180,7 @@ export const INTENT_PAGES: IntentPage[] = [
         answer:
           "Brushes and gradients, HSL, presets, lens correction controls, AI tools such as Lens Blur and Adaptive Presets, a catalogue with keywords and collections, tethering and printing. Photopipe also has no Windows or Intel version. If your work depends on those, keep Lightroom. Because ratings and edits travel as XMP, you can still do the cull in Photopipe.",
         link: {
-          href: "/free-photo-culling-software",
+          slug: "free-photo-culling-software",
           label: "Free AI photo culling, compared",
         },
       },
@@ -311,7 +316,7 @@ export const INTENT_PAGES: IntentPage[] = [
         answer:
           "Yes, and that is the main difference. The loupe you cull in is also the editor: tone, colour, curves, denoise on the Neural Engine and crop, plus masks on macOS 27. Edits are saved as XMP and baked into JPEG exports.",
         link: {
-          href: "/lightroom-alternative",
+          slug: "lightroom-alternative",
           label: "Photopipe and Lightroom compared",
         },
       },
@@ -323,7 +328,7 @@ export const INTENT_PAGES: IntentPage[] = [
       {
         question: "Does Photo Mechanic read Photopipe's ratings?",
         answer:
-          "Yes. Stars are written as standard XMP, a sidecar beside a raw or embedded in a DNG, JPEG or PNG. Photo Mechanic, Lightroom Classic and Capture One read the same stars.",
+          "Yes. Stars are written as standard XMP: a sidecar beside a raw, and on a Mac embedded in a DNG, JPEG or PNG. Photo Mechanic, Lightroom Classic and Capture One read the same stars.",
       },
       {
         question: "Why not Adobe Bridge?",
@@ -455,9 +460,9 @@ export const INTENT_PAGES: IntentPage[] = [
       {
         question: "Can I finish in Lightroom after culling?",
         answer:
-          "Yes. Star ratings are written as XMP, a sidecar beside a raw or embedded in a DNG, JPEG or PNG, and Lightroom Classic, Capture One and Photo Mechanic read them.",
+          "Yes. Star ratings are written as XMP: a sidecar beside a raw, and on a Mac embedded in a DNG, JPEG or PNG. Lightroom Classic, Capture One and Photo Mechanic read them.",
         link: {
-          href: "/lightroom-alternative",
+          slug: "lightroom-alternative",
           label: "Photopipe as a free Lightroom alternative",
         },
       },

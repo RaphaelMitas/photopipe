@@ -7,12 +7,9 @@ export type ScreenshotName =
   | "develop"
   | "export";
 
-type Props = {
-  name: ScreenshotName;
-  alt: string;
-  sizes: string;
-  preload?: boolean;
-};
+export type ScreenshotImage = { name: ScreenshotName; alt: string };
+
+type Props = ScreenshotImage & { sizes: string; preload?: boolean };
 
 export function Screenshot({ name, alt, sizes, preload }: Props) {
   return (
