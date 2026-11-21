@@ -29,8 +29,8 @@ export function StructuredData({
     },
     image: `${SITE_URL}/og-dark.png`,
     screenshot: [
-      `${SITE_URL}/screenshots/browse.png`,
-      `${SITE_URL}/screenshots/loupe.png`,
+      `${SITE_URL}/screenshots/hero.jpg`,
+      `${SITE_URL}/screenshots/develop.jpg`,
     ],
     downloadUrl: href,
     installUrl: APP_STORE,

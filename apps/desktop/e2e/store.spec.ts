@@ -12,15 +12,21 @@ import {
   type Size,
 } from "./store/frames";
 
+const MAC = {
+  name: "mac",
+  url: "/?store",
+  root: "/Users/you/Pictures/Camera",
+} as const;
 const IPAD = {
   name: "ipad",
   url: "/?store&ipad",
   root: "/private/var/mobile/Library/LiveFiles/com.apple.filesystems.userfsd/SD/Photos",
 } as const;
-const DEVICES = [
-  { name: "mac", url: "/?store", root: "/Users/you/Pictures/Camera" },
-  IPAD,
-] as const satisfies { name: Device; url: string; root: string }[];
+const DEVICES = [MAC, IPAD] satisfies {
+  name: Device;
+  url: string;
+  root: string;
+}[];
 
 const TRIP = "2026-09-03_zell-am-see";
 const LANDSCAPES = "2026-09-03_landscapes";
@@ -86,7 +92,7 @@ async function compose(
   );
   mkdirSync(out, { recursive: true });
   const page = await browser.newPage();
-  for (const { file, size, frame } of list) {
+  for (const { file, size, frame, quality } of list) {
     const shot = frame.capture && captures[frame.capture];
     if (frame.capture && !shot) throw new Error(`no ${frame.capture} capture`);
     await page.setViewportSize(size);
@@ -98,7 +104,7 @@ async function compose(
       }),
     );
     await page.evaluate(() => document.fonts.ready);
-    await page.screenshot({ path: `${out}/${file}` });
+    await page.screenshot({ path: `${out}/${file}`, quality });
   }
   await page.close();
 }
@@ -124,57 +130,78 @@ async function loupeOnBlueHour(page: Page) {
   await expect(page.getByTestId("curve-histogram")).toBeAttached();
 }
 
-for (const device of DEVICES) {
+async function listing(
+  browser: Browser,
+  device: (typeof DEVICES)[number],
+  out: string,
+  asset: (name: string, index: number) => Pick<Asset, "file" | "quality">,
+) {
   const size = SIZES[device.name];
+  const shoot = (name: string, steps: (page: Page) => Promise<void>) =>
+    capture(
+      browser,
+      device,
+      { width: size.width / 2, height: size.height / 2 },
+      2,
+      name,
+      steps,
+    );
+  const captures: Partial<Record<Capture, Buffer>> = {
+    "loupe-DSC03455": await shoot(TRIP, async (page) => {
+      await page.getByTestId("hist-4").click();
+      await page
+        .locator('[data-testid=thumb][data-path="DSC03455.ARW"]')
+        .click();
+      await expect(page.getByTestId("loupe-name")).toHaveText("DSC03455.ARW");
+    }),
+    "nature-keepers-selected": await shoot(LANDSCAPES, async (page) => {
+      await selectKeepers(page);
+      await page.getByTestId("drawer-close").click();
+      await expect(page.getByTestId("selection-count")).toHaveText(
+        "34 selected",
+      );
+    }),
+    "nature-export": await shoot(LANDSCAPES, async (page) => {
+      await selectKeepers(page);
+      await expect(page.getByTestId("drawer-count")).toHaveText("34");
+    }),
+    "nature-grid-instinct-3up": await shoot(LANDSCAPES, async (page) => {
+      await sortByInstinct(page);
+      await page.getByTestId("hist-3").click();
+    }),
+    "loupe-DSC04417": await shoot(LANDSCAPES, loupeOnBlueHour),
+  };
+  await compose(
+    browser,
+    out,
+    frames(device.name).map((frame, index) => ({
+      ...asset(frame.name, index),
+      size,
+      frame,
+    })),
+    captures,
+  );
+}
 
+for (const device of DEVICES) {
   test(`@store ${device.name}`, async ({ browser }) => {
     test.setTimeout(180_000);
-    const shoot = (name: string, steps: (page: Page) => Promise<void>) =>
-      capture(
-        browser,
-        device,
-        { width: size.width / 2, height: size.height / 2 },
-        2,
-        name,
-        steps,
-      );
-    const captures: Partial<Record<Capture, Buffer>> = {
-      "loupe-DSC03455": await shoot(TRIP, async (page) => {
-        await page.getByTestId("hist-4").click();
-        await page
-          .locator('[data-testid=thumb][data-path="DSC03455.ARW"]')
-          .click();
-        await expect(page.getByTestId("loupe-name")).toHaveText("DSC03455.ARW");
-      }),
-      "nature-keepers-selected": await shoot(LANDSCAPES, async (page) => {
-        await selectKeepers(page);
-        await page.getByTestId("drawer-close").click();
-        await expect(page.getByTestId("selection-count")).toHaveText(
-          "34 selected",
-        );
-      }),
-      "nature-export": await shoot(LANDSCAPES, async (page) => {
-        await selectKeepers(page);
-        await expect(page.getByTestId("drawer-count")).toHaveText("34");
-      }),
-      "nature-grid-instinct-3up": await shoot(LANDSCAPES, async (page) => {
-        await sortByInstinct(page);
-        await page.getByTestId("hist-3").click();
-      }),
-      "loupe-DSC04417": await shoot(LANDSCAPES, loupeOnBlueHour),
-    };
-    await compose(
+    await listing(
       browser,
+      device,
       `store-screenshots/${device.name}`,
-      frames(device.name).map((frame, i) => ({
-        file: `0${i + 1}.png`,
-        size,
-        frame,
-      })),
-      captures,
+      (_, index) => ({ file: `0${index + 1}.png` }),
     );
   });
 }
+
+test("@screenshots readme and landing page", async ({ browser }) => {
+  test.setTimeout(180_000);
+  await listing(browser, MAC, "../../docs/screenshots", (name) => ({
+    file: `${name}.jpg`,
+    quality: 90,
+  }));
+});
 
 test("@store creative", async ({ browser }) => {
   test.setTimeout(120_000);

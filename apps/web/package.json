@@ -4,7 +4,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "assets": "mkdir -p public/screenshots && cp ../../docs/screenshots/*.png public/screenshots/ && cp ../../brand/web/favicon.ico ../../brand/web/favicon.svg ../../brand/web/apple-touch-icon.png ../../brand/web/icon-*.png ../../brand/web/site.webmanifest ../../brand/social/og-dark.png public/",
+    "assets": "mkdir -p public/screenshots && cp ../../docs/screenshots/*.jpg public/screenshots/ && cp ../../brand/web/favicon.ico ../../brand/web/favicon.svg ../../brand/web/apple-touch-icon.png ../../brand/web/icon-*.png ../../brand/web/site.webmanifest ../../brand/social/og-dark.png public/",
     "predev": "pnpm assets",
     "dev": "next dev",
     "prebuild": "pnpm assets",

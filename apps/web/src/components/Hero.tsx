@@ -1,7 +1,7 @@
-import Image from "next/image";
 import { AppStoreBadge } from "@/components/AppStoreBadge";
 import { BrewCommand } from "@/components/BrewCommand";
 import { DownloadButton } from "@/components/DownloadButton";
+import { Screenshot } from "@/components/Screenshot";
 
 export function Hero({ href }: { href: string }) {
   return (
@@ -37,14 +37,11 @@ export function Hero({ href }: { href: string }) {
         </p>
       </div>
       <div className="relative mx-auto w-full max-w-7xl px-6 pb-8">
-        <Image
-          src="/screenshots/browse.png"
-          alt="The Photopipe browse grid, a shoot sorted by Instinct score"
-          width={2560}
-          height={1600}
-          preload
+        <Screenshot
+          name="hero"
+          alt="Photopipe on a Mac: a five-star raw open in the loupe, the edit panel beside it"
           sizes="(min-width: 1536px) 1440px, 100vw"
-          className="w-full rounded-xl border border-border shadow-2xl shadow-black/40"
+          preload
         />
       </div>
     </section>

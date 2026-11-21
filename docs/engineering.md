@@ -349,13 +349,9 @@ The cask in `RaphaelMitas/homebrew-tap` needs `auto_updates true`, or
 
 ### Screenshots
 
-`pnpm screenshots` captures `docs/screenshots/*.png` for the README and the
-landing page from the real UI against the e2e mock, so neither can show an
-app that no longer exists. The photos are landscapes drawn from each file
-name, deterministic and machine-independent.
-
-The App Store gets its own set. `pnpm store-screenshots` runs the mock in
-`?store` mode, which swaps the drawn library for real photos from
+`pnpm store-screenshots` builds the App Store set from the real UI against
+the e2e mock, so the listing cannot show an app that no longer exists. It runs
+the mock in `?store` mode, which swaps the drawn library for real photos from
 `apps/desktop/e2e/store`, captures the UI for the Mac (2880x1800) and the
 13-inch iPad (2732x2048, through `?ipad`), and frames each capture with a
 headline and photos (`e2e/store/frames.ts`). It writes to
@@ -370,6 +366,11 @@ the header (3840x1646) and the search result (3840x2560), to
 Store Connect's Asset Library by hand, from the release's `store-screenshots`
 artifact. Apple reviews them on their own, and they can replace the live ones
 without a new version.
+
+The README and the landing page show the same Mac frames. `pnpm screenshots`
+writes them to `docs/screenshots/*.jpg`, named after what each one shows, and
+those are committed. Run it on a Mac, for the same system font; the release
+script does.
 
 The photos are the maker's own and not under the MIT licence (see
 `e2e/store/LICENSE.md`). Only the ones a screenshot shows are committed, as
