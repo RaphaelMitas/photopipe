@@ -1,13 +1,15 @@
-import { FAQ } from "@/lib/faq";
+import type { FaqItem } from "@/lib/faq";
 import { APP_STORE, REPO } from "@/lib/release";
 import { DESCRIPTION, SITE_URL } from "@/lib/site";
 
 export function StructuredData({
   version,
   href,
+  faq,
 }: {
   version: string | null;
   href: string;
+  faq: FaqItem[];
 }) {
   const app = {
     "@type": "SoftwareApplication",
@@ -36,15 +38,15 @@ export function StructuredData({
     installUrl: APP_STORE,
     sameAs: [REPO, APP_STORE],
   };
-  const faq = {
+  const faqPage = {
     "@type": "FAQPage",
-    mainEntity: FAQ.map((item) => ({
+    mainEntity: faq.map((item) => ({
       "@type": "Question",
       name: item.question,
       acceptedAnswer: { "@type": "Answer", text: item.answer },
     })),
   };
-  const data = { "@context": "https://schema.org", "@graph": [app, faq] };
+  const data = { "@context": "https://schema.org", "@graph": [app, faqPage] };
 
   return (
     <script

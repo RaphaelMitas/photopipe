@@ -1,7 +1,8 @@
 import { CONTROLS, DEVELOP } from "@/components/DevelopSection";
 import { EVERYTHING_ELSE, FEATURES } from "@/components/FeatureGrid";
 import { INSTINCT, NUMBERS } from "@/components/InstinctSection";
-import { FAQ } from "@/lib/faq";
+import { FAQ, type FaqItem } from "@/lib/faq";
+import { INTENT_PAGES, type IntentPage } from "@/lib/intent-pages";
 import {
   APP_STORE,
   BREW_INSTALL,
@@ -22,10 +23,28 @@ ${version ? `Current version: ${version}. ` : ""}Requires macOS 15 (Sequoia) or 
 - Homebrew: \`${BREW_INSTALL}\``;
 }
 
+function questions(items: FaqItem[]) {
+  return items
+    .map((item) => `### ${item.question}\n\n${item.answer}`)
+    .join("\n\n");
+}
+
 function faq() {
   return `## FAQ
 
-${FAQ.map((item) => `### ${item.question}\n\n${item.answer}`).join("\n\n")}`;
+${questions(FAQ)}`;
+}
+
+function comparison(page: IntentPage) {
+  return `## ${page.title}
+
+${page.lede}
+
+| | Photopipe | ${page.rival} |
+| --- | --- | --- |
+${page.comparison.map((row) => `| ${row.feature} | ${row.photopipe} | ${row.rival} |`).join("\n")}
+
+${questions(page.faq)}`;
 }
 
 export async function llmsTxt() {
@@ -40,6 +59,7 @@ ${faq()}
 ## Docs
 
 - [Full page as Markdown](${SITE_URL}/llms-full.txt): every feature, in one file
+${INTENT_PAGES.map((page) => `- [${page.title}](${SITE_URL}/${page.slug}): ${page.description}`).join("\n")}
 - [Privacy](${SITE_URL}/privacy): no account, no telemetry, no uploads
 - [Source code](${REPO}): MIT licence
 - [Design notes](${REPO}/blob/main/docs/design.md): why it works the way it does
@@ -73,6 +93,8 @@ ${NUMBERS.map((number) => `- **${number.value}**: ${number.label}`).join("\n")}
 ${FEATURES.map((feature) => `### ${feature.title}\n\n${feature.body}`).join("\n\n")}
 
 ${faq()}
+
+${INTENT_PAGES.map(comparison).join("\n\n")}
 `;
 }
 

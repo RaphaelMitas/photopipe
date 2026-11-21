@@ -1,6 +1,8 @@
 import { BREW_INSTALL } from "@/lib/release";
 
-export const FAQ = [
+export type FaqItem = { question: string; answer: string };
+
+export const FAQ: FaqItem[] = [
   {
     question: "Is Photopipe free?",
     answer:
@@ -9,7 +11,7 @@ export const FAQ = [
   {
     question: "What can I edit in Photopipe?",
     answer:
-      "Global edits on the whole photo: exposure, highlights, shadows, whites, blacks, texture, clarity, dehaze, white balance, vibrance, saturation, RGB and per-channel curves, Neural Engine denoise on raw files, and crop, straighten and rotate. Copy a look onto a whole selection, undo anything with ⌘Z, and export full-resolution JPEGs with the edits baked in. Local adjustments such as masks and brushes, HSL, presets and lens correction controls are not there yet.",
+      "Exposure, highlights, shadows, whites, blacks, texture, clarity, dehaze, white balance, vibrance, saturation, RGB and per-channel curves, Neural Engine denoise on raw files, and crop, straighten and rotate. On macOS 27, masks for the subject, the people, the background or any object you click take the tone and colour sliders on their own. Copy a look onto a whole selection, undo anything with ⌘Z, and export full-resolution JPEGs with the edits baked in. Brushes, gradients, HSL, presets and lens correction controls are not there yet.",
   },
   {
     question: "Which Macs does Photopipe run on?",
@@ -33,7 +35,7 @@ export const FAQ = [
   {
     question: "Is Photopipe a free Lightroom alternative?",
     answer:
-      "For a shoot you cull, edit with global adjustments and export, yes, without a catalogue or an import step: Photopipe opens a folder, scores it, and writes every decision back to the files. If you rely on masks, presets, HSL or a catalogue with keywords and collections, not yet, and because ratings and edits are saved as XMP you can finish those photos in Lightroom.",
+      "For a shoot you cull, edit and export, yes, without a catalogue or an import step: Photopipe opens a folder, scores it, and writes every decision back to the files. If you rely on brushes, presets, HSL or a catalogue with keywords and collections, not yet, and because ratings and edits are saved as XMP you can finish those photos in Lightroom.",
   },
   {
     question: "Does Photopipe have AI culling?",

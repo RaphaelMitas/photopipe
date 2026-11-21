@@ -1,7 +1,14 @@
 import Image from "next/image";
 
+export type ScreenshotName =
+  | "hero"
+  | "cull"
+  | "instinct"
+  | "develop"
+  | "export";
+
 type Props = {
-  name: "hero" | "cull" | "instinct" | "develop" | "export";
+  name: ScreenshotName;
   alt: string;
   sizes: string;
   preload?: boolean;
