@@ -275,6 +275,7 @@ export const INTENT_PAGES: IntentPage[] = [
           href: "/lightroom-alternative",
           label: "Photopipe and Lightroom compared",
         },
+      },
       {
         question: "Is Photopipe as fast as Photo Mechanic?",
         answer:
@@ -289,7 +290,6 @@ export const INTENT_PAGES: IntentPage[] = [
         question: "Why not Adobe Bridge?",
         answer:
           "Bridge is free with an Adobe account and rates quickly from the camera's previews, but it has no AI sort and leaves raw editing to Camera Raw, which needs a paid Adobe app. Photopipe needs no account, sorts the shoot on your Mac and edits the keepers in the same view. Neither has Photo Mechanic's captions, IPTC templates or code replacements.",
-      },
       },
     ],
   },
