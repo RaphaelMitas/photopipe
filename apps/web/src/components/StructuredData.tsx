@@ -1,4 +1,4 @@
-import type { ScreenshotName } from "@/components/Screenshot";
+import { SCREENSHOTS, type ScreenshotName } from "@/components/Screenshot";
 import type { FaqItem } from "@/lib/faq";
 import { APP_STORE, REPO } from "@/lib/release";
 import { DESCRIPTION, SITE_URL } from "@/lib/site";
@@ -58,7 +58,7 @@ export function StructuredData({
     },
     author: { "@id": maker["@id"] },
     image: `${SITE_URL}/og-dark.png`,
-    screenshot: ["hero", "cull", "instinct", "develop", "export"].map(
+    screenshot: SCREENSHOTS.map(
       (name) => `${SITE_URL}/screenshots/${name}.jpg`,
     ),
     downloadUrl: href,

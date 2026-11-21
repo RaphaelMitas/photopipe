@@ -33,11 +33,7 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
     title: page.title,
     description: page.description,
     alternates: { canonical: url },
-    ...socialMetadata({
-      title: `${page.title} — Photopipe`,
-      description: page.description,
-      url,
-    }),
+    ...socialMetadata(url),
   };
 }
 

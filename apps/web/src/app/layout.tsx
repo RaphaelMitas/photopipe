@@ -38,7 +38,7 @@ export const metadata: Metadata = {
     ],
     apple: "/apple-touch-icon.png",
   },
-  ...socialMetadata({ title: TITLE, description: DESCRIPTION, url: SITE_URL }),
+  ...socialMetadata(SITE_URL),
 };
 
 export default function RootLayout({

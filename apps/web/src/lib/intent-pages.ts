@@ -65,7 +65,7 @@ export const INTENT_PAGES: IntentPage[] = [
       },
       {
         feature: "Getting photos in",
-        photopipe: "Open a folder. No import, no catalogue",
+        photopipe: "Open a folder. No import step, no catalogue",
         rival: "Import into a catalogue",
       },
       {
@@ -95,7 +95,7 @@ export const INTENT_PAGES: IntentPage[] = [
       {
         feature: "Masks",
         photopipe:
-          "Subject, people, background or a clicked object, on macOS 27",
+          "Subject, people, background or a clicked object, on macOS and iPadOS 27",
         rival: "Those, plus brushes, gradients and range masks",
       },
       {
@@ -115,7 +115,8 @@ export const INTENT_PAGES: IntentPage[] = [
       },
       {
         feature: "Export",
-        photopipe: "Originals or full-resolution JPEG, to a folder or a zip",
+        photopipe:
+          "Originals or full-resolution JPEG, to a folder, or a zip on a Mac",
         rival: "JPEG, TIFF, DNG and PSD, print and publish services",
       },
     ],
@@ -256,12 +257,14 @@ export const INTENT_PAGES: IntentPage[] = [
       },
       {
         feature: "Ingest",
-        photopipe: "Opens the folder you already have",
+        photopipe:
+          "Opens the folder you already have, or copies picked photos into one",
         rival: "Several cards at once, with rename and backup",
       },
       {
         feature: "Delivery",
-        photopipe: "Originals or full-resolution JPEG, to a folder or a zip",
+        photopipe:
+          "Originals or full-resolution JPEG, to a folder, or a zip on a Mac",
         rival: "FTP and upload services",
       },
     ],
@@ -305,7 +308,7 @@ export const INTENT_PAGES: IntentPage[] = [
         },
         {
           title: "Deliver",
-          body: "Export full-resolution JPEGs to a folder or a zip, or hand the folder on. The stars are XMP that Photo Mechanic and Lightroom read.",
+          body: "Export full-resolution JPEGs to a folder, or a zip on a Mac. Or hand the folder on: the stars beside your raws are XMP that Photo Mechanic and Lightroom read.",
         },
       ],
     },
@@ -314,7 +317,7 @@ export const INTENT_PAGES: IntentPage[] = [
       {
         question: "Does Photopipe edit raw files?",
         answer:
-          "Yes, and that is the main difference. The loupe you cull in is also the editor: tone, colour, curves, denoise on the Neural Engine and crop, plus masks on macOS 27. Edits are saved as XMP and baked into JPEG exports.",
+          "Yes, and that is the main difference. The loupe you cull in is also the editor: tone, colour, curves, denoise on the Neural Engine and crop, plus masks on macOS and iPadOS 27. Edits are saved as XMP and baked into JPEG exports.",
         link: {
           slug: "lightroom-alternative",
           label: "Photopipe and Lightroom compared",
@@ -469,7 +472,7 @@ export const INTENT_PAGES: IntentPage[] = [
       {
         question: "Can Photopipe delete the rejects?",
         answer:
-          "Only when you ask. X flags a frame as a reject and it stays where it is. When the pass is done you can send every reject to the Trash in one step, behind a confirm, with its XMP sidecar.",
+          "Only when you ask. X flags a frame as a reject and it stays where it is. When the pass is done you can send every reject to the Trash in one step, behind a confirm, with its XMP sidecar. On iPad, which has no Trash, they are deleted for good after the confirm.",
       },
     ],
   },

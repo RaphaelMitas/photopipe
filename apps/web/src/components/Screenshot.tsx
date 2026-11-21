@@ -1,11 +1,14 @@
 import Image from "next/image";
 
-export type ScreenshotName =
-  | "hero"
-  | "cull"
-  | "instinct"
-  | "develop"
-  | "export";
+export const SCREENSHOTS = [
+  "hero",
+  "cull",
+  "instinct",
+  "develop",
+  "export",
+] as const;
+
+export type ScreenshotName = (typeof SCREENSHOTS)[number];
 
 export type ScreenshotImage = { name: ScreenshotName; alt: string };
 
