@@ -3,15 +3,15 @@ import { Photopipe } from "@photopipe/ui/components/photopipe-mark";
 import { PhotopipeWordmark } from "@photopipe/ui/components/photopipe-wordmark";
 import { APP_STORE, REPO } from "@/lib/release";
 
-const LINKS = [
-  { label: "Develop", href: "/#develop" },
-  { label: "Instinct", href: "/#instinct" },
-  { label: "Export", href: "/#everything-else" },
-  { label: "FAQ", href: "/#faq" },
-  { label: "GitHub", href: REPO },
-];
+export function SiteNav({ faqHref = "/#faq" }: { faqHref?: string }) {
+  const links = [
+    { label: "Develop", href: "/#develop" },
+    { label: "Instinct", href: "/#instinct" },
+    { label: "Export", href: "/#everything-else" },
+    { label: "FAQ", href: faqHref },
+    { label: "GitHub", href: REPO },
+  ];
 
-export function SiteNav() {
   return (
     <header className="sticky top-0 z-50 border-border/60 border-b bg-background/80 backdrop-blur-xl">
       <nav className="mx-auto flex h-16 w-full max-w-6xl items-center gap-3 px-6">
@@ -25,7 +25,7 @@ export function SiteNav() {
         </a>
         <div className="flex-1" />
         <div className="hidden items-center gap-1 md:flex">
-          {LINKS.map((link) => (
+          {links.map((link) => (
             <Button key={link.label} asChild variant="ghost" size="sm">
               <a href={link.href}>{link.label}</a>
             </Button>

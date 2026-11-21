@@ -58,10 +58,9 @@ export function StructuredData({
     },
     author: { "@id": maker["@id"] },
     image: `${SITE_URL}/og-dark.png`,
-    screenshot: [
-      `${SITE_URL}/screenshots/hero.jpg`,
-      `${SITE_URL}/screenshots/develop.jpg`,
-    ],
+    screenshot: ["hero", "cull", "instinct", "develop", "export"].map(
+      (name) => `${SITE_URL}/screenshots/${name}.jpg`,
+    ),
     downloadUrl: href,
     installUrl: APP_STORE,
     sameAs: [REPO, APP_STORE],

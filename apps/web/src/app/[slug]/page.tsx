@@ -58,7 +58,7 @@ export default async function IntentPage(props: Props) {
         mentions={{ name: page.rival, url: page.rivalUrl }}
         faq={page.faq}
       />
-      <SiteNav />
+      <SiteNav faqHref="#faq" />
       <main>
         <Hero
           href={href}
@@ -72,7 +72,9 @@ export default async function IntentPage(props: Props) {
         <div id="workflow">
           <WorkflowSection workflow={page.workflow} />
         </div>
-        <FaqSection title={page.faqTitle} items={page.faq} />
+        <div id="faq">
+          <FaqSection title={page.faqTitle} items={page.faq} />
+        </div>
       </main>
       <CloseSection href={href} brew={false} version={version} />
       <SiteFooter />

@@ -165,6 +165,11 @@ export function ComparisonSection({ page }: { page: IntentPage }) {
       <p className="mt-8 text-muted-foreground">
         {page.related.lead}{" "}
         <TextLink href={`/${page.related.slug}`}>{page.related.label}</TextLink>
+        . Or see{" "}
+        <TextLink href="/#develop">
+          everything Photopipe does, with screenshots
+        </TextLink>
+        .
       </p>
     </Section>
   );

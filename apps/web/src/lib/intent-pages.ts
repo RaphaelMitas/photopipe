@@ -59,6 +59,12 @@ export const INTENT_PAGES: IntentPage[] = [
         rival: "Import into a catalogue",
       },
       {
+        feature: "Raw files",
+        photopipe:
+          "Every camera your Mac or iPad can decode, such as Sony ARW, Canon CR3, Nikon NEF, Fujifilm RAF and DNG. A new camera opens once an Apple update adds it",
+        rival: "Adobe's own raw support, updated for new cameras",
+      },
+      {
         feature: "Where your work is stored",
         photopipe: "XMP beside or inside each file",
         rival: "In the catalogue, written to XMP when you ask",
@@ -180,7 +186,7 @@ export const INTENT_PAGES: IntentPage[] = [
       {
         question: "Is Lightroom free, or can I buy it once?",
         answer:
-          "Lightroom on a phone is free to download with basic editing. On a computer, Lightroom and Lightroom Classic come with a paid Adobe plan after a free trial, and Adobe has sold no one-time licence since Lightroom 6. Photopipe is free on Mac and iPad with every feature, no trial and no account.",
+          "Lightroom on a phone is free to download with basic editing. On a computer, Lightroom and Lightroom Classic come with a paid Adobe plan after a free trial, and Adobe has sold no one-time licence since Lightroom 6. Photopipe is free with every feature, no trial and no account, on as many Macs and iPads as you like.",
       },
       {
         question: "Does Photopipe run on iPad or iPhone?",
@@ -335,7 +341,7 @@ export const INTENT_PAGES: IntentPage[] = [
     title: "Free AI photo culling software for Mac",
     description:
       "Free AI photo culling software for Mac and iPad: on-device scoring with no photo limit, no account and a raw editor built in.",
-    headline: "Free culling, with the AI on your Mac.",
+    headline: "Cull a shoot with the AI on your Mac.",
     lede: "Photopipe is a free photo culling app that scores every frame on your Mac and sorts the stronger ones first. There is no photo limit, no project limit and no account, and you edit and export the keepers in the same app.",
     screenshot: {
       name: "instinct",

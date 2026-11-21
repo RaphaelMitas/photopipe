@@ -11,7 +11,7 @@ export function WorkflowSection({
 }) {
   return (
     <Section eyebrow="How it goes" title={workflow.title}>
-      <div className="mt-12">
+      <div className="mt-16">
         <Screenshot
           {...workflow.screenshot}
           sizes="(min-width: 1152px) 1104px, 100vw"
