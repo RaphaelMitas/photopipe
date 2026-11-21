@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Montserrat } from "next/font/google";
 import "./globals.css";
-import { DESCRIPTION, SITE_URL } from "@/lib/site";
+import { DESCRIPTION, SITE_URL, socialMetadata, TITLE } from "@/lib/site";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -19,12 +19,10 @@ export const viewport: Viewport = {
   themeColor: "#16181D",
 };
 
-const title = "Photopipe: free raw photo editor and culling app for Mac";
-
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: title,
+    default: TITLE,
     template: "%s — Photopipe",
   },
   description: DESCRIPTION,
@@ -40,20 +38,7 @@ export const metadata: Metadata = {
     ],
     apple: "/apple-touch-icon.png",
   },
-  openGraph: {
-    title,
-    description: DESCRIPTION,
-    url: SITE_URL,
-    siteName: "Photopipe",
-    type: "website",
-    images: [{ url: "/og-dark.png", width: 1200, height: 630 }],
-  },
-  twitter: {
-    card: "summary_large_image",
-    title,
-    description: DESCRIPTION,
-    images: ["/og-dark.png"],
-  },
+  ...socialMetadata(SITE_URL),
 };
 
 export default function RootLayout({

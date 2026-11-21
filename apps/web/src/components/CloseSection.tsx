@@ -1,6 +1,4 @@
-import { AppStoreBadge } from "@/components/AppStoreBadge";
-import { BrewCommand } from "@/components/BrewCommand";
-import { DownloadButton } from "@/components/DownloadButton";
+import { InstallOptions } from "@/components/InstallOptions";
 
 const FACTS = [
   "macOS 15 (Sequoia) or later",
@@ -11,9 +9,11 @@ const FACTS = [
 
 export function CloseSection({
   href,
+  brew,
   version,
 }: {
   href: string;
+  brew?: boolean;
   version: string | null;
 }) {
   return (
@@ -29,13 +29,7 @@ export function CloseSection({
         <p className="mt-4 text-lg text-muted-foreground">
           Free and open source{version ? `, version ${version}` : ""}.
         </p>
-        <div className="mt-9 flex flex-col flex-wrap items-center justify-center gap-3 sm:flex-row">
-          <AppStoreBadge />
-          <DownloadButton href={href} variant="outline">
-            Download DMG
-          </DownloadButton>
-          <BrewCommand />
-        </div>
+        <InstallOptions href={href} brew={brew} />
         <div className="mt-8 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-muted-foreground text-sm">
           {FACTS.map((fact) => (
             <span key={fact}>{fact}</span>

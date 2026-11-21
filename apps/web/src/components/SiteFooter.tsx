@@ -1,6 +1,7 @@
 import { Button } from "@photopipe/ui/components/button";
 import { Photopipe } from "@photopipe/ui/components/photopipe-mark";
 import { PhotopipeWordmark } from "@photopipe/ui/components/photopipe-wordmark";
+import { INTENT_PAGES } from "@/lib/intent-pages";
 import { APP_STORE, REPO } from "@/lib/release";
 
 const LINKS = [
@@ -28,6 +29,23 @@ export function SiteFooter() {
           ))}
         </div>
       </div>
+      <nav
+        aria-label="Comparisons"
+        className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-center gap-x-6 gap-y-2 px-6 pb-10 text-muted-foreground text-sm sm:justify-start"
+      >
+        <span className="w-full text-center font-medium text-xs uppercase tracking-[0.14em] sm:w-auto sm:text-left">
+          Compare
+        </span>
+        {INTENT_PAGES.map((page) => (
+          <a
+            key={page.slug}
+            href={`/${page.slug}`}
+            className="hover:text-foreground"
+          >
+            {page.title}
+          </a>
+        ))}
+      </nav>
     </footer>
   );
 }

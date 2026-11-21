@@ -1,9 +1,16 @@
-import { AppStoreBadge } from "@/components/AppStoreBadge";
-import { BrewCommand } from "@/components/BrewCommand";
-import { DownloadButton } from "@/components/DownloadButton";
-import { Screenshot } from "@/components/Screenshot";
+import { InstallOptions } from "@/components/InstallOptions";
+import { Screenshot, type ScreenshotImage } from "@/components/Screenshot";
 
-export function Hero({ href }: { href: string }) {
+type Props = {
+  href: string;
+  brew?: boolean;
+  eyebrow: string;
+  title: React.ReactNode;
+  lede: string;
+  screenshot: ScreenshotImage;
+};
+
+export function Hero({ href, brew, eyebrow, title, lede, screenshot }: Props) {
   return (
     <section className="relative overflow-hidden">
       <div
@@ -13,24 +20,15 @@ export function Hero({ href }: { href: string }) {
       <div className="relative mx-auto w-full max-w-6xl px-6 pt-20 pb-12 text-center md:pt-28">
         <h1 className="mx-auto max-w-4xl text-balance font-heading text-5xl leading-[1.05] tracking-tight md:text-7xl">
           <span className="mb-5 block font-medium font-sans text-primary text-sm uppercase tracking-[0.14em]">
-            Free raw photo editor for Mac
+            {eyebrow}
+            <span className="sr-only">.</span>
           </span>{" "}
-          From 2000 raws to the ones you&rsquo;ll{" "}
-          <span className="text-primary">send</span>.
+          {title}
         </h1>
         <p className="mx-auto mt-7 max-w-2xl text-balance text-lg text-muted-foreground leading-relaxed md:text-xl">
-          Cull, develop and export your raws in one free Mac app. Tone, colour,
-          curves, Neural Engine denoise and crop run through Apple&rsquo;s raw
-          pipeline, and on-device AI ranks the shoot before you start. No
-          catalogue, no import, no account.
+          {lede}
         </p>
-        <div className="mt-9 flex flex-col flex-wrap items-center justify-center gap-3 sm:flex-row">
-          <AppStoreBadge />
-          <DownloadButton href={href} variant="outline">
-            Download DMG
-          </DownloadButton>
-          <BrewCommand />
-        </div>
+        <InstallOptions href={href} brew={brew} />
         <p className="mt-6 text-muted-foreground text-sm">
           Free and open source (MIT) · macOS 15 or later · Apple Silicon · your
           photos never leave your Mac
@@ -38,9 +36,8 @@ export function Hero({ href }: { href: string }) {
       </div>
       <div className="relative mx-auto w-full max-w-7xl px-6 pb-8">
         <Screenshot
-          name="hero"
-          alt="Photopipe on a Mac: a five-star raw open in the loupe, the edit panel beside it"
-          sizes="(min-width: 1536px) 1440px, 100vw"
+          {...screenshot}
+          sizes="(min-width: 1280px) 1232px, calc(100vw - 48px)"
           preload
         />
       </div>
