@@ -55,12 +55,14 @@ export default async function IntentPage(props: Props) {
         title={page.title}
         image={page.screenshot.name}
         updated={page.updated}
+        mentions={{ name: page.rival, url: page.rivalUrl }}
         faq={page.faq}
       />
       <SiteNav />
       <main>
         <Hero
           href={href}
+          brew={false}
           eyebrow={page.title}
           title={page.headline}
           lede={page.lede}
@@ -72,7 +74,7 @@ export default async function IntentPage(props: Props) {
         </div>
         <FaqSection title={page.faqTitle} items={page.faq} />
       </main>
-      <CloseSection href={href} version={version} />
+      <CloseSection href={href} brew={false} version={version} />
       <SiteFooter />
     </>
   );

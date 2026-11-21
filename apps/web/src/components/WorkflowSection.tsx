@@ -1,4 +1,5 @@
 import { Card, CardContent } from "@photopipe/ui/components/card";
+import { Screenshot } from "@/components/Screenshot";
 import { Section } from "@/components/Section";
 import { TextLink } from "@/components/TextLink";
 import type { IntentPage } from "@/lib/intent-pages";
@@ -10,7 +11,13 @@ export function WorkflowSection({
 }) {
   return (
     <Section eyebrow="How it goes" title={workflow.title}>
-      <ol className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-12">
+        <Screenshot
+          {...workflow.screenshot}
+          sizes="(min-width: 1152px) 1104px, 100vw"
+        />
+      </div>
+      <ol className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {workflow.steps.map((step, index) => (
           <li key={step.title}>
             <Card className="h-full">

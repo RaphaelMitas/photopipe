@@ -5,6 +5,7 @@ export type IntentPage = {
   slug: string;
   updated: string;
   rival: string;
+  rivalUrl: string;
   whyThisRival: string;
   title: string;
   description: string;
@@ -14,7 +15,11 @@ export type IntentPage = {
   comparison: { feature: string; photopipe: string; rival: string }[];
   pick: { photopipe: string[]; rival: string[]; keepingRival: string };
   related: { lead: string; label: string; slug: string };
-  workflow: { title: string; steps: { title: string; body: string }[] };
+  workflow: {
+    title: string;
+    screenshot: { name: ScreenshotName; alt: string };
+    steps: { title: string; body: string }[];
+  };
   faqTitle: string;
   faq: FaqItem[];
 };
@@ -24,13 +29,14 @@ export const INTENT_PAGES: IntentPage[] = [
     slug: "lightroom-alternative",
     updated: "2026-11-21",
     rival: "Lightroom Classic",
+    rivalUrl: "https://www.adobe.com/products/photoshop-lightroom-classic.html",
     whyThisRival:
-      "Lightroom Classic is the raw editor most photographers measure the others against.",
+      "Lightroom Classic is the raw editor most photographers measure the others against. This page compares with Classic, the desktop app that works on folders, not with the cloud-based Lightroom.",
     title: "Free Lightroom alternative for Mac",
     description:
       "A free Lightroom alternative for Mac and iPad: open source raw editing and culling, no subscription, no catalogue, and XMP edits Lightroom reads.",
     headline: "Cull and edit a shoot without the subscription.",
-    lede: "A free raw editor and culling app for Mac with no catalogue and no subscription. Ratings and edits save as XMP that Lightroom reads, so you can try it on a real shoot and still finish there.",
+    lede: "Photopipe is a free, open source raw editor and culling app for Mac, with no catalogue and no subscription. Ratings and edits save as XMP that Lightroom Classic reads, so you can try it on a real shoot and still finish there.",
     screenshot: {
       name: "develop",
       alt: "Photopipe's edit panel beside a blue hour raw, with the photo before and after the edit",
@@ -39,12 +45,13 @@ export const INTENT_PAGES: IntentPage[] = [
       {
         feature: "Price",
         photopipe: "Free and open source (MIT)",
-        rival: "Adobe subscription",
+        rival: "Adobe subscription, after a free trial",
       },
       {
         feature: "Runs on",
         photopipe: "Apple Silicon Mac and iPad",
-        rival: "Mac and Windows",
+        rival:
+          "Mac and Windows. The plan adds the cloud-based Lightroom for phone, tablet and web",
       },
       {
         feature: "Getting photos in",
@@ -59,7 +66,8 @@ export const INTENT_PAGES: IntentPage[] = [
       {
         feature: "AI culling",
         photopipe: "Instinct, its on-device AI, scores every frame 0 to 100",
-        rival: "Assisted Culling checks focus, eyes and similar frames",
+        rival:
+          "Assisted Culling scores sharpness, focus and open eyes, and you make the final selects",
       },
       {
         feature: "Tone, colour and curves",
@@ -72,6 +80,11 @@ export const INTENT_PAGES: IntentPage[] = [
         photopipe:
           "Subject, people, background or a clicked object, on macOS 27",
         rival: "Those, plus brushes, gradients and range masks",
+      },
+      {
+        feature: "Removing spots and objects",
+        photopipe: "No",
+        rival: "Remove tool for spots, objects and distractions",
       },
       {
         feature: "Presets and lens corrections",
@@ -115,6 +128,10 @@ export const INTENT_PAGES: IntentPage[] = [
     },
     workflow: {
       title: "From card to Lightroom in four steps.",
+      screenshot: {
+        name: "instinct",
+        alt: "A shoot in Photopipe sorted by Instinct, its on-device AI score, with the strongest frames at the top",
+      },
       steps: [
         {
           title: "Open the folder",
@@ -142,9 +159,9 @@ export const INTENT_PAGES: IntentPage[] = [
           "Yes. Photopipe writes star ratings and edits as XMP, with the edits in the same fields Lightroom uses, so Lightroom Classic reads them from the file. Cull and do a first edit in Photopipe, then open the keepers in Lightroom for the work Photopipe does not do. Masks are the exception: Lightroom does not see a mask made in Photopipe.",
       },
       {
-        question: "Do I have to import my photos first?",
+        question: "What happens to my Lightroom catalogue?",
         answer:
-          "No. Photopipe has no catalogue. Point it at a folder and it shows what is there, and when you move a file in Finder it moves in the app.",
+          "Nothing. Photopipe has no catalogue and never opens yours. Point it at the folder your raws are in and it shows what is there, with no import. For a folder Lightroom Classic already knows, choose Metadata, then Read Metadata from Files after culling. That replaces what the catalogue held for those photos with the stars and edits from Photopipe.",
       },
       {
         question: "What does Lightroom do that Photopipe does not?",
@@ -160,18 +177,29 @@ export const INTENT_PAGES: IntentPage[] = [
         answer:
           "darktable and RawTherapee are free and open source, run on Windows, Linux and Mac, and have deeper editing tools than Photopipe. Photopipe is narrower and built for one job: open a folder, cull it from the keyboard with an AI first sort, and edit the keepers in a native Mac and iPad app. It is free for paid work too, with no paid tier and no account, and its edits are written in the fields Lightroom reads.",
       },
+      {
+        question: "Is Lightroom free, or can I buy it once?",
+        answer:
+          "Lightroom on a phone is free to download with basic editing. On a computer, Lightroom and Lightroom Classic come with a paid Adobe plan after a free trial, and Adobe has sold no one-time licence since Lightroom 6. Photopipe is free on Mac and iPad with every feature, no trial and no account.",
+      },
+      {
+        question: "Does Photopipe run on iPad or iPhone?",
+        answer:
+          "On iPad, yes. The same App Store listing installs it on iPadOS 18 or later. There is no iPhone, Windows or Intel Mac version.",
+      },
     ],
   },
   {
     slug: "photo-mechanic-alternative",
     updated: "2026-11-21",
     rival: "Photo Mechanic",
+    rivalUrl: "https://home.camerabits.com/",
     whyThisRival: "Photo Mechanic is the benchmark for culling a card fast.",
     title: "Free Photo Mechanic alternative for Mac",
     description:
       "A free Photo Mechanic alternative for Mac and iPad: cull raws from the keyboard, let on-device AI sort the shoot, then edit the keepers in the same app.",
     headline: "Cull the shoot, then edit it in the same app.",
-    lede: "A keyboard-driven culling app with a raw editor in the same view. Rate with 1 to 5, flag with P and X, and develop the keepers without leaving the app. It is free, and Photo Mechanic reads the stars it writes.",
+    lede: "Photopipe is a free, keyboard-driven culling app with a raw editor in the same view. Rate with 1 to 5, flag with P and X, and develop the keepers without leaving the app. Photo Mechanic reads the stars it writes.",
     screenshot: {
       name: "cull",
       alt: "Culling a shoot in Photopipe: 34 keepers selected out of 146 frames",
@@ -246,6 +274,10 @@ export const INTENT_PAGES: IntentPage[] = [
     },
     workflow: {
       title: "A shoot in Photopipe, start to finish.",
+      screenshot: {
+        name: "develop",
+        alt: "Editing a raw in Photopipe: the photo before and after, beside the edit panel",
+      },
       steps: [
         {
           title: "Open the folder",
@@ -297,13 +329,14 @@ export const INTENT_PAGES: IntentPage[] = [
     slug: "free-photo-culling-software",
     updated: "2026-11-21",
     rival: "Aftershoot",
+    rivalUrl: "https://aftershoot.com/",
     whyThisRival:
       "Aftershoot is one of the best-known AI cullers, so it is the yardstick here.",
     title: "Free AI photo culling software for Mac",
     description:
       "Free AI photo culling software for Mac and iPad: on-device scoring with no photo limit, no account and a raw editor built in.",
     headline: "Free culling, with the AI on your Mac.",
-    lede: "A free photo culling app that scores every frame on your Mac and sorts the stronger ones first. There is no photo limit, no project limit and no account, and you edit and export the keepers in the same app.",
+    lede: "Photopipe is a free photo culling app that scores every frame on your Mac and sorts the stronger ones first. There is no photo limit, no project limit and no account, and you edit and export the keepers in the same app.",
     screenshot: {
       name: "instinct",
       alt: "The Photopipe grid sorted by its on-device AI score, the strongest frames first",
@@ -367,6 +400,10 @@ export const INTENT_PAGES: IntentPage[] = [
     },
     workflow: {
       title: "Cull a shoot in four steps.",
+      screenshot: {
+        name: "cull",
+        alt: "34 keepers selected out of 146 frames in the Photopipe grid",
+      },
       steps: [
         {
           title: "Open the folder",
@@ -391,7 +428,7 @@ export const INTENT_PAGES: IntentPage[] = [
       {
         question: "How good is the AI?",
         answer:
-          "Instinct is a first sort, not a judge. It uses Apple's Vision aesthetics model to give each frame one score, and sorting by it brings the stronger frames to the top. It does not check for closed eyes or missed focus, and inside a burst it does not choose the frame for you. Aftershoot, Narrative Select and FilterPixel do that work, on paid plans or on free plans with limits.",
+          "Instinct is a first sort, not a judge. It uses Apple's Vision aesthetics model to give each frame one score, and sorting by it brings the stronger frames to the top. It does not check for closed eyes or missed focus, and inside a burst it does not choose the frame for you. Aftershoot, Narrative Select, FilterPixel and Lightroom's Assisted Culling do that work, on paid plans or on free plans with limits.",
       },
       {
         question: "How is Photopipe different from other free culling apps?",

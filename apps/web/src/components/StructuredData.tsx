@@ -10,6 +10,7 @@ export function StructuredData({
   title,
   image,
   updated,
+  mentions,
   faq,
 }: {
   version: string | null;
@@ -18,13 +19,22 @@ export function StructuredData({
   title: string;
   image: ScreenshotName;
   updated?: string;
+  mentions?: { name: string; url: string };
   faq: FaqItem[];
 }) {
+  const maker = {
+    "@type": "Person",
+    "@id": "https://raphaelmitas.com/#person",
+    name: "Raphael Mitas",
+    url: "https://raphaelmitas.com",
+    sameAs: ["https://github.com/RaphaelMitas"],
+  };
   const site = {
     "@type": "WebSite",
     "@id": `${SITE_URL}/#site`,
     url: SITE_URL,
     name: "Photopipe",
+    publisher: { "@id": maker["@id"] },
   };
   const app = {
     "@type": "SoftwareApplication",
@@ -39,12 +49,14 @@ export function StructuredData({
     softwareVersion: version ?? undefined,
     license: `${REPO}/blob/main/LICENSE`,
     isAccessibleForFree: true,
-    offers: { "@type": "Offer", price: 0, priceCurrency: "USD" },
-    author: {
-      "@type": "Person",
-      name: "Raphael Mitas",
-      url: "https://raphaelmitas.com",
+    offers: {
+      "@type": "Offer",
+      price: 0,
+      priceCurrency: "USD",
+      availability: "https://schema.org/InStock",
+      url: APP_STORE,
     },
+    author: { "@id": maker["@id"] },
     image: `${SITE_URL}/og-dark.png`,
     screenshot: [
       `${SITE_URL}/screenshots/hero.jpg`,
@@ -63,6 +75,12 @@ export function StructuredData({
     primaryImageOfPage: `${SITE_URL}/screenshots/${image}.jpg`,
     isPartOf: { "@id": site["@id"] },
     about: { "@id": app["@id"] },
+    author: { "@id": maker["@id"] },
+    mentions: mentions && {
+      "@type": "SoftwareApplication",
+      name: mentions.name,
+      sameAs: mentions.url,
+    },
     mainEntity: faq.map((item) => ({
       "@type": "Question",
       name: item.question,
@@ -71,7 +89,7 @@ export function StructuredData({
   };
   const data = {
     "@context": "https://schema.org",
-    "@graph": [site, app, faqPage],
+    "@graph": [maker, site, app, faqPage],
   };
 
   return (

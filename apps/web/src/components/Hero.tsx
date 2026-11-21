@@ -1,17 +1,16 @@
-import { AppStoreBadge } from "@/components/AppStoreBadge";
-import { BrewCommand } from "@/components/BrewCommand";
-import { DownloadButton } from "@/components/DownloadButton";
+import { InstallOptions } from "@/components/InstallOptions";
 import { Screenshot, type ScreenshotName } from "@/components/Screenshot";
 
 type Props = {
   href: string;
+  brew?: boolean;
   eyebrow: string;
   title: React.ReactNode;
   lede: string;
   screenshot: { name: ScreenshotName; alt: string };
 };
 
-export function Hero({ href, eyebrow, title, lede, screenshot }: Props) {
+export function Hero({ href, brew, eyebrow, title, lede, screenshot }: Props) {
   return (
     <section className="relative overflow-hidden">
       <div
@@ -29,13 +28,7 @@ export function Hero({ href, eyebrow, title, lede, screenshot }: Props) {
         <p className="mx-auto mt-7 max-w-2xl text-balance text-lg text-muted-foreground leading-relaxed md:text-xl">
           {lede}
         </p>
-        <div className="mt-9 flex flex-col flex-wrap items-center justify-center gap-3 sm:flex-row">
-          <AppStoreBadge />
-          <DownloadButton href={href} variant="outline">
-            Download DMG
-          </DownloadButton>
-          <BrewCommand />
-        </div>
+        <InstallOptions href={href} brew={brew} />
         <p className="mt-6 text-muted-foreground text-sm">
           Free and open source (MIT) · macOS 15 or later · Apple Silicon · your
           photos never leave your Mac
