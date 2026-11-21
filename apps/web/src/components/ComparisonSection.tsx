@@ -43,7 +43,7 @@ function PickCard({
       <CardContent>
         <ul
           className={cn(
-            "flex list-disc flex-col gap-2.5 pl-5 text-base text-muted-foreground leading-relaxed",
+            "flex list-disc flex-col gap-2.5 text-pretty pl-5 text-base text-muted-foreground leading-relaxed",
             accent && "marker:text-primary",
           )}
         >
@@ -146,13 +146,13 @@ export function ComparisonSection({ page }: { page: IntentPage }) {
                   >
                     {row.feature}
                   </th>
-                  <td className="w-1/2 pt-1 pr-3 pb-3 pl-6 align-top md:w-auto md:bg-primary/[0.03] md:px-6 md:py-4">
+                  <td className="w-1/2 text-pretty pt-1 pr-3 pb-3 pl-6 align-top md:w-auto md:bg-primary/[0.03] md:px-6 md:py-4">
                     <ColumnLabel className="text-primary">
                       Photopipe
                     </ColumnLabel>
                     {row.photopipe}
                   </td>
-                  <td className="w-1/2 pt-1 pr-6 pb-3 pl-3 align-top text-muted-foreground md:w-auto md:px-6 md:py-4">
+                  <td className="w-1/2 text-pretty pt-1 pr-6 pb-3 pl-3 align-top text-muted-foreground md:w-auto md:px-6 md:py-4">
                     <ColumnLabel>{page.rival}</ColumnLabel>
                     {row.rival}
                   </td>

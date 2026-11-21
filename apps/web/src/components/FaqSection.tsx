@@ -15,7 +15,7 @@ export function FaqSection({
         {items.map((item) => (
           <div key={item.question}>
             <h3 className="font-medium text-lg">{item.question}</h3>
-            <p className="mt-2 text-muted-foreground leading-relaxed">
+            <p className="mt-2 text-pretty text-muted-foreground leading-relaxed">
               {item.answer}
             </p>
             {item.link ? (

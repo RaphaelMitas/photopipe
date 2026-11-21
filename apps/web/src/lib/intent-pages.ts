@@ -28,7 +28,7 @@ export const INTENT_PAGES: IntentPage[] = [
       "Lightroom Classic is the raw editor most photographers measure the others against.",
     title: "Free Lightroom alternative for Mac",
     description:
-      "A free Lightroom alternative for Mac and iPad: open source raw editing and culling with no subscription or catalogue. Edits save as XMP that Lightroom reads.",
+      "A free Lightroom alternative for Mac and iPad: open source raw editing and culling, no subscription, no catalogue, and XMP edits Lightroom reads.",
     headline: "Cull and edit a shoot without the subscription.",
     lede: "A free raw editor and culling app for Mac with no catalogue and no subscription. Ratings and edits save as XMP that Lightroom reads, so you can try it on a real shoot and still finish there.",
     screenshot: {
@@ -40,6 +40,11 @@ export const INTENT_PAGES: IntentPage[] = [
         feature: "Price",
         photopipe: "Free and open source (MIT)",
         rival: "Adobe subscription",
+      },
+      {
+        feature: "Runs on",
+        photopipe: "Apple Silicon Mac and iPad",
+        rival: "Mac and Windows",
       },
       {
         feature: "Getting photos in",
@@ -84,11 +89,6 @@ export const INTENT_PAGES: IntentPage[] = [
         rival: "JPEG, TIFF, DNG and PSD, print and publish services",
       },
       {
-        feature: "Runs on",
-        photopipe: "Apple Silicon Mac and iPad",
-        rival: "Mac and Windows",
-      },
-      {
         feature: "Account",
         photopipe: "None, and no telemetry",
         rival: "Adobe account",
@@ -125,7 +125,7 @@ export const INTENT_PAGES: IntentPage[] = [
           body: "A background pass scores every frame from 0 to 100 on your Mac. Sort by it and the stronger frames come first.",
         },
         {
-          title: "Rate and rough in the edit",
+          title: "Rate, then a first edit",
           body: "Stars on 1 to 5 in a full-screen view, then exposure, white balance and curves on the keepers. Every decision is written as XMP beside the raw.",
         },
         {
@@ -139,7 +139,7 @@ export const INTENT_PAGES: IntentPage[] = [
       {
         question: "Can I use Photopipe and Lightroom together?",
         answer:
-          "Yes. Photopipe writes star ratings and edits as XMP, with the edits in the same fields Lightroom uses, so Lightroom Classic reads them from the file. Cull and rough in the edit in Photopipe, then open the keepers in Lightroom for the work Photopipe does not do. Masks are the exception: Lightroom does not see a mask made in Photopipe.",
+          "Yes. Photopipe writes star ratings and edits as XMP, with the edits in the same fields Lightroom uses, so Lightroom Classic reads them from the file. Cull and do a first edit in Photopipe, then open the keepers in Lightroom for the work Photopipe does not do. Masks are the exception: Lightroom does not see a mask made in Photopipe.",
       },
       {
         question: "Do I have to import my photos first?",
@@ -169,7 +169,7 @@ export const INTENT_PAGES: IntentPage[] = [
     whyThisRival: "Photo Mechanic is the benchmark for culling a card fast.",
     title: "Free Photo Mechanic alternative for Mac",
     description:
-      "A free Photo Mechanic alternative for Mac and iPad: rate from the keyboard, let on-device AI sort the shoot, then edit the raws in the same app.",
+      "A free Photo Mechanic alternative for Mac and iPad: cull raws from the keyboard, let on-device AI sort the shoot, then edit the keepers in the same app.",
     headline: "Cull the shoot, then edit it in the same app.",
     lede: "A keyboard-driven culling app with a raw editor in the same view. Rate with 1 to 5, flag with P and X, and develop the keepers without leaving the app. It is free, and Photo Mechanic reads the stars it writes.",
     screenshot: {
@@ -181,6 +181,11 @@ export const INTENT_PAGES: IntentPage[] = [
         feature: "Price",
         photopipe: "Free and open source (MIT)",
         rival: "Paid, by subscription or one-time licence",
+      },
+      {
+        feature: "Runs on",
+        photopipe: "Apple Silicon Mac and iPad",
+        rival: "Mac and Windows",
       },
       {
         feature: "Browsing speed",
@@ -218,11 +223,6 @@ export const INTENT_PAGES: IntentPage[] = [
         feature: "Delivery",
         photopipe: "Originals or full-resolution JPEG, to a folder or a zip",
         rival: "FTP and upload services",
-      },
-      {
-        feature: "Runs on",
-        photopipe: "Apple Silicon Mac and iPad",
-        rival: "Mac and Windows",
       },
     ],
     pick: {
@@ -315,6 +315,11 @@ export const INTENT_PAGES: IntentPage[] = [
         rival: "Subscription, after a free trial",
       },
       {
+        feature: "Runs on",
+        photopipe: "Apple Silicon Mac and iPad",
+        rival: "Mac and Windows",
+      },
+      {
         feature: "What the AI does",
         photopipe: "One score per frame, 0 to 100, to sort by",
         rival: "Groups duplicates, checks eyes and focus, makes the selection",
@@ -339,11 +344,6 @@ export const INTENT_PAGES: IntentPage[] = [
         feature: "Editing",
         photopipe: "Raw editor built in",
         rival: "AI editing as a separate plan, or a hand-off to Lightroom",
-      },
-      {
-        feature: "Runs on",
-        photopipe: "Apple Silicon Mac and iPad",
-        rival: "Mac and Windows",
       },
     ],
     pick: {
@@ -370,7 +370,7 @@ export const INTENT_PAGES: IntentPage[] = [
       steps: [
         {
           title: "Open the folder",
-          body: "Scoring starts in the background as soon as the shoot is open, with no upload and no account. Already culled in Aftershoot? Open that folder and go straight to step 4.",
+          body: "Scoring starts in the background as soon as the shoot is open, with no upload and no account.",
         },
         {
           title: "Sort by Instinct",
@@ -382,7 +382,7 @@ export const INTENT_PAGES: IntentPage[] = [
         },
         {
           title: "Edit and export the keepers",
-          body: "Develop them in the same app and export full-resolution JPEGs, or leave the stars in XMP for Lightroom.",
+          body: "Develop them in the same app and export full-resolution JPEGs. Already culled in Aftershoot? Open that folder and start here.",
         },
       ],
     },

@@ -24,7 +24,7 @@ export function WorkflowSection({
                 <h3 className="mt-3 text-balance font-medium text-lg lg:min-h-14">
                   {step.title}
                 </h3>
-                <p className="mt-2 text-base text-muted-foreground leading-relaxed">
+                <p className="mt-2 text-pretty text-base text-muted-foreground leading-relaxed">
                   {step.body}
                 </p>
               </CardContent>
@@ -32,7 +32,7 @@ export function WorkflowSection({
           </li>
         ))}
       </ol>
-      <p className="mt-8 max-w-3xl text-muted-foreground leading-relaxed">
+      <p className="mt-8 max-w-2xl text-pretty text-muted-foreground leading-relaxed">
         Photopipe is built by{" "}
         <TextLink href="https://raphaelmitas.com">Raphael Mitas</TextLink>, a
         hobby event photographer, for his own dance shoots of 2000 to 3000 raws

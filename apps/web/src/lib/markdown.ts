@@ -43,6 +43,7 @@ function comparison(page: IntentPage) {
   return `## ${page.title}
 
 URL: ${SITE_URL}/${page.slug}
+Updated: ${page.updated}
 
 ${page.lede}
 
@@ -80,7 +81,7 @@ ${faq()}
 
 ## Docs
 
-- [Full page as Markdown](${SITE_URL}/llms-full.txt): every feature, in one file
+- [Full site as Markdown](${SITE_URL}/llms-full.txt): every feature and the comparison pages, in one file
 ${INTENT_PAGES.map((page) => `- [${page.title}](${SITE_URL}/${page.slug}): ${page.description}`).join("\n")}
 - [Privacy](${SITE_URL}/privacy): no account, no telemetry, no uploads
 - [Source code](${REPO}): MIT licence
