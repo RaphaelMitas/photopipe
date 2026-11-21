@@ -54,6 +54,11 @@ export const INTENT_PAGES: IntentPage[] = [
           "Mac and Windows. The plan adds the cloud-based Lightroom for phone, tablet and web",
       },
       {
+        feature: "Account",
+        photopipe: "None, and no telemetry",
+        rival: "Adobe account",
+      },
+      {
         feature: "Getting photos in",
         photopipe: "Open a folder. No import, no catalogue",
         rival: "Import into a catalogue",
@@ -61,12 +66,13 @@ export const INTENT_PAGES: IntentPage[] = [
       {
         feature: "Raw files",
         photopipe:
-          "Every camera your Mac or iPad can decode, such as Sony ARW, Canon CR3, Nikon NEF, Fujifilm RAF and DNG. A new camera opens once an Apple update adds it",
+          "Whatever your Mac or iPad can decode: Sony ARW, Canon CR3, Nikon NEF, Fujifilm RAF, DNG and more. New cameras arrive with Apple updates",
         rival: "Adobe's own raw support, updated for new cameras",
       },
       {
         feature: "Where your work is stored",
-        photopipe: "XMP beside or inside each file",
+        photopipe:
+          "An XMP sidecar beside each raw, which leaves the raw untouched. Inside the file for DNG, JPEG and PNG",
         rival: "In the catalogue, written to XMP when you ask",
       },
       {
@@ -107,11 +113,6 @@ export const INTENT_PAGES: IntentPage[] = [
         photopipe: "Originals or full-resolution JPEG, to a folder or a zip",
         rival: "JPEG, TIFF, DNG and PSD, print and publish services",
       },
-      {
-        feature: "Account",
-        photopipe: "None, and no telemetry",
-        rival: "Adobe account",
-      },
     ],
     pick: {
       photopipe: [
@@ -141,7 +142,7 @@ export const INTENT_PAGES: IntentPage[] = [
       steps: [
         {
           title: "Open the folder",
-          body: "Point Photopipe at the folder the shoot is in. Nothing is imported or copied.",
+          body: "Point Photopipe at a new shoot's folder. Nothing is imported or copied.",
         },
         {
           title: "Let Instinct sort it",
@@ -167,12 +168,12 @@ export const INTENT_PAGES: IntentPage[] = [
       {
         question: "What happens to my Lightroom catalogue?",
         answer:
-          "Nothing. Photopipe has no catalogue and never opens yours. Point it at the folder your raws are in and it shows what is there, with no import. For a folder Lightroom Classic already knows, choose Metadata, then Read Metadata from Files after culling. That replaces what the catalogue held for those photos with the stars and edits from Photopipe.",
+          "Nothing. Photopipe has no catalogue and never opens yours. Point it at the folder your raws are in and it shows what is there, with no import. For a folder Lightroom Classic already knows, choose Metadata, then Read Metadata from Files after culling. That replaces what the catalogue held for those photos with the stars and edits from Photopipe. To try Photopipe without touching anything Lightroom knows, start with a new shoot you have not imported yet.",
       },
       {
         question: "What does Lightroom do that Photopipe does not?",
         answer:
-          "Brushes and gradients, HSL, presets, lens correction controls, a catalogue with keywords and collections, tethering and printing. Photopipe also has no Windows or Intel version. If your work depends on those, keep Lightroom. Because ratings and edits travel as XMP, you can still do the cull in Photopipe.",
+          "Brushes and gradients, HSL, presets, lens correction controls, AI tools such as Lens Blur and Adaptive Presets, a catalogue with keywords and collections, tethering and printing. Photopipe also has no Windows or Intel version. If your work depends on those, keep Lightroom. Because ratings and edits travel as XMP, you can still do the cull in Photopipe.",
         link: {
           href: "/free-photo-culling-software",
           label: "Free AI photo culling, compared",

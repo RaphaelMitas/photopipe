@@ -15,7 +15,7 @@ export function Section({ eyebrow, title, lede, children }: Props) {
         {title}
       </h2>
       {lede ? (
-        <p className="mt-5 max-w-3xl text-balance text-lg text-muted-foreground leading-relaxed">
+        <p className="mt-5 max-w-3xl text-pretty text-lg text-muted-foreground leading-relaxed md:text-balance">
           {lede}
         </p>
       ) : null}
