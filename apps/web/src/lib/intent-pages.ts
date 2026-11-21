@@ -174,7 +174,7 @@ export const INTENT_PAGES: IntentPage[] = [
       {
         question: "What happens to my Lightroom catalogue?",
         answer:
-          "Nothing. Photopipe has no catalogue and never opens yours. Point it at the folder your raws are in and it shows what is there, with no import. For a folder Lightroom Classic already knows, choose Metadata, then Read Metadata from Files after culling. That replaces what the catalogue held for those photos with the stars and edits from Photopipe. To try Photopipe without touching anything Lightroom knows, start with a new shoot you have not imported yet.",
+          "Nothing. Photopipe has no catalogue and never opens yours. Point it at the folder your raws are in and it shows what is there, with no import step. For a folder Lightroom Classic already knows, choose Metadata, then Read Metadata from Files after culling. That replaces what the catalogue held for those photos with the stars and edits from Photopipe. To try Photopipe without touching anything Lightroom knows, start with a new shoot you have not imported yet.",
       },
       {
         question: "What does Lightroom do that Photopipe does not?",
@@ -448,7 +448,7 @@ export const INTENT_PAGES: IntentPage[] = [
       {
         question: "How is Photopipe different from other free culling apps?",
         answer:
-          "Many free AI cullers are the free plan of a paid product, with an account and a cap on photos, projects or AI use. Free viewers such as Adobe Bridge or digiKam rate and compare but do not score frames. Photopipe is the whole app with nothing to upgrade to: on-device scoring, keyboard culling and a raw editor, under the MIT licence.",
+          "Many free AI cullers are the free plan of a paid product, with an account and a cap on photos, projects or AI use. Free viewers such as Adobe Bridge rate and compare but do not score frames. Photopipe is the whole app with nothing to upgrade to: on-device scoring, keyboard culling and a raw editor, under the MIT licence.",
       },
       {
         question: "Is there a limit on photos or projects?",

@@ -1,4 +1,8 @@
-import { SCREENSHOTS, type ScreenshotName } from "@/components/Screenshot";
+import {
+  SCREENSHOTS,
+  type ScreenshotName,
+  screenshotPath,
+} from "@/components/Screenshot";
 import type { FaqItem } from "@/lib/faq";
 import { APP_STORE, REPO } from "@/lib/release";
 import { DESCRIPTION, SITE_URL } from "@/lib/site";
@@ -58,9 +62,7 @@ export function StructuredData({
     },
     author: { "@id": maker["@id"] },
     image: `${SITE_URL}/og-dark.png`,
-    screenshot: SCREENSHOTS.map(
-      (name) => `${SITE_URL}/screenshots/${name}.jpg`,
-    ),
+    screenshot: SCREENSHOTS.map((name) => `${SITE_URL}${screenshotPath(name)}`),
     downloadUrl: href,
     installUrl: APP_STORE,
     sameAs: [REPO, APP_STORE],
@@ -71,7 +73,7 @@ export function StructuredData({
     url,
     name: title,
     dateModified: updated,
-    primaryImageOfPage: `${SITE_URL}/screenshots/${image}.jpg`,
+    primaryImageOfPage: `${SITE_URL}${screenshotPath(image)}`,
     isPartOf: { "@id": site["@id"] },
     about: { "@id": app["@id"] },
     author: { "@id": maker["@id"] },
