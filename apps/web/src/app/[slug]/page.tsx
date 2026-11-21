@@ -7,8 +7,10 @@ import { Hero } from "@/components/Hero";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteNav } from "@/components/SiteNav";
 import { StructuredData } from "@/components/StructuredData";
+import { WorkflowSection } from "@/components/WorkflowSection";
 import { INTENT_PAGES } from "@/lib/intent-pages";
 import { downloadUrl, latestVersion } from "@/lib/release";
+import { SITE_URL, socialMetadata } from "@/lib/site";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -31,12 +33,11 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
     title: page.title,
     description: page.description,
     alternates: { canonical: url },
-    openGraph: {
+    ...socialMetadata({
       title: `${page.title} — Photopipe`,
       description: page.description,
       url,
-      images: ["/og-dark.png"],
-    },
+    }),
   };
 }
 
@@ -47,7 +48,15 @@ export default async function IntentPage(props: Props) {
 
   return (
     <>
-      <StructuredData version={version} href={href} faq={page.faq} />
+      <StructuredData
+        version={version}
+        href={href}
+        url={`${SITE_URL}/${page.slug}`}
+        title={page.title}
+        image={page.screenshot.name}
+        updated={page.updated}
+        faq={page.faq}
+      />
       <SiteNav />
       <main>
         <Hero
@@ -58,7 +67,10 @@ export default async function IntentPage(props: Props) {
           screenshot={page.screenshot}
         />
         <ComparisonSection page={page} />
-        <FaqSection items={page.faq} />
+        <div id="workflow">
+          <WorkflowSection workflow={page.workflow} />
+        </div>
+        <FaqSection title={page.faqTitle} items={page.faq} />
       </main>
       <CloseSection href={href} version={version} />
       <SiteFooter />

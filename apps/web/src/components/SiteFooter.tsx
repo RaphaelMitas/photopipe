@@ -17,16 +17,6 @@ const LINKS = [
 export function SiteFooter() {
   return (
     <footer className="border-border/60 border-t">
-      <nav
-        aria-label="Comparisons"
-        className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-center gap-1 px-6 pt-10 sm:justify-end"
-      >
-        {INTENT_PAGES.map((page) => (
-          <Button key={page.slug} asChild variant="ghost" size="sm">
-            <a href={`/${page.slug}`}>{page.title}</a>
-          </Button>
-        ))}
-      </nav>
       <div className="mx-auto flex w-full max-w-6xl flex-col items-center gap-4 px-6 py-10 sm:flex-row">
         <Photopipe aria-hidden className="size-5 text-muted-foreground" />
         <PhotopipeWordmark className="text-sm" />
@@ -39,6 +29,23 @@ export function SiteFooter() {
           ))}
         </div>
       </div>
+      <nav
+        aria-label="Comparisons"
+        className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-center gap-x-6 gap-y-2 px-6 pb-10 text-muted-foreground text-sm sm:justify-start"
+      >
+        <span className="w-full text-center font-medium text-xs uppercase tracking-[0.14em] sm:w-auto sm:text-left">
+          Compare
+        </span>
+        {INTENT_PAGES.map((page) => (
+          <a
+            key={page.slug}
+            href={`/${page.slug}`}
+            className="hover:text-foreground"
+          >
+            {page.title}
+          </a>
+        ))}
+      </nav>
     </footer>
   );
 }

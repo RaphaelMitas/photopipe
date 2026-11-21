@@ -15,8 +15,14 @@ export function SiteNav() {
   return (
     <header className="sticky top-0 z-50 border-border/60 border-b bg-background/80 backdrop-blur-xl">
       <nav className="mx-auto flex h-16 w-full max-w-6xl items-center gap-3 px-6">
-        <Photopipe aria-hidden className="size-7 text-foreground" />
-        <PhotopipeWordmark className="font-heading font-semibold text-lg" />
+        <a
+          href="/"
+          aria-label="Photopipe home"
+          className="flex items-center gap-3 rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+        >
+          <Photopipe aria-hidden className="size-7 text-foreground" />
+          <PhotopipeWordmark className="font-heading font-semibold text-lg" />
+        </a>
         <div className="flex-1" />
         <div className="hidden items-center gap-1 md:flex">
           {LINKS.map((link) => (

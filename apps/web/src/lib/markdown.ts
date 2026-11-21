@@ -16,16 +16,16 @@ async function install() {
   const version = await latestVersion();
   return `## Install
 
-${version ? `Current version: ${version}. ` : ""}Requires macOS 15 (Sequoia) or later on Apple Silicon. Free, open source (MIT).
+${version ? `Current version: ${version}. ` : ""}Requires macOS 15 (Sequoia) or later on Apple Silicon, or iPadOS 18 or later. Free, open source (MIT).
 
 - Mac App Store: ${APP_STORE}
 - DMG: ${downloadUrl(version)}
 - Homebrew: \`${BREW_INSTALL}\``;
 }
 
-function questions(items: FaqItem[]) {
+function questions(items: FaqItem[], heading = "###") {
   return items
-    .map((item) => `### ${item.question}\n\n${item.answer}`)
+    .map((item) => `${heading} ${item.question}\n\n${item.answer}`)
     .join("\n\n");
 }
 
@@ -35,16 +35,38 @@ function faq() {
 ${questions(FAQ)}`;
 }
 
+function bullets(items: string[]) {
+  return items.map((item) => `- ${item}`).join("\n");
+}
+
 function comparison(page: IntentPage) {
   return `## ${page.title}
 
+URL: ${SITE_URL}/${page.slug}
+
 ${page.lede}
+
+### Photopipe or ${page.rival}?
+
+Pick Photopipe if:
+
+${bullets(page.pick.photopipe)}
+
+Pick ${page.rival} if:
+
+${bullets(page.pick.rival)}
 
 | | Photopipe | ${page.rival} |
 | --- | --- | --- |
 ${page.comparison.map((row) => `| ${row.feature} | ${row.photopipe} | ${row.rival} |`).join("\n")}
 
-${questions(page.faq)}`;
+### ${page.workflow.title}
+
+${page.workflow.steps.map((step, index) => `${index + 1}. **${step.title}.** ${step.body}`).join("\n")}
+
+### ${page.faqTitle}
+
+${questions(page.faq, "####")}`;
 }
 
 export async function llmsTxt() {

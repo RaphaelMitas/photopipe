@@ -24,7 +24,7 @@ export function BrewCommand() {
   }, [copied]);
 
   return (
-    <div className="flex max-w-full items-center gap-1 rounded-4xl border border-border bg-card/60 py-1 pr-1 pl-4 font-mono text-muted-foreground text-xs sm:text-sm">
+    <div className="hidden max-w-full items-center gap-1 rounded-4xl border border-border bg-card/60 py-1 pr-1 pl-4 font-mono text-muted-foreground text-sm sm:flex">
       <code className="min-w-0 truncate">{BREW_INSTALL}</code>
       <Button
         variant="ghost"

@@ -22,6 +22,7 @@ export function Hero({ href, eyebrow, title, lede, screenshot }: Props) {
         <h1 className="mx-auto max-w-4xl text-balance font-heading text-5xl leading-[1.05] tracking-tight md:text-7xl">
           <span className="mb-5 block font-medium font-sans text-primary text-sm uppercase tracking-[0.14em]">
             {eyebrow}
+            <span className="sr-only">.</span>
           </span>{" "}
           {title}
         </h1>
@@ -43,7 +44,7 @@ export function Hero({ href, eyebrow, title, lede, screenshot }: Props) {
       <div className="relative mx-auto w-full max-w-7xl px-6 pb-8">
         <Screenshot
           {...screenshot}
-          sizes="(min-width: 1536px) 1440px, 100vw"
+          sizes="(min-width: 1280px) 1232px, calc(100vw - 48px)"
           preload
         />
       </div>

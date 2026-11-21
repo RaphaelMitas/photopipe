@@ -9,6 +9,7 @@ import { SiteNav } from "@/components/SiteNav";
 import { StructuredData } from "@/components/StructuredData";
 import { FAQ } from "@/lib/faq";
 import { downloadUrl, latestVersion } from "@/lib/release";
+import { SITE_URL, TITLE } from "@/lib/site";
 
 export default async function Home() {
   const version = await latestVersion();
@@ -16,7 +17,14 @@ export default async function Home() {
 
   return (
     <>
-      <StructuredData version={version} href={href} faq={FAQ} />
+      <StructuredData
+        version={version}
+        href={href}
+        url={SITE_URL}
+        title={TITLE}
+        image="hero"
+        faq={FAQ}
+      />
       <SiteNav />
       <main>
         <Hero

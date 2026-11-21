@@ -1,6 +1,10 @@
 import { BREW_INSTALL } from "@/lib/release";
 
-export type FaqItem = { question: string; answer: string };
+export type FaqItem = {
+  question: string;
+  answer: string;
+  link?: { href: string; label: string };
+};
 
 export const FAQ: FaqItem[] = [
   {
@@ -31,16 +35,28 @@ export const FAQ: FaqItem[] = [
     question: "Does Photopipe work with Lightroom?",
     answer:
       "Yes, side by side. Star ratings and edits are written as XMP: a sidecar next to a raw file, embedded in DNG, JPEG and PNG files. TIFF, HEIC, AVIF, JPEG XL and WebP files, and on iPad DNG, JPEG and PNG too, keep theirs in a Photopipe sidecar that other apps do not read. Edits use Lightroom's own crs tags, such as crs:Exposure2012. Lightroom Classic, Capture One and Photo Mechanic read the same star ratings, so you can cull in Photopipe and finish in Lightroom.",
+    link: {
+      href: "/photo-mechanic-alternative",
+      label: "Photopipe and Photo Mechanic compared",
+    },
   },
   {
     question: "Is Photopipe a free Lightroom alternative?",
     answer:
       "For a shoot you cull, edit and export, yes, without a catalogue or an import step: Photopipe opens a folder, scores it, and writes every decision back to the files. If you rely on brushes, presets, HSL or a catalogue with keywords and collections, not yet, and because ratings and edits are saved as XMP you can finish those photos in Lightroom.",
+    link: {
+      href: "/lightroom-alternative",
+      label: "Photopipe and Lightroom compared",
+    },
   },
   {
     question: "Does Photopipe have AI culling?",
     answer:
       "Yes, and it runs on your Mac. Instinct scores every photo with Apple's Vision aesthetics model, straight from the raw file. Each photo gets one number from 0 to 100 that means the same in every project, and sorting by it puts the stronger frames first. It is a first sort, not a replacement for your judgement: it never rejects or deletes anything, and the score stays in Photopipe's rebuildable cache, not in your files.",
+    link: {
+      href: "/free-photo-culling-software",
+      label: "Free AI culling, compared",
+    },
   },
   {
     question: "Does Photopipe upload my photos?",

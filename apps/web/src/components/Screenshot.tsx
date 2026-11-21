@@ -23,6 +23,7 @@ export function Screenshot({ name, alt, sizes, preload }: Props) {
       height={1800}
       sizes={sizes}
       preload={preload}
+      fetchPriority={preload ? "high" : "auto"}
       className="w-full rounded-xl border border-border shadow-2xl shadow-black/40"
     />
   );
