@@ -1,5 +1,5 @@
 import { Separator } from "@photopipe/ui/components/separator";
-import Image from "next/image";
+import { Screenshot } from "@/components/Screenshot";
 import { Section } from "@/components/Section";
 
 export const CONTROLS = [
@@ -54,13 +54,10 @@ export function DevelopSection() {
             </li>
           ))}
         </ul>
-        <Image
-          src="/screenshots/loupe.png"
-          alt="The Photopipe loupe with the edit panel open on a raw file"
-          width={2560}
-          height={1600}
+        <Screenshot
+          name="develop"
+          alt="A blue hour raw before and after its edit, beside the Photopipe loupe with the edit panel open"
           sizes="(min-width: 1024px) 60vw, 100vw"
-          className="w-full rounded-xl border border-border shadow-2xl shadow-black/40"
         />
       </div>
     </Section>

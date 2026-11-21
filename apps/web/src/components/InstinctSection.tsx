@@ -1,4 +1,5 @@
 import { Card, CardContent } from "@photopipe/ui/components/card";
+import { Screenshot } from "@/components/Screenshot";
 import { Section } from "@/components/Section";
 
 export const NUMBERS = [
@@ -17,7 +18,14 @@ export const INSTINCT = {
 export function InstinctSection() {
   return (
     <Section {...INSTINCT}>
-      <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-12">
+        <Screenshot
+          name="instinct"
+          alt="The Photopipe grid sorted by Instinct score, the strongest frames first"
+          sizes="(min-width: 1152px) 1104px, 100vw"
+        />
+      </div>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {NUMBERS.map((number) => (
           <Card key={number.value}>
             <CardContent>

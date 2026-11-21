@@ -12,6 +12,7 @@ import {
   Star,
   Upload,
 } from "lucide-react";
+import { Screenshot } from "@/components/Screenshot";
 import { Section } from "@/components/Section";
 
 export const FEATURES = [
@@ -55,7 +56,19 @@ export const EVERYTHING_ELSE = {
 export function FeatureGrid() {
   return (
     <Section {...EVERYTHING_ELSE}>
-      <div className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-12 grid gap-4 md:grid-cols-2">
+        <Screenshot
+          name="cull"
+          alt="A Photopipe grid with 34 keepers selected out of 146 frames"
+          sizes="(min-width: 1152px) 544px, (min-width: 768px) 50vw, 100vw"
+        />
+        <Screenshot
+          name="export"
+          alt="The Photopipe export drawer, 34 keepers going out as JPEG"
+          sizes="(min-width: 1152px) 544px, (min-width: 768px) 50vw, 100vw"
+        />
+      </div>
+      <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {FEATURES.map((feature) => (
           <Card key={feature.title} className="h-full">
             <CardHeader>

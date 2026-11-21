@@ -17,7 +17,7 @@ what is on disk and shows it to you. It never maintains a catalogue that can
 disagree with reality, and the only files it changes are the ones you ask it
 to.
 
-![The browser: a justified grid with a selection](docs/screenshots/browse.png)
+![Photopipe on a Mac: a five-star raw in the loupe, the edit panel beside it](docs/screenshots/hero.jpg)
 
 ## Install
 
@@ -66,7 +66,7 @@ The app is one surface: browse and rate in the grid, edit in the loupe,
 leave through the **Export** button. The sidebar's rating histogram doubles
 as the filter — a count per rating, click a bar to narrow.
 
-![The export drawer: selection, format, destination, activity](docs/screenshots/export.png)
+![The export drawer: selection, format, destination](docs/screenshots/export.jpg)
 
 Export always acts on the selection (quick actions select the filtered set
 or everything for you) and offers two formats: **Original** copies the bytes
@@ -80,7 +80,7 @@ where errors stay visible instead of vanishing with a toast.
 
 ### Culling
 
-![The loupe: full-bleed photo, exposure slider, filmstrip](docs/screenshots/loupe.png)
+![The grid with 34 keepers selected out of 146 frames](docs/screenshots/cull.jpg)
 
 Click a photo to open it full-bleed. Rate with `1`–`5`, clear with `0`,
 navigate with `←`/`→`, adjust exposure with `↑`/`↓`. The exposure is saved
@@ -137,5 +137,5 @@ merging it builds, signs, notarizes and publishes. See
 ## Licence
 
 [MIT](LICENSE). © 2026 Raphael Mitas. The photos in
-`apps/desktop/e2e/store` are not part of that licence, see
-[their note](apps/desktop/e2e/store/LICENSE.md).
+`apps/desktop/e2e/store`, and the screenshots that show them, are not part of
+that licence, see [their note](apps/desktop/e2e/store/LICENSE.md).

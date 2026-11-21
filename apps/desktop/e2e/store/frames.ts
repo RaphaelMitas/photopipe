@@ -40,7 +40,7 @@ export type Frame = {
 
 const render = (name: string) => `renders/${name}.jpg`;
 
-export function frames(device: Device): Frame[] {
+export function frames(device: Device): (Frame & { name: string })[] {
   const mac = device === "mac";
   const side = mac
     ? { pad: "120px", h1: "150px", sub: "46px" }
@@ -70,6 +70,7 @@ export function frames(device: Device): Frame[] {
       };
   return [
     {
+      name: "hero",
       layout: "left",
       eyebrow: true,
       h1: "Cull fast.<br>Edit RAW.<br><em>Deliver.</em>",
@@ -103,6 +104,7 @@ export function frames(device: Device): Frame[] {
           },
     },
     {
+      name: "cull",
       layout: "panel side-left",
       h1: "146 frames. <em>34 keepers.</em>",
       sub: mac
@@ -120,6 +122,7 @@ export function frames(device: Device): Frame[] {
       vars: panel,
     },
     {
+      name: "instinct",
       layout: "left",
       h1: "Your strongest frames, <em>sorted up.</em>",
       sub: "Instinct scores every frame on device with Apple's Vision aesthetics model. A head start, not a verdict.",
@@ -150,6 +153,7 @@ export function frames(device: Device): Frame[] {
           },
     },
     {
+      name: "develop",
       layout: "compare",
       h1: "The blue hour you actually saw.",
       sub: "Exposure, shadows, curves and dehaze, on the RAW.",
@@ -184,6 +188,7 @@ export function frames(device: Device): Frame[] {
           },
     },
     {
+      name: "export",
       layout: "panel side-right",
       h1: "Hand over the keepers, <em>edits baked in.</em>",
       sub: mac
@@ -201,7 +206,12 @@ export function frames(device: Device): Frame[] {
   ];
 }
 
-export type Asset = { file: string; size: Size; frame: Frame };
+export type Asset = {
+  file: string;
+  size: Size;
+  frame: Frame;
+  quality?: number;
+};
 
 export const CREATIVE_ASSETS: Asset[] = [
   {
