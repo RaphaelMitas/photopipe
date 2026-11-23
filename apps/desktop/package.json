@@ -33,19 +33,19 @@
   },
   "devDependencies": {
     "@photopipe/tsconfig": "workspace:*",
-    "@playwright/test": "1.65.0",
+    "@playwright/test": "1.65.1",
     "@tailwindcss/vite": "4.3.5",
-    "@tauri-apps/cli": "2.12.4",
+    "@tauri-apps/cli": "2.12.6",
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.3",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "6.3.0",
-    "jsdom": "31.0.0",
+    "jsdom": "31.0.1",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vite": "8.3.8",
-    "vitest": "5.1.0"
+    "vitest": "5.1.1"
   }
 }
