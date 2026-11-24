@@ -11,5 +11,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.8,
     })),
     { url: `${SITE_URL}/privacy`, priority: 0.3 },
+    { url: `${SITE_URL}/imprint`, priority: 0.1 },
   ];
 }
