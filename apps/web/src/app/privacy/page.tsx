@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
-import { SiteFooter } from "@/components/SiteFooter";
-import { SiteNav } from "@/components/SiteNav";
+import { LegalPage } from "@/components/LegalPage";
+import { OperatorAddress } from "@/components/OperatorAddress";
+import { TextLink } from "@/components/TextLink";
+import { OPERATOR } from "@/lib/operator";
 import { REPO } from "@/lib/release";
 
 const description =
@@ -39,42 +41,38 @@ const SECTIONS = [
 
 export default function Privacy() {
   return (
-    <>
-      <SiteNav />
-      <main className="mx-auto w-full max-w-3xl px-6 py-20 md:py-28">
-        <h1 className="font-heading text-4xl tracking-tight md:text-5xl">
-          Privacy
-        </h1>
-        {SECTIONS.map((section) => (
-          <section key={section.title} className="mt-12">
-            <h2 className="font-heading text-2xl tracking-tight">
-              {section.title}
-            </h2>
-            {section.body.map((paragraph) => (
-              <p
-                key={paragraph}
-                className="mt-4 text-muted-foreground leading-relaxed"
-              >
-                {paragraph}
-              </p>
-            ))}
-          </section>
-        ))}
-        <section className="mt-12">
-          <h2 className="font-heading text-2xl tracking-tight">Contact</h2>
-          <p className="mt-4 text-muted-foreground leading-relaxed">
-            Raphael Mitas builds Photopipe. Questions about this page go to the{" "}
-            <a
-              href={`${REPO}/issues`}
-              className="text-foreground underline underline-offset-4"
+    <LegalPage title="Privacy">
+      {SECTIONS.map((section) => (
+        <section key={section.title} className="mt-12">
+          <h2 className="font-heading text-2xl tracking-tight">
+            {section.title}
+          </h2>
+          {section.body.map((paragraph) => (
+            <p
+              key={paragraph}
+              className="mt-4 text-muted-foreground leading-relaxed"
             >
-              issue tracker
-            </a>
-            .
-          </p>
+              {paragraph}
+            </p>
+          ))}
         </section>
-      </main>
-      <SiteFooter />
-    </>
+      ))}
+      <section className="mt-12">
+        <h2 className="font-heading text-2xl tracking-tight">Contact</h2>
+        <p className="mt-4 text-muted-foreground leading-relaxed">
+          {OPERATOR.name} builds Photopipe and is the controller responsible for
+          this website.
+        </p>
+        <OperatorAddress />
+        <p className="mt-4 text-muted-foreground leading-relaxed">
+          Email{" "}
+          <TextLink href={`mailto:${OPERATOR.email}`}>
+            {OPERATOR.email}
+          </TextLink>
+          . Questions about the app can also go to the{" "}
+          <TextLink href={`${REPO}/issues`}>issue tracker</TextLink>.
+        </p>
+      </section>
+    </LegalPage>
   );
 }
