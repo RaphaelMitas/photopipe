@@ -27,10 +27,19 @@ export default function Imprint() {
         </h2>
         <OperatorAddress />
         <p className="mt-4 text-muted-foreground leading-relaxed">
-          Kontakt: E-Mail{" "}
-          <TextLink href={`mailto:${OPERATOR.email}`}>
-            {OPERATOR.email}
-          </TextLink>
+          Kontakt:
+          <span className="block">
+            Telefon{" "}
+            <TextLink href={`tel:${OPERATOR.phone.replaceAll(" ", "")}`}>
+              {OPERATOR.phone}
+            </TextLink>
+          </span>
+          <span className="block">
+            E-Mail{" "}
+            <TextLink href={`mailto:${OPERATOR.email}`}>
+              {OPERATOR.email}
+            </TextLink>
+          </span>
         </p>
       </section>
       <section className="mt-12">

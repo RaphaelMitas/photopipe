@@ -7,4 +7,5 @@ export const OPERATOR = {
     "Deutschland",
   ],
   email: "support@photopipe.net",
+  phone: "+49 15679 769941",
 };
