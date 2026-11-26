@@ -85,7 +85,7 @@ Stack, testing strategy, CI and releases.
 ```
 photopipe/
 ├── apps/desktop/       Tauri app for macOS and iPadOS (src/ React, src-tauri/ Rust, e2e/ Playwright)
-├── apps/web/           photopipe.net, Next.js on Vercel
+├── apps/web/           photopipe.net, a static Next.js export in a Caddy image
 ├── packages/ui/        shadcn components and tokens shared by both apps
 ├── tooling/            shared tsconfig
 ├── core/               Swift package: the core, linked into the app

@@ -5,6 +5,8 @@ export function AppStoreBadge() {
   return (
     <a
       href={APP_STORE}
+      data-event="Download"
+      data-event-via="app-store"
       className="rounded-[9px] outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
     >
       <Image

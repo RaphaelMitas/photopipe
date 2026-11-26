@@ -32,7 +32,9 @@ export function SiteNav({ faqHref = "/#faq" }: { faqHref?: string }) {
           ))}
         </div>
         <Button asChild size="sm" className="ml-1">
-          <a href={APP_STORE}>Download</a>
+          <a href={APP_STORE} data-event="Download" data-event-via="app-store">
+            Download
+          </a>
         </Button>
       </nav>
     </header>

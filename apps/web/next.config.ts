@@ -1,31 +1,15 @@
 import type { NextConfig } from "next";
+import { SCREENSHOT_WIDTHS } from "./src/lib/screenshot-loader";
 
 const config: NextConfig = {
+  output: "export",
   transpilePackages: ["@photopipe/ui"],
   agentRules: false,
-  async rewrites() {
-    return {
-      beforeFiles: [
-        {
-          source: "/",
-          has: [{ type: "header", key: "accept", value: ".*text/markdown.*" }],
-          destination: "/llms-full.txt",
-        },
-      ],
-    };
-  },
-  async headers() {
-    return [
-      {
-        source: "/",
-        headers: [
-          {
-            key: "Link",
-            value: '</llms-full.txt>; rel="alternate"; type="text/markdown"',
-          },
-        ],
-      },
-    ];
+  images: {
+    loader: "custom",
+    loaderFile: "./src/lib/screenshot-loader.ts",
+    deviceSizes: SCREENSHOT_WIDTHS,
+    imageSizes: [],
   },
 };
 

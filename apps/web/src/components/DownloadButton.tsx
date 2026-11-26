@@ -16,7 +16,7 @@ export function DownloadButton({
 }: Props) {
   return (
     <Button asChild size={size} variant={variant}>
-      <a href={href}>
+      <a href={href} data-event="Download" data-event-via="dmg">
         <Download data-icon="inline-start" />
         {children}
       </a>

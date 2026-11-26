@@ -1,0 +1,85 @@
+name: Website
+
+on:
+  push:
+    branches: [main]
+    paths: &website-sources
+      - apps/web/**
+      - packages/ui/**
+      - tooling/**
+      - brand/**
+      - docs/screenshots/**
+      - pnpm-lock.yaml
+      - .github/workflows/website.yml
+  pull_request:
+    paths: *website-sources
+  workflow_dispatch:
+
+concurrency:
+  group: website-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Export photopipe.net
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter "web..."
+      - run: pnpm --filter web build
+      - name: Fail when the DMG link lost its version
+        run: grep -q "/releases/download/v" apps/web/out/index.html
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: website
+          path: apps/web/out
+
+  publish:
+    name: Publish the photopipe.net image
+    needs: build
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/raphaelmitas/photopipe-web
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            apps/web/Dockerfile
+            apps/web/Caddyfile
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: website
+          path: apps/web/out
+      - run: |
+          docker build \
+            --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+            -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" .
+      - name: Serve the pages the way purr runs the image, before anyone can pull it
+        run: |
+          docker run -d --rm --name smoke -p 8080:80 \
+            --read-only --user 1000:1000 --cap-drop ALL --security-opt no-new-privileges \
+            --tmpfs /data:size=1m,uid=1000 "$IMAGE:latest"
+          for page in / /privacy /llms.txt; do
+            curl -fsS --retry 10 --retry-all-errors --retry-delay 1 -o /dev/null "http://127.0.0.1:8080$page"
+          done
+          docker stop smoke
+      - run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - run: docker push --all-tags "$IMAGE"

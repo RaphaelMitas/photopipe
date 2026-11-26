@@ -322,6 +322,18 @@ jobs:
             -f release_tag="$TAG" \
             -f source_repo=RaphaelMitas/photopipe
 
+  website:
+    name: Rebuild photopipe.net with this release's DMG link
+    needs: [check, release]
+    if: ${{ !cancelled() && needs.check.outputs.is-release == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run website.yml --ref main -R "${{ github.repository }}"
+
   # The listing's screenshots, from the released UI. A macOS runner, because
   # the frames are set in the system font.
   store-screenshots:

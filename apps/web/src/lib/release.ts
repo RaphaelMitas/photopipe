@@ -16,7 +16,6 @@ function versionOf(payload: unknown): string | null {
 export async function latestVersion(): Promise<string | null> {
   try {
     const response = await fetch(LATEST_JSON, {
-      next: { revalidate: 3600 },
       signal: AbortSignal.timeout(5000),
     });
     return response.ok ? versionOf(await response.json()) : null;

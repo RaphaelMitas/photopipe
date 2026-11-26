@@ -1,7 +1,7 @@
-import { llmsTxt, markdownResponse } from "@/lib/markdown";
+import { llmsTxt } from "@/lib/markdown";
 
-export const revalidate = 3600;
+export const dynamic = "force-static";
 
 export async function GET() {
-  return markdownResponse(await llmsTxt());
+  return new Response(await llmsTxt());
 }

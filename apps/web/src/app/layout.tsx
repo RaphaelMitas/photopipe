@@ -46,7 +46,10 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`dark ${inter.variable} ${montserrat.variable}`}>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        {children}
+        <script defer src="/p.js" />
+      </body>
     </html>
   );
 }

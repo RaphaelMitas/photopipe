@@ -32,9 +32,17 @@ const SECTIONS = [
   {
     title: "This website",
     body: [
-      "photopipe.net sets no cookies and runs no analytics or tracking scripts. The fonts ship with the site, so your browser makes no request to Google.",
-      "Vercel hosts the site. Like any web host, Vercel processes your IP address and keeps short-lived server logs to deliver pages and block abuse.",
-      "The Download button and the App Store links lead to the Mac App Store, where Apple's privacy policy applies. The DMG download and the other links in the footer point to GitHub, where GitHub's privacy statement applies.",
+      "photopipe.net sets no cookies and stores nothing in your browser. The fonts and scripts ship with the site, so loading a page sends no request to anyone else.",
+      "The site runs on a server of Hetzner Online GmbH, Industriestr. 25, 91710 Gunzenhausen, Germany, in a data centre in Helsinki, Finland. Hetzner processes data on my behalf under Art. 28 GDPR. To deliver a page, the server processes what your browser sends with every request, in particular your IP address, the time, the address you asked for and your browser and operating system. It keeps no access log. Technical error logs can occasionally contain an IP address; they are limited in size and overwritten continuously. The legal basis is Art. 6(1)(f) GDPR, my legitimate interest in delivering the site securely and reliably.",
+      "The Download button and the App Store links lead to the Mac App Store, where Apple's privacy policy applies. The DMG download and the GitHub links in the footer point to GitHub, where GitHub's privacy statement applies.",
+    ],
+  },
+  {
+    title: "Visitor counts",
+    body: [
+      "I count visits with Plausible, running on that same server, without cookies and without any third party. It records the page you open, the website you came from (only its domain), campaign tags in the link, your browser, operating system, device type and country, and whether you clicked one of the download options. Your IP address and browser details are used to work out a visitor hash from a salt that changes daily, and that hash is stored with each visit. The IP address itself is not stored.",
+      "The data is deleted after 25 months. The legal basis is Art. 6(1)(f) GDPR, my legitimate interest in knowing how people find the site and whether they download the app.",
+      "You can object to this at any time, without giving a reason: turn on Global Privacy Control or Do Not Track in your browser, and nothing is recorded from then on.",
     ],
   },
 ];

@@ -30,6 +30,8 @@ export function BrewCommand() {
         variant="ghost"
         size="icon-sm"
         aria-label={copied ? "Copied" : "Copy install command"}
+        data-event="Download"
+        data-event-via="brew"
         onClick={async (event) => {
           try {
             await navigator.clipboard.writeText(BREW_INSTALL);
