@@ -2,6 +2,7 @@
   "extends": "@photopipe/tsconfig/base.json",
   "compilerOptions": {
     "plugins": [{ "name": "next" }],
+    "allowImportingTsExtensions": true,
     "paths": {
       "@/*": ["./src/*"]
     }

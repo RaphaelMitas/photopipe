@@ -1,0 +1,53 @@
+name: Website
+
+on:
+  push:
+    branches: [main]
+    paths: &website-sources
+      - apps/web/**
+      - packages/ui/**
+      - tooling/**
+      - brand/**
+      - docs/screenshots/**
+      - pnpm-lock.yaml
+      - .github/workflows/website.yml
+  pull_request:
+    paths: *website-sources
+  workflow_dispatch:
+
+concurrency:
+  group: website-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    name: Build the photopipe.net image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter "web..."
+      - run: pnpm --filter web build
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: apps/web
+          platforms: linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          tags: |
+            ghcr.io/raphaelmitas/photopipe-web:${{ github.sha }}
+            ghcr.io/raphaelmitas/photopipe-web:latest

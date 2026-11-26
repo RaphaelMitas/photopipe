@@ -1,0 +1,32 @@
+{
+	admin off
+	persist_config off
+}
+
+:80 {
+	root * /srv
+	encode zstd gzip
+
+	@markdown_home {
+		path /
+		header Accept *text/markdown*
+	}
+	@markdown path /llms.txt /llms-full.txt
+
+	header / Link "</llms-full.txt>; rel=\"alternate\"; type=\"text/markdown\""
+	header / Vary Accept
+	header @markdown_home Content-Type "text/markdown; charset=utf-8"
+	header @markdown_home +Link "<https://photopipe.net>; rel=\"canonical\""
+	header @markdown Content-Type "text/markdown; charset=utf-8"
+	header @markdown Link "<https://photopipe.net>; rel=\"canonical\""
+	header /_next/static/* Cache-Control "public, max-age=31536000, immutable"
+
+	rewrite @markdown_home /llms-full.txt
+	try_files {path} {path}.html
+	file_server
+
+	handle_errors 404 {
+		rewrite * /404.html
+		file_server
+	}
+}

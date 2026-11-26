@@ -124,12 +124,3 @@ ${faq()}
 ${INTENT_PAGES.map(comparison).join("\n\n")}
 `;
 }
-
-export function markdownResponse(body: string) {
-  return new Response(body, {
-    headers: {
-      "Content-Type": "text/markdown; charset=utf-8",
-      Link: `<${SITE_URL}>; rel="canonical"`,
-    },
-  });
-}
