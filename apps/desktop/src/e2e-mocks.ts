@@ -11,6 +11,7 @@ import {
 } from "./lib/core";
 import type { RootEntry } from "./lib/roots";
 import { makeImage } from "./lib/test-image";
+import { noModels } from "./lib/test-models";
 
 function image(
   shootPath: string,
@@ -389,9 +390,7 @@ const E2E_HANDLERS: CoreHandlers = {
     png: OPAQUE_PIXEL_PNG,
     point: { x, y, include },
   }),
-  maskSupport: () => ({
-    clicks: location.search.includes("nomasks") ? 0 : 16,
-  }),
+  models: () => noModels(location.search.includes("nomasks") ? 0 : 16),
   render: ({ path, edit, viewport }) => {
     const unmasked =
       location.search.includes("nomodel") &&

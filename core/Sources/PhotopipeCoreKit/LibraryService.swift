@@ -37,6 +37,7 @@ public final class LibraryService: @unchecked Sendable {
     private let printer: Printer
     private let facer: Facer
     private let exporter = Exporter()
+    let modelStore = ModelStore(folder: ModelStore.defaultFolder())
     private let rescanQueue = DispatchQueue(label: "photopipe.rescan")
     private let indexQueue = DispatchQueue(label: "photopipe.index", qos: .utility)
     private var pendingRescan: DispatchWorkItem?
@@ -446,6 +447,14 @@ public final class LibraryService: @unchecked Sendable {
             answered = true
         }
         return answered ? false : nil
+    }
+
+    func models() -> ModelsReport {
+        ModelsReport(
+            entries: modelStore.entries(),
+            tasks: .init(
+                findRegion: .init(clicks: Masker.isAvailable ? Mask.clickLimit : 0),
+                fillHole: .init(model: ModelEntry.fillHole.id)))
     }
 
     public struct DecoderSupport: Sendable, Encodable {

@@ -54,8 +54,8 @@ Stack, testing strategy, CI and releases.
   click is a pass of the model, so a mask takes 16 and a
   sidecar's mask with more stays unread. The request only exists in the 27
   SDK, so the call sits behind `#if compiler(>=6.4)` and `#available`: an
-  older toolchain or system gets a core without masks, `maskSupport` answers
-  zero clicks, the UI drops the Masks group, and every mask in a sidecar is
+  older toolchain or system gets a core without masks, `models` answers
+  zero clicks for `findRegion`, the UI drops the Masks group, and every mask in a sidecar is
   an unread entry. The index rebuilds its file rows when the core gains or
   loses masking, since the same sidecar reads differently on each. The hover
   preview goes through `maskAt`, which answers with the overlay as bytes and
@@ -67,6 +67,17 @@ Stack, testing strategy, CI and releases.
   neighbours: the writer works the unread ones out again from the file, so a
   mask that turned readable when another was deleted would be in neither the
   edit nor the kept entries, and the save would drop it.
+- **Downloaded models** come from a catalog compiled into the app
+  (`ModelCatalog.swift`): every file's URL, path inside the Core ML package,
+  SHA-256 and size. An id names one set of bytes for good, so a rebuilt model
+  gets a new id. The store downloads only when asked, checks each file's hash
+  before anything reads it, compiles the package on the Mac and renames the
+  folder into `Application Support/Photopipe/models/<id>-<digest>/` in one
+  step, so a folder is either complete or absent. The files live as a
+  prerelease `model-<id>` of this repo, never marked latest, because the
+  updater reads `releases/latest`. `scripts/models/build-lama.sh` rebuilds
+  Big-LaMa from the pinned upstream checkpoint; its weights come out
+  byte-identical, its manifest does not.
 - **Formats** come from ImageIO at runtime: every extension whose type it
   reads and calls a camera raw, plus JPEG, PNG, TIFF, HEIC/HEIF, AVIF, JPEG XL
   and WebP. A camera a new OS learns needs no release.
@@ -237,7 +248,7 @@ listing (text from `fastlane/metadata/en-US`, screenshots from the
 `store-screenshots` job, see Screenshots below), attaches the build and
 submits it for review with automatic release.
 What's New is written per release and platform by `scripts/whats-new.sh`:
-the `feat:` and `fix:` subjects since the previous tag that touch
+the `feat:` and `fix:` subjects since the previous `v*` tag that touch
 `apps/desktop` or `core`, minus those naming only the other platform. A commit
 subject is a line in the store, and a change for one platform names it.
 A release whose subjects read badly in the store gets

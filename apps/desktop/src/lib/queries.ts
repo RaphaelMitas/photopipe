@@ -364,12 +364,12 @@ export function useRaw9Availability(enabled: boolean) {
 }
 
 export function useMaskClickLimit() {
-  const support = useQuery({
-    queryKey: ["maskSupport"],
-    queryFn: () => coreRequest("maskSupport"),
+  const models = useQuery({
+    queryKey: ["models"],
+    queryFn: () => coreRequest("models"),
     staleTime: Number.POSITIVE_INFINITY,
   });
-  return support.data?.clicks ?? 0;
+  return models.data?.tasks.findRegion.clicks ?? 0;
 }
 
 export function useCanMask() {

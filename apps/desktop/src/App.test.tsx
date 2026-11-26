@@ -10,6 +10,7 @@ import {
 } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { noModels } from "@/lib/test-models";
 import App from "./App";
 
 const invoke = vi.hoisted(() => vi.fn());
@@ -150,6 +151,7 @@ describe("App", () => {
         return { shoots: [root === "/docs" ? PHOTOS : SHOOT] };
       if (method === "status") return { generation: 1, root, shoots: 1 };
       if (method === "listImages") return { images: [] };
+      if (method === "models") return noModels(0);
       return {};
     });
 
@@ -168,9 +170,12 @@ describe("App", () => {
   });
 
   it("opens settings from the menu bar before a folder is picked", async () => {
-    invoke.mockImplementation(async (cmd) =>
-      cmd === "default_library" ? null : [],
-    );
+    invoke.mockImplementation(async (cmd, args) => {
+      if (cmd === "default_library") return null;
+      return (args as { method?: string } | undefined)?.method === "models"
+        ? noModels(0)
+        : [];
+    });
     renderWithQueries(<App />);
     expect(screen.getByTestId("root-input")).toBeInTheDocument();
 

@@ -7,6 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
+import { noModels } from "@/lib/test-models";
 import { type Edit, type ImageFile, identityEdit } from "./core";
 import { makeImage } from "./test-image";
 import { useMaskPick } from "./useMaskPick";
@@ -51,7 +52,7 @@ it("a click lands while the loupe is open, and is dropped once it has closed", a
   invoke.mockImplementation((_, { method }) =>
     method === "maskAt"
       ? new Promise((resolve) => answers.push(resolve))
-      : Promise.resolve({ clicks: 16 }),
+      : Promise.resolve(noModels(16)),
   );
   const changeEdit = vi.fn();
   const { unmount } = render(

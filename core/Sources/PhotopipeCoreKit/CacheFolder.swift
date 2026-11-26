@@ -29,8 +29,7 @@ final class CacheFolder: Sendable {
     private static let pathExtensions: Set = ["jpg", "png"]
 
     func url(forKey key: String, pathExtension: String = "jpg") -> URL {
-        let digest = SHA256.hash(data: Data(key.utf8))
-            .map { String(format: "%02x", $0) }.joined().prefix(32)
+        let digest = SHA256.hash(data: Data(key.utf8)).hex.prefix(32)
         return dir.appendingPathComponent("\(digest).\(pathExtension)")
     }
 
@@ -127,4 +126,8 @@ final class CacheFolder: Sendable {
     private static func modified(_ url: URL) -> Date? {
         (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
     }
+}
+
+extension SHA256.Digest {
+    var hex: String { map { String(format: "%02x", $0) }.joined() }
 }

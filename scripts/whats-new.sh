@@ -3,7 +3,7 @@ set -euo pipefail
 
 TAG="$1"
 TO="$2"
-FROM=$(git describe --tags --abbrev=0 "$TO^")
+FROM=$(git describe --tags --abbrev=0 --match 'v*' "$TO^")
 LIMIT=3900
 MAC='mac|macos|dmg'
 IPAD='ipad|ipados|ios'

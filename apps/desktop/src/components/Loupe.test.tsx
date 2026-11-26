@@ -19,6 +19,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { type Edit, type Flag, type ImageFile, identityEdit } from "@/lib/core";
 import { type CropDraft, draftFromEdit } from "@/lib/crop";
 import { makeImage } from "@/lib/test-image";
+import { noModels } from "@/lib/test-models";
 import type { MaskSession } from "@/lib/useMaskSession";
 import { EditSidebar } from "./EditPanel";
 import { filmstripPref } from "./Filmstrip";
@@ -35,14 +36,18 @@ const invoke = vi.hoisted(() =>
       cmd: string,
       args: { method: string; params?: { path?: string; edit?: Edit } },
     ) => Promise<unknown>
-  >(async () => ({ cachePath: "/fake/render.jpg" })),
+  >(async (_cmd, { method }) => answer(method)),
 );
 vi.mock("@tauri-apps/api/core", () => ({
   invoke,
   convertFileSrc: (path: string) => `asset://${path}`,
 }));
+function answer(method: string) {
+  return method === "models" ? noModels(0) : { cachePath: "/fake/render.jpg" };
+}
+
 afterEach(() =>
-  invoke.mockImplementation(async () => ({ cachePath: "/fake/render.jpg" })),
+  invoke.mockImplementation(async (_cmd, { method }) => answer(method)),
 );
 
 const editWith = (exposure: number): Edit => ({ ...identityEdit, exposure });
@@ -398,7 +403,7 @@ describe("Loupe render order", () => {
             finishFirst = resolve;
           });
       }
-      return { cachePath: "/fake/render.jpg" };
+      return answer(method);
     });
     renderLoupe(1);
     await waitFor(() => expect(rendered).toHaveLength(1));
@@ -674,9 +679,7 @@ describe("EditSidebar", () => {
   it("keeps a stored RAW 9 when this Mac can only give RAW 8", async () => {
     localStorage.setItem("photopipe.rawDecoder", "9");
     invoke.mockImplementation(async (_cmd, { method }) =>
-      method === "decoderAvailability"
-        ? { raw9: false }
-        : { cachePath: "/fake/render.jpg" },
+      method === "decoderAvailability" ? { raw9: false } : answer(method),
     );
     renderEditSidebar(identityEdit);
     await waitFor(() =>
