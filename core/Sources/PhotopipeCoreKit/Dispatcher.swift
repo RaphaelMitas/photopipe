@@ -93,8 +93,14 @@ public final class Dispatcher: Sendable {
                 at: CGPoint(x: request.fraction("x"), y: request.fraction("y")),
                 include: request.param("include")?.boolValue ?? true,
                 maxPixel: request.param("maxPixel")?.intValue ?? 2000)
-        case "maskSupport":
-            return ["clicks": Masker.isAvailable ? Mask.clickLimit : 0]
+        case "models":
+            return library.models()
+        case "downloadModel":
+            return try library.downloadModel(id: request.string("id"))
+        case "cancelModelDownload":
+            return try library.cancelModelDownload(id: request.string("id"))
+        case "deleteModel":
+            return try library.deleteModel(id: request.string("id"))
         case "setRating":
             return try library.setRating(
                 shoot: request.string("shoot"), path: request.string("path"),

@@ -296,6 +296,28 @@ export type StatusResult = {
 
 type CachePath = { cachePath: string };
 
+export type ModelEntry = {
+  id: string;
+  name: string;
+  bytes: number;
+  licence: string;
+  state:
+    | "unsupported"
+    | "absent"
+    | "downloading"
+    | "preparing"
+    | "failed"
+    | "ready";
+  progress?: number;
+  reason?: string;
+  loadError?: string;
+};
+
+export type Models = {
+  entries: ModelEntry[];
+  tasks: { findRegion: { clicks: number }; fillHole: { model: string } };
+};
+
 export type CoreMethods = {
   listShoots: { params: undefined; result: { shoots: WireShoot[] } };
   listImages: { params: { shoot: string }; result: { images: WireImage[] } };
@@ -326,7 +348,7 @@ export type CoreMethods = {
     };
     result: { png: string; point: MaskPoint };
   };
-  maskSupport: { params: undefined; result: { clicks: number } };
+  models: { params: undefined; result: Models };
   rawDefaults: {
     params: { path: string; decoderVersion: number };
     result: {

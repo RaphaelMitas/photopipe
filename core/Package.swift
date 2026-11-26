@@ -10,6 +10,8 @@ let package = Package(
     targets: [
         .target(name: "PhotopipeCoreKit"),
         .target(name: "PhotopipeCoreFFI", dependencies: ["PhotopipeCoreKit"]),
-        .testTarget(name: "PhotopipeCoreKitTests", dependencies: ["PhotopipeCoreKit"]),
+        .testTarget(
+            name: "PhotopipeCoreKitTests", dependencies: ["PhotopipeCoreKit"],
+            resources: [.copy("Fixtures")]),
     ]
 )

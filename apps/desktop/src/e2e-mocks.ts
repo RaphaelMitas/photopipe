@@ -389,8 +389,12 @@ const E2E_HANDLERS: CoreHandlers = {
     png: OPAQUE_PIXEL_PNG,
     point: { x, y, include },
   }),
-  maskSupport: () => ({
-    clicks: location.search.includes("nomasks") ? 0 : 16,
+  models: () => ({
+    entries: [],
+    tasks: {
+      findRegion: { clicks: location.search.includes("nomasks") ? 0 : 16 },
+      fillHole: { model: "lama-1" },
+    },
   }),
   render: ({ path, edit, viewport }) => {
     const unmasked =

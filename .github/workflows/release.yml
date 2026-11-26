@@ -281,10 +281,20 @@ jobs:
           echo "TARBALL=$TARBALL" >> $GITHUB_OUTPUT
           echo "MANIFEST=$MANIFEST" >> $GITHUB_OUTPUT
 
+      - name: Find the previous app release
+        id: previous
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.check.outputs.tag }}
+        run: |
+          LATEST=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          if [ "$LATEST" != "$TAG" ]; then echo "TAG=$LATEST" >> $GITHUB_OUTPUT; fi
+
       - name: Publish the release
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3
         with:
           tag_name: ${{ needs.check.outputs.tag }}
+          previous_tag: ${{ steps.previous.outputs.TAG }}
           files: |
             ${{ steps.dmg.outputs.PATH }}
             ${{ steps.zip.outputs.PATH }}
