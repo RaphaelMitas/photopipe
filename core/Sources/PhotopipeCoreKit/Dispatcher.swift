@@ -96,11 +96,14 @@ public final class Dispatcher: Sendable {
         case "models":
             return library.models()
         case "downloadModel":
-            return try library.downloadModel(id: request.string("id"))
+            try library.modelStore.download(request.string("id"))
+            return library.models()
         case "cancelModelDownload":
-            return try library.cancelModelDownload(id: request.string("id"))
+            try library.modelStore.cancel(request.string("id"))
+            return library.models()
         case "deleteModel":
-            return try library.deleteModel(id: request.string("id"))
+            try library.modelStore.delete(request.string("id"))
+            return library.models()
         case "setRating":
             return try library.setRating(
                 shoot: request.string("shoot"), path: request.string("path"),
