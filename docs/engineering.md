@@ -248,7 +248,7 @@ listing (text from `fastlane/metadata/en-US`, screenshots from the
 `store-screenshots` job, see Screenshots below), attaches the build and
 submits it for review with automatic release.
 What's New is written per release and platform by `scripts/whats-new.sh`:
-the `feat:` and `fix:` subjects since the previous tag that touch
+the `feat:` and `fix:` subjects since the previous `v*` tag that touch
 `apps/desktop` or `core`, minus those naming only the other platform. A commit
 subject is a line in the store, and a change for one platform names it.
 A release whose subjects read badly in the store gets

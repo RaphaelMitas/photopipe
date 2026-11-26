@@ -316,17 +316,21 @@ final class ModelStore: @unchecked Sendable {
             guard (try file.resourceValues(forKeys: [.isRegularFileKey])).isRegularFile == true
             else { continue }
             let descriptor = open(file.path, O_RDONLY)
-            guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+            guard descriptor >= 0 else { throw lastPOSIXError() }
             defer { close(descriptor) }
             guard fcntl(descriptor, F_FULLFSYNC) == 0 else {
-                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                throw lastPOSIXError()
             }
         }
     }
 
+    private static func lastPOSIXError() -> POSIXError {
+        POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+    }
+
     private static func moveUnlessTaken(_ source: URL, to destination: URL) throws {
         guard renamex_np(source.path, destination.path, UInt32(RENAME_EXCL)) != 0 else { return }
-        guard errno == EEXIST else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        guard errno == EEXIST else { throw lastPOSIXError() }
     }
 }
 

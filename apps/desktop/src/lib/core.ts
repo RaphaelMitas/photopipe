@@ -296,7 +296,7 @@ export type StatusResult = {
 
 type CachePath = { cachePath: string };
 
-export type ModelEntry = {
+export type ModelReport = {
   id: string;
   name: string;
   bytes: number;
@@ -314,7 +314,7 @@ export type ModelEntry = {
 };
 
 export type Models = {
-  entries: ModelEntry[];
+  entries: ModelReport[];
   tasks: { findRegion: { clicks: number }; fillHole: { model: string } };
 };
 

@@ -15,6 +15,7 @@ extension Runner {
 enum LaMa {
     enum FillError: Error {
         case unexpectedModel
+        case maskUndrawable
         case sizeMismatch
     }
 
@@ -25,10 +26,10 @@ enum LaMa {
         let wanted = max(hole.width, hole.height) * contextPerHole
         let fits = min(extent.width, extent.height)
         guard wanted <= fits else { return nil }
-        let side = min(max(wanted, Double(Self.side)), fits).rounded(.down)
-        let x = min(max(hole.midX - side / 2, extent.minX), extent.maxX - side).rounded(.down)
-        let y = min(max(hole.midY - side / 2, extent.minY), extent.maxY - side).rounded(.down)
-        return CGRect(x: x, y: y, width: side, height: side)
+        let length = min(max(wanted, Double(side)), fits).rounded(.down)
+        let x = min(max(hole.midX - length / 2, extent.minX), extent.maxX - length).rounded(.down)
+        let y = min(max(hole.midY - length / 2, extent.minY), extent.maxY - length).rounded(.down)
+        return CGRect(x: x, y: y, width: length, height: length)
     }
 
     static func fill(_ crop: CGImage, hole: CGImage, with model: MLModel) throws -> CIImage {
@@ -60,11 +61,11 @@ enum LaMa {
                 data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side,
                 space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue),
             let pixels = context.data?.assumingMemoryBound(to: UInt8.self)
-        else { throw FillError.unexpectedModel }
+        else { throw FillError.maskUndrawable }
         context.interpolationQuality = .high
         context.draw(hole, in: CGRect(x: 0, y: 0, width: side, height: side))
         for index in 0..<side * side where pixels[index] > 0 { pixels[index] = 255 }
-        guard let covering = context.makeImage() else { throw FillError.unexpectedModel }
+        guard let covering = context.makeImage() else { throw FillError.maskUndrawable }
         return covering
     }
 }
