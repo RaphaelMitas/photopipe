@@ -9,7 +9,6 @@
     "dev": "next dev",
     "prebuild": "pnpm assets",
     "build": "next build",
-    "start": "next start",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

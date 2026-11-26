@@ -1,5 +1,5 @@
 import type { NextConfig } from "next";
-import { SCREENSHOT_WIDTHS } from "./src/lib/screenshot-widths";
+import { SCREENSHOT_WIDTHS } from "./src/lib/screenshot-loader";
 
 const config: NextConfig = {
   output: "export",
@@ -8,7 +8,7 @@ const config: NextConfig = {
   images: {
     loader: "custom",
     loaderFile: "./src/lib/screenshot-loader.ts",
-    deviceSizes: [...SCREENSHOT_WIDTHS],
+    deviceSizes: SCREENSHOT_WIDTHS,
     imageSizes: [],
   },
 };

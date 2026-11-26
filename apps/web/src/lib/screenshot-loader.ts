@@ -1,6 +1,7 @@
 import type { ImageLoaderProps } from "next/image";
-import { screenshotVariant } from "./screenshot-widths";
+
+export const SCREENSHOT_WIDTHS = [640, 1080, 1600, 2880];
 
 export default function screenshotLoader({ src, width }: ImageLoaderProps) {
-  return screenshotVariant(src, width);
+  return `${src.replace(/\.jpg$/, "")}-${width}.webp`;
 }

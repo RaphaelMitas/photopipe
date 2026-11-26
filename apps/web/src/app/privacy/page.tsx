@@ -40,7 +40,7 @@ const SECTIONS = [
   {
     title: "Visitor counts",
     body: [
-      "I count visits with Plausible, running on that same server, without cookies and without any third party. It records the page you open, the website you came from (only its domain), campaign tags in the link, your browser, operating system and country, and whether you clicked one of the download options. Your IP address and browser details are only used to work out a visitor hash, which is based on a salt that changes daily; the IP address itself is not stored.",
+      "I count visits with Plausible, running on that same server, without cookies and without any third party. It records the page you open, the website you came from (only its domain), campaign tags in the link, your browser, operating system, device type and country, and whether you clicked one of the download options. Your IP address and browser details are used to work out a visitor hash from a salt that changes daily, and that hash is stored with each visit. The IP address itself is not stored.",
       "The data is deleted after 25 months. The legal basis is Art. 6(1)(f) GDPR, my legitimate interest in knowing how people find the site and whether they download the app.",
       "You can object to this at any time, without giving a reason: turn on Global Privacy Control or Do Not Track in your browser, and nothing is recorded from then on.",
     ],

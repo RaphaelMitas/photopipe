@@ -309,6 +309,11 @@ jobs:
             `brew install --cask raphaelmitas/tap/photopipe`, or download the
             DMG below.
 
+      - name: Rebuild photopipe.net so its DMG link points at this release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run website.yml --ref main -R "${{ github.repository }}"
+
       # Guarded so a release still succeeds when the token is absent; the tap
       # can always be updated by hand. `secrets` cannot be read in a step
       # `if:`, hence the env indirection.
@@ -322,11 +327,6 @@ jobs:
             -f cask_name=photopipe \
             -f release_tag="$TAG" \
             -f source_repo=RaphaelMitas/photopipe
-
-      - name: Rebuild photopipe.net so its DMG link points at this release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run website.yml --ref main -R "${{ github.repository }}"
 
   # The listing's screenshots, from the released UI. A macOS runner, because
   # the frames are set in the system font.

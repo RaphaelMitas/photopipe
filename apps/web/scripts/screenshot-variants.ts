@@ -1,10 +1,9 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import sharp from "sharp";
-import {
+import screenshotLoader, {
   SCREENSHOT_WIDTHS,
-  screenshotVariant,
-} from "../src/lib/screenshot-widths.ts";
+} from "../src/lib/screenshot-loader.ts";
 
 const folder = "public/screenshots";
 const screenshots = (await readdir(folder)).filter((file) =>
@@ -17,7 +16,7 @@ await Promise.all(
       sharp(join(folder, file))
         .resize({ width })
         .webp({ quality: 80 })
-        .toFile(join(folder, screenshotVariant(file, width))),
+        .toFile(screenshotLoader({ src: join(folder, file), width })),
     ),
   ),
 );
