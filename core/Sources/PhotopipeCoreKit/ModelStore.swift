@@ -80,10 +80,11 @@ final class ModelStore: @unchecked Sendable {
         #endif
     }
 
+    private static let idle: Duration = .seconds(120)
+
     let folder: URL
     private let catalog: [ModelEntry]
     private let transfer: Transfer
-    private let idle: Duration
     private let lock = NSLock()
     private let filling = NSLock()
     private var runs: [String: Run] = [:]
@@ -91,16 +92,14 @@ final class ModelStore: @unchecked Sendable {
     private var loaded: [String: MLModel] = [:]
     private var loadErrors: [String: String] = [:]
     private var lent: Set<String> = []
-    private var lends = 0
+    private var lends: [String: Int] = [:]
 
     init(
-        folder: URL, catalog: [ModelEntry] = ModelEntry.catalog, transfer: Transfer = Transfer(),
-        idle: Duration = .seconds(120)
+        folder: URL, catalog: [ModelEntry] = ModelEntry.catalog, transfer: Transfer = Transfer()
     ) {
         self.folder = folder
         self.catalog = catalog
         self.transfer = transfer
-        self.idle = idle
     }
 
     static func defaultFolder() -> URL {
@@ -177,13 +176,14 @@ final class ModelStore: @unchecked Sendable {
     private func giveBack(_ id: String) {
         let lend = lock.withLock {
             lent.remove(id)
-            lends += 1
-            return lends
+            let lend = lends[id, default: 0] + 1
+            lends[id] = lend
+            return lend
         }
-        Task.detached { [idle] in
-            try? await Task.sleep(for: idle)
+        Task.detached {
+            try? await Task.sleep(for: Self.idle)
             self.lock.withLock {
-                if self.lends == lend, !self.lent.contains(id) { self.loaded[id] = nil }
+                if self.lends[id] == lend, !self.lent.contains(id) { self.loaded[id] = nil }
             }
         }
     }
@@ -204,8 +204,7 @@ final class ModelStore: @unchecked Sendable {
     }
 
     private func scratchFolder() throws -> URL {
-        try FileManager.default.url(
-            for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: folder, create: true)
+        try FileManager.default.scratchFolder(beside: folder)
     }
 
     private func stop(_ id: String) {
@@ -348,7 +347,7 @@ final class Transfer: Sendable {
         let task = session.dataTask(with: url)
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                receiver.finish = continuation
+                receiver.wait(continuation)
                 task.resume()
             }
         } onCancel: {
@@ -359,7 +358,14 @@ final class Transfer: Sendable {
 }
 
 private final class Receiver: NSObject, URLSessionDataDelegate, @unchecked Sendable {
-    var finish: CheckedContinuation<Void, any Error>?
+    private enum Outcome {
+        case pending
+        case waiting(CheckedContinuation<Void, any Error>)
+        case finished(Result<Void, any Error>)
+    }
+
+    private let outcome = NSLock()
+    private var state = Outcome.pending
     private let name: String
     private let handle: FileHandle
     private let limit: Int
@@ -399,14 +405,26 @@ private final class Receiver: NSObject, URLSessionDataDelegate, @unchecked Senda
         }
     }
 
+    func wait(_ continuation: CheckedContinuation<Void, any Error>) {
+        let finished = outcome.withLock { () -> Result<Void, any Error>? in
+            guard case .finished(let result) = state else {
+                state = .waiting(continuation)
+                return nil
+            }
+            return result
+        }
+        if let finished { continuation.resume(with: finished) }
+    }
+
     func urlSession(
         _ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?
     ) {
-        if let failure = failure ?? error {
-            finish?.resume(throwing: failure)
-        } else {
-            finish?.resume()
+        let result: Result<Void, any Error> = (failure ?? error).map { .failure($0) } ?? .success(())
+        let waiting = outcome.withLock { () -> CheckedContinuation<Void, any Error>? in
+            defer { state = .finished(result) }
+            guard case .waiting(let continuation) = state else { return nil }
+            return continuation
         }
-        finish = nil
+        waiting?.resume(with: result)
     }
 }

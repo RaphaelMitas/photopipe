@@ -21,49 +21,36 @@ enum LaMa {
     static let side = 1024
     static let contextPerHole = 4.0
 
-    static func crop(around hole: CGRect, in extent: CGRect) -> CGRect {
+    static func crop(around hole: CGRect, in extent: CGRect) -> CGRect? {
         let wanted = max(hole.width, hole.height) * contextPerHole
         let side = min(max(wanted, Double(Self.side)), extent.width, extent.height).rounded(.down)
         let x = min(max(hole.midX - side / 2, extent.minX), extent.maxX - side).rounded(.down)
         let y = min(max(hole.midY - side / 2, extent.minY), extent.maxY - side).rounded(.down)
-        return CGRect(x: x, y: y, width: side, height: side)
+        let crop = CGRect(x: x, y: y, width: side, height: side)
+        return crop.contains(hole) ? crop : nil
     }
 
     static func fill(_ crop: CGImage, hole: CGImage, with model: MLModel) throws -> CIImage {
-        guard crop.width == hole.width, crop.height == hole.height else {
-            throw FillError.sizeMismatch
-        }
+        guard crop.width == crop.height, crop.width == hole.width, crop.height == hole.height
+        else { throw FillError.sizeMismatch }
         let inputs = model.modelDescription.inputDescriptionsByName
         guard let imageInput = inputs["image"]?.imageConstraint,
             let maskInput = inputs["mask"]?.imageConstraint
         else { throw FillError.unexpectedModel }
-        let scaleFill: [MLFeatureValue.ImageOption: Any] = [
-            .cropAndScale: VNImageCropAndScaleOption.scaleFill.rawValue
-        ]
         let output = try model.prediction(
             from: MLDictionaryFeatureProvider(dictionary: [
-                "image": try MLFeatureValue(cgImage: crop, constraint: imageInput, options: scaleFill),
+                "image": try MLFeatureValue(
+                    cgImage: crop, constraint: imageInput,
+                    options: [.cropAndScale: VNImageCropAndScaleOption.scaleFill.rawValue]),
                 "mask": try MLFeatureValue(
-                    cgImage: try covering(hole, side: maskInput.pixelsWide), constraint: maskInput,
-                    options: scaleFill),
+                    cgImage: try covering(hole, side: maskInput.pixelsWide), constraint: maskInput),
             ]))
         guard let filled = output.featureValue(for: "output")?.imageBufferValue else {
             throw FillError.unexpectedModel
         }
-        let original = CIImage(cgImage: crop)
-        let scale = original.extent.width / Double(CVPixelBufferGetWidth(filled))
-        let feather = CIImage(cgImage: hole).clampedToExtent()
-            .applyingGaussianBlur(sigma: max(1.5, scale * 1.5))
-            .cropped(to: original.extent)
+        let scale = Double(crop.width) / Double(CVPixelBufferGetWidth(filled))
         return CIImage(cvPixelBuffer: filled)
             .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-            .applyingFilter(
-                "CIBlendWithMask",
-                parameters: [
-                    kCIInputBackgroundImageKey: original, kCIInputMaskImageKey: feather,
-                ]
-            )
-            .cropped(to: original.extent)
     }
 
     private static func covering(_ hole: CGImage, side: Int) throws -> CGImage {

@@ -1719,7 +1719,7 @@ private func alpha(of image: CIImage, at point: CGPoint) -> UInt8 {
     pixel(of: image, at: point)[3]
 }
 
-private func pixel(of image: CIImage, at point: CGPoint) -> [UInt8] {
+func pixel(of image: CIImage, at point: CGPoint) -> [UInt8] {
     var pixel = [UInt8](repeating: 0, count: 4)
     CIContext().render(
         image, toBitmap: &pixel, rowBytes: 4,

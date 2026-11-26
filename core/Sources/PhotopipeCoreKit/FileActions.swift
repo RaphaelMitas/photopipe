@@ -61,9 +61,7 @@ public enum FileActions {
         #else
             let fm = FileManager.default
             let dest = URL(fileURLWithPath: destination)
-            let scratch = try fm.url(
-                for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: dest,
-                create: true)
+            let scratch = try fm.scratchFolder(beside: dest)
             defer { try? fm.removeItem(at: scratch) }
             let temp = scratch.appendingPathComponent("\(tempPrefix)\(UUID().uuidString).zip")
             let result = try run(
@@ -132,5 +130,12 @@ extension FileActions.ActionError: WireError {
         case .noFiles: ResponseError(code: "no_files", message: "nothing selected")
         case .zipFailed(let output): ResponseError(code: "zip_failed", message: output)
         }
+    }
+}
+
+extension FileManager {
+    func scratchFolder(beside url: URL) throws -> URL {
+        try self.url(
+            for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: url, create: true)
     }
 }

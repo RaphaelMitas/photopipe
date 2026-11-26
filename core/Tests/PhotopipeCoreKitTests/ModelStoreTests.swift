@@ -17,6 +17,7 @@ private final class Served: URLProtocol, @unchecked Sendable {
 
     static let replies = Mutex<[URL: Reply]>([:])
     static let requests = Mutex<[URL: Int]>([:])
+    static let stopped = Mutex<Set<URL>>([])
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -50,22 +51,23 @@ private final class Served: URLProtocol, @unchecked Sendable {
         client?.urlProtocolDidFinishLoading(self)
     }
 
-    override func stopLoading() {}
+    override func stopLoading() {
+        guard let url = request.url else { return }
+        Self.stopped.withLock { _ = $0.insert(url) }
+    }
 }
 
-private struct Harness {
+private let fillFixture = fixturesRoot().appendingPathComponent("models/Fill.mlpackage")
+
+private final class Harness {
     let folder: URL
     let entry: ModelEntry
     let store: ModelStore
     let files: [(ModelFile, Data)]
 
-    init(idle: Duration = .seconds(120), body: (ModelFile, Data) -> Served.Reply = { .body($1) })
-        throws
-    {
-        folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("models-\(UUID().uuidString)", isDirectory: true)
-        let package = try #require(
-            Bundle.module.url(forResource: "Fill", withExtension: "mlpackage", subdirectory: "Fixtures"))
+    init(body: (ModelFile, Data) -> Served.Reply = { .body($1) }) throws {
+        folder = scratchDir("models")
+        let package = fillFixture
         let host = "https://\(UUID().uuidString).test/"
         files = try ["Manifest.json", "Data/com.apple.CoreML/model.mlmodel"].map { path in
             let data = try Data(contentsOf: package.appendingPathComponent(path))
@@ -75,8 +77,8 @@ private struct Harness {
             return (file, data)
         }
         entry = ModelEntry(
-            id: "fill-test", name: "Fill", licence: "MIT", upstream: URL(string: host)!,
-            runner: .lama1024, files: files.map(\.0))
+            id: "fill-test", name: "Fill", licence: "MIT", runner: .lama1024,
+            files: files.map(\.0))
         for (file, data) in files {
             Served.replies.withLock { $0[file.url] = body(file, data) }
         }
@@ -86,7 +88,11 @@ private struct Harness {
                 let configuration = URLSessionConfiguration.ephemeral
                 configuration.protocolClasses = [Served.self]
                 return configuration
-            }, idle: idle)
+            })
+    }
+
+    deinit {
+        try? FileManager.default.removeItem(at: folder)
     }
 
     var report: ModelReport { store.entries()[0] }
@@ -171,15 +177,13 @@ private struct Harness {
 @Test func aPathThatLeavesThePackageIsRefused() async throws {
     let harness = try Harness()
     let escaping = ModelEntry(
-        id: "escaping", name: "Escaping", licence: "MIT", upstream: harness.entry.upstream,
-        runner: .lama1024,
+        id: "escaping", name: "Escaping", licence: "MIT", runner: .lama1024,
         files: [
             ModelFile(
                 url: harness.files[0].0.url, path: "../../escaped.json",
                 sha256: harness.files[0].0.sha256, bytes: harness.files[0].0.bytes)
         ])
-    let store = ModelStore(
-        folder: harness.folder, catalog: [escaping], transfer: Transfer(), idle: .seconds(1))
+    let store = ModelStore(folder: harness.folder, catalog: [escaping])
 
     try store.download("escaping")
     for _ in 0..<500 where store.entries()[0].state == .downloading {
@@ -194,10 +198,18 @@ private struct Harness {
         file.path == "Manifest.json" ? .hang : .body(data)
     }
     try harness.store.download("fill-test")
+    for _ in 0..<500 where harness.requests(0) == 0 {
+        try await Task.sleep(for: .milliseconds(10))
+    }
     #expect(harness.report.state == .downloading)
 
     try harness.store.cancel("fill-test")
     #expect(harness.report.state == .absent)
+    let manifest = harness.files[0].0.url
+    for _ in 0..<500 where !Served.stopped.withLock({ $0.contains(manifest) }) {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(Served.stopped.withLock { $0.contains(manifest) })
 
     Served.replies.withLock { $0[harness.files[0].0.url] = .body(harness.files[0].1) }
     try harness.store.download("fill-test")
@@ -286,17 +298,16 @@ private struct Harness {
     #expect(
         LaMa.crop(around: CGRect(x: 3000, y: 2000, width: 500, height: 300), in: photo)
             == CGRect(x: 2250, y: 1150, width: 2000, height: 2000))
-    #expect(LaMa.crop(around: CGRect(x: 0, y: 0, width: 3000, height: 3000), in: photo).width == 4000)
+    #expect(LaMa.crop(around: CGRect(x: 0, y: 0, width: 3000, height: 3000), in: photo)?.width == 4000)
+    #expect(LaMa.crop(around: CGRect(x: 500, y: 2000, width: 5000, height: 20), in: photo) == nil)
 }
 
 @Test func theFillReplacesTheHoleAndKeepsTheRest() async throws {
-    let harness = try Harness()
-    try harness.store.download("fill-test")
-    _ = try await harness.settle()
+    let model = try MLModel(contentsOf: await MLModel.compileModel(at: fillFixture))
     let side = 2048
-    let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
     let photo = CGContext(
-        data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0, space: srgb,
+        data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
         bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
     photo.setFillColor(red: 0.8, green: 0.2, blue: 0.2, alpha: 1)
     photo.fill(CGRect(x: 0, y: 0, width: side, height: side))
@@ -306,21 +317,11 @@ private struct Harness {
     hole.setFillColor(gray: 1, alpha: 1)
     hole.fill(CGRect(x: 768, y: 768, width: 512, height: 512))
 
-    let filled = try harness.store.lend("fill-test") {
-        try LaMa.fill(photo.makeImage()!, hole: hole.makeImage()!, with: $0)
-    }
+    let filled = try LaMa.fill(photo.makeImage()!, hole: hole.makeImage()!, with: model)
 
     #expect(filled.extent == CGRect(x: 0, y: 0, width: side, height: side))
-    let context = CIContext()
-    func pixel(_ x: Int, _ y: Int) -> [Int] {
-        var bytes = [UInt8](repeating: 0, count: 4)
-        context.render(
-            filled, toBitmap: &bytes, rowBytes: 4, bounds: CGRect(x: x, y: y, width: 1, height: 1),
-            format: .RGBA8, colorSpace: srgb)
-        return bytes.prefix(3).map(Int.init)
-    }
-    let inside = pixel(1024, 1024)
-    let outside = pixel(100, 100)
+    let inside = pixel(of: filled, at: CGPoint(x: 1024, y: 1024)).prefix(3).map(Int.init)
+    let outside = pixel(of: filled, at: CGPoint(x: 100, y: 100)).prefix(3).map(Int.init)
     #expect(zip(inside, [51, 204, 204]).allSatisfy { abs($0 - $1) <= 3 }, "\(inside)")
     #expect(zip(outside, [204, 51, 51]).allSatisfy { abs($0 - $1) <= 3 }, "\(outside)")
 }

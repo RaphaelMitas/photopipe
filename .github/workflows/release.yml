@@ -287,8 +287,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.check.outputs.tag }}
         run: |
-          LATEST=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
-          if [ "$LATEST" != "$TAG" ]; then echo "TAG=$LATEST" >> $GITHUB_OUTPUT; fi
+          PREVIOUS=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 100 --json tagName \
+            --jq "[.[].tagName | select(startswith(\"v\") and . != \"$TAG\")][0] // empty")
+          echo "TAG=$PREVIOUS" >> $GITHUB_OUTPUT
 
       - name: Publish the release
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3

@@ -84,7 +84,7 @@ class Restricted(pickle.Unpickler):
 
 restricted = types.ModuleType("restricted_pickle")
 restricted.Unpickler = Restricted
-restricted.load = pickle.load
+restricted.load = lambda file, **kwargs: Restricted(file, **kwargs).load()
 restricted.__name__ = "pickle"
 
 checkpoint = torch.load(args.checkpoint, map_location="cpu", pickle_module=restricted, weights_only=False)
