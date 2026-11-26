@@ -269,10 +269,15 @@ final class ModelStore: @unchecked Sendable {
                 received += file.bytes
             }
             try update(entry.id, token, to: .preparing)
-            let compiled = try await MLModel.compileModel(at: package)
             let ready = staging.appendingPathComponent(entry.folderName, isDirectory: true)
             try fm.createDirectory(at: ready, withIntermediateDirectories: false)
-            try fm.moveItem(at: compiled, to: ready.appendingPathComponent("model.mlmodelc"))
+            let compiled = try await MLModel.compileModel(at: package)
+            do {
+                try fm.moveItem(at: compiled, to: ready.appendingPathComponent("model.mlmodelc"))
+            } catch {
+                try? fm.removeItem(at: compiled)
+                throw error
+            }
             try Self.flush(ready)
             try lock.withLock {
                 guard runs[entry.id]?.token == token else { throw CancellationError() }

@@ -23,11 +23,12 @@ enum LaMa {
 
     static func crop(around hole: CGRect, in extent: CGRect) -> CGRect? {
         let wanted = max(hole.width, hole.height) * contextPerHole
-        let side = min(max(wanted, Double(Self.side)), extent.width, extent.height).rounded(.down)
+        let fits = min(extent.width, extent.height)
+        guard wanted <= fits else { return nil }
+        let side = min(max(wanted, Double(Self.side)), fits).rounded(.down)
         let x = min(max(hole.midX - side / 2, extent.minX), extent.maxX - side).rounded(.down)
         let y = min(max(hole.midY - side / 2, extent.minY), extent.maxY - side).rounded(.down)
-        let crop = CGRect(x: x, y: y, width: side, height: side)
-        return crop.contains(hole) ? crop : nil
+        return CGRect(x: x, y: y, width: side, height: side)
     }
 
     static func fill(_ crop: CGImage, hole: CGImage, with model: MLModel) throws -> CIImage {

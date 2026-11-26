@@ -57,6 +57,12 @@ private final class Served: URLProtocol, @unchecked Sendable {
     }
 }
 
+private func waitWhile(_ condition: () -> Bool) async throws {
+    for _ in 0..<1000 where condition() {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+}
+
 private let fillFixture = fixturesRoot().appendingPathComponent("models/Fill.mlpackage")
 
 private final class Harness {
@@ -100,9 +106,7 @@ private final class Harness {
     var installed: URL { folder.appendingPathComponent(entry.folderName) }
 
     func settle() async throws -> ModelReport {
-        for _ in 0..<1000 where [.downloading, .preparing].contains(report.state) {
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await waitWhile { [.downloading, .preparing].contains(self.report.state) }
         return report
     }
 
@@ -186,9 +190,7 @@ private final class Harness {
     let store = ModelStore(folder: harness.folder, catalog: [escaping])
 
     try store.download("escaping")
-    for _ in 0..<500 where store.entries()[0].state == .downloading {
-        try await Task.sleep(for: .milliseconds(10))
-    }
+    try await waitWhile { store.entries()[0].state == .downloading }
 
     #expect(store.entries()[0].reason == "../../escaped.json is outside the model package")
 }
@@ -198,17 +200,13 @@ private final class Harness {
         file.path == "Manifest.json" ? .hang : .body(data)
     }
     try harness.store.download("fill-test")
-    for _ in 0..<500 where harness.requests(0) == 0 {
-        try await Task.sleep(for: .milliseconds(10))
-    }
+    try await waitWhile { harness.requests(0) == 0 }
     #expect(harness.report.state == .downloading)
 
     try harness.store.cancel("fill-test")
     #expect(harness.report.state == .absent)
     let manifest = harness.files[0].0.url
-    for _ in 0..<500 where !Served.stopped.withLock({ $0.contains(manifest) }) {
-        try await Task.sleep(for: .milliseconds(10))
-    }
+    try await waitWhile { !Served.stopped.withLock { $0.contains(manifest) } }
     #expect(Served.stopped.withLock { $0.contains(manifest) })
 
     Served.replies.withLock { $0[harness.files[0].0.url] = .body(harness.files[0].1) }
@@ -220,9 +218,13 @@ private final class Harness {
     let harness = try Harness()
     let other = harness.folder.appendingPathComponent("fill-test-000000000000")
     try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+    #expect(harness.report.state == .absent)
+
+    try harness.store.download("fill-test")
+    #expect(try await harness.settle().state == .ready)
+    try harness.store.delete("fill-test")
 
     #expect(harness.report.state == .absent)
-    try harness.store.delete("fill-test")
     #expect(FileManager.default.fileExists(atPath: other.path))
 }
 
@@ -262,9 +264,10 @@ private final class Harness {
     #expect(Set(entries.map(\.id)).count == entries.count)
     for entry in entries {
         #expect(Set(entry.files.map(\.path)).count == entry.files.count)
+        #expect(Set(entry.files.map(\.url)).count == entry.files.count)
         for file in entry.files {
             #expect(file.url.scheme == "https")
-            #expect(file.sha256.count == 64 && file.sha256.allSatisfy(\.isHexDigit))
+            #expect(file.sha256.wholeMatch(of: /[0-9a-f]{64}/) != nil)
             #expect(file.bytes > 0)
             #expect(file.isInsidePackage)
         }
@@ -298,7 +301,10 @@ private final class Harness {
     #expect(
         LaMa.crop(around: CGRect(x: 3000, y: 2000, width: 500, height: 300), in: photo)
             == CGRect(x: 2250, y: 1150, width: 2000, height: 2000))
-    #expect(LaMa.crop(around: CGRect(x: 0, y: 0, width: 3000, height: 3000), in: photo)?.width == 4000)
+    #expect(
+        LaMa.crop(around: CGRect(x: 0, y: 0, width: 1000, height: 1000), in: photo)
+            == CGRect(x: 0, y: 0, width: 4000, height: 4000))
+    #expect(LaMa.crop(around: CGRect(x: 0, y: 0, width: 1001, height: 1000), in: photo) == nil)
     #expect(LaMa.crop(around: CGRect(x: 500, y: 2000, width: 5000, height: 20), in: photo) == nil)
 }
 
@@ -315,13 +321,13 @@ private final class Harness {
         data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
         space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)!
     hole.setFillColor(gray: 1, alpha: 1)
-    hole.fill(CGRect(x: 768, y: 768, width: 512, height: 512))
+    hole.fill(CGRect(x: 256, y: 1280, width: 512, height: 512))
 
     let filled = try LaMa.fill(photo.makeImage()!, hole: hole.makeImage()!, with: model)
 
     #expect(filled.extent == CGRect(x: 0, y: 0, width: side, height: side))
-    let inside = pixel(of: filled, at: CGPoint(x: 1024, y: 1024)).prefix(3).map(Int.init)
-    let outside = pixel(of: filled, at: CGPoint(x: 100, y: 100)).prefix(3).map(Int.init)
+    let inside = pixel(of: filled, at: CGPoint(x: 512, y: 1536)).prefix(3).map(Int.init)
+    let outside = pixel(of: filled, at: CGPoint(x: 512, y: 512)).prefix(3).map(Int.init)
     #expect(zip(inside, [51, 204, 204]).allSatisfy { abs($0 - $1) <= 3 }, "\(inside)")
     #expect(zip(outside, [204, 51, 51]).allSatisfy { abs($0 - $1) <= 3 }, "\(outside)")
 }
